@@ -1,0 +1,31 @@
+{
+  "PRJ2025": {
+    "project_code": "PRJ2025",
+    "project_name": "Installazione Stand Reale",
+    "activities": [
+      {
+        "id": "ARRIVO",
+        "label": "Arrivo materiali",
+        "plan_start": "2025-03-04T08:00:00+01:00",
+        "plan_end": "2025-03-04T09:30:00+01:00"
+      },
+      {
+        "id": "MONT",
+        "label": "Montaggio struttura",
+        "plan_start": "2025-03-04T09:30:00+01:00",
+        "plan_end": "2025-03-04T15:00:00+01:00"
+      },
+      {
+        "id": "FIN",
+        "label": "Finiture",
+        "plan_start": "2025-03-04T15:30:00+01:00",
+        "plan_end": "2025-03-04T18:00:00+01:00"
+      }
+    ],
+    "team": [
+      { "key": "andrea", "name": "Andrea Riva" },
+      { "key": "chiara", "name": "Chiara Sala" },
+      { "key": "davide", "name": "Davide Moretti" }
+    ]
+  }
+}
