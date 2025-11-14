@@ -3,6 +3,24 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>JobLOG</title>
+
+<!-- PWA Meta Tags -->
+<meta name="application-name" content="JobLog">
+<meta name="description" content="Gestione timer e attività per progetti Rentman">
+<meta name="theme-color" content="#0ea5e9">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JobLog">
+
+<!-- PWA Manifest -->
+<link rel="manifest" href="/static/manifest.json">
+
+<!-- PWA Icons -->
+<link rel="icon" type="image/svg+xml" sizes="192x192" href="/static/icons/icon-192x192.svg">
+<link rel="icon" type="image/svg+xml" sizes="512x512" href="/static/icons/icon-512x512.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/icon-192x192.svg">
+
 <link rel="preconnect" href="/static/js/app.js?v=20251113a" />
 <style>
 :root { --brand:#0078d7; --ok:#28a745; --warn:#dc3545; --bg:#f2f4f7; --header-height:68px; --project-bar-offset:calc(var(--header-height) + 12px); }
@@ -129,6 +147,17 @@ header { background: var(--brand); color: white; padding: 12px 20px; font-size: 
 .feedback-submit:not(:disabled):active { background:#1558c0; }
 .feedback-cancel { border:none; background:transparent; color:#5f6368; font-size:15px; font-weight:600; cursor:pointer; }
 .feedback-cancel:hover { text-decoration:underline; }
+.install-prompt { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:300; width:90%; max-width:400px; }
+.install-prompt-content { background:#fff; border-radius:16px; box-shadow:0 8px 24px rgba(15,23,42,0.25); padding:18px 20px; display:flex; align-items:center; gap:16px; animation:slideUp 0.3s ease; }
+@keyframes slideUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+.install-prompt-icon { font-size:32px; }
+.install-prompt-text { flex:1; display:flex; flex-direction:column; gap:2px; }
+.install-prompt-text strong { font-size:16px; font-weight:700; color:#0f172a; }
+.install-prompt-text span { font-size:13px; color:#64748b; }
+.install-prompt-btn { border:none; background:#1a73e8; color:#fff; padding:10px 20px; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.install-prompt-btn:active { background:#1558c0; }
+.install-prompt-dismiss { border:none; background:transparent; color:#94a3b8; font-size:20px; cursor:pointer; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:50%; }
+.install-prompt-dismiss:active { background:#f1f5f9; }
 .timeline-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.35); z-index: 110; }
 .timeline-panel { position: fixed; top: 0; right: 0; width: 340px; max-width: 90vw; height: 100vh; background: #fff; z-index: 120; box-shadow: -4px 0 18px rgba(15,23,42,0.18); transform: translateX(100%); transition: transform 0.28s ease; display: flex; flex-direction: column; }
 .timeline-panel.open { transform: translateX(0); }
@@ -295,6 +324,19 @@ header { background: var(--brand); color: white; padding: 12px 20px; font-size: 
 
 <div id="popup" class="popup">✅ Operazione eseguita</div>
 
+<!-- PWA Install Prompt -->
+<div id="installPrompt" class="install-prompt hidden">
+<div class="install-prompt-content">
+<div class="install-prompt-icon">📱</div>
+<div class="install-prompt-text">
+<strong>Installa JobLog</strong>
+<span>Accesso rapido dalla schermata home</span>
+</div>
+<button id="installBtn" class="install-prompt-btn">Installa</button>
+<button id="dismissInstallBtn" class="install-prompt-dismiss">✕</button>
+</div>
+</div>
+
 <div id="timelineOverlay" class="timeline-overlay hidden"></div>
 <div id="timelinePanel" class="timeline-panel">
 <div class="timeline-header">
@@ -308,5 +350,72 @@ header { background: var(--brand); color: white; padding: 12px 20px; font-size: 
 
 
 <script src="/static/js/app.js?v=20251113a"></script>
+<script>
+// PWA Service Worker Registration
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/sw.js')
+            .then(registration => {
+                console.log('✓ Service Worker registrato:', registration.scope);
+            })
+            .catch(error => {
+                console.log('✗ Service Worker fallito:', error);
+            });
+    });
+}
+
+// PWA Install Prompt
+let deferredPrompt;
+const installPrompt = document.getElementById('installPrompt');
+const installBtn = document.getElementById('installBtn');
+const dismissInstallBtn = document.getElementById('dismissInstallBtn');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    
+    // Check if user dismissed before
+    const dismissed = localStorage.getItem('pwa-install-dismissed');
+    if (!dismissed) {
+        setTimeout(() => {
+            if (installPrompt) {
+                installPrompt.classList.remove('hidden');
+            }
+        }, 3000);
+    }
+});
+
+if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+        if (!deferredPrompt) return;
+        
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log('PWA install:', outcome);
+        
+        if (installPrompt) {
+            installPrompt.classList.add('hidden');
+        }
+        deferredPrompt = null;
+    });
+}
+
+if (dismissInstallBtn) {
+    dismissInstallBtn.addEventListener('click', () => {
+        if (installPrompt) {
+            installPrompt.classList.add('hidden');
+        }
+        localStorage.setItem('pwa-install-dismissed', 'true');
+    });
+}
+
+// Listen for app installed
+window.addEventListener('appinstalled', () => {
+    console.log('✓ PWA installata');
+    if (installPrompt) {
+        installPrompt.classList.add('hidden');
+    }
+});
+</script>
 </body>
 </html>
