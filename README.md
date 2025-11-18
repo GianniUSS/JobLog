@@ -13,6 +13,12 @@ pip install -r requirements.txt
 python app.py
 ```
 
+## Gestione utenti
+- Elenca utenti: `python manage_users.py list`
+- Crea un account: `python manage_users.py create USERNAME --name "Nome Cognome"`
+- Aggiorna password: `python manage_users.py set-password USERNAME`
+- Elimina account: `python manage_users.py delete USERNAME`
+
 ## Caricare progetti reali
 - Modifica `projects.json` inserendo i tuoi codici progetto, le attività e la squadra; l'esempio incluso può essere usato come base.
 - Avvia l'app (`python app.py`) e inserisci il codice del progetto nel campo in alto: se il codice esiste in `projects.json` verrà caricato al posto dei progetti demo.

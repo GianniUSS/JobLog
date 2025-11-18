@@ -21,15 +21,23 @@ const APP_RELEASE = "v2025.11.14";
 let menuOpen = false;
 let feedbackContext = null;
 let feedbackToolbarWasVisible = false;
+let darkMode = false;
+let exportModalOpen = false;
+let pollingSuspended = false;
+let unauthorizedNotified = false;
 
 async function postJson(url, payload) {
+
     const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload || {}),
     });
     if (!res.ok) {
-        throw new Error(`HTTP ${res.status} for ${url}`);
+        const error = new Error(`HTTP ${res.status} for ${url}`);
+        error.status = res.status;
+        error.url = url;
+        throw error;
     }
     return res.json();
 }
@@ -37,7 +45,10 @@ async function postJson(url, payload) {
 async function fetchJson(url) {
     const res = await fetch(url);
     if (!res.ok) {
-        throw new Error(`HTTP ${res.status} for ${url}`);
+        const error = new Error(`HTTP ${res.status} for ${url}`);
+        error.status = res.status;
+        error.url = url;
+        throw error;
     }
     return res.json();
 }
@@ -391,6 +402,142 @@ function toggleMenu() {
     setMenuVisibility(!menuOpen);
 }
 
+function initTheme() {
+    const savedTheme = localStorage.getItem('joblog-theme');
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    if (savedTheme === 'dark' || (!savedTheme && systemPrefersDark)) {
+        darkMode = true;
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+        darkMode = false;
+        document.documentElement.removeAttribute('data-theme');
+    }
+    
+    updateThemeUI();
+}
+
+function toggleTheme() {
+    darkMode = !darkMode;
+    
+    if (darkMode) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('joblog-theme', 'dark');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('joblog-theme', 'light');
+    }
+    
+    updateThemeUI();
+}
+
+function updateThemeUI() {
+    const themeIcon = document.querySelector('#themeToggle .side-menu-item-icon');
+    const themeStatus = document.getElementById('themeStatus');
+    
+    if (themeIcon) {
+        themeIcon.textContent = darkMode ? '☀️' : '🌙';
+    }
+    
+    if (themeStatus) {
+        themeStatus.textContent = darkMode ? 'Tema scuro attivo' : 'Tema scuro disattivato';
+    }
+}
+
+function openExportModal() {
+    const modal = document.getElementById('exportModal');
+    if (!modal) {
+        return;
+    }
+    
+    exportModalOpen = true;
+    closeMenu();
+    markBodyModalOpen();
+    
+    // Imposta date predefinite (oggi e una settimana fa)
+    const today = new Date();
+    const weekAgo = new Date();
+    weekAgo.setDate(today.getDate() - 7);
+    
+    const startDateInput = document.getElementById('exportStartDate');
+    const endDateInput = document.getElementById('exportEndDate');
+    
+    if (startDateInput) {
+        startDateInput.value = weekAgo.toISOString().split('T')[0];
+    }
+    if (endDateInput) {
+        endDateInput.value = today.toISOString().split('T')[0];
+    }
+    
+    modal.style.display = 'flex';
+}
+
+function closeExportModal() {
+    const modal = document.getElementById('exportModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    exportModalOpen = false;
+    releaseBodyModalState();
+}
+
+async function performExport(format) {
+    const startDate = document.getElementById('exportStartDate')?.value || '';
+    const endDate = document.getElementById('exportEndDate')?.value || '';
+    
+    const params = new URLSearchParams();
+    params.append('format', format);
+    if (startDate) {
+        params.append('start_date', startDate);
+    }
+    if (endDate) {
+        params.append('end_date', endDate);
+    }
+    
+    try {
+        const url = `/api/export?${params.toString()}`;
+        
+        // Mostra feedback loading
+        showPopup('⏳ Generazione report in corso...');
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Export fallito');
+        }
+        
+        // Download file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        
+        // Estrai filename dall'header Content-Disposition o genera uno di default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `joblog_report_${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+        
+        if (contentDisposition) {
+            const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+            if (matches != null && matches[1]) {
+                filename = matches[1].replace(/['"]/g, '');
+            }
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(downloadUrl);
+        document.body.removeChild(a);
+        
+        showPopup(`✅ Report ${format === 'excel' ? 'Excel' : 'CSV'} scaricato!`);
+        closeExportModal();
+    } catch (error) {
+        console.error('Export error:', error);
+        showPopup('⚠️ Errore durante l\'export');
+    }
+}
+
 function setProjectVisibility(active) {
     projectVisible = active;
 
@@ -437,6 +584,16 @@ function setProjectVisibility(active) {
     updateSelectionToolbar();
 }
 
+function setProjectDefaultDate() {
+    const dateInput = document.getElementById("projectDateInput");
+    if (!dateInput || dateInput.value) {
+        return;
+    }
+    const today = new Date();
+    const iso = today.toISOString().split("T")[0];
+    dateInput.value = iso;
+}
+
 function getSelectedMemberNodes() {
     return Array.from(
         document.querySelectorAll(".team-member.selected, .member-task.selected")
@@ -463,6 +620,27 @@ function determineSelectionPauseIntent(nodes) {
         return "resume";
     }
     return "pause";
+}
+
+function getEligiblePauseKeys(nodes, intent) {
+    if (!nodes || nodes.length === 0) {
+        return [];
+    }
+    const predicate =
+        intent === "pause"
+            ? (node) => node.dataset.running === "true"
+            : (node) => node.dataset.paused === "true";
+    const unique = new Set();
+    nodes.forEach((node) => {
+        const key = node.dataset.key;
+        if (!key || unique.has(key)) {
+            return;
+        }
+        if (predicate(node)) {
+            unique.add(key);
+        }
+    });
+    return Array.from(unique);
 }
 
 function getActivityMemberNodes(activityId) {
@@ -565,16 +743,25 @@ async function toggleSelectionPause() {
         return;
     }
     const intent = determineSelectionPauseIntent(nodes);
+    const eligibleKeys = getEligiblePauseKeys(nodes, intent);
+    if (eligibleKeys.length === 0) {
+        showPopup(
+            intent === "pause"
+                ? "⚠️ Nessun operatore in attività nella selezione"
+                : "⚠️ Nessun operatore in pausa nella selezione"
+        );
+        return;
+    }
     if (intent === "pause") {
         await performSelectionAction(
-            keys,
+            eligibleKeys,
             "/api/member/pause",
             "⏸️ Operatori in pausa",
             "⚠️ Impossibile mettere in pausa la selezione"
         );
     } else {
         await performSelectionAction(
-            keys,
+            eligibleKeys,
             "/api/member/resume",
             "▶️ Operatori ripresi",
             "⚠️ Impossibile riprendere la selezione"
@@ -596,6 +783,23 @@ async function finishSelection() {
     );
 }
 
+function syncSelectionToolbarOffset(inputToolbar) {
+    const toolbar = inputToolbar || document.getElementById("selectionToolbar");
+    const root = document.documentElement;
+    if (!toolbar || !root) {
+        return;
+    }
+    if (toolbar.classList.contains("hidden")) {
+        root.style.setProperty("--selection-toolbar-height", "0px");
+        return;
+    }
+    requestAnimationFrame(() => {
+        const measured = toolbar.offsetHeight || 0;
+        const spacing = measured > 0 ? measured + 12 : 0;
+        root.style.setProperty("--selection-toolbar-height", `${spacing}px`);
+    });
+}
+
 function updateSelectionToolbar() {
     const toolbar = document.getElementById("selectionToolbar");
     if (!toolbar) {
@@ -607,17 +811,16 @@ function updateSelectionToolbar() {
     const count = keys.length;
     const hasSelection = count > 0 && projectVisible;
     const label = document.getElementById("selectionCount");
+    const suppressed = toolbar.dataset.modalSuppressed === "true";
+    const shouldShow = hasSelection && !suppressed;
 
     if (label) {
         label.textContent =
             count === 1 ? "1 operatore selezionato" : `${count} operatori selezionati`;
     }
 
-    if (hasSelection) {
-        toolbar.classList.remove("hidden");
-    } else {
-        toolbar.classList.add("hidden");
-    }
+    toolbar.classList.toggle("hidden", !shouldShow);
+    syncSelectionToolbarOffset(toolbar);
 
     const moveBtn = document.getElementById("selectionMoveBtn");
     const pauseBtn = document.getElementById("selectionPauseBtn");
@@ -922,11 +1125,35 @@ function applyState(state) {
     refreshTotalRunningTimeDisplay();
 }
 
-function scheduleRefresh() {
-    if (refreshTimer) {
-        clearTimeout(refreshTimer);
+function stopRefreshTimer() {
+    if (!refreshTimer) {
+        return;
     }
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+}
+
+function scheduleRefresh() {
+    if (pollingSuspended) {
+        return;
+    }
+    stopRefreshTimer();
     refreshTimer = setTimeout(refreshState, 5000);
+}
+
+function handleUnauthenticated() {
+    if (pollingSuspended) {
+        return;
+    }
+    pollingSuspended = true;
+    stopRefreshTimer();
+    if (!unauthorizedNotified) {
+        unauthorizedNotified = true;
+        showPopup("⚠️ Sessione scaduta. Effettua di nuovo l'accesso.");
+        setTimeout(() => {
+            window.location.href = "/login";
+        }, 1500);
+    }
 }
 
 async function refreshState() {
@@ -938,7 +1165,12 @@ async function refreshState() {
         applyState(stateData);
         renderEvents(eventsData.events || []);
     } catch (err) {
-        console.error("refreshState", err);
+        if (err && err.status === 401) {
+            console.warn("refreshState unauthorized", err);
+            handleUnauthenticated();
+        } else {
+            console.error("refreshState", err);
+        }
     } finally {
         scheduleRefresh();
     }
@@ -1126,6 +1358,7 @@ function anyModalVisible() {
 function markBodyModalOpen() {
     if (document.body) {
         document.body.classList.add("modal-open");
+        syncSelectionToolbarOffset();
     }
 }
 
@@ -1135,6 +1368,7 @@ function releaseBodyModalState() {
     }
     if (!anyModalVisible()) {
         document.body.classList.remove("modal-open");
+        syncSelectionToolbarOffset();
     }
 }
 
@@ -1163,11 +1397,12 @@ function openActivityModal() {
         selectionToolbarWasVisible = !toolbar.classList.contains("hidden");
         toolbar.dataset.modalSuppressed = "true";
         toolbar.classList.add("hidden");
+        syncSelectionToolbarOffset(toolbar);
     }
     const search = document.getElementById("activitySearch");
     if (search) {
         search.value = activitySearchTerm;
-        setTimeout(() => search.focus(), 0);
+        search.setAttribute('readonly', 'readonly');
     }
     renderActivityChoices();
     modal.style.display = "flex";
@@ -1250,6 +1485,7 @@ function openFeedbackModalForActivity(activity) {
     if (toolbar) {
         feedbackToolbarWasVisible = !toolbar.classList.contains("hidden");
         toolbar.classList.add("hidden");
+        syncSelectionToolbarOffset(toolbar);
     } else {
         feedbackToolbarWasVisible = false;
     }
@@ -1548,6 +1784,42 @@ function bindUI() {
         menuOverlay.addEventListener("click", closeMenu);
     }
 
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            toggleTheme();
+        });
+    }
+
+    const exportToggle = document.getElementById('exportToggle');
+    if (exportToggle) {
+        exportToggle.addEventListener('click', openExportModal);
+    }
+
+    const exportExcelBtn = document.getElementById('exportExcelBtn');
+    if (exportExcelBtn) {
+        exportExcelBtn.addEventListener('click', () => performExport('excel'));
+    }
+
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', () => performExport('csv'));
+    }
+
+    const exportCancelBtn = document.getElementById('exportCancelBtn');
+    if (exportCancelBtn) {
+        exportCancelBtn.addEventListener('click', closeExportModal);
+    }
+
+    const exportModal = document.getElementById('exportModal');
+    if (exportModal) {
+        exportModal.addEventListener('click', (event) => {
+            if (event.target === exportModal) {
+                closeExportModal();
+            }
+        });
+    }
+
     document.querySelectorAll("[data-menu-action]").forEach((node) => {
         node.addEventListener("click", closeMenu);
     });
@@ -1622,6 +1894,7 @@ function bindUI() {
             closeActivityModal();
             closeTimeline();
             closeMenu();
+            closeExportModal();
         }
     });
 
@@ -1641,7 +1914,9 @@ function updateClock() {
 }
 
 async function init() {
+    initTheme();
     bindUI();
+    setProjectDefaultDate();
     const releaseTarget = document.getElementById("menuReleaseVersion");
     if (releaseTarget) {
         releaseTarget.textContent = APP_RELEASE;
@@ -1653,3 +1928,6 @@ async function init() {
 }
 
 window.addEventListener("DOMContentLoaded", init);
+window.addEventListener("resize", () => {
+    syncSelectionToolbarOffset();
+});

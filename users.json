@@ -1,0 +1,11 @@
+{
+  "admin": {
+    "name": "Administrator",
+    "password": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
+  },
+  "giannipi": {
+    "display": "giannipi",
+    "name": "Gianni PIccoli",
+    "password": "8ff41e0d8d032afdc78cc138c5a62f6cda88b81e3ac2823e3136efcc88c23e57"
+  }
+}

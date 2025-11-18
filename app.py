@@ -1,16 +1,25 @@
 ﻿from __future__ import annotations
 
+import csv
+import hashlib
+import io
 import json
 import logging
 import os
+import secrets
 import sqlite3
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from flask import Flask, g, jsonify, render_template, request
+from flask import Flask, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask.typing import ResponseReturnValue
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from rentman_client import (
     RentmanAPIError,
     RentmanAuthError,
@@ -20,6 +29,10 @@ from rentman_client import (
 
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +45,7 @@ app.logger.propagate = True
 DATABASE = Path(__file__).with_name("joblog.db")
 PROJECTS_FILE = Path(__file__).with_name("projects.json")
 CONFIG_FILE = Path(__file__).with_name("config.json")
+USERS_FILE = Path(__file__).with_name("users.json")
 DEMO_PROJECT_CODE = "1001"
 
 MOCK_PROJECTS: Dict[str, Dict[str, Any]] = {
@@ -73,6 +87,40 @@ _RENTMAN_CLIENT: Optional[RentmanClient] = None
 _RENTMAN_CLIENT_TOKEN: Optional[str] = None
 _CONFIG_CACHE: Optional[Dict[str, Any]] = None
 _CONFIG_CACHE_MTIME: Optional[float] = None
+
+
+# Authentication helpers
+def hash_password(password: str) -> str:
+    """Hash a password using SHA-256."""
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verify a password against a hash."""
+    return hash_password(password) == hashed
+
+
+def load_users() -> Dict[str, Dict[str, str]]:
+    """Load users from users.json file."""
+    if not USERS_FILE.exists():
+        return {}
+    try:
+        with open(USERS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def login_required(f):
+    """Decorator to require login for a route."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Authentication required'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def _is_truthy(value: Any) -> bool:
@@ -957,12 +1005,57 @@ def describe_event(kind: str, details: Dict[str, Any], activity_labels: Dict[str
     return kind.replace("_", " ").title()
 
 
+# Authentication routes
+@app.route("/login")
+def login():
+    """Render login page. Redirect to home if already logged in."""
+    if 'user' in session:
+        return redirect(url_for('home'))
+    return render_template("login.html")
+
+
+@app.post("/api/login")
+def api_login():
+    """Handle login POST request."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Dati non validi'}), 400
+    
+    username_input = data.get('username', '').strip()
+    password = data.get('password', '')
+    
+    if not username_input or not password:
+        return jsonify({'success': False, 'error': 'Username e password richiesti'}), 400
+    
+    users = load_users()
+    username_key = username_input.lower()
+    user = users.get(username_input) or users.get(username_key)
+    
+    if not user or not verify_password(password, user.get('password', '')):
+        return jsonify({'success': False, 'error': 'Credenziali non valide'}), 401
+    
+    session.permanent = True
+    session['user'] = username_key
+    session['user_name'] = user.get('name', username_input)
+    return jsonify({'success': True})
+
+
+@app.route("/logout")
+def logout():
+    """Clear session and redirect to login."""
+    session.clear()
+    return redirect(url_for('login'))
+
+
 @app.route("/")
-def home() -> str:
+def home() -> ResponseReturnValue:
+    if 'user' not in session:
+        return redirect(url_for('login'))
     return render_template("index.html")
 
 
 @app.get("/api/activities")
+@login_required
 def api_activities():
     db = get_db()
     rows = db.execute(
@@ -972,6 +1065,7 @@ def api_activities():
 
 
 @app.get("/api/state")
+@login_required
 def api_state():
     db = get_db()
     now = now_ms()
@@ -1062,6 +1156,7 @@ def api_state():
 
 
 @app.get("/api/events")
+@login_required
 def api_events():
     db = get_db()
     project_code = get_app_state(db, "project_code")
@@ -1103,6 +1198,7 @@ def api_events():
 
 
 @app.post("/api/load_project")
+@login_required
 def api_load_project():
     data = request.get_json(silent=True) or {}
     project_code = (data.get("project_code") or "").strip().upper()
@@ -1134,6 +1230,7 @@ def api_load_project():
 
 
 @app.post("/api/move")
+@login_required
 def api_move():
     data = request.get_json(silent=True) or {}
     member_key = (data.get("member_key") or "").strip()
@@ -1214,6 +1311,7 @@ def api_move():
 
 
 @app.post("/api/start_activity")
+@login_required
 def api_start_activity():
     """Avvia i timer per tutti i membri di una specifica attività."""
     data = request.get_json(silent=True) or {}
@@ -1261,6 +1359,7 @@ def api_start_activity():
 
 
 @app.post("/api/start_member")
+@login_required
 def api_start_member():
     """Avvia il timer per un singolo membro."""
     data = request.get_json(silent=True) or {}
@@ -1303,6 +1402,7 @@ def api_start_member():
 
 
 @app.post("/api/start_all")
+@login_required
 def api_start_all():
     """Avvia i timer per tutti i membri che hanno un'attività assegnata."""
     now = now_ms()
@@ -1334,6 +1434,7 @@ def api_start_all():
 
 
 @app.post("/api/pause_all")
+@login_required
 def api_pause_all():
     now = now_ms()
     db = get_db()
@@ -1365,6 +1466,7 @@ def api_pause_all():
 
 
 @app.post("/api/resume_all")
+@login_required
 def api_resume_all():
     now = now_ms()
     db = get_db()
@@ -1390,6 +1492,7 @@ def api_resume_all():
 
 
 @app.post("/api/finish_all")
+@login_required
 def api_finish_all():
     now = now_ms()
     db = get_db()
@@ -1441,6 +1544,7 @@ def api_finish_all():
 
 
 @app.post("/api/member/pause")
+@login_required
 def api_member_pause():
     data = request.get_json(silent=True) or {}
     member_key = (data.get("member_key") or "").strip()
@@ -1494,6 +1598,7 @@ def api_member_pause():
 
 
 @app.post("/api/member/resume")
+@login_required
 def api_member_resume():
     data = request.get_json(silent=True) or {}
     member_key = (data.get("member_key") or "").strip()
@@ -1541,6 +1646,7 @@ def api_member_resume():
 
 
 @app.post("/api/member/finish")
+@login_required
 def api_member_finish():
     data = request.get_json(silent=True) or {}
     member_key = (data.get("member_key") or "").strip()
@@ -1587,7 +1693,365 @@ def api_member_finish():
     return jsonify({"ok": True})
 
 
+@app.get("/api/export")
+@login_required
+def api_export():
+    """Esporta i dati delle attività in formato Excel o CSV."""
+    export_format = request.args.get("format", "excel").lower()
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+    project_filter = request.args.get("project_code", "").strip()
+
+    db = get_db()
+    
+    # Ottieni informazioni progetto corrente
+    project_code = get_app_state(db, "project_code")
+    project_name = get_app_state(db, "project_name")
+    
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_active_project"}), 400
+
+    # Se c'è un filtro progetto e non corrisponde al progetto attivo, errore
+    if project_filter and project_filter != project_code:
+        return jsonify({"ok": False, "error": "project_mismatch"}), 400
+
+    # Ottieni tutte le attività
+    activity_rows = db.execute(
+        "SELECT activity_id, label FROM activities ORDER BY sort_order, label"
+    ).fetchall()
+    
+    activity_map = {row["activity_id"]: row["label"] for row in activity_rows}
+
+    # Query per ottenere i log delle attività completate
+    query = """
+        SELECT 
+            el.ts,
+            el.kind,
+            el.member_key,
+            el.details,
+            ms.member_name
+        FROM event_log el
+        LEFT JOIN member_state ms ON el.member_key = ms.member_key
+        WHERE el.kind IN ('move', 'finish_activity', 'pause_member', 'resume_member')
+        ORDER BY el.ts ASC
+    """
+    
+    event_rows = db.execute(query).fetchall()
+
+    # Raggruppa eventi per operatore e attività per calcolare sessioni di lavoro
+    sessions = {}  # Key: (member_key, activity_id) -> lista di eventi
+    
+    app.logger.info(f"Export: trovati {len(event_rows)} eventi da processare")
+    
+    for row in event_rows:
+        try:
+            details = json.loads(row["details"]) if row["details"] else {}
+        except json.JSONDecodeError:
+            details = {}
+        
+        ts = row["ts"]
+        dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        
+        # Filtro per data
+        if start_date:
+            filter_date = datetime.fromisoformat(start_date).date()
+            if dt.date() < filter_date:
+                continue
+        if end_date:
+            filter_date = datetime.fromisoformat(end_date).date()
+            if dt.date() > filter_date:
+                continue
+        
+        member_key = row["member_key"]
+        member_name = row["member_name"] or details.get("member_name", "N/D")
+        
+        # Determina l'activity_id dall'evento
+        if row["kind"] == "move":
+            activity_id = details.get("to")
+        else:
+            activity_id = details.get("activity_id")
+        
+        if not activity_id or not member_key:
+            continue
+        
+        session_key = (member_key, activity_id)
+        
+        if session_key not in sessions:
+            sessions[session_key] = {
+                "member_name": member_name,
+                "activity_id": activity_id,
+                "events": []
+            }
+        
+        sessions[session_key]["events"].append({
+            "ts": ts,
+            "dt": dt,
+            "kind": row["kind"],
+            "details": details
+        })
+    
+    # Calcola statistiche per ogni sessione
+    export_data = []
+    
+    app.logger.info(f"Export: trovate {len(sessions)} sessioni uniche (operatore + attività)")
+    
+    for (member_key, activity_id), session in sessions.items():
+        events = sorted(session["events"], key=lambda e: e["ts"])
+        
+        if not events:
+            continue
+        
+        member_name = session["member_name"]
+        activity_label = activity_map.get(activity_id, "N/D")
+        
+        # Trova inizio e fine
+        start_event = None
+        end_event = None
+        pause_events = []
+        resume_events = []
+        
+        for event in events:
+            if event["kind"] == "move" and event["details"].get("to") == activity_id:
+                if not start_event:
+                    start_event = event
+            elif event["kind"] == "pause_member":
+                pause_events.append(event)
+            elif event["kind"] == "resume_member":
+                resume_events.append(event)
+            elif event["kind"] == "finish_activity":
+                end_event = event
+        
+        # Se non c'è evento di move, usa il primo evento come inizio
+        if not start_event and events:
+            start_event = events[0]
+        
+        # Se ancora non c'è inizio, salta
+        if not start_event:
+            continue
+        
+        start_dt = start_event["dt"]
+        end_dt = end_event["dt"] if end_event else datetime.now(tz=timezone.utc)
+        
+        # Calcola durata totale (tempo trascorso dall'inizio alla fine)
+        total_duration_ms = int((end_dt - start_dt).total_seconds() * 1000)
+        
+        # Calcola tempo netto (durata registrata nell'evento finish)
+        net_duration_ms = 0
+        if end_event:
+            net_duration_ms = end_event["details"].get("duration_ms", 0)
+        else:
+            # Se l'attività è ancora in corso, usa la durata totale
+            net_duration_ms = total_duration_ms
+        
+        # Calcola tempo in pausa (differenza tra totale e netto)
+        pause_duration_ms = max(0, total_duration_ms - net_duration_ms)
+        
+        # Conta numero di pause
+        num_pauses = len(pause_events)
+        
+        export_data.append({
+            "operatore": member_name,
+            "attivita": activity_label,
+            "data_inizio": start_dt.strftime("%d/%m/%Y"),
+            "ora_inizio": start_dt.strftime("%H:%M:%S"),
+            "data_fine": end_dt.strftime("%d/%m/%Y") if end_event else "In corso",
+            "ora_fine": end_dt.strftime("%H:%M:%S") if end_event else "-",
+            "durata_netta": format_duration_ms(net_duration_ms) or "00:00:00",
+            "tempo_pausa": format_duration_ms(pause_duration_ms) or "00:00:00",
+            "num_pause": str(num_pauses),
+            "stato": "Completato" if end_event else "In corso"
+        })
+    
+    app.logger.info(f"Export: generati {len(export_data)} record per l'export")
+
+    # Genera file in base al formato
+    if export_format == "csv":
+        return generate_csv_export(export_data, project_code, project_name)
+    else:
+        return generate_excel_export(export_data, project_code, project_name)
+
+
+def generate_excel_export(data: List[Dict[str, Any]], project_code: str, project_name: str):
+    """Genera un file Excel con template professionale."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Report Attività"
+
+    # Stili
+    header_font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="0EA5E9", end_color="0EA5E9", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    
+    title_font = Font(name="Calibri", size=18, bold=True, color="1E293B")
+    title_alignment = Alignment(horizontal="left", vertical="center")
+    
+    cell_font = Font(name="Calibri", size=11)
+    cell_alignment = Alignment(horizontal="left", vertical="center")
+    
+    border_thin = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="thin", color="CBD5E1"),
+    )
+
+    # Titolo report
+    ws.merge_cells("A1:J1")
+    title_cell = ws["A1"]
+    title_cell.value = f"🔷 JobLOG - Report Attività"
+    title_cell.font = title_font
+    title_cell.alignment = title_alignment
+    
+    # Info progetto
+    ws.merge_cells("A2:J2")
+    project_cell = ws["A2"]
+    project_cell.value = f"Progetto: {project_code} - {project_name or project_code}"
+    project_cell.font = Font(name="Calibri", size=12, color="64748B")
+    project_cell.alignment = Alignment(horizontal="left", vertical="center")
+    
+    # Data generazione
+    ws.merge_cells("A3:J3")
+    date_cell = ws["A3"]
+    now = datetime.now()
+    date_cell.value = f"Generato il: {now.strftime('%d/%m/%Y alle %H:%M')}"
+    date_cell.font = Font(name="Calibri", size=10, color="94A3B8")
+    date_cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    # Riga vuota
+    ws.append([])
+
+    # Header colonne
+    headers = ["Operatore", "Attività", "Data Inizio", "Ora Inizio", "Data Fine", "Ora Fine", "Durata Netta", "Tempo Pausa", "N° Pause", "Stato"]
+    ws.append(headers)
+    
+    header_row = ws.max_row
+    for col_num, header in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border_thin
+
+    # Dati
+    for row_data in data:
+        ws.append([
+            row_data["operatore"],
+            row_data["attivita"],
+            row_data["data_inizio"],
+            row_data["ora_inizio"],
+            row_data["data_fine"],
+            row_data["ora_fine"],
+            row_data["durata_netta"],
+            row_data["tempo_pausa"],
+            row_data["num_pause"],
+            row_data["stato"],
+        ])
+        
+        row_num = ws.max_row
+        for col_num in range(1, 11):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.font = cell_font
+            cell.alignment = cell_alignment
+            cell.border = border_thin
+            
+            # Alternating row colors
+            if row_num % 2 == 0:
+                cell.fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+
+    # Totale sessioni
+    total_row = ws.max_row + 2
+    ws.merge_cells(f"A{total_row}:I{total_row}")
+    total_cell = ws.cell(row=total_row, column=1)
+    total_cell.value = f"Totale Sessioni: {len(data)}"
+    total_cell.font = Font(name="Calibri", size=12, bold=True, color="1E293B")
+    total_cell.alignment = Alignment(horizontal="right", vertical="center")
+
+    # Auto-fit colonne
+    column_widths = {
+        "A": 20,  # Operatore
+        "B": 30,  # Attività
+        "C": 12,  # Data Inizio
+        "D": 11,  # Ora Inizio
+        "E": 12,  # Data Fine
+        "F": 11,  # Ora Fine
+        "G": 14,  # Durata Netta
+        "H": 13,  # Tempo Pausa
+        "I": 10,  # N° Pause
+        "J": 12,  # Stato
+    }
+    
+    for col_letter, width in column_widths.items():
+        ws.column_dimensions[col_letter].width = width
+
+    # Salva in memoria
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"joblog_report_{project_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+def generate_csv_export(data: List[Dict[str, Any]], project_code: str, project_name: str):
+    """Genera un file CSV con encoding UTF-8 BOM."""
+    output = io.StringIO()
+    
+    # UTF-8 BOM per compatibilità Excel
+    output.write("\ufeff")
+    
+    writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+    
+    # Header informativo
+    writer.writerow([f"JobLOG - Report Attività"])
+    writer.writerow([f"Progetto: {project_code} - {project_name or project_code}"])
+    writer.writerow([f"Generato il: {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"])
+    writer.writerow([])  # Riga vuota
+    
+    # Header colonne
+    writer.writerow(["Operatore", "Attività", "Data Inizio", "Ora Inizio", "Data Fine", "Ora Fine", "Durata Netta", "Tempo Pausa", "N° Pause", "Stato"])
+    
+    # Dati
+    for row in data:
+        writer.writerow([
+            row["operatore"],
+            row["attivita"],
+            row["data_inizio"],
+            row["ora_inizio"],
+            row["data_fine"],
+            row["ora_fine"],
+            row["durata_netta"],
+            row["tempo_pausa"],
+            row["num_pause"],
+            row["stato"],
+        ])
+    
+    # Totale
+    writer.writerow([])
+    writer.writerow(["", "", "", "", "", "", "", "", f"Totale Sessioni: {len(data)}", ""])
+
+    # Prepara per download
+    output.seek(0)
+    bytes_output = io.BytesIO(output.getvalue().encode("utf-8"))
+    bytes_output.seek(0)
+
+    filename = f"joblog_report_{project_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    return send_file(
+        bytes_output,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
 @app.post("/api/_reset")
+@login_required
 def api_reset():
     db = get_db()
     seed_demo_data(db)
