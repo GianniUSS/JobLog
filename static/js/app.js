@@ -11,13 +11,20 @@ let projectVisible = false;
 let keypadVisible = false;
 let suppressSelectionRestore = false;
 let eventsCache = [];
+let pushNotificationsCache = [];
 let timelineOpen = false;
 let activitySearchTerm = "";
 let activitySearchInitialized = false;
 let selectionToolbarWasVisible = false;
 const collapsedActivities = new Set();
 const activityTotalDisplays = new Map();
-const APP_RELEASE = "v2025.11.14";
+const activityOverdueTrackers = new Map();
+const activityRuntimeOffsets = new Map();
+const activityTotalValues = new Map();
+const clientElapsedState = new Map();
+const seenActivityIds = new Set();
+const ACTIVITY_DELAY_GRACE_MS = 0;
+const APP_RELEASE = "v2025.11.20a";
 let menuOpen = false;
 let feedbackContext = null;
 let feedbackToolbarWasVisible = false;
@@ -25,6 +32,41 @@ let darkMode = false;
 let exportModalOpen = false;
 let pollingSuspended = false;
 let unauthorizedNotified = false;
+let pushNotificationsLoading = false;
+let pushNotificationsModalOpen = false;
+let lastKnownState = null;
+let teamCollapsed = true;
+const pushState = {
+    supported: typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && typeof Notification !== "undefined",
+    configured: false,
+    subscribed: false,
+    publicKey: null,
+};
+const LAST_STATE_KEY = 'joblog-cache-state';
+const LAST_EVENTS_KEY = 'joblog-cache-events';
+const LAST_PUSH_KEY = 'joblog-cache-push';
+let offlineMode = typeof navigator !== 'undefined' ? !navigator.onLine : false;
+let offlineHydrated = false;
+let offlineNotified = false;
+const SERVICE_WORKER_READY_TIMEOUT = 2000;
+const POPUP_DISPLAY_MS = 6000;
+const NOTIFICATION_KIND_LABELS = {
+    overdue_activity: "Attività oltre termine",
+    test_message: "Notifica di test",
+    long_running_member: "Operatore prolungato",
+};
+const QUEUE_ACTION_LABELS = {
+    '/api/move': 'Spostamento operatori',
+    '/api/member/pause': 'Pausa operatore',
+    '/api/member/resume': 'Ripresa operatore',
+    '/api/member/finish': 'Chiusura operatore',
+    '/api/start_member': 'Avvio operatore',
+    '/api/start_activity': 'Avvio attività',
+    '/api/pause_all': 'Pausa di gruppo',
+    '/api/resume_all': 'Ripresa di gruppo',
+    '/api/finish_all': 'Chiusura di gruppo',
+};
+const PUSH_NOTIFICATIONS_LIMIT = 'all';
 
 async function postJson(url, payload) {
 
@@ -37,9 +79,17 @@ async function postJson(url, payload) {
         const error = new Error(`HTTP ${res.status} for ${url}`);
         error.status = res.status;
         error.url = url;
+        if (res.status === 401) {
+            handleUnauthenticated();
+        }
         throw error;
     }
-    return res.json();
+    const data = await res.json();
+    const queuedHeader = res.headers.get('X-JobLog-Queued');
+    if (queuedHeader === '1' && data && typeof data === 'object') {
+        data.__queued = true;
+    }
+    return data;
 }
 
 async function fetchJson(url) {
@@ -48,6 +98,9 @@ async function fetchJson(url) {
         const error = new Error(`HTTP ${res.status} for ${url}`);
         error.status = res.status;
         error.url = url;
+        if (res.status === 401) {
+            handleUnauthenticated();
+        }
         throw error;
     }
     return res.json();
@@ -61,6 +114,27 @@ function formatTime(ms) {
     return `${fmt2(hours)}:${fmt2(minutes)}:${fmt2(seconds)}`;
 }
 
+function formatDurationFromMs(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) {
+        return "";
+    }
+    const totalMinutes = Math.round(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${fmt2(minutes)}m`;
+}
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i += 1) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
 const planningDateFormatter = new Intl.DateTimeFormat("it-IT", {
     day: "2-digit",
     month: "2-digit",
@@ -72,6 +146,11 @@ const planningDateFormatter = new Intl.DateTimeFormat("it-IT", {
 const planningTimeFormatter = new Intl.DateTimeFormat("it-IT", {
     hour: "2-digit",
     minute: "2-digit",
+});
+
+const notificationTimestampFormatter = new Intl.DateTimeFormat("it-IT", {
+    dateStyle: "short",
+    timeStyle: "short",
 });
 
 function parsePlanningDate(value) {
@@ -125,6 +204,40 @@ function formatPlanningRange(startIso, endIso) {
     return `${prefix}: ${planningDateFormatter.format(single)}`;
 }
 
+function formatPlannedDuration(startIso, endIso, multiplier = 1) {
+    const start = parsePlanningDate(startIso);
+    const end = parsePlanningDate(endIso);
+    if (!start || !end) {
+        return "";
+    }
+    const diffMs = Math.max(0, end.getTime() - start.getTime());
+    if (diffMs === 0) {
+        return "";
+    }
+    const normalizedMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 0;
+    if (normalizedMultiplier === 0) {
+        return "0h 00m";
+    }
+    const totalMinutes = Math.round((diffMs * normalizedMultiplier) / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${fmt2(minutes)}m`;
+}
+
+function getPlannedMemberMultiplier(activity) {
+    if (!activity) {
+        return 1;
+    }
+    const stored = Number(activity.planned_members);
+    if (Number.isFinite(stored) && stored > 0) {
+        return stored;
+    }
+    if (Array.isArray(activity.members) && activity.members.length > 0) {
+        return activity.members.length;
+    }
+    return 1;
+}
+
 function domId(key) {
     return (key || "").toString().replace(/[^a-zA-Z0-9_-]/g, "_");
 }
@@ -158,30 +271,23 @@ function forEachMemberNode(memberKey, callback) {
 }
 
 function computeTotalRunningMilliseconds() {
-    const totals = new Map();
-    const collect = (selector) => {
-        document.querySelectorAll(selector).forEach((node) => {
-            const key = node.dataset.key;
-            if (!key || totals.has(key)) {
-                return;
-            }
-            if (node.dataset.running !== "true") {
-                return;
-            }
-            const value = Number(node.dataset.elapsedMs || 0);
-            if (Number.isFinite(value)) {
-                totals.set(key, value);
-            }
-        });
-    };
-    collect(".team-member");
-    if (totals.size === 0) {
-        collect(".member-task");
-    }
     let total = 0;
-    totals.forEach((value) => {
-        total += value;
+    activityTotalValues.forEach((value) => {
+        if (Number.isFinite(value)) {
+            total += value;
+        }
     });
+
+    document.querySelectorAll(".team-member").forEach((node) => {
+        if (node.dataset.running !== "true") {
+            return;
+        }
+        const value = Number(node.dataset.elapsedMs || 0);
+        if (Number.isFinite(value)) {
+            total += value;
+        }
+    });
+
     return total;
 }
 
@@ -207,30 +313,155 @@ function calculateActivityRunningTime(members) {
     }, 0);
 }
 
+function getActivityPlannedDurationMs(activity) {
+    if (!activity) {
+        return null;
+    }
+    const storedDuration = Number(activity.planned_duration_ms);
+    if (Number.isFinite(storedDuration) && storedDuration > 0) {
+        return storedDuration;
+    }
+    const start = parsePlanningDate(activity.plan_start);
+    const end = parsePlanningDate(activity.plan_end);
+    if (!start || !end) {
+        return null;
+    }
+    const baseDuration = Math.max(0, end.getTime() - start.getTime());
+    if (baseDuration === 0) {
+        return null;
+    }
+    const multiplier = getPlannedMemberMultiplier(activity);
+    if (!Number.isFinite(multiplier) || multiplier <= 0) {
+        return baseDuration;
+    }
+    return baseDuration * multiplier;
+}
+
+function formatDelayBadgeLabel(overdueMs) {
+    const totalMinutes = Math.max(1, Math.floor(overdueMs / 60000));
+    if (totalMinutes >= 60) {
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        if (minutes === 0) {
+            return `+${hours}h ritardo`;
+        }
+        return `+${hours}h ${minutes}m ritardo`;
+    }
+    return `+${totalMinutes}m ritardo`;
+}
+
+function setActivityRuntimeOffset(activityId, value) {
+    if (!activityId) {
+        return;
+    }
+    const normalized = Math.max(0, Number(value) || 0);
+    activityRuntimeOffsets.set(activityId, normalized);
+    const tracker = activityOverdueTrackers.get(activityId);
+    if (tracker) {
+        tracker.baseMs = normalized;
+    }
+}
+
+function addActivityRuntimeOffset(activityId, deltaMs) {
+    if (!activityId) {
+        return;
+    }
+    const contribution = Number(deltaMs);
+    if (!Number.isFinite(contribution) || contribution <= 0) {
+        return;
+    }
+    const nextValue = Math.max(0, (activityRuntimeOffsets.get(activityId) || 0) + contribution);
+    activityRuntimeOffsets.set(activityId, nextValue);
+    const tracker = activityOverdueTrackers.get(activityId);
+    if (tracker) {
+        tracker.baseMs = nextValue;
+    }
+    updateActivityTotalDisplay(activityId);
+    refreshTotalRunningTimeDisplay();
+}
+
+function updateActivityDelayUI(activityId, runningMs) {
+    if (!activityId) {
+        return;
+    }
+    const key = String(activityId);
+    const tracker = activityOverdueTrackers.get(key);
+    if (!tracker || typeof tracker.plannedMs !== "number" || tracker.plannedMs <= 0) {
+        return;
+    }
+    const baseMs = Number(tracker.baseMs) || 0;
+    let total = runningMs;
+    if (!Number.isFinite(total) && tracker.card instanceof HTMLElement) {
+        total = 0;
+        tracker.card.querySelectorAll(".member-task").forEach((node) => {
+            if (node.dataset.running !== "true") {
+                return;
+            }
+            const value = Number(node.dataset.elapsedMs || 0);
+            if (Number.isFinite(value)) {
+                total += value;
+            }
+        });
+        total += baseMs;
+    }
+    if (!Number.isFinite(total)) {
+        return;
+    }
+    const overdueMs = Math.max(0, total - tracker.plannedMs);
+    const hasDelay = overdueMs > ACTIVITY_DELAY_GRACE_MS;
+    if (tracker.wrapper) {
+        tracker.wrapper.classList.toggle("hidden", !hasDelay);
+    }
+    if (tracker.valueNode) {
+        tracker.valueNode.textContent = hasDelay ? formatTime(overdueMs) : "00:00:00";
+    }
+    if (tracker.badge) {
+        tracker.badge.classList.toggle("hidden", !hasDelay);
+        if (hasDelay) {
+            tracker.badge.textContent = formatDelayBadgeLabel(overdueMs);
+        }
+    }
+    if (tracker.card) {
+        tracker.card.classList.toggle("task-card-overdue", hasDelay);
+    }
+}
+
 function updateActivityTotalDisplay(activityId) {
     if (!activityId) {
         return;
     }
     const key = String(activityId);
     const display = activityTotalDisplays.get(key);
-    if (!display) {
-        return;
+    const tracker = activityOverdueTrackers.get(key);
+    let card = null;
+    if (display instanceof HTMLElement) {
+        card = display.closest(".task-card");
     }
-    const card = display.closest(".task-card");
+    if (!card && tracker && tracker.card) {
+        card = tracker.card;
+    }
     if (!card) {
         return;
     }
-    let total = 0;
+    let runningMembersTotal = 0;
     card.querySelectorAll(".member-task").forEach((node) => {
         if (node.dataset.running !== "true") {
             return;
         }
         const value = Number(node.dataset.elapsedMs || 0);
         if (Number.isFinite(value)) {
-            total += value;
+            runningMembersTotal += value;
         }
     });
-    display.textContent = formatTime(total);
+    const offset = activityRuntimeOffsets.get(key) || 0;
+    const naiveTotal = runningMembersTotal + offset;
+    const previousTotal = activityTotalValues.get(key) || 0;
+    const correctedTotal = Math.max(naiveTotal, previousTotal);
+    if (display) {
+        display.textContent = formatTime(correctedTotal);
+    }
+    activityTotalValues.set(key, correctedTotal);
+    updateActivityDelayUI(key, correctedTotal);
 }
 
 function handleGlobalPointerForKeypad(event, projectInputGroup) {
@@ -254,7 +485,573 @@ function showPopup(message) {
     }
     node.textContent = message;
     node.classList.add("show");
-    setTimeout(() => node.classList.remove("show"), 2200);
+    setTimeout(() => node.classList.remove("show"), POPUP_DISPLAY_MS);
+}
+
+const STORAGE_AVAILABLE = (() => {
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+        return false;
+    }
+    try {
+        const key = '__joblog_cache_test__';
+        window.localStorage.setItem(key, 'ok');
+        window.localStorage.removeItem(key);
+        return true;
+    } catch (error) {
+        console.warn('LocalStorage non disponibile', error);
+        return false;
+    }
+})();
+
+function saveCachedPayload(key, value) {
+    if (!STORAGE_AVAILABLE) {
+        return;
+    }
+    try {
+        window.localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data: value }));
+    } catch (error) {
+        console.warn('saveCachedPayload', key, error);
+    }
+}
+
+function readCachedPayload(key) {
+    if (!STORAGE_AVAILABLE) {
+        return null;
+    }
+    try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) {
+            return null;
+        }
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && 'data' in parsed) {
+            return parsed.data;
+        }
+    } catch (error) {
+        console.warn('readCachedPayload', key, error);
+    }
+    return null;
+}
+
+function loadCachedStateAndEvents() {
+    const cachedState = readCachedPayload(LAST_STATE_KEY);
+    if (cachedState) {
+        applyState(cachedState);
+    }
+    const cachedEvents = readCachedPayload(LAST_EVENTS_KEY);
+    if (cachedEvents) {
+        renderEvents(cachedEvents);
+    }
+}
+
+function hydrateCacheOnce() {
+    if (offlineHydrated) {
+        return false;
+    }
+    loadCachedStateAndEvents();
+    offlineHydrated = true;
+    return true;
+}
+
+function loadCachedNotifications(options) {
+    const cachedNotifications = readCachedPayload(LAST_PUSH_KEY);
+    if (cachedNotifications) {
+        pushNotificationsCache = cachedNotifications;
+        if (!options || !options.skipRender) {
+            renderPushNotifications();
+        }
+        return true;
+    }
+    return false;
+}
+
+function hydrateInitialContentFromCache() {
+    loadCachedStateAndEvents();
+    loadCachedNotifications({ skipRender: true });
+}
+
+function updateOfflineBanner() {
+    const banner = document.getElementById('offlineBanner');
+    if (!banner) {
+        return;
+    }
+    banner.classList.toggle('hidden', !offlineMode);
+}
+
+function setOfflineMode(value, options) {
+    const silent = options && options.silent;
+    const previous = offlineMode;
+    offlineMode = Boolean(value);
+    if (!offlineMode) {
+        offlineNotified = false;
+        offlineHydrated = false;
+    } else if (!offlineNotified && !silent) {
+        showPopup('⚠️ Modalità offline attiva. Mostro i dati salvati');
+        offlineNotified = true;
+    }
+    if (!previous && offlineMode) {
+        offlineHydrated = false;
+    }
+    updateOfflineBanner();
+}
+
+function handleOfflineEvent() {
+    setOfflineMode(true, { silent: false });
+    hydrateCacheOnce();
+    loadCachedNotifications();
+}
+
+function handleOnlineEvent() {
+    setOfflineMode(false, { silent: true });
+    showPopup('🔌 Connessione ripristinata');
+    requestQueueFlush();
+    refreshState();
+    fetchPushNotifications({ silent: true });
+}
+
+function requestQueueFlush() {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) {
+        return;
+    }
+    try {
+        const controller = navigator.serviceWorker.controller;
+        if (controller) {
+            controller.postMessage({ type: 'flush-offline-queue' });
+        }
+    } catch (error) {
+        console.warn('Impossibile richiedere il flush della coda offline', error);
+    }
+}
+
+function cloneStateSnapshot(state) {
+    if (!state) {
+        return null;
+    }
+    try {
+        return JSON.parse(JSON.stringify(state));
+    } catch (error) {
+        console.warn('cloneStateSnapshot fallita', error);
+    }
+    return null;
+}
+
+function updateLastKnownElapsed(memberKey, elapsed) {
+    if (!lastKnownState || !memberKey) {
+        return;
+    }
+    const updateCollection = (collection) => {
+        if (!Array.isArray(collection)) {
+            return false;
+        }
+        let changed = false;
+        collection.forEach((member) => {
+            if (member && member.member_key === memberKey) {
+                member.elapsed = elapsed;
+                changed = true;
+            }
+        });
+        return changed;
+    };
+    if (updateCollection(lastKnownState.team)) {
+        return;
+    }
+    if (Array.isArray(lastKnownState.activities)) {
+        lastKnownState.activities.forEach((activity) => {
+            updateCollection(activity.members);
+        });
+    }
+}
+
+function recordClientElapsed(memberKey, elapsed) {
+    if (!memberKey) {
+        return;
+    }
+    clientElapsedState.set(memberKey, {
+        elapsed,
+        syncedAt: Date.now(),
+    });
+}
+
+function getClientElapsed(memberKey, fallbackElapsed, running) {
+    if (!memberKey) {
+        return fallbackElapsed;
+    }
+    const info = clientElapsedState.get(memberKey);
+    if (!info) {
+        return fallbackElapsed;
+    }
+    const safeFallback = Number.isFinite(fallbackElapsed) ? fallbackElapsed : 0;
+    const now = Date.now();
+    const resetThreshold = 1500;
+
+    if (!running) {
+        if (safeFallback + resetThreshold < info.elapsed) {
+            clientElapsedState.set(memberKey, { elapsed: safeFallback, syncedAt: now });
+            return safeFallback;
+        }
+        return Math.max(safeFallback, info.elapsed);
+    }
+
+    const delta = Math.max(0, now - info.syncedAt);
+    const projected = info.elapsed + delta;
+
+    if (safeFallback + resetThreshold < info.elapsed) {
+        clientElapsedState.set(memberKey, { elapsed: safeFallback, syncedAt: now });
+        return safeFallback;
+    }
+
+    if (safeFallback > projected + resetThreshold) {
+        clientElapsedState.set(memberKey, { elapsed: safeFallback, syncedAt: now });
+        return safeFallback;
+    }
+
+    return Math.max(safeFallback, projected);
+}
+
+function mutateMemberSnapshot(state, memberKey, mutator) {
+    if (!state || !memberKey || typeof mutator !== 'function') {
+        return false;
+    }
+    let mutated = false;
+    const visitMember = (member) => {
+        if (member && member.member_key === memberKey) {
+            mutator(member);
+            mutated = true;
+        }
+    };
+    if (Array.isArray(state.team)) {
+        state.team.forEach(visitMember);
+    }
+    if (Array.isArray(state.activities)) {
+        state.activities.forEach((activity) => {
+            if (Array.isArray(activity.members)) {
+                activity.members.forEach(visitMember);
+            }
+        });
+    }
+    return mutated;
+}
+
+function removeMemberFromSnapshot(state, memberKey) {
+    if (!state || !memberKey) {
+        return false;
+    }
+    let removed = false;
+    if (Array.isArray(state.team)) {
+        const index = state.team.findIndex((member) => member && member.member_key === memberKey);
+        if (index !== -1) {
+            state.team.splice(index, 1);
+            removed = true;
+        }
+    }
+    if (Array.isArray(state.activities)) {
+        state.activities.forEach((activity) => {
+            if (!Array.isArray(activity.members)) {
+                return;
+            }
+            const index = activity.members.findIndex((member) => member && member.member_key === memberKey);
+            if (index !== -1) {
+                activity.members.splice(index, 1);
+                removed = true;
+            }
+        });
+    }
+    return removed;
+}
+
+function moveMemberBetweenActivities(state, memberKey, targetActivityId, fallbackPayload) {
+    if (!state || !memberKey) {
+        return false;
+    }
+
+    const removeFromList = (collection) => {
+        if (!Array.isArray(collection)) {
+            return null;
+        }
+        const index = collection.findIndex((member) => member && member.member_key === memberKey);
+        if (index === -1) {
+            return null;
+        }
+        return collection.splice(index, 1)[0];
+    };
+
+    let memberData = removeFromList(state.team);
+    if (Array.isArray(state.activities)) {
+        state.activities.forEach((activity) => {
+            if (!Array.isArray(activity.members)) {
+                return;
+            }
+            const removed = removeFromList(activity.members);
+            if (removed && !memberData) {
+                memberData = removed;
+            }
+        });
+    }
+
+    if (!memberData) {
+        memberData = {
+            member_key: memberKey,
+            member_name: fallbackPayload?.member_name || memberKey,
+            elapsed: Number(fallbackPayload?.elapsed) || 0,
+        };
+    }
+
+    const previousActivityId = memberData.activity_id ? String(memberData.activity_id) : "";
+    const elapsedBeforeMove = Number(memberData.elapsed) || 0;
+    const resolvedActivityId = targetActivityId ? String(targetActivityId) : "";
+    const resolvedRunning =
+        fallbackPayload && Object.prototype.hasOwnProperty.call(fallbackPayload, "running")
+            ? Boolean(fallbackPayload.running)
+            : Boolean(resolvedActivityId);
+    const resolvedPaused =
+        fallbackPayload && Object.prototype.hasOwnProperty.call(fallbackPayload, "paused")
+            ? Boolean(fallbackPayload.paused)
+            : false;
+
+    memberData.activity_id = resolvedActivityId;
+    memberData.running = resolvedRunning;
+    memberData.paused = resolvedPaused;
+    const movingBetweenActivities = Boolean(previousActivityId) && previousActivityId !== resolvedActivityId;
+    if (movingBetweenActivities && elapsedBeforeMove > 0) {
+        addActivityRuntimeOffset(previousActivityId, elapsedBeforeMove);
+        if (Array.isArray(state.activities)) {
+            const sourceActivity = state.activities.find(
+                (activity) => activity && String(activity.activity_id) === previousActivityId,
+            );
+            if (sourceActivity) {
+                const currentBase = Number(sourceActivity.actual_runtime_ms) || 0;
+                sourceActivity.actual_runtime_ms = currentBase + elapsedBeforeMove;
+            }
+        }
+    }
+    const fallbackElapsed = Number(fallbackPayload && fallbackPayload.elapsed);
+    const shouldResetElapsed = Boolean(resolvedActivityId) && movingBetweenActivities;
+    if (shouldResetElapsed) {
+        memberData.elapsed = 0;
+        clientElapsedState.delete(memberKey);
+    } else if (Number.isFinite(fallbackElapsed) && fallbackElapsed >= 0) {
+        memberData.elapsed = fallbackElapsed;
+    }
+
+    let inserted = false;
+    if (resolvedActivityId) {
+        const targetActivity = Array.isArray(state.activities)
+            ? state.activities.find((activity) => String(activity.activity_id) === resolvedActivityId)
+            : null;
+        if (targetActivity) {
+            if (!Array.isArray(targetActivity.members)) {
+                targetActivity.members = [];
+            }
+            const existingIndex = targetActivity.members.findIndex((m) => m.member_key === memberData.member_key);
+            if (existingIndex !== -1) {
+                targetActivity.members.splice(existingIndex, 1, memberData);
+            } else {
+                targetActivity.members.push(memberData);
+            }
+            inserted = true;
+        }
+    }
+
+    if (!inserted) {
+        if (!Array.isArray(state.team)) {
+            state.team = [];
+        }
+        const teamIndex = state.team.findIndex((m) => m.member_key === memberData.member_key);
+        if (teamIndex !== -1) {
+            state.team.splice(teamIndex, 1, memberData);
+        } else {
+            state.team.push(memberData);
+        }
+    }
+
+    mutateMemberSnapshot(state, memberKey, (target) => {
+        target.activity_id = memberData.activity_id;
+        target.running = memberData.running;
+        target.paused = memberData.paused;
+        if (Number.isFinite(memberData.elapsed)) {
+            target.elapsed = memberData.elapsed;
+        }
+    });
+    const touchedActivities = [];
+    if (previousActivityId) {
+        touchedActivities.push(previousActivityId);
+    }
+    if (resolvedActivityId) {
+        touchedActivities.push(resolvedActivityId);
+    }
+    touchedActivities.forEach((activityKey) => {
+        updateActivityTotalDisplay(activityKey);
+    });
+    refreshTotalRunningTimeDisplay();
+    return true;
+}
+
+const OPTIMISTIC_SELECTION_HANDLERS = {
+    '/api/member/pause': (member) => {
+        member.running = false;
+        member.paused = true;
+    },
+    '/api/member/resume': (member) => {
+        member.running = true;
+        member.paused = false;
+    },
+};
+
+function applyOptimisticSelectionState(endpoint, memberKeys) {
+    if (!Array.isArray(memberKeys) || memberKeys.length === 0) {
+        return;
+    }
+    if (endpoint === '/api/member/finish') {
+        optimisticRemoveMembers(memberKeys);
+        return;
+    }
+    const handler = OPTIMISTIC_SELECTION_HANDLERS[endpoint];
+    if (!handler) {
+        return;
+    }
+    const snapshot = cloneStateSnapshot(lastKnownState);
+    if (!snapshot) {
+        return;
+    }
+    let updated = false;
+    memberKeys.forEach((memberKey) => {
+        const changed = mutateMemberSnapshot(snapshot, memberKey, handler);
+        if (changed) {
+            updated = true;
+        }
+    });
+    if (!updated) {
+        return;
+    }
+    lastKnownState = snapshot;
+    saveCachedPayload(LAST_STATE_KEY, snapshot);
+    suppressSelectionRestore = true;
+    applyState(snapshot);
+}
+
+function optimisticRemoveMembers(memberKeys) {
+    const snapshot = cloneStateSnapshot(lastKnownState);
+    if (!snapshot) {
+        return;
+    }
+    let updated = false;
+    memberKeys.forEach((memberKey) => {
+        if (removeMemberFromSnapshot(snapshot, memberKey)) {
+            updated = true;
+        }
+    });
+    if (!updated) {
+        return;
+    }
+    lastKnownState = snapshot;
+    saveCachedPayload(LAST_STATE_KEY, snapshot);
+    suppressSelectionRestore = true;
+    applyState(snapshot);
+}
+
+function applyOptimisticMoveState(payloads) {
+    if (!Array.isArray(payloads) || payloads.length === 0) {
+        return;
+    }
+    const snapshot = cloneStateSnapshot(lastKnownState);
+    if (!snapshot) {
+        return;
+    }
+    let updated = false;
+    payloads.forEach((payload) => {
+        const memberKey = payload && payload.member_key;
+        if (!memberKey) {
+            return;
+        }
+        const changed = moveMemberBetweenActivities(snapshot, memberKey, payload.activity_id, payload);
+        if (changed) {
+            updated = true;
+        }
+    });
+    if (!updated) {
+        return;
+    }
+    lastKnownState = snapshot;
+    saveCachedPayload(LAST_STATE_KEY, snapshot);
+    applyState(snapshot);
+}
+
+function optimisticStartMembers(memberKeys) {
+    if (!Array.isArray(memberKeys) || memberKeys.length === 0) {
+        return;
+    }
+    const snapshot = cloneStateSnapshot(lastKnownState);
+    if (!snapshot) {
+        return;
+    }
+    const keySet = new Set(memberKeys.filter(Boolean));
+    if (keySet.size === 0) {
+        return;
+    }
+    let updated = false;
+    const visitCollection = (collection) => {
+        if (!Array.isArray(collection)) {
+            return;
+        }
+        collection.forEach((member) => {
+            if (member && keySet.has(member.member_key)) {
+                if (!member.running || member.paused) {
+                    member.running = true;
+                    member.paused = false;
+                    updated = true;
+                }
+            }
+        });
+    };
+    visitCollection(snapshot.team);
+    if (Array.isArray(snapshot.activities)) {
+        snapshot.activities.forEach((activity) => visitCollection(activity.members));
+    }
+    if (!updated) {
+        return;
+    }
+    lastKnownState = snapshot;
+    saveCachedPayload(LAST_STATE_KEY, snapshot);
+    applyState(snapshot);
+}
+
+function optimisticStartActivity(activityId) {
+    if (!activityId) {
+        return;
+    }
+    const snapshot = cloneStateSnapshot(lastKnownState);
+    if (!snapshot || !Array.isArray(snapshot.activities)) {
+        return;
+    }
+    const normalized = String(activityId);
+    let affectedKeys = [];
+    snapshot.activities.forEach((activity) => {
+        if (!activity || String(activity.activity_id) !== normalized || !Array.isArray(activity.members)) {
+            return;
+        }
+        activity.members.forEach((member) => {
+            if (member) {
+                member.running = true;
+                member.paused = false;
+                affectedKeys.push(member.member_key);
+            }
+        });
+    });
+    if (affectedKeys.length === 0) {
+        return;
+    }
+    const keySet = new Set(affectedKeys);
+    if (Array.isArray(snapshot.team)) {
+        snapshot.team.forEach((member) => {
+            if (member && keySet.has(member.member_key)) {
+                member.running = true;
+                member.paused = false;
+            }
+        });
+    }
+    lastKnownState = snapshot;
+    saveCachedPayload(LAST_STATE_KEY, snapshot);
+    applyState(snapshot);
 }
 
 function toggleSelection(node) {
@@ -283,7 +1080,7 @@ function appendProjectDigit(digit) {
 }
 
 function backspaceProjectDigit() {
-    if (!projectCodeBuffer) {
+    if (projectCodeBuffer.length === 0) {
         return;
     }
     setProjectCodeBuffer(projectCodeBuffer.slice(0, -1));
@@ -306,6 +1103,10 @@ function setKeypadVisibility(visible) {
     if (keypad) {
         keypad.classList.toggle("hidden", !visible);
     }
+    const group = document.getElementById("projectInputGroup");
+    if (group) {
+        group.classList.toggle("keypad-open", visible);
+    }
 }
 
 function formatEventTime(timestamp) {
@@ -317,6 +1118,137 @@ function formatEventTime(timestamp) {
         return "";
     }
     return `${fmt2(date.getHours())}:${fmt2(date.getMinutes())}:${fmt2(date.getSeconds())}`;
+}
+
+function formatNotificationTimestamp(value) {
+    if (value === undefined || value === null) {
+        return "";
+    }
+    const date = new Date(Number(value));
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+    return notificationTimestampFormatter.format(date);
+}
+
+function formatNotificationKind(kind) {
+    if (!kind) {
+        return "";
+    }
+    const label = NOTIFICATION_KIND_LABELS[kind];
+    if (label) {
+        return label;
+    }
+    return kind.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function renderPushNotifications() {
+    const list = document.getElementById("pushNotificationsList");
+    const emptyNode = document.getElementById("pushNotificationsEmpty");
+    const counter = document.getElementById("pushNotificationsCount");
+    if (!list || !emptyNode) {
+        return;
+    }
+
+    list.innerHTML = "";
+    const items = Array.isArray(pushNotificationsCache) ? pushNotificationsCache : [];
+    if (items.length === 0) {
+        emptyNode.classList.remove("hidden");
+        if (counter) {
+            counter.classList.add("hidden");
+        }
+        return;
+    }
+
+    if (counter) {
+        counter.textContent = `${items.length} notifiche`;
+        counter.classList.remove("hidden");
+    }
+    emptyNode.classList.add("hidden");
+    const fragment = document.createDocumentFragment();
+    items.forEach((item) => {
+        const node = document.createElement("div");
+        node.className = "notification-item";
+
+        const title = document.createElement("div");
+        title.className = "notification-item-title";
+        title.textContent = item.title || "Notifica push";
+        node.appendChild(title);
+
+        if (item.body) {
+            const body = document.createElement("div");
+            body.className = "notification-item-body";
+            body.textContent = item.body;
+            node.appendChild(body);
+        }
+
+        const meta = document.createElement("div");
+        meta.className = "notification-item-meta";
+        const parts = [];
+        const kindLabel = formatNotificationKind(item.kind);
+        const timeLabel = formatNotificationTimestamp(item.sent_ts || item.created_ts);
+        if (kindLabel) {
+            parts.push(kindLabel);
+        }
+        if (timeLabel) {
+            parts.push(timeLabel);
+        }
+        if (item.activity_id) {
+            parts.push(`#${item.activity_id}`);
+        }
+        meta.textContent = parts.join(" · ") || "";
+        node.appendChild(meta);
+
+        fragment.appendChild(node);
+    });
+    list.appendChild(fragment);
+}
+
+async function fetchPushNotifications(options) {
+    const settings = options || {};
+    const silent = Boolean(settings.silent);
+    if (pushNotificationsLoading && !silent) {
+        return;
+    }
+
+    const button = document.getElementById("refreshPushNotificationsBtn");
+    if (button && !button.dataset.label) {
+        button.dataset.label = button.textContent || "Aggiorna";
+    }
+    if (button && !silent) {
+        button.disabled = true;
+        button.textContent = "Aggiorno...";
+    }
+
+    pushNotificationsLoading = true;
+    try {
+        const data = await fetchJson(`/api/push/notifications?limit=${PUSH_NOTIFICATIONS_LIMIT}`);
+        pushNotificationsCache = data && Array.isArray(data.items) ? data.items : [];
+        saveCachedPayload(LAST_PUSH_KEY, pushNotificationsCache);
+        renderPushNotifications();
+        if (!silent) {
+            showPopup("📥 Storico notifiche aggiornato");
+        }
+    } catch (error) {
+        console.warn("fetchPushNotifications", error);
+        let handledOffline = false;
+        if (!navigator.onLine) {
+            handledOffline = loadCachedNotifications();
+        }
+        if (!silent) {
+            if (handledOffline) {
+                showPopup('⚠️ Offline: mostro lo storico salvato');
+            } else {
+                showPopup("⚠️ Impossibile caricare lo storico notifiche");
+            }
+        }
+    } finally {
+        pushNotificationsLoading = false;
+        if (button && !silent) {
+            button.disabled = false;
+            button.textContent = button.dataset.label || "Aggiorna";
+        }
+    }
 }
 
 function renderEvents(events) {
@@ -402,6 +1334,31 @@ function toggleMenu() {
     setMenuVisibility(!menuOpen);
 }
 
+function openPushNotificationsModal() {
+    const modal = document.getElementById("pushNotificationsModal");
+    if (!modal || pushNotificationsModalOpen) {
+        return;
+    }
+    pushNotificationsModalOpen = true;
+    modal.style.display = "flex";
+    markBodyModalOpen();
+    fetchPushNotifications({ silent: true });
+}
+
+function closePushNotificationsModal() {
+    const modal = document.getElementById("pushNotificationsModal");
+    if (!modal) {
+        return;
+    }
+    if (!pushNotificationsModalOpen) {
+        modal.style.display = "none";
+        return;
+    }
+    pushNotificationsModalOpen = false;
+    modal.style.display = "none";
+    releaseBodyModalState();
+}
+
 function initTheme() {
     const savedTheme = localStorage.getItem('joblog-theme');
     const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -442,6 +1399,338 @@ function updateThemeUI() {
     if (themeStatus) {
         themeStatus.textContent = darkMode ? 'Tema scuro attivo' : 'Tema scuro disattivato';
     }
+}
+
+function updatePushUI() {
+    const toggle = document.getElementById('pushToggle');
+    const statusLabel = document.getElementById('pushStatus');
+    const textLabel = toggle ? toggle.querySelector('.side-menu-item-text') : null;
+    const testBtn = document.getElementById('pushTestBtn');
+    const testHint = document.getElementById('pushTestHint');
+    const setTestState = (enabled, hint) => {
+        if (testBtn) {
+            testBtn.disabled = !enabled;
+        }
+        if (testHint && typeof hint === 'string') {
+            testHint.textContent = hint;
+        }
+    };
+
+    if (!toggle || !statusLabel || !textLabel) {
+        setTestState(false, 'Attiva le notifiche per provarle');
+        return;
+    }
+
+    if (!pushState.supported) {
+        toggle.disabled = true;
+        textLabel.textContent = 'Notifiche Push';
+        statusLabel.textContent = 'Non supportato';
+        setTestState(false, 'Non disponibile nel browser');
+        return;
+    }
+
+    if (!pushState.configured) {
+        toggle.disabled = true;
+        textLabel.textContent = 'Notifiche Push';
+        statusLabel.textContent = 'Disattivate dal server';
+        setTestState(false, 'Server non configurato');
+        return;
+    }
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+        toggle.disabled = true;
+        textLabel.textContent = 'Notifiche Push';
+        statusLabel.textContent = 'Permesso negato';
+        setTestState(false, 'Permesso notifiche negato');
+        return;
+    }
+
+    toggle.disabled = false;
+    if (pushState.subscribed) {
+        textLabel.textContent = 'Disattiva notifiche';
+        statusLabel.textContent = 'Attive';
+        setTestState(true, 'Invia notifica immediata');
+    } else {
+        textLabel.textContent = 'Attiva notifiche';
+        statusLabel.textContent = (typeof Notification !== 'undefined' && Notification.permission === 'granted')
+            ? 'Disponibili'
+            : 'Richiedono permesso';
+        setTestState(false, 'Attiva le notifiche per provarle');
+    }
+}
+
+async function refreshPushState() {
+    if (!pushState.supported) {
+        updatePushUI();
+        return;
+    }
+
+    try {
+        const status = await fetchJson('/api/push/status');
+        pushState.configured = Boolean(status.enabled);
+        pushState.publicKey = status.publicKey || null;
+        pushState.subscribed = Boolean(status.subscribed);
+    } catch (error) {
+        console.warn('refreshPushState', error);
+        pushState.configured = false;
+    }
+
+    let registration = null;
+    try {
+        registration = await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise((resolve) => setTimeout(() => resolve(null), SERVICE_WORKER_READY_TIMEOUT)),
+        ]);
+    } catch (error) {
+        console.warn('navigator.serviceWorker.ready', error);
+    }
+
+    if (!registration) {
+        try {
+            registration = await navigator.serviceWorker.getRegistration() || null;
+        } catch (error) {
+            console.warn('navigator.serviceWorker.getRegistration', error);
+        }
+    }
+
+    if (registration) {
+        try {
+            const subscription = await registration.pushManager.getSubscription();
+            pushState.subscribed = Boolean(subscription);
+        } catch (error) {
+            console.warn('pushManager.getSubscription', error);
+        }
+    }
+
+    updatePushUI();
+}
+
+async function subscribeToPush() {
+    if (!pushState.supported) {
+        showPopup('⚠️ Notifiche non supportate');
+                return false;
+    }
+
+    if (!pushState.publicKey) {
+        showPopup('⚠️ Server non configurato per le notifiche');
+        return false;
+    }
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+        showPopup('⚠️ Permesso notifiche negato dal browser');
+        return false;
+    }
+
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            showPopup('⚠️ Permesso notifiche non concesso');
+            return false;
+        }
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        const applicationServerKey = urlBase64ToUint8Array(pushState.publicKey);
+        const subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey,
+        });
+
+        const payload = subscription.toJSON();
+        payload.userAgent = navigator.userAgent || null;
+        payload.contentEncoding = 'aes128gcm';
+        await postJson('/api/push/subscribe', payload);
+        pushState.subscribed = true;
+        showPopup('🔔 Notifiche attivate');
+        return true;
+    } catch (error) {
+        console.error('subscribeToPush', error);
+        showPopup('⚠️ Attivazione notifiche fallita');
+        return false;
+    }
+}
+
+async function unsubscribeFromPush() {
+    if (!pushState.supported) {
+        return;
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+            pushState.subscribed = false;
+            return;
+        }
+
+        const payload = subscription.toJSON();
+        try {
+            await postJson('/api/push/unsubscribe', { endpoint: payload.endpoint });
+        } catch (error) {
+            console.warn('unsubscribe backend', error);
+        }
+
+        await subscription.unsubscribe();
+        pushState.subscribed = false;
+        showPopup('🔕 Notifiche disattivate');
+    } catch (error) {
+        console.error('unsubscribeFromPush', error);
+        showPopup('⚠️ Disattivazione notifiche fallita');
+    }
+}
+
+async function handlePushToggle() {
+    const toggle = document.getElementById('pushToggle');
+    if (toggle) {
+        toggle.disabled = true;
+    }
+
+    try {
+        if (pushState.subscribed) {
+            await unsubscribeFromPush();
+        } else {
+            const enabled = await subscribeToPush();
+            if (!enabled) {
+                return;
+            }
+        }
+    } finally {
+        await refreshPushState();
+        if (toggle) {
+            toggle.disabled = false;
+        }
+    }
+}
+
+async function sendPushTest() {
+    if (!pushState.supported || !pushState.configured || !pushState.subscribed) {
+        showPopup('⚠️ Attiva prima le notifiche');
+        return;
+    }
+
+    const testBtn = document.getElementById('pushTestBtn');
+    if (testBtn) {
+        testBtn.disabled = true;
+    }
+
+    try {
+        await postJson('/api/push/test', {});
+        await fetchPushNotifications({ silent: true });
+        showPopup('📬 Notifica di prova inviata');
+    } catch (error) {
+        console.error('sendPushTest', error);
+        if (error && error.status === 404) {
+            showPopup('⚠️ Nessuna iscrizione push trovata');
+        } else if (error && error.status === 400) {
+            showPopup('⚠️ Server push non configurato');
+        } else {
+            showPopup('⚠️ Invio notifica di prova fallito');
+        }
+    } finally {
+        await refreshPushState();
+    }
+}
+
+function registerServiceWorkerMessaging() {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+        return;
+    }
+    try {
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            const message = event.data;
+            if (!message || typeof message.type !== 'string') {
+                return;
+            }
+            if (message.type === 'push-notification') {
+                handleServiceWorkerPushMessage(message);
+                return;
+            }
+            if (message.type === 'offline-queue') {
+                handleOfflineQueueMessage(message);
+            }
+        });
+    } catch (error) {
+        console.warn('Impossibile ascoltare i messaggi del service worker', error);
+    }
+}
+
+function handleServiceWorkerPushMessage(message) {
+    const meta = message.meta || {};
+    if (meta && meta.permission && meta.permission !== 'granted') {
+        showPopup('⚠️ Notifiche bloccate dal browser');
+        return;
+    }
+    if (meta && meta.error) {
+        showPopup(`⚠️ Errore notifica: ${meta.error}`);
+        return;
+    }
+    const payload = message.payload || {};
+    const title = payload.title || 'Notifica push';
+    const body = payload.body ? `: ${payload.body}` : '';
+    showPopup(`🔔 ${title}${body}`);
+    fetchPushNotifications({ silent: true });
+}
+
+function describeQueuedAction(url) {
+    if (!url) {
+        return 'Operazione';
+    }
+    let pathname = url;
+    try {
+        pathname = new URL(url, window.location.origin).pathname;
+    } catch (error) {
+        // noop
+    }
+    const match = Object.keys(QUEUE_ACTION_LABELS).find((key) => pathname.startsWith(key));
+    if (match) {
+        return QUEUE_ACTION_LABELS[match];
+    }
+    if (pathname.startsWith('/api/')) {
+        return pathname.replace('/api/', '').replace(/_/g, ' ');
+    }
+    return pathname;
+}
+
+function handleOfflineQueueMessage(message) {
+    if (!message || !message.action) {
+        return;
+    }
+    const label = describeQueuedAction(message.pathname || message.url || '');
+    if (message.action === 'queued') {
+        showPopup(`💾 ${label} salvata offline`);
+        return;
+    }
+    if (message.action === 'delivered') {
+        showPopup(`📡 ${label} sincronizzata`);
+        return;
+    }
+    if (message.action === 'error') {
+        const errorLabel = message.error ? `: ${message.error}` : '';
+        showPopup(`⚠️ Sync ${label} fallito${errorLabel}`);
+    }
+}
+
+async function initPushNotifications() {
+    updatePushUI();
+    if (!pushState.supported) {
+        return;
+    }
+
+    if ('serviceWorker' in navigator) {
+        try {
+            navigator.serviceWorker.ready
+                .then(() => refreshPushState())
+                .catch((error) => console.warn('Service worker non pronto', error));
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                refreshPushState();
+            });
+        } catch (error) {
+            console.warn('Impossibile monitorare il service worker', error);
+        }
+    }
+
+    await refreshPushState();
 }
 
 function openExportModal() {
@@ -582,6 +1871,7 @@ function setProjectVisibility(active) {
     }
 
     updateSelectionToolbar();
+    updateTeamCollapseUI();
 }
 
 function setProjectDefaultDate() {
@@ -717,14 +2007,23 @@ async function performSelectionAction(memberKeys, endpoint, successMessage, erro
         btn.disabled = true;
     });
     try {
+        let queued = false;
         for (const memberKey of memberKeys) {
-            await postJson(endpoint, { member_key: memberKey });
+            const result = await postJson(endpoint, { member_key: memberKey });
+            if (result && result.__queued) {
+                queued = true;
+            }
         }
         suppressSelectionRestore = true;
-        if (successMessage) {
+        if (queued) {
+            showPopup('💾 Operazione salvata offline');
+            applyOptimisticSelectionState(endpoint, memberKeys);
+        } else if (successMessage) {
             showPopup(successMessage);
+            await refreshState();
+        } else {
+            await refreshState();
         }
-        await refreshState();
         return true;
     } catch (err) {
         console.error("performSelectionAction", endpoint, err);
@@ -852,6 +2151,7 @@ function updateSelectionToolbar() {
     }
 
     updateActivitySelectButtons();
+    updateTeamSelectButton();
 }
 
 function restoreSelection(keys) {
@@ -874,7 +2174,7 @@ function attachTimer(member) {
     if (timers[key]) {
         clearInterval(timers[key]);
     }
-    let elapsed = Number(member.elapsed) || 0;
+    let elapsed = getClientElapsed(key, Number(member.elapsed) || 0, member.running);
 
     const syncNodes = () => {
         displays.forEach((display) => {
@@ -885,6 +2185,8 @@ function attachTimer(member) {
             node.dataset.running = member.running ? "true" : "false";
             node.dataset.paused = member.paused ? "true" : "false";
         });
+        updateLastKnownElapsed(key, elapsed);
+        recordClientElapsed(key, elapsed);
     };
 
     syncNodes();
@@ -895,6 +2197,7 @@ function attachTimer(member) {
 
     if (!member.running) {
         delete timers[key];
+        clientElapsedState.delete(key);
         return;
     }
 
@@ -937,15 +2240,79 @@ function createMemberNode(member, baseClass) {
 }
 
 function renderTeam(team) {
+    const members = Array.isArray(team) ? team : [];
     const list = document.getElementById("memberList");
-    if (!list) {
+    if (list) {
+        list.innerHTML = "";
+        members.forEach((member) => {
+            const node = createMemberNode(member, "team-member");
+            list.appendChild(node);
+        });
+    }
+    setTeamCount(members.length);
+    updateTeamCollapseUI();
+    updateTeamSelectButton();
+}
+
+function setTeamCount(count) {
+    const label = document.getElementById("teamMemberCount");
+    if (!label) {
         return;
     }
-    list.innerHTML = "";
-    team.forEach((member) => {
-        const node = createMemberNode(member, "team-member");
-        list.appendChild(node);
+    const total = Number(count) || 0;
+    label.textContent = total === 1 ? "1 operatore" : `${total} operatori`;
+}
+
+function updateTeamSelectButton() {
+    const btn = document.getElementById("teamSelectBtn");
+    if (!btn) {
+        return;
+    }
+    const nodes = Array.from(document.querySelectorAll(".team-member"));
+    const allSelected =
+        nodes.length > 0 && nodes.every((node) => node.classList.contains("selected"));
+    btn.textContent = allSelected ? "Deseleziona tutti" : "Seleziona tutti";
+    btn.setAttribute("aria-pressed", allSelected ? "true" : "false");
+    btn.disabled = !projectVisible || nodes.length === 0;
+}
+
+function toggleTeamSelection() {
+    const nodes = Array.from(document.querySelectorAll(".team-member"));
+    if (nodes.length === 0) {
+        showPopup("⚠️ Nessun operatore disponibile");
+        return;
+    }
+    const shouldSelect = !nodes.every((node) => node.classList.contains("selected"));
+    nodes.forEach((node) => {
+        node.classList.toggle("selected", shouldSelect);
     });
+    updateSelectionToolbar();
+}
+
+function updateTeamCollapseUI() {
+    const list = document.getElementById('memberList');
+    const card = document.getElementById('teamCard');
+    const toggleBtn = document.getElementById('teamCollapseBtn');
+    if (list) {
+        list.classList.toggle('hidden', teamCollapsed);
+    }
+    if (card) {
+        card.classList.toggle('collapsed', teamCollapsed);
+    }
+    if (toggleBtn) {
+        toggleBtn.textContent = teamCollapsed ? 'Mostra squadra' : 'Nascondi squadra';
+        toggleBtn.setAttribute('aria-expanded', teamCollapsed ? 'false' : 'true');
+    }
+}
+
+function setTeamCollapsed(collapsed) {
+    const nextValue = Boolean(collapsed);
+    if (teamCollapsed === nextValue) {
+        updateTeamCollapseUI();
+        return;
+    }
+    teamCollapsed = nextValue;
+    updateTeamCollapseUI();
 }
 
 function renderActivities(activities) {
@@ -954,36 +2321,93 @@ function renderActivities(activities) {
         return;
     }
     container.innerHTML = "";
+    const previousTotals = new Map(activityTotalValues);
     activityTotalDisplays.clear();
+    activityOverdueTrackers.clear();
+    activityRuntimeOffsets.clear();
+    activityTotalValues.clear();
     activities.forEach((activity) => {
         const card = document.createElement("div");
         card.className = "task-card";
         const activityId = activity.activity_id ? String(activity.activity_id) : "";
+        const members = Array.isArray(activity.members) ? activity.members : [];
+        const memberCount = members.length;
+        const plannedMultiplier = getPlannedMemberMultiplier(activity);
+        const plannedDurationMs = getActivityPlannedDurationMs(activity);
+        const runningMembersMs = calculateActivityRunningTime(members);
+        const baseRuntimeMs = Number(activity.actual_runtime_ms) || 0;
+        const naiveTotalMs = baseRuntimeMs + runningMembersMs;
+        const previousTotalMs = activityId ? previousTotals.get(activityId) || 0 : 0;
+        const correctedTotalMs = Math.max(naiveTotalMs, previousTotalMs);
+        const correctedOffsetMs = Math.max(0, correctedTotalMs - runningMembersMs);
+        if (activityId) {
+            setActivityRuntimeOffset(activityId, correctedOffsetMs);
+            activityTotalValues.set(activityId, correctedTotalMs);
+        }
+        const plannedDurationLabel = plannedDurationMs !== null
+            ? formatDurationFromMs(plannedDurationMs)
+            : formatPlannedDuration(
+                  activity.plan_start,
+                  activity.plan_end,
+                  plannedMultiplier
+              );
+        if (activityId && !seenActivityIds.has(activityId)) {
+            seenActivityIds.add(activityId);
+            collapsedActivities.add(activityId);
+        }
         card.dataset.activityId = activityId;
         const scheduleLabel = formatPlanningRange(activity.plan_start, activity.plan_end);
-        const isCollapsed = activityId ? collapsedActivities.has(activityId) : false;
+        const isCollapsed = activityId ? collapsedActivities.has(activityId) : true;
 
         const header = document.createElement("div");
         header.className = "task-header";
 
         const info = document.createElement("div");
         info.className = "task-header-info";
+        const titleRow = document.createElement("div");
+        titleRow.className = "task-title-row";
         const title = document.createElement("span");
+        title.className = "task-title";
         title.textContent = activity.label;
-        info.appendChild(title);
+        titleRow.appendChild(title);
+        const delayBadge = document.createElement("span");
+        delayBadge.className = "activity-delay-badge hidden";
+        delayBadge.textContent = "In ritardo";
+        titleRow.appendChild(delayBadge);
+        info.appendChild(titleRow);
         if (scheduleLabel) {
             const schedule = document.createElement("div");
             schedule.className = "task-schedule";
             schedule.textContent = scheduleLabel;
             info.appendChild(schedule);
         }
+        if (plannedDurationLabel) {
+            const duration = document.createElement("div");
+            duration.className = "task-duration";
+            duration.textContent = `Durata prevista: ${plannedDurationLabel}`;
+            info.appendChild(duration);
+        }
 
         const meta = document.createElement("div");
         meta.className = "task-header-meta";
         const count = document.createElement("span");
         count.className = "timer-display";
-        count.textContent = `${activity.members.length} operatori`;
+        count.textContent = `${memberCount} operatori`;
         meta.appendChild(count);
+
+        if (plannedDurationLabel) {
+            const plannedSummary = document.createElement("div");
+            plannedSummary.className = "activity-time-summary activity-duration-summary";
+            const plannedLabel = document.createElement("span");
+            plannedLabel.className = "activity-time-label";
+            plannedLabel.textContent = "Durata prevista";
+            const plannedValue = document.createElement("span");
+            plannedValue.className = "activity-time-value";
+            plannedValue.textContent = plannedDurationLabel;
+            plannedSummary.appendChild(plannedLabel);
+            plannedSummary.appendChild(plannedValue);
+            meta.appendChild(plannedSummary);
+        }
 
         const timeSummary = document.createElement("div");
         timeSummary.className = "activity-time-summary";
@@ -992,13 +2416,38 @@ function renderActivities(activities) {
         timeLabel.textContent = "Tempo in corso";
         const timeValue = document.createElement("span");
         timeValue.className = "activity-time-value";
-        timeValue.textContent = formatTime(calculateActivityRunningTime(activity.members));
+        timeValue.textContent = formatTime(correctedTotalMs);
         if (activityId) {
             activityTotalDisplays.set(activityId, timeValue);
         }
         timeSummary.appendChild(timeLabel);
         timeSummary.appendChild(timeValue);
         meta.appendChild(timeSummary);
+
+        if (plannedDurationMs !== null) {
+            const delaySummary = document.createElement("div");
+            delaySummary.className = "activity-time-summary activity-delay-summary hidden";
+            const delayLabel = document.createElement("span");
+            delayLabel.className = "activity-time-label";
+            delayLabel.textContent = "Ritardo";
+            const delayValue = document.createElement("span");
+            delayValue.className = "activity-time-value";
+            delayValue.textContent = "00:00:00";
+            delaySummary.appendChild(delayLabel);
+            delaySummary.appendChild(delayValue);
+            meta.appendChild(delaySummary);
+            if (activityId) {
+                activityOverdueTrackers.set(activityId, {
+                    plannedMs: plannedDurationMs,
+                    wrapper: delaySummary,
+                    valueNode: delayValue,
+                    card,
+                    badge: delayBadge,
+                    baseMs: correctedOffsetMs,
+                });
+                updateActivityDelayUI(activityId, correctedTotalMs);
+            }
+        }
 
         const collapseBtn = document.createElement("button");
         collapseBtn.type = "button";
@@ -1035,7 +2484,7 @@ function renderActivities(activities) {
 
         const body = document.createElement("div");
         body.className = "task-members";
-        activity.members.forEach((member) => {
+        members.forEach((member) => {
             const node = createMemberNode(member, "member-task");
             body.appendChild(node);
         });
@@ -1087,7 +2536,12 @@ function resetProjectStateUI() {
     updateSelectionToolbar();
     activitySearchTerm = "";
     collapsedActivities.clear();
+    seenActivityIds.clear();
     activityTotalDisplays.clear();
+    activityOverdueTrackers.clear();
+    activityRuntimeOffsets.clear();
+    activityTotalValues.clear();
+    setTeamCount(0);
     const search = document.getElementById("activitySearch");
     if (search) {
         search.value = "";
@@ -1099,6 +2553,30 @@ function resetProjectStateUI() {
 }
 
 function applyState(state) {
+    const normalizeElapsed = (member) => {
+        if (!member) {
+            return;
+        }
+        const current = Number(member.elapsed) || 0;
+        if (member.running) {
+            const adjusted = getClientElapsed(member.member_key, current, true);
+            member.elapsed = adjusted;
+            recordClientElapsed(member.member_key, adjusted);
+        } else {
+            clientElapsedState.delete(member.member_key);
+            member.elapsed = current;
+        }
+    };
+    if (Array.isArray(state.team)) {
+        state.team.forEach(normalizeElapsed);
+    }
+    if (Array.isArray(state.activities)) {
+        state.activities.forEach((activity) => {
+            if (activity && Array.isArray(activity.members)) {
+                activity.members.forEach(normalizeElapsed);
+            }
+        });
+    }
     const previouslySelected = getSelectedKeys();
     clearTimers();
     renderTeam(state.team);
@@ -1123,6 +2601,7 @@ function applyState(state) {
     updateToggleButton();
     updateSelectionToolbar();
     refreshTotalRunningTimeDisplay();
+    lastKnownState = cloneStateSnapshot(state);
 }
 
 function stopRefreshTimer() {
@@ -1157,11 +2636,21 @@ function handleUnauthenticated() {
 }
 
 async function refreshState() {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setOfflineMode(true, { silent: offlineNotified });
+        hydrateCacheOnce();
+        scheduleRefresh();
+        return;
+    }
+    offlineHydrated = false;
     try {
         const [stateData, eventsData] = await Promise.all([
             fetchJson("/api/state"),
             fetchJson("/api/events"),
         ]);
+        saveCachedPayload(LAST_STATE_KEY, stateData);
+        saveCachedPayload(LAST_EVENTS_KEY, eventsData.events || []);
+        setOfflineMode(false, { silent: true });
         applyState(stateData);
         renderEvents(eventsData.events || []);
     } catch (err) {
@@ -1170,6 +2659,10 @@ async function refreshState() {
             handleUnauthenticated();
         } else {
             console.error("refreshState", err);
+            if (!navigator.onLine) {
+                setOfflineMode(true, { silent: offlineNotified });
+                hydrateCacheOnce();
+            }
         }
     } finally {
         scheduleRefresh();
@@ -1189,10 +2682,16 @@ async function moveTo(activityId) {
         if (!key || uniqueMembers.has(key)) {
             return;
         }
+        const elapsed = Number(node.dataset.elapsedMs || 0);
+        const running = node.dataset.running === "true";
+        const paused = node.dataset.paused === "true";
         uniqueMembers.set(key, {
             member_key: key,
             member_name: name,
             activity_id: activityId,
+            elapsed,
+            running,
+            paused,
         });
     });
     const payloads = Array.from(uniqueMembers.values());
@@ -1201,23 +2700,26 @@ async function moveTo(activityId) {
         return;
     }
     try {
-        await Promise.all(
-            payloads.map((body) =>
-                fetch("/api/move", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(body),
-                })
-            )
-        );
-        showPopup("✅ Risorse aggiornate");
+        let queued = false;
+        for (const body of payloads) {
+            const result = await postJson("/api/move", body);
+            if (result && result.__queued) {
+                queued = true;
+            }
+        }
         closeActivityModal();
         suppressSelectionRestore = true;
         selectedNodes.forEach((node) => {
             node.classList.remove("selected");
         });
         updateSelectionToolbar();
-        await refreshState();
+        if (queued) {
+            showPopup("💾 Spostamento salvato offline");
+            applyOptimisticMoveState(payloads);
+        } else {
+            showPopup("✅ Risorse aggiornate");
+            await refreshState();
+        }
     } catch (err) {
         console.error("moveTo", err);
         showPopup("⚠️ Impossibile spostare le risorse");
@@ -1236,17 +2738,13 @@ async function startActivity(activityId) {
         return;
     }
     try {
-        const res = await fetch("/api/start_activity", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ activity_id: activityId }),
-        });
-        if (res.ok) {
-            const data = await res.json();
-            showPopup(`▶️ Timer avviati per ${data.affected || 0} operatori`);
-            await refreshState();
+        const data = await postJson("/api/start_activity", { activity_id: activityId });
+        if (data && data.__queued) {
+            showPopup('💾 Avvio attività salvato offline');
+            optimisticStartActivity(activityId);
         } else {
-            throw new Error(`HTTP ${res.status}`);
+            showPopup(`▶️ Timer avviati per ${data?.affected || 0} operatori`);
+            await refreshState();
         }
     } catch (err) {
         console.error("startActivity", err);
@@ -1260,16 +2758,13 @@ async function startMember(memberKey) {
         return;
     }
     try {
-        const res = await fetch("/api/start_member", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ member_key: memberKey }),
-        });
-        if (res.ok) {
+        const data = await postJson("/api/start_member", { member_key: memberKey });
+        if (data && data.__queued) {
+            showPopup('💾 Timer salvato offline');
+            optimisticStartMembers([memberKey]);
+        } else {
             showPopup("▶️ Timer avviato");
             await refreshState();
-        } else {
-            throw new Error(`HTTP ${res.status}`);
         }
     } catch (err) {
         console.error("startMember", err);
@@ -1299,17 +2794,25 @@ async function startSelection() {
     
     try {
         let started = 0;
+        const queuedKeys = [];
         for (const memberKey of keys) {
-            const res = await fetch("/api/start_member", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ member_key: memberKey }),
-            });
-            if (res.ok) {
+            const result = await postJson("/api/start_member", { member_key: memberKey });
+            if (result && result.__queued) {
+                queuedKeys.push(memberKey);
+            } else {
                 started++;
             }
         }
-        showPopup(`▶️ ${started} timer avviati`);
+        if (queuedKeys.length > 0) {
+            optimisticStartMembers(queuedKeys);
+            const label = queuedKeys.length === keys.length
+                ? '💾 Timer salvati offline'
+                : '💾 Alcuni timer salvati offline';
+            showPopup(label);
+        }
+        if (started > 0) {
+            showPopup(`▶️ ${started} timer avviati`);
+        }
         
         // Deseleziona tutti gli operatori avviati
         suppressSelectionRestore = true;
@@ -1318,7 +2821,9 @@ async function startSelection() {
         });
         updateSelectionToolbar();
         
-        await refreshState();
+        if (started > 0) {
+            await refreshState();
+        }
     } catch (err) {
         console.error("startSelection", err);
         showPopup("⚠️ Impossibile avviare gli operatori");
@@ -1695,6 +3200,14 @@ function bindUI() {
     const feedbackSubmitBtn = document.getElementById("feedbackSubmitBtn");
     const feedbackCancelBtn = document.getElementById("feedbackCancelBtn");
     const feedbackStars = document.querySelectorAll(".feedback-star");
+    const pushToggle = document.getElementById("pushToggle");
+    const pushTestBtn = document.getElementById("pushTestBtn");
+    const refreshPushNotificationsBtn = document.getElementById("refreshPushNotificationsBtn");
+    const notificationsBtn = document.getElementById("notificationsBtn");
+    const closePushNotificationsBtn = document.getElementById("closePushNotificationsBtn");
+    const pushNotificationsModal = document.getElementById("pushNotificationsModal");
+    const teamSelectBtn = document.getElementById("teamSelectBtn");
+    const teamCollapseBtn = document.getElementById("teamCollapseBtn");
 
     if (startAllBtn) {
         startAllBtn.addEventListener("click", async () => {
@@ -1772,6 +3285,32 @@ function bindUI() {
         feedbackCancelBtn.addEventListener("click", closeFeedbackModal);
     }
 
+    if (pushToggle) {
+        pushToggle.addEventListener("click", handlePushToggle);
+    }
+
+    if (pushTestBtn) {
+        pushTestBtn.addEventListener("click", sendPushTest);
+    }
+
+    if (refreshPushNotificationsBtn) {
+        refreshPushNotificationsBtn.dataset.label = refreshPushNotificationsBtn.textContent || "Aggiorna";
+        refreshPushNotificationsBtn.addEventListener("click", () => {
+            fetchPushNotifications({ silent: false });
+        });
+    }
+
+    if (notificationsBtn) {
+        notificationsBtn.addEventListener("click", () => {
+            closeMenu();
+            openPushNotificationsModal();
+        });
+    }
+
+    if (closePushNotificationsBtn) {
+        closePushNotificationsBtn.addEventListener("click", closePushNotificationsModal);
+    }
+
     if (menuToggleBtn) {
         menuToggleBtn.addEventListener("click", toggleMenu);
     }
@@ -1822,6 +3361,13 @@ function bindUI() {
 
     document.querySelectorAll("[data-menu-action]").forEach((node) => {
         node.addEventListener("click", closeMenu);
+    });
+
+    document.querySelectorAll("[data-open-notifications]").forEach((node) => {
+        node.addEventListener("click", () => {
+            closeMenu();
+            openPushNotificationsModal();
+        });
     });
 
     ensureActivitySearch();
@@ -1888,6 +3434,24 @@ function bindUI() {
         timelineOverlay.addEventListener("click", closeTimeline);
     }
 
+    if (pushNotificationsModal) {
+        pushNotificationsModal.addEventListener("click", (event) => {
+            if (event.target === pushNotificationsModal) {
+                closePushNotificationsModal();
+            }
+        });
+    }
+
+    if (teamSelectBtn) {
+        teamSelectBtn.addEventListener("click", toggleTeamSelection);
+    }
+
+    if (teamCollapseBtn) {
+        teamCollapseBtn.addEventListener("click", () => {
+            setTeamCollapsed(!teamCollapsed);
+        });
+    }
+
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
             closeFeedbackModal();
@@ -1895,6 +3459,7 @@ function bindUI() {
             closeTimeline();
             closeMenu();
             closeExportModal();
+            closePushNotificationsModal();
         }
     });
 
@@ -1916,7 +3481,10 @@ function updateClock() {
 async function init() {
     initTheme();
     bindUI();
+    setTeamCollapsed(true);
     setProjectDefaultDate();
+    hydrateInitialContentFromCache();
+    setOfflineMode(offlineMode, { silent: true });
     const releaseTarget = document.getElementById("menuReleaseVersion");
     if (releaseTarget) {
         releaseTarget.textContent = APP_RELEASE;
@@ -1924,9 +3492,15 @@ async function init() {
     refreshTotalRunningTimeDisplay();
     updateClock();
     setInterval(updateClock, 1000);
+    renderPushNotifications();
+    registerServiceWorkerMessaging();
+    await initPushNotifications();
+    await fetchPushNotifications({ silent: true });
     await refreshState();
 }
 
+window.addEventListener('online', handleOnlineEvent);
+window.addEventListener('offline', handleOfflineEvent);
 window.addEventListener("DOMContentLoaded", init);
 window.addEventListener("resize", () => {
     syncSelectionToolbarOffset();

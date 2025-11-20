@@ -77,6 +77,22 @@ body {
   margin-bottom: 16px;
 }
 
+.login-btn.loading {
+  position: relative;
+  color: transparent;
+  cursor: wait;
+}
+
+.login-btn.loading::after {
+  content: "⏳";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
 .login-logo img {
   display: block;
   width: 160px;
@@ -127,6 +143,24 @@ body {
   background: var(--bg);
   color: var(--text-primary);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-status {
+  min-height: 18px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  transition: color 0.2s ease;
+}
+
+.form-status.loading {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.form-status.success {
+  color: var(--ok);
+  font-weight: 600;
 }
 
 .form-input:focus {
@@ -230,7 +264,8 @@ body {
     </div>
     
     <form id="loginForm" class="login-form">
-      <div class="form-error" id="errorMessage"></div>
+      <div class="form-error" id="errorMessage" role="alert" aria-live="assertive"></div>
+      <div class="form-status" id="loginStatus" aria-live="polite"></div>
       
       <div class="form-group">
         <label class="form-label" for="username">Username</label>
@@ -241,6 +276,7 @@ body {
           class="form-input" 
           placeholder="Inserisci username"
           autocomplete="username"
+          autofocus
           required
         />
       </div>
@@ -267,6 +303,7 @@ body {
 
 <script>
 let darkMode = false;
+let statusElement = null;
 
 function initTheme() {
   const savedTheme = localStorage.getItem('joblog-theme');
@@ -305,6 +342,7 @@ function updateThemeIcon() {
 }
 
 function showError(message) {
+  setStatus('', null);
   const errorElement = document.getElementById('errorMessage');
   if (errorElement) {
     errorElement.textContent = message;
@@ -315,20 +353,44 @@ function showError(message) {
   }
 }
 
+function setStatus(message, state) {
+  if (!statusElement) {
+    statusElement = document.getElementById('loginStatus');
+  }
+  if (!statusElement) {
+    return;
+  }
+  statusElement.textContent = message || '';
+  statusElement.className = 'form-status';
+  if (state) {
+    statusElement.classList.add(state);
+  }
+}
+
 async function handleLogin(event) {
   event.preventDefault();
   
   const loginBtn = document.getElementById('loginBtn');
-  const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value;
+  const usernameInput = document.getElementById('username');
+  const passwordInput = document.getElementById('password');
+  const username = usernameInput ? usernameInput.value.trim() : '';
+  const password = passwordInput ? passwordInput.value : '';
   
   if (!username || !password) {
     showError('Inserisci username e password');
+    setStatus('', null);
+    if (!username && usernameInput) {
+      usernameInput.focus();
+    } else if (passwordInput) {
+      passwordInput.focus();
+    }
     return;
   }
   
   loginBtn.disabled = true;
   loginBtn.textContent = 'Accesso in corso...';
+  loginBtn.classList.add('loading');
+  setStatus('Accesso in corso...', 'loading');
   
   try {
     const response = await fetch('/api/login', {
@@ -342,17 +404,29 @@ async function handleLogin(event) {
     const data = await response.json();
     
     if (response.ok && data.success) {
+      setStatus('Accesso effettuato! Reindirizzamento...', 'success');
       window.location.href = '/';
     } else {
       showError(data.error || 'Credenziali non valide');
+      setStatus('', null);
       loginBtn.disabled = false;
       loginBtn.textContent = 'Accedi';
+      loginBtn.classList.remove('loading');
+      if (passwordInput) {
+        passwordInput.value = '';
+        passwordInput.focus();
+      }
     }
   } catch (error) {
     console.error('Login error:', error);
     showError('Errore di connessione. Riprova.');
+    setStatus('', null);
     loginBtn.disabled = false;
     loginBtn.textContent = 'Accedi';
+    loginBtn.classList.remove('loading');
+    if (passwordInput) {
+      passwordInput.focus();
+    }
   }
 }
 
@@ -368,6 +442,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (loginForm) {
     loginForm.addEventListener('submit', handleLogin);
   }
+  statusElement = document.getElementById('loginStatus');
+  setStatus('', null);
 });
 </script>
 </body>

@@ -1,3 +1,16 @@
 {
-  "rentman_api_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJtZWRld2Vya2VyIjoxODYwLCJhY2NvdW50IjoiaXRpbmVyYXBybyIsImNsaWVudF90eXBlIjoib3BlbmFwaSIsImNsaWVudC5uYW1lIjoib3BlbmFwaSIsImV4cCI6MjA1ODU5NzU2MSwiaXNzIjoie1wibmFtZVwiOlwiYmFja2VuZFwiLFwidmVyc2lvblwiOlwiNC43MjguMC4zXCJ9IiwiaWF0IjoxNzQzMDY4MzYxfQ.AqegIhlTftQkz_T4WtJIpTpY1E1_vgNP0uT5SzoNE9w"
+  "rentman_api_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJtZWRld2Vya2VyIjoxODYwLCJhY2NvdW50IjoiaXRpbmVyYXBybyIsImNsaWVudF90eXBlIjoib3BlbmFwaSIsImNsaWVudC5uYW1lIjoib3BlbmFwaSIsImV4cCI6MjA1ODU5NzU2MSwiaXNzIjoie1wibmFtZVwiOlwiYmFja2VuZFwiLFwidmVyc2lvblwiOlwiNC43MjguMC4zXCJ9IiwiaWF0IjoxNzQzMDY4MzYxfQ.AqegIhlTftQkz_T4WtJIpTpY1E1_vgNP0uT5SzoNE9w",
+  "database": {
+    "vendor": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "user": "tim_root",
+    "password": "gianni225524",
+    "name": "joblog"
+  },
+  "webpush": {
+    "vapid_public": "BIrn69C16abPXMHCQ0sCjGWnl_uwBBLNOfcgTD_SJR7JrdvbeL-ZmYL3SgSk6IHTka-Xs7ug6fiVKmxEhrmzz5A",
+    "vapid_private": "BN5FlLBPKYigl6RXwMuVOVSPqe7vAFy8NLEVnpa6y9Y",
+    "subject": "mailto:ops@example.com"
+  }
 }

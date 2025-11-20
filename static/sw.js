@@ -1,11 +1,31 @@
-const CACHE_NAME = 'joblog-v2025.11.14';
-const STATIC_CACHE = 'joblog-static-v1';
-const DYNAMIC_CACHE = 'joblog-dynamic-v1';
+const CACHE_NAME = 'joblog-v2025.11.19c';
+const STATIC_CACHE = 'joblog-static-v4';
+const DYNAMIC_CACHE = 'joblog-dynamic-v4';
+const API_CACHE = 'joblog-api-v2';
+const BG_SYNC_TAG = 'joblog-sync-queue';
+const QUEUE_DB = 'joblog-sync-db';
+const QUEUE_STORE = 'requests';
+const OFFLINE_QUEUE_PATHS = [
+    '/api/move',
+    '/api/member/pause',
+    '/api/member/resume',
+    '/api/member/finish',
+    '/api/start_member',
+    '/api/start_activity',
+    '/api/pause_all',
+    '/api/resume_all',
+    '/api/finish_all',
+];
+
+const API_CACHE_PATHS = ['/api/state', '/api/events', '/api/push/notifications'];
+const OFFLINE_FALLBACK = '/';
 
 const STATIC_ASSETS = [
     '/',
     '/static/js/app.js',
     '/static/manifest.json',
+    '/static/icons/icon-192x192.svg',
+    '/static/icons/icon-72x72.svg',
 ];
 
 // Install event - cache static assets
@@ -25,16 +45,22 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
     console.log('[ServiceWorker] Activating...');
     event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames.map((cacheName) => {
-                    if (cacheName !== STATIC_CACHE && cacheName !== DYNAMIC_CACHE) {
-                        console.log('[ServiceWorker] Deleting old cache:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        }).then(() => self.clients.claim())
+        Promise.all([
+            caches.keys().then((cacheNames) => {
+                return Promise.all(
+                    cacheNames.map((cacheName) => {
+                        const keep = [STATIC_CACHE, DYNAMIC_CACHE, API_CACHE];
+                        if (!keep.includes(cacheName)) {
+                            console.log('[ServiceWorker] Deleting old cache:', cacheName);
+                            return caches.delete(cacheName);
+                        }
+                    })
+                );
+            }).then(() => self.clients.claim()),
+            processQueue().catch((error) => {
+                console.warn('[ServiceWorker] Impossibile processare la coda offline all\'attivazione', error);
+            }),
+        ])
     );
 });
 
@@ -48,9 +74,23 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // API requests - network only (don't cache dynamic data)
-    if (url.pathname.startsWith('/api/')) {
-        event.respondWith(fetch(request));
+    if (request.method === 'POST' && shouldQueueRequest(url.pathname)) {
+        event.respondWith(handleMutatingRequest(event));
+        return;
+    }
+
+    if (request.method !== 'GET') {
+        return;
+    }
+
+    // App shell / navigation requests
+    if (request.mode === 'navigate') {
+        event.respondWith(handleNavigationRequest(request));
+        return;
+    }
+
+    if (isApiCacheTarget(url.pathname)) {
+        event.respondWith(handleApiRequest(request));
         return;
     }
 
@@ -72,20 +112,230 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // HTML pages - network first, fallback to cache
+    // Default: try network, fallback to cache
     event.respondWith(
         fetch(request)
-            .then((networkResponse) => {
+            .then((response) => {
                 return caches.open(DYNAMIC_CACHE).then((cache) => {
-                    cache.put(request, networkResponse.clone());
-                    return networkResponse;
+                    cache.put(request, response.clone());
+                    return response;
                 });
             })
-            .catch(() => {
-                return caches.match(request);
-            })
+            .catch(() => caches.match(request))
     );
 });
+
+self.addEventListener('sync', (event) => {
+    if (event.tag === BG_SYNC_TAG) {
+        event.waitUntil(processQueue());
+    }
+});
+
+function isApiCacheTarget(pathname) {
+    return API_CACHE_PATHS.some((path) => pathname.startsWith(path));
+}
+
+function handleNavigationRequest(request) {
+    return fetch(request)
+        .then((response) => {
+            const copy = response.clone();
+            caches.open(DYNAMIC_CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
+            return response;
+        })
+        .catch(() => caches.match(OFFLINE_FALLBACK));
+}
+
+function handleApiRequest(request) {
+    return fetch(request)
+        .then((response) => {
+            const copy = response.clone();
+            caches.open(API_CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
+            return response;
+        })
+        .catch(() => caches.match(request));
+}
+
+function shouldQueueRequest(pathname) {
+    return OFFLINE_QUEUE_PATHS.some((path) => pathname.startsWith(path));
+}
+
+async function handleMutatingRequest(event) {
+    const { request } = event;
+    try {
+        const response = await fetch(request.clone());
+        return response;
+    } catch (error) {
+        const queueId = await queueRequest(request);
+        let pathname = request.url;
+        try {
+            pathname = new URL(request.url).pathname;
+        } catch (err) {
+            // noop
+        }
+        await notifyOfflineQueue({ action: 'queued', id: queueId, url: request.url, pathname });
+        await scheduleQueueSync();
+        return buildQueuedResponse(queueId);
+    }
+}
+
+function buildQueuedResponse(queueId) {
+    return new Response(
+        JSON.stringify({ queued: true, id: queueId }),
+        {
+            status: 202,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-JobLog-Queued': '1',
+            },
+        }
+    );
+}
+
+async function queueRequest(request) {
+    const serialized = await serializeRequest(request);
+    return addQueueEntry(serialized);
+}
+
+async function serializeRequest(request) {
+    const headers = {};
+    for (const [key, value] of request.headers.entries()) {
+        headers[key] = value;
+    }
+    let body = null;
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+        body = await request.clone().text();
+    }
+    let pathname = request.url;
+    try {
+        pathname = new URL(request.url).pathname;
+    } catch (error) {
+        // noop
+    }
+    return {
+        url: request.url,
+        pathname,
+        method: request.method,
+        headers,
+        body,
+        timestamp: Date.now(),
+    };
+}
+
+async function addQueueEntry(entry) {
+    const db = await openQueueDb();
+    try {
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(QUEUE_STORE, 'readwrite');
+            const store = tx.objectStore(QUEUE_STORE);
+            const addReq = store.add(entry);
+            addReq.onsuccess = () => resolve(addReq.result);
+            addReq.onerror = () => reject(addReq.error);
+        });
+    } finally {
+        db.close();
+    }
+}
+
+function openQueueDb() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(QUEUE_DB, 1);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+                db.createObjectStore(QUEUE_STORE, { keyPath: 'id', autoIncrement: true });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+async function getAllQueueEntries() {
+    const db = await openQueueDb();
+    try {
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(QUEUE_STORE, 'readonly');
+            const store = tx.objectStore(QUEUE_STORE);
+            const getReq = store.getAll();
+            getReq.onsuccess = () => resolve(getReq.result || []);
+            getReq.onerror = () => reject(getReq.error);
+        });
+    } finally {
+        db.close();
+    }
+}
+
+async function deleteQueueEntry(id) {
+    const db = await openQueueDb();
+    try {
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(QUEUE_STORE, 'readwrite');
+            const store = tx.objectStore(QUEUE_STORE);
+            const delReq = store.delete(id);
+            delReq.onsuccess = () => resolve();
+            delReq.onerror = () => reject(delReq.error);
+        });
+    } finally {
+        db.close();
+    }
+}
+
+async function scheduleQueueSync() {
+    if (self.registration && 'sync' in self.registration) {
+        try {
+            await self.registration.sync.register(BG_SYNC_TAG);
+            return;
+        } catch (error) {
+            console.warn('[ServiceWorker] sync.register fallita', error);
+        }
+    }
+    await processQueue();
+}
+
+async function processQueue() {
+    const entries = await getAllQueueEntries();
+    if (!entries.length) {
+        return;
+    }
+    entries.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    for (const entry of entries) {
+        try {
+            const response = await replayQueuedRequest(entry);
+            if (!response || !response.ok) {
+                throw new Error(`HTTP ${response ? response.status : '0'}`);
+            }
+            await deleteQueueEntry(entry.id);
+            await notifyOfflineQueue({ action: 'delivered', id: entry.id, url: entry.url, pathname: entry.pathname });
+        } catch (error) {
+            console.warn('[ServiceWorker] Errore durante la ripetizione della richiesta', error);
+            await notifyOfflineQueue({
+                action: 'error',
+                id: entry.id,
+                url: entry.url,
+                pathname: entry.pathname,
+                error: error && error.message ? error.message : String(error),
+            });
+            throw error;
+        }
+    }
+    await notifyOfflineQueue({ action: 'idle' });
+}
+
+function replayQueuedRequest(entry) {
+    const headers = entry.headers || {};
+    return fetch(entry.url, {
+        method: entry.method || 'POST',
+        headers,
+        body: entry.body,
+        credentials: 'include',
+    });
+}
+
+async function notifyOfflineQueue(meta) {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const message = { type: 'offline-queue', ...meta };
+    clientList.forEach((client) => client.postMessage(message));
+}
 
 // Handle background sync (optional - for future offline capabilities)
 self.addEventListener('sync', (event) => {
@@ -95,19 +345,111 @@ self.addEventListener('sync', (event) => {
     }
 });
 
-// Handle push notifications (optional - for future)
 self.addEventListener('push', (event) => {
-    if (event.data) {
-        const data = event.data.json();
-        const options = {
-            body: data.body || 'Nuova notifica da JobLog',
-            icon: '/static/icons/icon-192x192.svg',
-            badge: '/static/icons/icon-72x72.svg',
-            vibrate: [200, 100, 200],
-            data: data.data || {}
-        };
+    const payload = parsePushPayload(event);
+    event.waitUntil(handlePushNotification(payload));
+});
+
+function parsePushPayload(event) {
+    const fallback = { title: 'JobLog', body: 'Nuova notifica', data: {} };
+    if (!event.data) {
+        return fallback;
+    }
+    try {
+        const parsed = event.data.json();
+        if (parsed && typeof parsed === 'object') {
+            return {
+                title: parsed.title || fallback.title,
+                body: parsed.body || fallback.body,
+                data: parsed.data || {},
+            };
+        }
+    } catch (err) {
+        console.warn('[ServiceWorker] Impossibile leggere il payload push', err);
+    }
+    return fallback;
+}
+
+async function handlePushNotification(payload) {
+    console.log('[ServiceWorker] Push ricevuto', payload);
+    const options = {
+        body: payload.body,
+        icon: '/static/icons/icon-192x192.svg',
+        badge: '/static/icons/icon-72x72.svg',
+        vibrate: [200, 100, 200],
+        timestamp: Date.now(),
+        data: payload.data || {},
+        requireInteraction: true,
+    };
+
+    const result = {
+        permission: typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
+        delivered: false,
+    };
+
+    if (typeof Notification === 'undefined') {
+        console.warn('[ServiceWorker] Notification API non disponibile');
+        await broadcastPushToClients(payload, result);
+        return;
+    }
+
+    if (Notification.permission !== 'granted') {
+        console.warn('[ServiceWorker] Permesso notifiche:', Notification.permission);
+        await broadcastPushToClients(payload, result);
+        return;
+    }
+
+    try {
+        await self.registration.showNotification(payload.title, options);
+        result.delivered = true;
+    } catch (error) {
+        console.error('[ServiceWorker] showNotification fallita', error);
+        result.error = error && error.message ? error.message : String(error);
+    }
+
+    await broadcastPushToClients(payload, result);
+}
+
+async function broadcastPushToClients(payload, meta) {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const message = {
+        type: 'push-notification',
+        payload,
+        meta: meta || {},
+    };
+    clientList.forEach((client) => {
+        client.postMessage(message);
+    });
+}
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const targetUrl = '/';
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            for (const client of windowClients) {
+                if ('focus' in client) {
+                    client.postMessage({ type: 'push-notification-click', data: event.notification.data });
+                    return client.focus();
+                }
+            }
+            if (clients.openWindow) {
+                return clients.openWindow(targetUrl);
+            }
+            return undefined;
+        })
+    );
+});
+
+self.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data.type !== 'string') {
+        return;
+    }
+    if (event.data.type === 'claim-clients') {
         event.waitUntil(
-            self.registration.showNotification(data.title || 'JobLog', options)
+            self.skipWaiting().then(() => clients.claim())
         );
+    } else if (event.data.type === 'flush-offline-queue') {
+        event.waitUntil(processQueue());
     }
 });
