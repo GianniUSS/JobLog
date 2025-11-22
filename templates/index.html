@@ -2,7 +2,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>JobLOG</title>
+<title>JOBlog</title>
 
 <!-- PWA Meta Tags -->
 <meta name="application-name" content="JobLog">
@@ -14,14 +14,14 @@
 <meta name="apple-mobile-web-app-title" content="JobLog">
 
 <!-- PWA Manifest -->
-<link rel="manifest" href="/static/manifest.json">
+<link rel="manifest" href="{{ static_version('manifest.json') }}">
 
 <!-- PWA Icons -->
-<link rel="icon" type="image/svg+xml" sizes="192x192" href="/static/icons/icon-192x192.svg">
-<link rel="icon" type="image/svg+xml" sizes="512x512" href="/static/icons/icon-512x512.svg">
-<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/icon-192x192.svg">
+<link rel="icon" type="image/svg+xml" sizes="192x192" href="{{ static_version('icons/icon-192x192.svg') }}">
+<link rel="icon" type="image/svg+xml" sizes="512x512" href="{{ static_version('icons/icon-512x512.svg') }}">
+<link rel="apple-touch-icon" sizes="180x180" href="{{ static_version('icons/icon-192x192.svg') }}">
 
-<link rel="preconnect" href="/static/js/app.js?v=20251119c" />
+<link rel="preconnect" href="{{ static_version('js/app.js') }}" />
 <style>
 :root {
   /* Theme Colors - Light Mode (default) */
@@ -153,6 +153,30 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .notification-item-body { font-size:14px; color:var(--text-secondary); }
 .notification-item-meta { font-size:12px; color:var(--text-secondary); letter-spacing:0.3px; text-transform:uppercase; }
 .notification-empty { font-size:14px; color:var(--text-secondary); font-style:italic; border:1px dashed var(--border); border-radius:10px; padding:16px; text-align:center; }
+.attachments-card { background:var(--bg-card); border-radius:16px; box-shadow:0 2px 5px var(--shadow); padding:20px; margin-bottom:20px; transition:box-shadow 0.2s ease, border-color 0.2s ease; border:1px solid transparent; }
+.attachments-card.highlight { box-shadow:0 10px 25px rgba(14,165,233,0.28); border-color:rgba(14,165,233,0.35); }
+.attachments-card-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+.attachments-title { font-size:20px; font-weight:700; display:block; }
+.attachments-subtitle { font-size:14px; color:var(--text-secondary); }
+.attachments-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.attachments-meta { display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:14px; color:var(--text-secondary); }
+.attachments-count { font-weight:600; letter-spacing:0.3px; text-transform:uppercase; }
+.attachments-upload-btn { display:flex; align-items:center; gap:8px; border-radius:999px; padding:10px 18px; background:var(--brand); color:#fff; border:none; font-weight:600; cursor:pointer; box-shadow:0 8px 20px rgba(14,165,233,0.35); transition:background 0.2s ease, box-shadow 0.2s ease; }
+.attachments-upload-btn:hover { background:var(--brand-hover); box-shadow:0 10px 24px rgba(14,165,233,0.45); }
+.attachments-refresh-btn { border-radius:999px; padding:10px 18px; background:#e2e8f0; color:#0f172a; border:none; font-weight:600; cursor:pointer; transition:background 0.2s ease, color 0.2s ease; }
+.attachments-refresh-btn:hover { background:#cbd5e1; color:#0f172a; }
+.attachments-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; }
+.attachment-card { border:1px solid var(--border); border-radius:14px; padding:16px; display:flex; gap:12px; align-items:flex-start; background:var(--bg); box-shadow:0 1px 3px var(--shadow); }
+.attachment-icon { width:44px; height:44px; border-radius:12px; background:#e0f2fe; color:#0f172a; font-size:22px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.attachment-details { flex:1; display:flex; flex-direction:column; gap:6px; }
+.attachment-name { font-weight:600; font-size:15px; color:var(--text-primary); word-break:break-word; }
+.attachment-meta { font-size:12px; color:var(--text-secondary); display:flex; gap:8px; flex-wrap:wrap; }
+.attachment-actions { display:flex; flex-direction:column; gap:8px; min-width:100px; }
+.attachment-action { border:none; border-radius:999px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; background:var(--bg-card); color:var(--brand); box-shadow:0 2px 6px rgba(15,23,42,0.08); }
+.attachment-action:disabled { opacity:0.5; cursor:not-allowed; }
+.attachment-action.download { background:var(--brand); color:#fff; }
+.attachments-empty { border:1px dashed var(--border); border-radius:12px; padding:24px; text-align:center; font-size:15px; color:var(--text-secondary); margin-top:16px; }
+.attachments-loading { margin-top:12px; font-size:14px; color:var(--text-secondary); display:flex; align-items:center; gap:8px; }
 .team-header, .task-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 17px; margin-bottom: 10px; gap: 12px; }
 .team-header-info { display:flex; flex-direction:column; gap:4px; }
 .team-count { font-size:14px; font-weight:600; color:var(--text-secondary); }
@@ -195,6 +219,9 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .popup { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); background: var(--ok); color: white; padding: 16px 24px; border-radius: 12px; font-size: 18px; opacity: 0; transition: opacity 0.3s ease-in-out; z-index: 999; }
 .popup.show { opacity: 1; }
 .offline-banner { background: #b45309; color: #fff; text-align: center; padding: 12px 16px; font-weight: 600; letter-spacing: 0.3px; position: sticky; top: var(--header-height); z-index: 215; box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
+.update-banner { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #0ea5e9; color: #fff; padding: 14px 18px; border-radius: 999px; display: flex; align-items: center; gap: 12px; box-shadow: 0 12px 30px rgba(14,165,233,0.4); z-index: 320; font-weight: 600; letter-spacing: 0.2px; }
+.update-banner button { border: none; border-radius: 999px; background: #fff; color: #0f172a; font-weight: 700; padding: 8px 16px; cursor: pointer; }
+.update-banner button:active { transform: scale(0.95); }
 .selection-toolbar { position: sticky; top: calc(var(--header-height) + 16px); z-index: 210; background: var(--bg-card); color: var(--text-primary); padding: 18px 20px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 6px 16px var(--shadow); display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 8px 0 24px; }
 .selection-count { font-weight: 700; letter-spacing: 0.3px; font-size: 15px; color: var(--text-primary); }
 .selection-actions { flex: 1; display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
@@ -210,6 +237,7 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .modal-card { background: var(--bg-card); width: 94vw; max-width: 520px; max-height: 90vh; border-radius: 16px; padding: 26px; text-align: center; box-shadow: 0 8px 20px var(--shadow-lg); display: flex; flex-direction: column; gap: 18px; transition: background-color 0.2s ease; }
 .modal-card h3 { color: var(--text-primary); }
 .modal-card h3 { margin: 0; }
+.attachments-modal-card { max-width: 720px; padding: 10px; }
 .activity-search { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; font-size: 17px; box-sizing: border-box; background: var(--bg); color: var(--text-primary); transition: background-color 0.2s ease, border-color 0.2s ease; }
 .activity-search + #choices { margin-top: 4px; }
 #choices { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 8px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
@@ -255,6 +283,9 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
         .task-card, .team-card { padding: 14px 12px; }
         .task-header { flex-direction: column; align-items: flex-start; gap: 10px; }
         .task-header-meta { width: 100%; justify-content: flex-start; }
+    .attachments-card-header { flex-direction: column; align-items: flex-start; }
+    .attachments-actions { width: 100%; justify-content: flex-start; }
+    .attachments-actions button { flex: 1; min-width: 0; }
         .popup { bottom: 90px; font-size: 16px; padding: 14px 20px; }
 }
 @media (max-width: 480px) {
@@ -290,6 +321,13 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .install-prompt-btn:active { background:#1558c0; }
 .install-prompt-dismiss { border:none; background:transparent; color:#94a3b8; font-size:20px; cursor:pointer; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:50%; }
 .install-prompt-dismiss:active { background:#f1f5f9; }
+#iosInstallBanner { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); width:min(90%,420px); background:#ffffff; color:#111827; border-radius:18px; box-shadow:0 18px 45px rgba(15,23,42,0.25); padding:16px 18px; font-family:-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; font-size:15px; line-height:1.4; display:none; z-index:350; }
+#iosInstallBanner.show { display:flex; gap:10px; align-items:center; }
+#iosInstallBanner svg { width:20px; height:20px; }
+#iosInstallBanner button { margin-left:auto; border:none; background:transparent; font-size:18px; cursor:pointer; color:#6b7280; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
+#iosInstallBanner button:active { background:#f1f5f9; }
+#iosInstallBanner::after { content:""; position:absolute; left:50%; bottom:-12px; transform:translateX(-50%); width:18px; height:18px; background:#ffffff; clip-path:polygon(50% 100%, 0 0, 100% 0); box-shadow:0 10px 30px rgba(15,23,42,0.2); }
+.ios-install-graphic { display:inline-flex; vertical-align:middle; margin:0 4px; }
 .timeline-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.35); z-index: 110; }
 .timeline-panel { position: fixed; top: 0; right: 0; width: 340px; max-width: 90vw; height: 100vh; background: var(--bg-card); z-index: 120; box-shadow: -4px 0 18px var(--shadow-lg); transform: translateX(100%); transition: transform 0.28s ease, background-color 0.2s ease; display: flex; flex-direction: column; }
 .timeline-panel.open { transform: translateX(0); }
@@ -306,7 +344,7 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 <header>
 <div class="header-left">
 <button id="menuToggle" class="header-icon-btn" aria-label="Apri menu">☰</button>
-<span class="logo-title">🔷 JobLOG</span>
+<span class="logo-title">🔷 JOBlog</span>
 </div>
 <div class="header-actions">
 <span id="clock">--/--/---- | --:--</span>
@@ -317,7 +355,11 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 </div>
 </header>
 
-<div id="offlineBanner" class="offline-banner hidden">⚠️ Connessione assente. Dati salvati in lettura</div>
+<div id="offlineBanner" class="offline-banner hidden">⚠️ Connessione assente. Dati in sola lettura</div>
+<div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite" aria-hidden="true">
+<span>🔄 Nuova versione disponibile</span>
+<button id="refreshAppBtn" type="button">Aggiorna</button>
+</div>
 
 <div id="menuOverlay" class="menu-overlay hidden"></div>
 <nav id="sideMenu" class="side-menu" aria-hidden="true">
@@ -361,6 +403,15 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 </button>
 </li>
 <li>
+<button id="attachmentsMenuBtn" class="side-menu-item" type="button" data-menu-action>
+<span class="side-menu-item-icon">📎</span>
+<span class="side-menu-item-label">
+<span class="side-menu-item-text">Allegati Progetto</span>
+<span class="side-menu-item-hint">File collegati al progetto attivo</span>
+</span>
+</button>
+</li>
+<li>
 <button class="side-menu-item" type="button" data-menu-action>
 <span class="side-menu-item-icon">�</span>
 <span class="side-menu-item-label">
@@ -378,6 +429,17 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 </span>
 </button>
 </li>
+{% if is_admin %}
+<li>
+<a href="{{ url_for('admin_sessions_page') }}" class="side-menu-item side-menu-link" data-menu-action>
+<span class="side-menu-item-icon">📱</span>
+<span class="side-menu-item-label">
+<span class="side-menu-item-text">Report Sessioni</span>
+<span class="side-menu-item-hint">UI mobile solo Admin</span>
+</span>
+</a>
+</li>
+{% endif %}
 </ul>
 </div>
 <div class="side-menu-section">
@@ -565,6 +627,27 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 </div>
 </div>
 
+<!-- iOS Safari Install Banner -->
+<div id="iosInstallBanner" role="dialog" aria-live="polite" aria-label="Suggerimento installazione iOS" aria-hidden="true">
+<span>
+Installa l'app: premi
+<span class="ios-install-graphic" aria-hidden="true">
+<svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.8">
+<path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="5" y="10" width="14" height="10" rx="2" ry="2" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
+</span>
+e poi Aggiungi alla Home
+<span class="ios-install-graphic" aria-hidden="true">
+<svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="1.8">
+<rect x="3" y="3" width="18" height="18" rx="4" ry="4" />
+<path d="M12 8v8M8 12h8" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
+</span>
+</span>
+<button type="button" aria-label="Chiudi suggerimento">&times;</button>
+</div>
+
 <div id="timelineOverlay" class="timeline-overlay hidden"></div>
 <div id="timelinePanel" class="timeline-panel">
 <div class="timeline-header">
@@ -595,9 +678,65 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 </div>
 
 
-<script src="/static/js/app.js?v=20251119c"></script>
+<div id="attachmentsModal" class="modal">
+<div class="modal-card attachments-modal-card">
+<div id="attachmentsCard" class="attachments-card" aria-live="polite">
+<div class="attachments-card-header">
+<div>
+<span class="attachments-title">📎 Allegati Progetto</span>
+<span class="attachments-subtitle">Scarica e consulta i file collegati al progetto attivo.</span>
+</div>
+<div class="attachments-actions">
+<button id="attachmentsRefreshBtn" class="attachments-refresh-btn" type="button">Aggiorna elenco</button>
+<button id="attachmentsUploadBtn" class="attachments-upload-btn" type="button">➕ Nuovo allegato</button>
+<button id="attachmentsCloseBtn" class="attachments-refresh-btn" type="button">Chiudi</button>
+</div>
+</div>
+<div class="attachments-meta">
+<span id="attachmentsProjectLabel">Nessun progetto attivo</span>
+<span class="attachments-count"><span id="attachmentsCount">0</span> file</span>
+</div>
+<div id="attachmentsLoading" class="attachments-loading hidden">Aggiorno gli allegati...</div>
+<div id="attachmentsGrid" class="attachments-grid hidden"></div>
+<div id="attachmentsEmpty" class="attachments-empty">Carica un progetto per visualizzare gli allegati disponibili.</div>
+</div>
+</div>
+</div>
+
+
+<script>
+window.__INITIAL_ATTACHMENTS__ = {
+project: {{ initial_project|tojson|safe }},
+items: {{ initial_attachments|tojson|safe }}
+};
+</script>
+<script src="{{ static_version('js/app.js') }}"></script>
 <script>
 // PWA Service Worker Registration
+const SW_UPDATE_INTERVAL_MS = 60_000;
+let swUpdateIntervalId = null;
+
+function scheduleServiceWorkerUpdates(registration) {
+    if (!registration || typeof registration.update !== 'function') {
+        return;
+    }
+    const runUpdateCheck = () => {
+        try {
+            const result = registration.update();
+            if (result && typeof result.catch === 'function') {
+                result.catch((error) => console.warn('registration.update fallita', error));
+            }
+        } catch (error) {
+            console.warn('Impossibile forzare l\'update del service worker', error);
+        }
+    };
+    runUpdateCheck();
+    if (swUpdateIntervalId) {
+        clearInterval(swUpdateIntervalId);
+    }
+    swUpdateIntervalId = setInterval(runUpdateCheck, SW_UPDATE_INTERVAL_MS);
+}
+
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
@@ -606,9 +745,8 @@ if ('serviceWorker' in navigator) {
                 if (registration.active && navigator.serviceWorker.controller === null) {
                     registration.active.postMessage({ type: 'claim-clients' });
                 }
-                if (registration.waiting) {
-                    registration.waiting.postMessage({ type: 'claim-clients' });
-                }
+                scheduleServiceWorkerUpdates(registration);
+                monitorServiceWorkerUpdates(registration);
             })
             .catch((error) => {
                 console.log('✗ Service Worker fallito:', error);
@@ -616,11 +754,21 @@ if ('serviceWorker' in navigator) {
     });
 }
 
+window.addEventListener('beforeunload', () => {
+    if (swUpdateIntervalId) {
+        clearInterval(swUpdateIntervalId);
+    }
+});
+
 // PWA Install Prompt
 let deferredPrompt;
 const installPrompt = document.getElementById('installPrompt');
 const installBtn = document.getElementById('installBtn');
 const dismissInstallBtn = document.getElementById('dismissInstallBtn');
+const updateBanner = document.getElementById('updateBanner');
+const refreshAppBtn = document.getElementById('refreshAppBtn');
+let pendingServiceWorker = null;
+let reloadOnControllerChange = false;
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -668,6 +816,105 @@ window.addEventListener('appinstalled', () => {
         installPrompt.classList.add('hidden');
     }
 });
+
+if (refreshAppBtn) {
+    refreshAppBtn.addEventListener('click', () => {
+        hideUpdateBanner();
+        if (pendingServiceWorker) {
+            reloadOnControllerChange = true;
+            pendingServiceWorker.postMessage({ type: 'claim-clients' });
+            pendingServiceWorker = null;
+        } else {
+            window.location.reload();
+        }
+    });
+}
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloadOnControllerChange) {
+            reloadOnControllerChange = false;
+            window.location.reload();
+        }
+    });
+}
+
+function showUpdateAvailable() {
+    if (!updateBanner) {
+        return;
+    }
+    updateBanner.classList.remove('hidden');
+    updateBanner.setAttribute('aria-hidden', 'false');
+}
+
+function hideUpdateBanner() {
+    if (!updateBanner) {
+        return;
+    }
+    updateBanner.classList.add('hidden');
+    updateBanner.setAttribute('aria-hidden', 'true');
+}
+
+function monitorServiceWorkerUpdates(registration) {
+    if (!registration || !navigator.serviceWorker.controller) {
+        return;
+    }
+
+    const handleWaitingWorker = (worker) => {
+        if (!worker || worker.state !== 'installed') {
+            return;
+        }
+        pendingServiceWorker = worker;
+        showUpdateAvailable();
+    };
+
+    if (registration.waiting) {
+        handleWaitingWorker(registration.waiting);
+    }
+
+    const onUpdateFound = () => {
+        const newWorker = registration.installing;
+        if (!newWorker) {
+            return;
+        }
+        newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                handleWaitingWorker(newWorker);
+            }
+        });
+    };
+
+    if (typeof registration.addEventListener === 'function') {
+        registration.addEventListener('updatefound', onUpdateFound);
+    } else {
+        registration.onupdatefound = onUpdateFound;
+    }
+}
+
+// Gentle banner for iOS Safari users (no native beforeinstallprompt event)
+(function () {
+    const STORAGE_KEY = 'ios-install-dismissed';
+    const banner = document.getElementById('iosInstallBanner');
+    if (!banner) return;
+
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    const dismissed = localStorage.getItem(STORAGE_KEY);
+
+    if (!isIOS || isStandalone || dismissed) {
+        return;
+    }
+
+    banner.classList.add('show');
+    banner.setAttribute('aria-hidden', 'false');
+
+    const closeBtn = banner.querySelector('button');
+    closeBtn?.addEventListener('click', () => {
+        banner.classList.remove('show');
+        banner.setAttribute('aria-hidden', 'true');
+        localStorage.setItem(STORAGE_KEY, '1');
+    });
+})();
 </script>
 </body>
 </html>

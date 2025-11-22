@@ -1,0 +1,603 @@
+            <!DOCTYPE html>
+            <html lang="it" data-theme="light">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+                <title>Sessioni Operatori · JobLog</title>
+                <link rel="manifest" href="{{ static_version('manifest.json') }}">
+                <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+                <script>
+                    (function syncThemeWithDashboard() {
+                        const root = document.documentElement;
+                        const stored = localStorage.getItem('joblog-theme');
+                        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                        root.dataset.theme = stored || (prefersDark ? 'dark' : 'light');
+                    })();
+                </script>
+                <style>
+                    :root {
+                        color-scheme: light dark;
+                        --bg: #f4f6fb;
+                        --bg-card: #ffffff;
+                        --text: #0f172a;
+                        --muted: #64748b;
+                        --brand: #2563eb;
+                        --brand-soft: rgba(37, 99, 235, 0.15);
+                        --danger: #dc2626;
+                        --success: #16a34a;
+                        --border: rgba(15, 23, 42, 0.08);
+                        --shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+                    }
+                    [data-theme="dark"] {
+                        --bg: #050816;
+                        --bg-card: #0f172a;
+                        --text: #f8fafc;
+                        --muted: #94a3b8;
+                        --brand: #38bdf8;
+                        --brand-soft: rgba(56, 189, 248, 0.15);
+                        --danger: #f87171;
+                        --success: #4ade80;
+                        --border: rgba(148, 163, 184, 0.18);
+                        --shadow: 0 18px 40px rgba(2, 6, 23, 0.55);
+                    }
+                    * {
+                        box-sizing: border-box;
+                    }
+                    body {
+                        margin: 0;
+                        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                        background: var(--bg);
+                        color: var(--text);
+                        min-height: 100vh;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    header.toolbar {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 12px;
+                        padding: 14px 18px 12px;
+                        background: var(--bg-card);
+                        border-bottom: 1px solid var(--border);
+                        position: sticky;
+                        top: 0;
+                        z-index: 10;
+                    }
+                    .toolbar-title {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 2px;
+                    }
+                    .toolbar-title strong {
+                        font-size: 20px;
+                    }
+                    .toolbar-title small {
+                        color: var(--muted);
+                        font-weight: 600;
+                        font-size: 13px;
+                    }
+                    .toolbar-actions {
+                        display: flex;
+                        gap: 8px;
+                    }
+                    button {
+                        font-family: inherit;
+                    }
+                    .btn {
+                        border: 1px solid var(--border);
+                        background: var(--bg);
+                        color: var(--text);
+                        border-radius: 12px;
+                        padding: 10px 14px;
+                        font-size: 15px;
+                        font-weight: 600;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                        cursor: pointer;
+                        transition: transform 0.15s ease, background 0.2s ease;
+                    }
+                    .btn:active {
+                        transform: scale(0.97);
+                    }
+                    .btn-ghost {
+                        background: transparent;
+                    }
+                    main {
+                        flex: 1;
+                        padding: 20px clamp(14px, 4vw, 36px) 60px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 16px;
+                    }
+                    .filters {
+                        background: var(--bg-card);
+                        border: 1px solid var(--border);
+                        border-radius: 18px;
+                        padding: 16px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 14px;
+                        box-shadow: var(--shadow);
+                    }
+                    .filters-row {
+                        display: flex;
+                        gap: 12px;
+                        flex-wrap: wrap;
+                    }
+                    .filter-field {
+                        flex: 1;
+                        min-width: 140px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                    }
+                    label {
+                        font-size: 12px;
+                        letter-spacing: 0.4px;
+                        text-transform: uppercase;
+                        color: var(--muted);
+                        font-weight: 600;
+                    }
+                    input, select, textarea {
+                        border: 1px solid var(--border);
+                        border-radius: 12px;
+                        background: var(--bg);
+                        color: var(--text);
+                        padding: 10px 12px;
+                        font-size: 15px;
+                    }
+                    textarea {
+                        min-height: 64px;
+                        resize: vertical;
+                    }
+                    .status-banner {
+                        border-radius: 16px;
+                        padding: 13px 16px;
+                        font-size: 14px;
+                        background: var(--brand-soft);
+                        border: 1px solid rgba(37, 99, 235, 0.35);
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                    }
+                    .hidden {
+                        display: none !important;
+                    }
+                    .sessions-list {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 16px;
+                    }
+                    .session-card {
+                        background: var(--bg-card);
+                        border: 1px solid var(--border);
+                        border-radius: 20px;
+                        padding: 16px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        box-shadow: var(--shadow);
+                    }
+                    .session-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 12px;
+                    }
+                    .session-header h3 {
+                        margin: 0;
+                        font-size: 18px;
+                    }
+                    .operator {
+                        font-weight: 700;
+                    }
+                    .session-header small {
+                        color: var(--muted);
+                        font-weight: 600;
+                    }
+                    .session-badges {
+                        display: flex;
+                        gap: 8px;
+                    }
+                    .session-badge {
+                        padding: 4px 10px;
+                        border-radius: 999px;
+                        font-size: 11px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                    }
+                    .session-badge.manual {
+                        background: rgba(59, 130, 246, 0.15);
+                        color: var(--brand);
+                    }
+                    .session-badge.auto {
+                        background: rgba(148, 163, 184, 0.2);
+                        color: var(--muted);
+                    }
+                    .status-chip {
+                        padding: 6px 12px;
+                        border-radius: 999px;
+                        font-size: 12px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                        text-transform: uppercase;
+                    }
+                    .status-running {
+                        background: rgba(251, 191, 36, 0.2);
+                        color: #b45309;
+                    }
+                    [data-theme="dark"] .status-running {
+                        color: #fbbf24;
+                    }
+                    .status-completed {
+                        background: rgba(16, 185, 129, 0.15);
+                        color: #15803d;
+                    }
+                    [data-theme="dark"] .status-completed {
+                        color: var(--success);
+                    }
+                    .session-body {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                        gap: 12px;
+                    }
+                    .session-field {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 4px;
+                        font-size: 13px;
+                        color: var(--muted);
+                    }
+                    .session-value {
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: var(--text);
+                    }
+                    .session-footer {
+                        display: flex;
+                        justify-content: space-between;
+                        gap: 10px;
+                        flex-wrap: wrap;
+                    }
+                    .session-meta {
+                        font-size: 12px;
+                        color: var(--muted);
+                    }
+                    .session-actions {
+                        display: flex;
+                        gap: 8px;
+                    }
+                    .session-actions button {
+                        border-radius: 10px;
+                        padding: 8px 12px;
+                        border: 1px solid var(--border);
+                        background: transparent;
+                        color: var(--text);
+                        font-weight: 600;
+                        cursor: pointer;
+                    }
+                    .session-actions button.edit-btn {
+                        border-color: var(--brand);
+                        color: var(--brand);
+                    }
+                    .session-actions button.delete-btn {
+                        border-color: rgba(220, 38, 38, 0.4);
+                        color: var(--danger);
+                    }
+                    .session-note {
+                        margin: 0;
+                        background: var(--brand-soft);
+                        padding: 10px 12px;
+                        border-radius: 12px;
+                        font-size: 13px;
+                    }
+                    .empty-state {
+                        margin-top: 20px;
+                        border: 1px dashed var(--border);
+                        border-radius: 16px;
+                        padding: 20px;
+                        text-align: center;
+                        color: var(--muted);
+                        font-weight: 600;
+                    }
+                    .fab {
+                        position: fixed;
+                        right: 18px;
+                        bottom: 18px;
+                        border: none;
+                        background: var(--brand);
+                        color: #fff;
+                        border-radius: 999px;
+                        box-shadow: 0 18px 32px rgba(37, 99, 235, 0.35);
+                        padding: 14px 20px;
+                        font-size: 15px;
+                        font-weight: 700;
+                        z-index: 30;
+                    }
+                    .session-sheet {
+                        position: fixed;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        background: var(--bg-card);
+                        border-radius: 20px 20px 0 0;
+                        box-shadow: 0 -18px 40px rgba(15, 23, 42, 0.45);
+                        padding: 20px;
+                        transform: translateY(100%);
+                        transition: transform 0.25s ease;
+                        z-index: 50;
+                    }
+                    .session-sheet.visible {
+                        transform: translateY(0);
+                    }
+                    .sheet-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 16px;
+                    }
+                    .sheet-header h2 {
+                        margin: 0;
+                        font-size: 18px;
+                    }
+                    .sheet-grid {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                    }
+                    .sheet-row {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 12px;
+                    }
+                    .sheet-row .filter-field {
+                        flex: 1;
+                        min-width: 160px;
+                    }
+                    .checkbox-field {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        color: var(--text);
+                        font-weight: 600;
+                        font-size: 14px;
+                    }
+                    .checkbox-field input {
+                        width: auto;
+                    }
+                    .hint-badge {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 18px;
+                        height: 18px;
+                        font-size: 12px;
+                        border-radius: 999px;
+                        border: 1px solid var(--border);
+                        color: var(--brand);
+                        cursor: help;
+                    }
+                    .sheet-actions {
+                        margin-top: 12px;
+                        display: flex;
+                        gap: 10px;
+                    }
+                    .sheet-actions button {
+                        flex: 1;
+                        padding: 12px;
+                        border-radius: 12px;
+                        border: none;
+                        font-weight: 700;
+                        cursor: pointer;
+                    }
+                    .sheet-actions .primary {
+                        background: var(--brand);
+                        color: #fff;
+                    }
+                    .sheet-actions .secondary {
+                        background: var(--bg);
+                        border: 1px solid var(--border);
+                        color: var(--text);
+                    }
+                    .sheet-overlay {
+                        position: fixed;
+                        inset: 0;
+                        background: rgba(15, 23, 42, 0.45);
+                        backdrop-filter: blur(2px);
+                        z-index: 40;
+                        opacity: 0;
+                        pointer-events: none;
+                        transition: opacity 0.25s ease;
+                    }
+                    .sheet-overlay.visible {
+                        opacity: 1;
+                        pointer-events: auto;
+                    }
+                    .toast {
+                        position: fixed;
+                        left: 50%;
+                        bottom: 30px;
+                        transform: translateX(-50%);
+                        background: var(--bg-card);
+                        border: 1px solid var(--border);
+                        border-radius: 14px;
+                        padding: 10px 18px;
+                        box-shadow: var(--shadow);
+                        z-index: 60;
+                        font-weight: 600;
+                        transition: opacity 0.2s ease;
+                    }
+                    .toast[data-tone="danger"] {
+                        border-color: rgba(220, 38, 38, 0.45);
+                        color: var(--danger);
+                    }
+                    .toast[data-tone="success"] {
+                        border-color: rgba(22, 163, 74, 0.45);
+                        color: var(--success);
+                    }
+                    @media (max-width: 640px) {
+                        header.toolbar {
+                            flex-direction: column;
+                            align-items: flex-start;
+                        }
+                        .toolbar-actions {
+                            width: 100%;
+                            justify-content: flex-end;
+                        }
+                        .filters-row {
+                            flex-direction: column;
+                        }
+                        .sheet-row {
+                            flex-direction: column;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+            <header class="toolbar">
+                <button id="backHome" class="btn" type="button">⬅ Dashboard</button>
+                <div class="toolbar-title">
+                    <strong>Sessioni operatori</strong>
+                    <small>Accesso Admin • Mobile</small>
+                </div>
+                <div class="toolbar-actions">
+                    <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Inverti tema">☀️</button>
+                    <button id="refreshBtn" class="btn" type="button">↻</button>
+                </div>
+            </header>
+            <main>
+                <section class="filters">
+                    <div class="filters-row">
+                        <div class="filter-field">
+                            <label for="filterStart">Dal</label>
+                            <input type="date" id="filterStart" />
+                        </div>
+                        <div class="filter-field">
+                            <label for="filterEnd">Al</label>
+                            <input type="date" id="filterEnd" />
+                        </div>
+                    </div>
+                    <div class="filters-row">
+                        <div class="filter-field" style="flex:2;">
+                            <label for="filterSearch">Filtro rapido</label>
+                            <input type="search" id="filterSearch" placeholder="Operatore o attività" />
+                        </div>
+                        <div class="filter-field">
+                            <label for="filterLimit">Risultati</label>
+                            <select id="filterLimit">
+                                <option value="50">50</option>
+                                <option value="100" selected>100</option>
+                                <option value="200">200</option>
+                                <option value="500">500</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="statusBanner" class="status-banner hidden"></section>
+                <section id="sessionsList" class="sessions-list"></section>
+                <div id="emptyState" class="empty-state hidden">Nessuna sessione trovata per i filtri selezionati.</div>
+            </main>
+
+            <button id="addSessionBtn" class="fab" type="button">＋ Nuova sessione</button>
+
+            <div id="sheetOverlay" class="sheet-overlay hidden"></div>
+            <section id="sessionSheet" class="session-sheet hidden" role="dialog" aria-modal="true">
+                <div class="sheet-header">
+                    <h2 id="sheetTitle">Nuova sessione</h2>
+                    <button id="closeSheetBtn" class="btn btn-ghost" type="button">✕</button>
+                </div>
+                <form id="sessionForm">
+                    <input type="hidden" id="overrideId" />
+                    <div class="sheet-grid">
+                        <div class="sheet-row">
+                            <div class="filter-field">
+                                <label for="formMemberKey">ID Operatore *</label>
+                                <input type="text" id="formMemberKey" required />
+                            </div>
+                            <div class="filter-field">
+                                <label for="formOperator">Nome Operatore</label>
+                                <input type="text" id="formOperator" required />
+                            </div>
+                        </div>
+                        <div class="sheet-row">
+                            <div class="filter-field">
+                                <label for="formActivityId">ID Attività *</label>
+                                <input type="text" id="formActivityId" required />
+                            </div>
+                            <div class="filter-field">
+                                <label for="formActivityLabel">Descrizione attività</label>
+                                <input type="text" id="formActivityLabel" />
+                            </div>
+                        </div>
+                        <div class="sheet-row">
+                            <div class="filter-field">
+                                <label for="formStart">Inizio *</label>
+                                <input type="datetime-local" id="formStart" required />
+                            </div>
+                            <div class="filter-field">
+                                <label for="formEnd">Fine</label>
+                                <input type="datetime-local" id="formEnd" />
+                            </div>
+                        </div>
+                        <div class="sheet-row">
+                            <div class="filter-field">
+                                <label for="formDuration">Durata netta (min)</label>
+                                <input type="number" id="formDuration" min="0" step="1" />
+                            </div>
+                            <div class="filter-field">
+                                <label for="formPause">Tempo pausa (min)</label>
+                                <input type="number" id="formPause" min="0" step="1" />
+                            </div>
+                        </div>
+                        <div class="sheet-row">
+                            <div class="filter-field">
+                                <label for="formPauseStart">Inizio pausa</label>
+                                <input type="datetime-local" id="formPauseStart" />
+                            </div>
+                            <div class="filter-field">
+                                <label for="formPauseEnd">Fine pausa</label>
+                                <input type="datetime-local" id="formPauseEnd" />
+                            </div>
+                        </div>
+                        <div class="sheet-row">
+                            <div class="filter-field">
+                                <label class="checkbox-field" for="formManualEntry">
+                                    <input type="checkbox" id="formManualEntry" />
+                                    <span>
+                                        Inserimento manuale
+                                        <span class="hint-badge" title="Lascia attivo per registrare sessioni create da te. Disattivalo solo quando stai correggendo una sessione già esistente così questa sostituisce il dato originale.">?</span>
+                                    </span>
+                                </label>
+                                <small style="color:var(--muted);">Quando è disattivo usiamo i campi fonte per rimpiazzare il log originale.</small>
+                            </div>
+                        </div>
+                        <div class="sheet-row">
+                            <div class="filter-field" style="flex:1;">
+                                <label for="formNotes">Note</label>
+                                <textarea id="formNotes" placeholder="Opzionale"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sheet-actions">
+                        <button type="button" id="deleteSessionBtn" class="secondary hidden">Elimina</button>
+                        <button type="submit" class="primary">Salva</button>
+                    </div>
+                </form>
+            </section>
+
+            <div id="toast" class="toast hidden"></div>
+
+            <script>
+                window.__ADMIN_SESSION_CONTEXT__ = {
+                    refreshUrl: "{{ url_for('api_admin_sessions') }}",
+                    saveUrl: "{{ url_for('api_admin_sessions_save') }}",
+                    deleteUrlTemplate: "{{ url_for('api_admin_sessions_delete', override_id=0) }}".replace(/0$/, ''),
+                    homeUrl: "{{ url_for('home') }}"
+                };
+            </script>
+            <script type="module" src="{{ static_version('js/admin_sessions.js') }}"></script>
+            </body>
+            </html>

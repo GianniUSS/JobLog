@@ -24,7 +24,7 @@ const activityTotalValues = new Map();
 const clientElapsedState = new Map();
 const seenActivityIds = new Set();
 const ACTIVITY_DELAY_GRACE_MS = 0;
-const APP_RELEASE = "v2025.11.20a";
+const APP_RELEASE = "v2025.11.22f";
 let menuOpen = false;
 let feedbackContext = null;
 let feedbackToolbarWasVisible = false;
@@ -36,6 +36,20 @@ let pushNotificationsLoading = false;
 let pushNotificationsModalOpen = false;
 let lastKnownState = null;
 let teamCollapsed = true;
+const initialAttachmentsPayload = (typeof window !== "undefined" && window.__INITIAL_ATTACHMENTS__) || {};
+const attachmentsState = {
+    project: initialAttachmentsPayload && initialAttachmentsPayload.project ? initialAttachmentsPayload.project : null,
+    items:
+        initialAttachmentsPayload && Array.isArray(initialAttachmentsPayload.items)
+            ? initialAttachmentsPayload.items
+            : [],
+    loading: false,
+};
+let attachmentsInitialized = Boolean(attachmentsState.project);
+if (attachmentsState.project && attachmentsState.items.length > 0) {
+    attachmentsInitialized = true;
+}
+let attachmentsModalOpen = false;
 const pushState = {
     supported: typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && typeof Notification !== "undefined",
     configured: false,
@@ -486,6 +500,336 @@ function showPopup(message) {
     node.textContent = message;
     node.classList.add("show");
     setTimeout(() => node.classList.remove("show"), POPUP_DISPLAY_MS);
+}
+
+function formatAttachmentSize(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "";
+    }
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let unitIndex = 0;
+    let normalized = value;
+    while (normalized >= 1024 && unitIndex < units.length - 1) {
+        normalized /= 1024;
+        unitIndex += 1;
+    }
+    const formatted = normalized >= 10 ? normalized.toFixed(0) : normalized.toFixed(1);
+    return `${formatted} ${units[unitIndex]}`;
+}
+
+function formatAttachmentTimestamp(value) {
+    if (!value) {
+        return "";
+    }
+    let date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) {
+            date = new Date(numeric);
+        }
+    }
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+    const dateLabel = date.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const timeLabel = date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+    return `${dateLabel} · ${timeLabel}`;
+}
+
+function getAttachmentIcon(type) {
+    const slug = String(type || "").toUpperCase();
+    if (!slug) {
+        return "📎";
+    }
+    if (slug.includes("PDF")) {
+        return "📄";
+    }
+    if (["JPG", "JPEG", "PNG", "GIF", "SVG", "WEBP", "BMP"].includes(slug)) {
+        return "🖼️";
+    }
+    if (["XLS", "XLSX", "CSV", "ODS"].includes(slug)) {
+        return "📊";
+    }
+    if (["DOC", "DOCX", "TXT", "RTF"].includes(slug)) {
+        return "📝";
+    }
+    if (["MP4", "MOV", "AVI", "MKV"].includes(slug)) {
+        return "🎬";
+    }
+    if (["MP3", "WAV", "AAC", "M4A", "OGG"].includes(slug)) {
+        return "🎧";
+    }
+    if (["ZIP", "RAR", "7Z", "TAR"].includes(slug)) {
+        return "🗜️";
+    }
+    return "📎";
+}
+
+function openAttachment(item) {
+    if (!item) {
+        return;
+    }
+    const target = item.preview_url || item.url;
+    if (!target) {
+        showPopup("⚠️ Link non disponibile");
+        return;
+    }
+    window.open(target, "_blank", "noopener");
+}
+
+function downloadAttachment(item) {
+    if (!item) {
+        return;
+    }
+    const target = item.url || item.preview_url;
+    if (!target) {
+        showPopup("⚠️ Download non disponibile");
+        return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = target;
+    anchor.target = "_blank";
+    anchor.rel = "noopener";
+    anchor.download = (item.name || "allegato").replace(/\s+/g, "_");
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+}
+
+function renderAttachments() {
+    const card = document.getElementById("attachmentsCard");
+    const grid = document.getElementById("attachmentsGrid");
+    const emptyState = document.getElementById("attachmentsEmpty");
+    const countNode = document.getElementById("attachmentsCount");
+    const projectLabel = document.getElementById("attachmentsProjectLabel");
+    const loadingNode = document.getElementById("attachmentsLoading");
+    const refreshBtn = document.getElementById("attachmentsRefreshBtn");
+    const uploadBtn = document.getElementById("attachmentsUploadBtn");
+    if (!card) {
+        return;
+    }
+    card.classList.remove("hidden");
+    const activeProject = attachmentsState.project;
+    if (projectLabel) {
+        if (activeProject && (activeProject.code || activeProject.name)) {
+            const { code, name } = activeProject;
+            projectLabel.textContent = code && name ? `${code} · ${name}` : name || code;
+        } else {
+            projectLabel.textContent = "Nessun progetto attivo";
+        }
+    }
+    if (countNode) {
+        countNode.textContent = attachmentsState.items.length;
+    }
+    const hasProject = Boolean(activeProject);
+    if (refreshBtn) {
+        refreshBtn.disabled = !hasProject || attachmentsState.loading;
+    }
+    if (uploadBtn) {
+        uploadBtn.disabled = !hasProject;
+    }
+    if (loadingNode) {
+        loadingNode.classList.toggle("hidden", !attachmentsState.loading);
+    }
+    if (!grid || !emptyState) {
+        return;
+    }
+    grid.innerHTML = "";
+    if (!activeProject) {
+        grid.classList.add("hidden");
+        emptyState.classList.remove("hidden");
+        emptyState.textContent = "Carica un progetto per visualizzare gli allegati disponibili.";
+        return;
+    }
+    if (!attachmentsState.items.length) {
+        grid.classList.add("hidden");
+        emptyState.classList.remove("hidden");
+        emptyState.textContent = attachmentsState.loading
+            ? "Sto recuperando gli allegati dal server..."
+            : "Nessun allegato disponibile per questo progetto.";
+        return;
+    }
+    grid.classList.remove("hidden");
+    emptyState.classList.add("hidden");
+    const fragment = document.createDocumentFragment();
+    attachmentsState.items.forEach((item) => {
+        const cardNode = document.createElement("div");
+        cardNode.className = "attachment-card";
+
+        const icon = document.createElement("div");
+        icon.className = "attachment-icon";
+        icon.textContent = getAttachmentIcon(item.type || item.extension);
+        cardNode.appendChild(icon);
+
+        const details = document.createElement("div");
+        details.className = "attachment-details";
+        const nameNode = document.createElement("div");
+        nameNode.className = "attachment-name";
+        nameNode.textContent = item.name || `Allegato ${item.id || ""}`;
+        details.appendChild(nameNode);
+
+        const meta = document.createElement("div");
+        meta.className = "attachment-meta";
+        const parts = [];
+        if (item.type) {
+            parts.push(item.type);
+        }
+        const sizeLabel = formatAttachmentSize(item.size);
+        if (sizeLabel) {
+            parts.push(sizeLabel);
+        }
+        const dateLabel = formatAttachmentTimestamp(item.created);
+        if (dateLabel) {
+            parts.push(dateLabel);
+        }
+        meta.textContent = parts.join(" · ");
+        details.appendChild(meta);
+
+        cardNode.appendChild(details);
+
+        const actions = document.createElement("div");
+        actions.className = "attachment-actions";
+
+        const openBtn = document.createElement("button");
+        openBtn.type = "button";
+        openBtn.className = "attachment-action";
+        openBtn.textContent = "Apri";
+        openBtn.disabled = !item.url && !item.preview_url;
+        openBtn.addEventListener("click", () => openAttachment(item));
+        actions.appendChild(openBtn);
+
+        const downloadBtn = document.createElement("button");
+        downloadBtn.type = "button";
+        downloadBtn.className = "attachment-action download";
+        downloadBtn.textContent = "Download";
+        downloadBtn.disabled = !item.url;
+        downloadBtn.addEventListener("click", () => downloadAttachment(item));
+        actions.appendChild(downloadBtn);
+
+        cardNode.appendChild(actions);
+        fragment.appendChild(cardNode);
+    });
+    grid.appendChild(fragment);
+}
+
+function openAttachmentsModal(options) {
+    const modal = document.getElementById("attachmentsModal");
+    if (!modal || attachmentsModalOpen) {
+        if (attachmentsModalOpen) {
+            renderAttachments();
+        }
+        return;
+    }
+    attachmentsModalOpen = true;
+    modal.style.display = "flex";
+    markBodyModalOpen();
+    renderAttachments();
+    const needsFetch = attachmentsState.project && !attachmentsState.items.length && !attachmentsState.loading;
+    const silent = !(options && options.forceToast);
+    if (needsFetch) {
+        fetchProjectAttachments({ silent });
+    }
+}
+
+function closeAttachmentsModal() {
+    const modal = document.getElementById("attachmentsModal");
+    if (!modal) {
+        return;
+    }
+    attachmentsModalOpen = false;
+    modal.style.display = "none";
+    releaseBodyModalState();
+}
+
+async function fetchProjectAttachments(options) {
+    const settings = options || {};
+    const silent = Boolean(settings.silent);
+    const refreshBtn = document.getElementById("attachmentsRefreshBtn");
+    if (refreshBtn && !refreshBtn.dataset.label) {
+        refreshBtn.dataset.label = refreshBtn.textContent || "Aggiorna";
+    }
+    const currentCode = attachmentsState.project && attachmentsState.project.code;
+    if (!currentCode) {
+        attachmentsState.project = null;
+        attachmentsState.items = [];
+        attachmentsInitialized = false;
+        renderAttachments();
+        if (!silent) {
+            showPopup("⚠️ Nessun progetto attivo");
+        }
+        return;
+    }
+    attachmentsState.loading = true;
+    if (refreshBtn && !silent) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Aggiorno...";
+    }
+    renderAttachments();
+    try {
+        const data = await fetchJson("/api/project/attachments");
+        const project = data && data.project ? data.project : attachmentsState.project;
+        attachmentsState.project = project || null;
+        attachmentsState.items = data && Array.isArray(data.attachments) ? data.attachments : [];
+        attachmentsInitialized = Boolean(attachmentsState.project);
+        renderAttachments();
+        if (!silent) {
+            showPopup("📎 Allegati aggiornati");
+        }
+    } catch (error) {
+        console.warn("fetchProjectAttachments", error);
+        if (!silent) {
+            showPopup("⚠️ Impossibile aggiornare gli allegati");
+        }
+    } finally {
+        attachmentsState.loading = false;
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = refreshBtn.dataset.label || "Aggiorna";
+        }
+        renderAttachments();
+    }
+}
+
+function syncAttachmentsProject(project) {
+    const nextCode = project && project.code ? String(project.code) : "";
+    const currentCode = attachmentsState.project && attachmentsState.project.code ? String(attachmentsState.project.code) : "";
+    if (!nextCode) {
+        attachmentsState.project = null;
+        attachmentsState.items = [];
+        attachmentsInitialized = false;
+        renderAttachments();
+        if (attachmentsModalOpen) {
+            closeAttachmentsModal();
+        }
+        return;
+    }
+    attachmentsState.project = project;
+    const changed = currentCode !== nextCode;
+    if (changed) {
+        attachmentsState.items = [];
+        attachmentsInitialized = true;
+        renderAttachments();
+        fetchProjectAttachments({ silent: true });
+        return;
+    }
+    if (!attachmentsInitialized) {
+        attachmentsInitialized = true;
+        renderAttachments();
+        if (!attachmentsState.items.length) {
+            fetchProjectAttachments({ silent: true });
+        }
+        return;
+    }
+    renderAttachments();
+}
+
+function handleAttachmentUpload() {
+    if (!attachmentsState.project) {
+        showPopup("⚠️ Carica prima un progetto");
+        return;
+    }
+    showPopup("🚧 Upload allegati in arrivo");
 }
 
 const STORAGE_AVAILABLE = (() => {
@@ -1332,6 +1676,12 @@ function closeMenu() {
 
 function toggleMenu() {
     setMenuVisibility(!menuOpen);
+}
+
+function forceCloseOverlays() {
+    // Reset any dimming layers that might linger after navigation/back-forward cache restores.
+    closeMenu();
+    closeTimeline();
 }
 
 function openPushNotificationsModal() {
@@ -2530,6 +2880,13 @@ function resetProjectStateUI() {
     suppressSelectionRestore = false;
     setProjectVisibility(false);
     setProjectLabel(null);
+    attachmentsState.project = null;
+    attachmentsState.items = [];
+    attachmentsInitialized = false;
+    renderAttachments();
+    if (attachmentsModalOpen) {
+        closeAttachmentsModal();
+    }
     eventsCache = [];
     renderEvents([]);
     updateToggleButton();
@@ -2598,6 +2955,7 @@ function applyState(state) {
     allPaused = state.allPaused;
     setProjectVisibility(hasProject);
     setProjectLabel(state.project || null);
+    syncAttachmentsProject(state.project || null);
     updateToggleButton();
     updateSelectionToolbar();
     refreshTotalRunningTimeDisplay();
@@ -3208,6 +3566,11 @@ function bindUI() {
     const pushNotificationsModal = document.getElementById("pushNotificationsModal");
     const teamSelectBtn = document.getElementById("teamSelectBtn");
     const teamCollapseBtn = document.getElementById("teamCollapseBtn");
+    const attachmentsMenuBtn = document.getElementById("attachmentsMenuBtn");
+    const attachmentsRefreshBtn = document.getElementById("attachmentsRefreshBtn");
+    const attachmentsUploadBtn = document.getElementById("attachmentsUploadBtn");
+    const attachmentsCloseBtn = document.getElementById("attachmentsCloseBtn");
+    const attachmentsModal = document.getElementById("attachmentsModal");
 
     if (startAllBtn) {
         startAllBtn.addEventListener("click", async () => {
@@ -3309,6 +3672,26 @@ function bindUI() {
 
     if (closePushNotificationsBtn) {
         closePushNotificationsBtn.addEventListener("click", closePushNotificationsModal);
+    }
+
+    if (attachmentsMenuBtn) {
+        attachmentsMenuBtn.addEventListener("click", () => {
+            closeMenu();
+            openAttachmentsModal({ forceToast: false });
+        });
+    }
+
+    if (attachmentsRefreshBtn) {
+        attachmentsRefreshBtn.dataset.label = attachmentsRefreshBtn.textContent || "Aggiorna";
+        attachmentsRefreshBtn.addEventListener("click", () => fetchProjectAttachments({ silent: false }));
+    }
+
+    if (attachmentsUploadBtn) {
+        attachmentsUploadBtn.addEventListener("click", handleAttachmentUpload);
+    }
+
+    if (attachmentsCloseBtn) {
+        attachmentsCloseBtn.addEventListener("click", closeAttachmentsModal);
     }
 
     if (menuToggleBtn) {
@@ -3442,6 +3825,14 @@ function bindUI() {
         });
     }
 
+    if (attachmentsModal) {
+        attachmentsModal.addEventListener("click", (event) => {
+            if (event.target === attachmentsModal) {
+                closeAttachmentsModal();
+            }
+        });
+    }
+
     if (teamSelectBtn) {
         teamSelectBtn.addEventListener("click", toggleTeamSelection);
     }
@@ -3460,6 +3851,7 @@ function bindUI() {
             closeMenu();
             closeExportModal();
             closePushNotificationsModal();
+            closeAttachmentsModal();
         }
     });
 
@@ -3481,9 +3873,11 @@ function updateClock() {
 async function init() {
     initTheme();
     bindUI();
+    forceCloseOverlays();
     setTeamCollapsed(true);
     setProjectDefaultDate();
     hydrateInitialContentFromCache();
+    renderAttachments();
     setOfflineMode(offlineMode, { silent: true });
     const releaseTarget = document.getElementById("menuReleaseVersion");
     if (releaseTarget) {
@@ -3501,6 +3895,14 @@ async function init() {
 
 window.addEventListener('online', handleOnlineEvent);
 window.addEventListener('offline', handleOfflineEvent);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        forceCloseOverlays();
+    }
+});
+window.addEventListener('pageshow', () => {
+    forceCloseOverlays();
+});
 window.addEventListener("DOMContentLoaded", init);
 window.addEventListener("resize", () => {
     syncSelectionToolbarOffset();

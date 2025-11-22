@@ -16,17 +16,27 @@ python app.py
 L'applicazione espone l'interfaccia su `http://localhost:5000`. In modalità debug il reloader è disattivato: riavvia `python app.py` dopo ogni modifica server-side.
 
 ## Gestione utenti
+Gli account vengono salvati nella tabella `app_users` del database configurato (SQLite di default o MySQL/MariaDB se abilitato). Lo script `manage_users.py` utilizza automaticamente le stesse impostazioni definite in `config.json` o tramite variabili `JOBLOG_DB_*`.
+
 - Elenca utenti: `python manage_users.py list`
-- Crea un account: `python manage_users.py create USERNAME --name "Nome Cognome"`
+- Crea un account: `python manage_users.py create USERNAME --name "Nome Cognome" --role supervisor`
 - Aggiorna password: `python manage_users.py set-password USERNAME`
+- Cambia ruolo: `python manage_users.py set-role USERNAME admin`
+- Abilita/Disabilita: `python manage_users.py activate USERNAME` / `python manage_users.py deactivate USERNAME`
 - Elimina account: `python manage_users.py delete USERNAME`
 
-Di default gli utenti vengono salvati in `users.json` con password hash SHA-256.
+I ruoli supportati sono `user`, `supervisor` e `admin`. Durante la creazione puoi specificare `--role` (default `user`) ed eventualmente `--inactive` per creare un account disabilitato. Il vecchio `users.json` resta solo come fonte legacy per la migrazione automatica alla prima esecuzione: tutti gli aggiornamenti successivi devono passare dallo script e dal database.
+
+## Dashboard sessioni (solo Admin)
+- La UI mobile `/admin/sessions` è accessibile esclusivamente agli utenti con ruolo `admin` e mostra in tempo reale le sessioni calcolate dalla stessa logica usata per l'export.
+- I dati sono forniti dall'endpoint `GET /api/admin/sessions`, che accetta filtri `start_date`, `end_date`, `search`, `member`, `activity_id` e `limit`.
+- L'interfaccia è ottimizzata per Android: card responsive, pulsanti touch-friendly e possibilità di filtrare rapidamente operatori/attività.
+- Dal menu laterale della dashboard principale compare automaticamente il link "Report Sessioni" quando l'utente autenticato possiede il ruolo amministratore.
 
 ## Autenticazione e sessioni
 - L'accesso all'app è protetto: autenticati dalla UI su `/login` usando le credenziali create con `manage_users.py`.
-- Dopo il login, la sessione resta valida 24 ore (cookie `SESSION_COOKIE_SAMESITE=Lax`, `HTTPOnly`).
-- Se la sessione scade o il cookie viene rimosso, tutte le chiamate API ricevono `401`: il frontend blocca il polling, mostra un avviso di sessione scaduta e reindirizza automaticamente alla schermata di login.
+- Dopo il login, la sessione HTTP resta valida 24 ore e viene salvata lato server nella directory `.flask_session` (o nel database se usi MySQL). In parallelo viene creato un cookie `joblog_auth` (HttpOnly, SameSite Lax) che permette di ripristinare automaticamente l'utente dopo un riavvio del backend.
+- Se anche il cookie persistente viene rimosso, tutte le chiamate API ricevono `401`: il frontend blocca il polling, mostra un avviso di sessione scaduta e reindirizza automaticamente alla schermata di login.
 - Per verificare il comportamento, dal browser puoi cancellare il cookie di sessione (DevTools → Application → Cookies) e tentare un'azione come "⏸️ Pausa selezione": il popup e il redirect confermeranno la gestione corretta dell'assenza di autenticazione.
 
 ## Configurazione database

@@ -188,6 +188,40 @@ class RentmanClient:
         reference = f"/projects/{project_id}"
         return self._get_all("/subprojects", {"project": reference})
 
+    def get_project_files(self, project_id: int) -> List[Dict[str, Any]]:
+        logger.info("Rentman: recupero allegati via /projects/%s/files", project_id)
+        try:
+            result = self._get_all(f"/projects/{project_id}/files")
+            logger.info("Rentman: ricevuti %s items da /projects/%s/files", len(result), project_id)
+            if result:
+                return result
+        except RentmanNotFound:
+            logger.info("Rentman: endpoint /projects/%s/files non disponibile (404)", project_id)
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo /projects/%s/files", exc, project_id)
+
+        logger.info("Rentman: provo fallback /files?itemtype=project&itemid=%s", project_id)
+        fallback_params = {
+            "itemtype": "project",
+            "itemid": project_id,
+        }
+        try:
+            fallback = self._get_all("/files", fallback_params)
+            logger.info(
+                "Rentman: fallback /files ha restituito %s items per il progetto %s",
+                len(fallback),
+                project_id,
+            )
+            return fallback
+        except RentmanNotFound:
+            logger.info("Rentman: endpoint /files non disponibile per fallback allegati")
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo /files fallback per progetto %s", exc, project_id)
+
+        # Se anche il fallback non ritorna nulla, restituiamo lista vuota
+        logger.info("Rentman: nessun allegato trovato per progetto %s", project_id)
+        return []
+
     def get_project_crew_by_function_ids(self, function_ids: Iterable[int]) -> List[Dict[str, Any]]:
         refs = [f"/projectfunctions/{fid}" for fid in function_ids if fid is not None]
         if not refs:

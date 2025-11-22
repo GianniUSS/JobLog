@@ -1,4 +1,4 @@
-const CACHE_NAME = 'joblog-v2025.11.19c';
+const CACHE_NAME = 'joblog-v2025.11.22e';
 const STATIC_CACHE = 'joblog-static-v4';
 const DYNAMIC_CACHE = 'joblog-dynamic-v4';
 const API_CACHE = 'joblog-api-v2';
@@ -37,11 +37,18 @@ self.addEventListener('install', (event) => {
                 console.log('[ServiceWorker] Caching static assets');
                 return cache.addAll(STATIC_ASSETS);
             })
-            .then(() => self.skipWaiting())
+            .then(async () => {
+                //_F Allow immediate activation only on the very first install so updates can stay waiting.
+                const hasActiveWorker = Boolean(self.registration && self.registration.active);
+                if (!hasActiveWorker) {
+                    await self.skipWaiting();
+                }
+            })
     );
 });
-
-// Activate event - cleanup old caches
+//proviamo qui 
+// opure qui
+// Activate event - cleanup old caches   ++  aaaaa a AUTOAGGIORNAMENTO ++
 self.addEventListener('activate', (event) => {
     console.log('[ServiceWorker] Activating...');
     event.waitUntil(

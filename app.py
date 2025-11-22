@@ -12,7 +12,7 @@ import secrets
 import sqlite3
 import time
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from threading import Event, Thread
@@ -27,7 +27,8 @@ except ImportError:  # pragma: no cover - fallback when MySQL client not install
     pymysql_err = None
     DictCursor = None
 
-from flask import Flask, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask_session import Session
 from flask.typing import ResponseReturnValue
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -42,11 +43,46 @@ from rentman_client import (
 )
 
 
+SECRET_FILE = Path(__file__).with_name('.flask_secret')
+
+
+def _load_or_create_secret_key() -> str:
+    override = os.environ.get('FLASK_SECRET_KEY')
+    if override:
+        return override
+    if SECRET_FILE.exists():
+        try:
+            value = SECRET_FILE.read_text(encoding='utf-8').strip()
+            if value:
+                return value
+        except OSError:
+            pass
+    generated = secrets.token_hex(32)
+    try:
+        SECRET_FILE.write_text(generated, encoding='utf-8')
+    except OSError:
+        logging.getLogger(__name__).warning("Impossibile salvare la chiave segreta su %s", SECRET_FILE)
+    return generated
+
+
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+app.secret_key = _load_or_create_secret_key()
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+
+PERSISTENT_SESSION_COOKIE_NAME = os.environ.get('JOBLOG_PERSISTENT_COOKIE_NAME', 'joblog_auth')
+PERSISTENT_SESSION_MAX_AGE = int(os.environ.get('JOBLOG_PERSISTENT_SESSION_MAX_AGE', str(30 * 86400)))
+app.config['PERSISTENT_SESSION_COOKIE_NAME'] = PERSISTENT_SESSION_COOKIE_NAME
+app.config['PERSISTENT_SESSION_MAX_AGE'] = PERSISTENT_SESSION_MAX_AGE
+
+SESSION_STORAGE = Path(__file__).with_name('.flask_session')
+SESSION_STORAGE.mkdir(parents=True, exist_ok=True)
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = str(SESSION_STORAGE)
+app.config['SESSION_FILE_THRESHOLD'] = 1024
+app.config['SESSION_PERMANENT'] = True
+session_manager = Session(app)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,6 +97,21 @@ PROJECTS_FILE = Path(__file__).with_name("projects.json")
 CONFIG_FILE = Path(__file__).with_name("config.json")
 USERS_FILE = Path(__file__).with_name("users.json")
 DEMO_PROJECT_CODE = "1001"
+
+
+def static_version(filename: str) -> str:
+    """Return cache-busted static URL using file mtime as version."""
+    safe_path = filename.lstrip("/")
+    static_folder = app.static_folder or os.path.join(app.root_path, "static")
+    file_path = os.path.join(static_folder, safe_path)
+    try:
+        version = int(os.path.getmtime(file_path))
+    except (OSError, TypeError):
+        version = int(time.time())
+    return url_for("static", filename=safe_path, v=version)
+
+
+app.jinja_env.globals["static_version"] = static_version
 
 MOCK_PROJECTS: Dict[str, Dict[str, Any]] = {
     "1001": {
@@ -177,9 +228,7 @@ class MySQLConnection:
 
     def __init__(self, settings: Dict[str, Any]):
         if pymysql is None or DictCursor is None:
-            raise RuntimeError(
-                "PyMySQL non è installato. Esegui 'pip install PyMySQL' per usare il backend MySQL."
-            )
+              raise RuntimeError("PyMySQL non è installato. Esegui 'pip install PyMySQL' per usare il backend MySQL.")
         self._settings = settings
         self._conn = self._connect_with_autocreate()
 
@@ -200,7 +249,7 @@ class MySQLConnection:
 
     def _connect_with_autocreate(self):
         try:
-            return self._base_connect(include_db=True)
+                return self._base_connect(include_db=True)
         except Exception as exc:  # pragma: no cover - MySQL specific bootstrap
             if pymysql_err is not None and isinstance(exc, pymysql_err.OperationalError):
                 err_code = exc.args[0] if exc.args else None
@@ -279,6 +328,16 @@ LONG_RUNNING_STATE_KEY = "long_running_member_notifications"
 LONG_RUNNING_THRESHOLD_MS = 2 * 60 * 1000  # 2 minuti
 OVERDUE_PUSH_TTL_SECONDS = max(300, int(os.environ.get("JOBLOG_OVERDUE_PUSH_TTL", "3600")))
 
+RUN_STATE_PAUSED = 0
+RUN_STATE_RUNNING = 1
+RUN_STATE_FINISHED = 2
+VALID_RUN_STATES = {RUN_STATE_PAUSED, RUN_STATE_RUNNING, RUN_STATE_FINISHED}
+
+ROLE_USER = "user"
+ROLE_SUPERVISOR = "supervisor"
+ROLE_ADMIN = "admin"
+VALID_USER_ROLES = {ROLE_USER, ROLE_SUPERVISOR, ROLE_ADMIN}
+
 
 # Authentication helpers
 def hash_password(password: str) -> str:
@@ -305,15 +364,324 @@ def compute_initials(value: str) -> str:
     return value[:2].upper()
 
 
-def load_users() -> Dict[str, Dict[str, str]]:
-    """Load users from users.json file."""
+def load_users_file() -> Dict[str, Dict[str, Any]]:
+    """Return the legacy users.json payload (if present) for migrations."""
     if not USERS_FILE.exists():
         return {}
     try:
         with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            payload = json.load(f)
     except Exception:
         return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _normalize_username(value: str) -> str:
+    return value.strip().lower()
+
+
+def _normalize_role(value: Optional[str]) -> str:
+    if not value:
+        return ROLE_USER
+    candidate = value.strip().lower()
+    if candidate in VALID_USER_ROLES:
+        return candidate
+    return ROLE_USER
+
+
+def _role_from_legacy_entry(entry: Mapping[str, Any]) -> str:
+    roles_field = entry.get("roles")
+    candidates: List[str] = []
+    if isinstance(roles_field, str):
+        candidates.append(roles_field)
+    elif isinstance(roles_field, Iterable):
+        for role in roles_field:
+            if isinstance(role, str):
+                candidates.append(role)
+
+    for role in candidates:
+        normalized = role.strip().lower()
+        if normalized == ROLE_ADMIN:
+            return ROLE_ADMIN
+        if normalized == ROLE_SUPERVISOR:
+            return ROLE_SUPERVISOR
+
+    is_admin_flag = entry.get("is_admin")
+    if isinstance(is_admin_flag, bool) and is_admin_flag:
+        return ROLE_ADMIN
+    if isinstance(is_admin_flag, str) and is_admin_flag.strip().lower() in {"1", "true", "yes", "y"}:
+        return ROLE_ADMIN
+    return ROLE_USER
+
+
+def fetch_user_record(db: DatabaseLike, username: str) -> Optional[Mapping[str, Any]]:
+    if not username:
+        return None
+    return db.execute(
+        """
+        SELECT username, password_hash, display_name, full_name, role, is_active
+        FROM app_users
+        WHERE LOWER(username)=LOWER(?)
+        """,
+        (username,),
+    ).fetchone()
+
+
+def _persistent_cookie_name() -> str:
+    return app.config.get('PERSISTENT_SESSION_COOKIE_NAME', PERSISTENT_SESSION_COOKIE_NAME)
+
+
+def _persistent_session_max_age() -> int:
+    value = app.config.get('PERSISTENT_SESSION_MAX_AGE', PERSISTENT_SESSION_MAX_AGE)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return PERSISTENT_SESSION_MAX_AGE
+    return max(300, parsed)
+
+
+def _hash_persistent_token(token: str) -> str:
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def _request_metadata() -> Tuple[Optional[str], Optional[str]]:
+    user_agent = request.headers.get('User-Agent', '').strip()
+    forwarded_for = request.headers.get('X-Forwarded-For', '').strip()
+    if forwarded_for:
+        ip_candidate = forwarded_for.split(',')[0].strip()
+    else:
+        ip_candidate = request.remote_addr or ''
+    user_agent = user_agent or None
+    ip_candidate = ip_candidate or None
+    return user_agent, ip_candidate
+
+
+def _store_persistent_session(username: str) -> Tuple[str, int]:
+    token = secrets.token_urlsafe(48)
+    token_hash = _hash_persistent_token(token)
+    now = now_ms()
+    max_age_ms = _persistent_session_max_age() * 1000
+    expires_ts = now + max_age_ms
+    user_agent, ip_addr = _request_metadata()
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO persistent_sessions(token_hash, username, user_agent, ip_address, created_ts, last_seen_ts, expires_ts)
+        VALUES(?,?,?,?,?,?,?)
+        """,
+        (token_hash, username, user_agent, ip_addr, now, now, expires_ts),
+    )
+    try:
+        db.commit()
+    except Exception:
+        pass
+    return token, expires_ts
+
+
+def _delete_persistent_session(token_value: Optional[str]) -> None:
+    if not token_value:
+        return
+    token_hash = _hash_persistent_token(token_value)
+    db = get_db()
+    db.execute("DELETE FROM persistent_sessions WHERE token_hash=?", (token_hash,))
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+
+def _load_persistent_session(token_value: str) -> Optional[Tuple[str, int]]:
+    if not token_value:
+        return None
+    token_hash = _hash_persistent_token(token_value)
+    db = get_db()
+    row = db.execute(
+        "SELECT username, expires_ts FROM persistent_sessions WHERE token_hash=?",
+        (token_hash,),
+    ).fetchone()
+    if not row:
+        return None
+    username = row.get('username') if isinstance(row, Mapping) else row[0]
+    expires_raw = row.get('expires_ts') if isinstance(row, Mapping) else row[1]
+    expires_ts = _coerce_int(expires_raw) or 0
+    now = now_ms()
+    if expires_ts <= now:
+        db.execute("DELETE FROM persistent_sessions WHERE token_hash=?", (token_hash,))
+        try:
+            db.commit()
+        except Exception:
+            pass
+        return None
+    new_expires = now + _persistent_session_max_age() * 1000
+    db.execute(
+        "UPDATE persistent_sessions SET last_seen_ts=?, expires_ts=? WHERE token_hash=?",
+        (now, new_expires, token_hash),
+    )
+    try:
+        db.commit()
+    except Exception:
+        pass
+    return username, new_expires
+
+
+def _set_persistent_cookie(response, token_value: str, expires_ts: Optional[int] = None) -> None:
+    max_age = _persistent_session_max_age()
+    expires = expires_ts or (now_ms() + max_age * 1000)
+    expires_dt = datetime.fromtimestamp(expires / 1000, tz=timezone.utc)
+    response.set_cookie(
+        _persistent_cookie_name(),
+        token_value,
+        max_age=max_age,
+        expires=expires_dt,
+        httponly=True,
+        secure=app.config.get('SESSION_COOKIE_SECURE', False),
+        samesite=app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+        path='/',
+    )
+
+
+def _apply_user_session(user_row: Mapping[str, Any]) -> None:
+    username = user_row.get('username') or ''
+    display = user_row.get('display_name') or username
+    full_name = user_row.get('full_name') or display
+    role = _normalize_role(user_row.get('role'))
+    session.permanent = True
+    session['user'] = username
+    session['user_display'] = display
+    session['user_name'] = full_name
+    session['user_initials'] = compute_initials(full_name)
+    session['user_role'] = role
+    session['is_admin'] = role == ROLE_ADMIN
+    session['is_supervisor'] = role in {ROLE_SUPERVISOR, ROLE_ADMIN}
+
+
+@app.before_request
+def _restore_persistent_session() -> None:
+    if 'user' in session:
+        return
+    token = request.cookies.get(_persistent_cookie_name())
+    if not token:
+        return
+    loaded = _load_persistent_session(token)
+    if not loaded:
+        return
+    username, new_expires = loaded
+    db = get_db()
+    user_row = fetch_user_record(db, username)
+    if not user_row or not user_row.get('is_active'):
+        _delete_persistent_session(token)
+        return
+    _apply_user_session(user_row)
+    g.persistent_cookie_refresh = (token, new_expires)
+
+
+@app.after_request
+def _refresh_persistent_cookie(response):
+    pending = g.pop('persistent_cookie_refresh', None)
+    if pending:
+        token_value, expires_ts = pending
+        _set_persistent_cookie(response, token_value, expires_ts)
+    return response
+
+
+def migrate_users_file(db: DatabaseLike) -> bool:
+    legacy = load_users_file()
+    if not legacy:
+        return False
+
+    rows: List[tuple] = []
+    now = now_ms()
+    for raw_username, entry in legacy.items():
+        if not isinstance(entry, Mapping):
+            continue
+        username = _normalize_username(str(raw_username))
+        password_hash = entry.get("password") or entry.get("password_hash")
+        if not username or not isinstance(password_hash, str) or not password_hash.strip():
+            continue
+        display = str(entry.get("display") or raw_username).strip() or username
+        full_name = str(entry.get("name") or display).strip() or display
+        role = _role_from_legacy_entry(entry)
+        rows.append((username, password_hash.strip(), display, full_name, role, 1, now, now))
+
+    if not rows:
+        return False
+
+    if DB_VENDOR == "mysql":
+        insert_sql = (
+            "INSERT INTO app_users("
+            "username, password_hash, display_name, full_name, role, is_active, created_ts, updated_ts"
+            ") VALUES(?,?,?,?,?,?,?,?) "
+            "ON DUPLICATE KEY UPDATE username=VALUES(username)"
+        )
+    else:
+        insert_sql = (
+            "INSERT INTO app_users("
+            "username, password_hash, display_name, full_name, role, is_active, created_ts, updated_ts"
+            ") VALUES(?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(username) DO NOTHING"
+        )
+
+    db.executemany(insert_sql, rows)
+    app.logger.info("Importati %s utenti da %s", len(rows), USERS_FILE.name)
+    return True
+
+
+def bootstrap_user_store(db: DatabaseLike) -> None:
+    try:
+        ensure_app_users_table(db)
+    except Exception:
+        app.logger.exception("Impossibile preparare la tabella app_users")
+        return
+
+    try:
+        row = db.execute("SELECT COUNT(*) AS total FROM app_users").fetchone()
+        existing = int(row["total"] if row else 0)
+    except Exception:
+        app.logger.exception("Impossibile verificare il conteggio degli utenti")
+        return
+
+    if existing > 0:
+        return
+
+    try:
+        migrated = migrate_users_file(db)
+    except Exception:
+        app.logger.exception("Migrazione utenti legacy fallita")
+        migrated = False
+
+    if migrated:
+        return
+
+    bootstrap_user = os.environ.get("JOBLOG_BOOTSTRAP_ADMIN_USER", "admin")
+    bootstrap_password = os.environ.get("JOBLOG_BOOTSTRAP_ADMIN_PASSWORD")
+    if not bootstrap_password:
+        app.logger.warning(
+            "Nessun utente configurato: crea un account con 'python manage_users.py create <utente> --role admin'"
+        )
+        return
+
+    now = now_ms()
+    username = _normalize_username(bootstrap_user)
+    db.execute(
+        """
+        INSERT INTO app_users(username, password_hash, display_name, full_name, role, is_active, created_ts, updated_ts)
+        VALUES(?,?,?,?,?,?,?,?)
+        """,
+        (
+            username,
+            hash_password(bootstrap_password),
+            bootstrap_user,
+            bootstrap_user,
+            ROLE_ADMIN,
+            1,
+            now,
+            now,
+        ),
+    )
+    app.logger.warning(
+        "Creato automaticamente l'utente amministratore '%s' dalle variabili JOBLOG_BOOTSTRAP_ADMIN_*",
+        bootstrap_user,
+    )
 
 
 def login_required(f):
@@ -336,6 +704,8 @@ def _is_truthy(value: Any) -> bool:
     if isinstance(value, (int, float)):
         return value != 0
     return False
+
+
 
 
 def _normalize_datetime(value: Any) -> Optional[str]:
@@ -428,6 +798,34 @@ def _coerce_int(value: Any) -> Optional[int]:
     return None
 
 
+def _normalize_running(value: Any, default: int | None = None) -> int:
+    coerced = _coerce_int(value)
+    if coerced in VALID_RUN_STATES:
+        return int(coerced)
+    if default is None:
+        return RUN_STATE_PAUSED
+    return default
+
+
+def _slugify(value: str) -> str:
+    """Crea uno slug alfanumerico minuscolo."""
+
+    normalized = value.strip().lower()
+    if not normalized:
+        return ""
+    buffer: List[str] = []
+    previous_dash = False
+    for char in normalized:
+        if char.isalnum():
+            buffer.append(char)
+            previous_dash = False
+        elif not previous_dash:
+            buffer.append("-")
+            previous_dash = True
+    slug = "".join(buffer).strip("-")
+    return slug
+
+
 def compute_planned_duration_ms(
     plan_start: Optional[str],
     plan_end: Optional[str],
@@ -463,6 +861,34 @@ def load_activity_meta(db: DatabaseLike) -> Dict[str, Any]:
 
 def save_activity_meta(db: DatabaseLike, meta: Mapping[str, Any]) -> None:
     set_app_state(db, "activity_plan_meta", json.dumps(meta))
+
+
+def refresh_activity_meta(db: DatabaseLike) -> Dict[str, Any]:
+    rows = db.execute(
+        "SELECT activity_id, plan_start, plan_end, planned_members, planned_duration_ms FROM activities"
+    ).fetchall()
+    current = load_activity_meta(db)
+    next_meta: Dict[str, Any] = {}
+    for row in rows:
+        activity_id = row["activity_id"]
+        if not activity_id:
+            continue
+        previous = current.get(activity_id)
+        previous_runtime = 0
+        if isinstance(previous, Mapping):
+            try:
+                previous_runtime = int(previous.get("actual_runtime_ms") or 0)
+            except (TypeError, ValueError):
+                previous_runtime = 0
+        next_meta[str(activity_id)] = {
+            "plan_start": row["plan_start"],
+            "plan_end": row["plan_end"],
+            "planned_members": row["planned_members"],
+            "planned_duration_ms": row["planned_duration_ms"],
+            "actual_runtime_ms": previous_runtime,
+        }
+    save_activity_meta(db, next_meta)
+    return next_meta
 
 
 def increment_activity_runtime(meta: Dict[str, Any], activity_id: Optional[str], delta_ms: int) -> bool:
@@ -637,12 +1063,126 @@ def load_config() -> Dict[str, Any]:
     return data
 
 
+APP_USERS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS app_users (
+    username VARCHAR(190) PRIMARY KEY,
+    password_hash VARCHAR(255) NOT NULL,
+    display_name VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255) DEFAULT NULL,
+    role VARCHAR(32) NOT NULL DEFAULT 'user',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+APP_USERS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS app_users (
+    username TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    full_name TEXT,
+    role TEXT NOT NULL DEFAULT 'user',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+)
+"""
+
+SESSION_OVERRIDES_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS activity_session_overrides (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    member_key VARCHAR(255) NOT NULL,
+    member_name VARCHAR(255) NOT NULL,
+    activity_id VARCHAR(255) NOT NULL,
+    activity_label VARCHAR(255) DEFAULT NULL,
+    start_ts BIGINT NOT NULL,
+    end_ts BIGINT DEFAULT NULL,
+    net_ms BIGINT DEFAULT NULL,
+    pause_ms BIGINT DEFAULT NULL,
+    pause_count INT NOT NULL DEFAULT 0,
+    status VARCHAR(32) NOT NULL DEFAULT 'completed',
+    source_member_key VARCHAR(255) DEFAULT NULL,
+    source_activity_id VARCHAR(255) DEFAULT NULL,
+    source_start_ts BIGINT DEFAULT NULL,
+    manual_entry TINYINT(1) NOT NULL DEFAULT 0,
+    note TEXT,
+    created_by VARCHAR(190) DEFAULT NULL,
+    updated_by VARCHAR(190) DEFAULT NULL,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    INDEX idx_session_override_source (source_member_key, source_activity_id, source_start_ts),
+    INDEX idx_session_override_member (member_key),
+    INDEX idx_session_override_activity (activity_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+SESSION_OVERRIDES_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS activity_session_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_key TEXT NOT NULL,
+    member_name TEXT NOT NULL,
+    activity_id TEXT NOT NULL,
+    activity_label TEXT,
+    start_ts INTEGER NOT NULL,
+    end_ts INTEGER,
+    net_ms INTEGER,
+    pause_ms INTEGER,
+    pause_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'completed',
+    source_member_key TEXT,
+    source_activity_id TEXT,
+    source_start_ts INTEGER,
+    manual_entry INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    created_by TEXT,
+    updated_by TEXT,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_override_source ON activity_session_overrides(source_member_key, source_activity_id, source_start_ts);
+CREATE INDEX IF NOT EXISTS idx_session_override_member ON activity_session_overrides(member_key);
+CREATE INDEX IF NOT EXISTS idx_session_override_activity ON activity_session_overrides(activity_id);
+"""
+
+PERSISTENT_SESSIONS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS persistent_sessions (
+    token_hash CHAR(64) PRIMARY KEY,
+    username VARCHAR(190) NOT NULL,
+    user_agent VARCHAR(255) DEFAULT NULL,
+    ip_address VARCHAR(64) DEFAULT NULL,
+    created_ts BIGINT NOT NULL,
+    last_seen_ts BIGINT NOT NULL,
+    expires_ts BIGINT NOT NULL,
+    INDEX idx_persistent_sessions_user (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+PERSISTENT_SESSIONS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS persistent_sessions (
+    token_hash TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    user_agent TEXT,
+    ip_address TEXT,
+    created_ts INTEGER NOT NULL,
+    last_seen_ts INTEGER NOT NULL,
+    expires_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_persistent_sessions_user ON persistent_sessions(username);
+"""
+
+
 MYSQL_SCHEMA_STATEMENTS: List[str] = [
     """
     CREATE TABLE IF NOT EXISTS activities (
         activity_id VARCHAR(255) PRIMARY KEY,
         label VARCHAR(255) NOT NULL,
-        sort_order INT NOT NULL
+        sort_order INT NOT NULL,
+        plan_start TEXT NULL,
+        plan_end TEXT NULL,
+        planned_members INT NULL,
+        planned_duration_ms BIGINT NULL,
+        notes TEXT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
@@ -654,6 +1194,7 @@ MYSQL_SCHEMA_STATEMENTS: List[str] = [
         start_ts BIGINT,
         elapsed_cached BIGINT NOT NULL DEFAULT 0,
         pause_start BIGINT,
+        entered_ts BIGINT,
         CONSTRAINT fk_member_activity
             FOREIGN KEY (activity_id)
             REFERENCES activities(activity_id)
@@ -705,10 +1246,66 @@ MYSQL_SCHEMA_STATEMENTS: List[str] = [
         INDEX idx_push_log_sent (sent_ts)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    APP_USERS_TABLE_MYSQL,
+    SESSION_OVERRIDES_TABLE_MYSQL,
 ]
 
 
 _DATABASE_SETTINGS: Optional[Dict[str, Any]] = None
+
+
+REQUIRED_ACTIVITY_COLUMNS: Dict[str, str] = {
+    "plan_start": "TEXT",
+    "plan_end": "TEXT",
+    "planned_members": "INTEGER",
+    "planned_duration_ms": "BIGINT",
+    "notes": "TEXT",
+}
+
+_ACTIVITY_SCHEMA_READY = False
+
+
+def _get_existing_columns(db: DatabaseLike, table: str) -> Set[str]:
+    columns: Set[str] = set()
+    if DB_VENDOR == "mysql":
+        query = (
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA=? AND TABLE_NAME=?"
+        )
+        rows = db.execute(query, (DATABASE_SETTINGS["name"], table)).fetchall()
+        for row in rows:
+            if isinstance(row, Mapping):
+                columns.add(str(row.get("COLUMN_NAME")))
+            elif isinstance(row, Sequence) and row:
+                columns.add(str(row[0]))
+    else:
+        rows = db.execute(f"PRAGMA table_info({table})").fetchall()
+        for row in rows:
+            if isinstance(row, Mapping):
+                columns.add(str(row.get("name")))
+            elif isinstance(row, Sequence) and len(row) > 1:
+                columns.add(str(row[1]))
+    return {str(col).lower() for col in columns if col}
+
+
+def ensure_activity_schema(db: DatabaseLike) -> None:
+    global _ACTIVITY_SCHEMA_READY
+    if _ACTIVITY_SCHEMA_READY:
+        return
+    try:
+        existing = _get_existing_columns(db, "activities")
+    except Exception:
+        return
+    alter_template = (
+        "ALTER TABLE activities ADD COLUMN {name} {definition}"
+        if DB_VENDOR == "mysql"
+        else "ALTER TABLE activities ADD COLUMN {name} {definition}"
+    )
+    for name, definition in REQUIRED_ACTIVITY_COLUMNS.items():
+        if name.lower() in existing:
+            continue
+        db.execute(alter_template.format(name=name, definition=definition))
+    _ACTIVITY_SCHEMA_READY = True
 
 
 def get_database_settings(force_refresh: bool = False) -> Dict[str, Any]:
@@ -1154,8 +1751,155 @@ def fetch_rentman_plan(project_code: str, project_date: Optional[str] = None) ->
     return plan
 
 
+def _normalize_attachment_name(entry: Mapping[str, Any]) -> str:
+    for key in (
+        "readable_name",
+        "displayname",
+        "friendly_name_without_extension",
+        "name_without_extension",
+    ):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    identifier = entry.get("id")
+    return f"Allegato {identifier}" if identifier is not None else "Allegato"
+
+
+def _normalize_attachment_extension(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    slug = value.strip().lstrip(".")
+    return slug.upper()
+
+
+def fetch_project_attachments(project_code: Optional[str]) -> List[Dict[str, Any]]:
+    attachments: List[Dict[str, Any]] = []
+    code = (project_code or "").strip()
+    if not code:
+        return attachments
+
+    client = get_rentman_client()
+    if not client:
+        return attachments
+
+    try:
+        project = client.find_project(code)
+    except RentmanNotFound:
+        app.logger.warning("Rentman: nessun progetto per allegati %s", code)
+        return attachments
+    except (RentmanAuthError, RentmanAPIError) as exc:
+        app.logger.error("Rentman: errore durante la ricerca degli allegati per %s: %s", code, exc)
+        return attachments
+
+    if not project:
+        app.logger.info("Rentman: progetto %s non trovato, nessun allegato", code)
+        return attachments
+
+    project_id = parse_reference(project.get("id")) or project.get("id")
+    if not isinstance(project_id, int):
+        app.logger.warning("Rentman: allegati non disponibili, id progetto non valido per %s (%s)", code, project.get("id"))
+        return attachments
+
+    try:
+        app.logger.info("Rentman: recupero allegati progetto %s (id=%s)", code, project_id)
+        files = client.get_project_files(project_id)
+        app.logger.info(
+            "Rentman: payload files raw (primi 3)=\n%s",
+            json.dumps(files[:3], ensure_ascii=False, indent=2) if files else "[]",
+        )
+    except RentmanNotFound:
+        app.logger.warning("Rentman: endpoint files non trovato (404) per progetto %s", code)
+        files = []
+    except RentmanAuthError as exc:
+        app.logger.error("Rentman: autenticazione fallita leggendo allegati per %s: %s", code, exc)
+        files = []
+    except RentmanAPIError as exc:
+        app.logger.error(
+            "Rentman: errore leggendo gli allegati del progetto %s: %s",
+            code,
+            exc,
+        )
+        files = []
+
+    app.logger.info("Rentman: ricevuti %s allegati per progetto %s", len(files), code)
+
+    for entry in files:
+        if not isinstance(entry, Mapping):
+            continue
+        attachments.append(
+            {
+                "id": entry.get("id"),
+                "name": _normalize_attachment_name(entry),
+                "created": entry.get("created"),
+                "type": _normalize_attachment_extension(entry.get("extension") or entry.get("type")),
+                "size": entry.get("size"),
+                "url": entry.get("url"),
+                "preview_url": entry.get("proxy_url") or entry.get("url"),
+            }
+        )
+
+    attachments.sort(key=lambda item: str(item.get("name") or "").lower())
+    return attachments
+
+
 def now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def ensure_app_users_table(db: DatabaseLike) -> None:
+    statement = APP_USERS_TABLE_MYSQL if DB_VENDOR == "mysql" else APP_USERS_TABLE_SQLITE
+    cursor = db.execute(statement)
+    try:
+        cursor.close()
+    except AttributeError:
+        pass
+
+
+def ensure_session_override_table(db: DatabaseLike) -> None:
+    if DB_VENDOR == "mysql":
+        cursor = db.execute(SESSION_OVERRIDES_TABLE_MYSQL)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def ensure_persistent_session_table(db: DatabaseLike) -> None:
+    statement = (
+        PERSISTENT_SESSIONS_TABLE_MYSQL if DB_VENDOR == "mysql" else PERSISTENT_SESSIONS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def _last_insert_id(db: DatabaseLike) -> Optional[int]:
+    query = "SELECT LAST_INSERT_ID() AS lid" if DB_VENDOR == "mysql" else "SELECT last_insert_rowid() AS lid"
+    row = db.execute(query).fetchone()
+    if not row:
+        return None
+    value = row.get("lid") if isinstance(row, Mapping) else row[0]
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+        return
+
+    for stmt in SESSION_OVERRIDES_TABLE_SQLITE.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
 
 
 def init_db() -> None:
@@ -1165,7 +1909,12 @@ def init_db() -> None:
             for statement in MYSQL_SCHEMA_STATEMENTS:
                 cursor = db.execute(statement)
                 cursor.close()
+            _ensure_entered_ts_column(db, "BIGINT")
             purge_legacy_seed(db)
+            ensure_app_users_table(db)
+            ensure_session_override_table(db)
+            ensure_persistent_session_table(db)
+            bootstrap_user_store(db)
             db.commit()
         finally:
             db.close()
@@ -1179,7 +1928,12 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id TEXT PRIMARY KEY,
                 label TEXT NOT NULL,
-                sort_order INTEGER NOT NULL
+                sort_order INTEGER NOT NULL,
+                plan_start TEXT,
+                plan_end TEXT,
+                planned_members INTEGER,
+                planned_duration_ms INTEGER,
+                notes TEXT
             );
 
             CREATE TABLE IF NOT EXISTS member_state (
@@ -1190,6 +1944,7 @@ def init_db() -> None:
                 start_ts INTEGER,
                 elapsed_cached INTEGER NOT NULL DEFAULT 0,
                 pause_start INTEGER,
+                entered_ts INTEGER,
                 FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
             );
 
@@ -1235,12 +1990,34 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_push_log_user ON push_notification_log(username);
             CREATE INDEX IF NOT EXISTS idx_push_log_sent ON push_notification_log(sent_ts);
+
+            CREATE TABLE IF NOT EXISTS app_users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+        ensure_app_users_table(db)
+                display_name TEXT NOT NULL,
+                full_name TEXT,
+                role TEXT NOT NULL DEFAULT 'user',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_ts INTEGER NOT NULL,
+                updated_ts INTEGER NOT NULL
+            );
             """
         )
+        _ensure_entered_ts_column(db, "INTEGER")
         purge_legacy_seed(db)
+        ensure_persistent_session_table(db)
+        bootstrap_user_store(db)
         db.commit()
     finally:
         db.close()
+
+
+def _ensure_entered_ts_column(db: DatabaseLike, column_type: str) -> None:
+    try:
+        db.execute(f"ALTER TABLE member_state ADD COLUMN entered_ts {column_type}")
+    except Exception:
+        return
 
 
 def purge_legacy_seed(db: DatabaseLike) -> None:
@@ -1378,12 +2155,45 @@ def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
     project_code = str(plan.get("project_code") or "UNKNOWN")
     project_name = str(plan.get("project_name") or project_code)
 
+    planned_counts: Dict[str, int] = {}
+    for member in team:
+        activity_id = (member.get("activity_id") or "").strip()
+        if activity_id:
+            planned_counts[activity_id] = planned_counts.get(activity_id, 0) + 1
+
+    activity_rows: List[tuple] = []
+    for index, activity in enumerate(activities, start=1):
+        activity_id = activity.get("id")
+        activity_key = (str(activity_id).strip() if activity_id is not None else "")
+        plan_start = activity.get("plan_start")
+        plan_end = activity.get("plan_end")
+        planned_members = planned_counts.get(activity_key, 0)
+        planned_duration_ms = compute_planned_duration_ms(
+            plan_start,
+            plan_end,
+            planned_members,
+        )
+        activity_rows.append(
+            (
+                activity_id,
+                activity.get("label"),
+                index,
+                plan_start,
+                plan_end,
+                planned_members,
+                planned_duration_ms,
+                activity.get("notes"),
+            )
+        )
+
     db.executemany(
-        "INSERT INTO activities(activity_id, label, sort_order) VALUES(?,?,?)",
-        [
-            (activity["id"], activity["label"], index)
-            for index, activity in enumerate(activities, start=1)
-        ],
+        """
+        INSERT INTO activities(
+            activity_id, label, sort_order, plan_start, plan_end,
+            planned_members, planned_duration_ms, notes
+        ) VALUES(?,?,?,?,?,?,?,?)
+        """,
+        activity_rows,
     )
 
     now = now_ms()
@@ -1398,34 +2208,30 @@ def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
         seen_keys.add(key)
         activity_id = (member.get("activity_id") or "").strip() or None
         # Non avviare automaticamente il timer, il capo squadra lo avvierà manualmente
-        running = 0
+        running = RUN_STATE_PAUSED
         start_ts = None
         member_rows.append(
-            (key, name, activity_id, running, start_ts, 0, None)
+            (key, name, activity_id, running, start_ts, 0, None, None)
         )
 
     if member_rows:
         db.executemany(
             """
             INSERT INTO member_state(
-                member_key, member_name, activity_id, running, start_ts, elapsed_cached, pause_start
-            ) VALUES(?,?,?,?,?,?,?)
+                member_key, member_name, activity_id, running, start_ts, elapsed_cached, pause_start, entered_ts
+            ) VALUES(?,?,?,?,?,?,?,?)
             """,
             member_rows,
         )
-
-    planned_counts: Dict[str, int] = {}
-    for member in team:
-        activity_id = (member.get("activity_id") or "").strip()
-        if activity_id:
-            planned_counts[activity_id] = planned_counts.get(activity_id, 0) + 1
 
     activity_meta = {}
     for activity in activities:
         activity_id = activity.get("id")
         if not activity_id:
             continue
-        key = str(activity_id)
+        key = str(activity_id).strip()
+        if not key:
+            continue
         plan_start = activity.get("plan_start")
         plan_end = activity.get("plan_end")
         planned_members = planned_counts.get(key, 0)
@@ -1472,6 +2278,13 @@ def get_db() -> DatabaseLike:
             conn = sqlite3.connect(DATABASE)
             conn.row_factory = sqlite3.Row
             g.db = conn
+        try:
+            ensure_activity_schema(g.db)
+            ensure_app_users_table(g.db)
+            ensure_session_override_table(g.db)
+            ensure_persistent_session_table(g.db)
+        except Exception:
+            app.logger.exception("Impossibile aggiornare lo schema attività")
     return g.db
 
 
@@ -1484,10 +2297,39 @@ def close_db(_: BaseException | None) -> None:
 
 def compute_elapsed(row: Mapping[str, Any], reference: int) -> int:
     elapsed = row["elapsed_cached"] or 0
-    if row["running"]:
+    if row["running"] == RUN_STATE_RUNNING:
         start_ts = row["start_ts"] or reference
         elapsed += max(0, reference - start_ts)
     return elapsed
+
+
+def row_value(row: Mapping[str, Any], key: str) -> Optional[Any]:
+    if hasattr(row, "get"):
+        try:
+            return row.get(key)  # type: ignore[call-arg]
+        except Exception:
+            pass
+    try:
+        return row[key]
+    except Exception:
+        return None
+
+
+def find_last_move_ts(db: DatabaseLike, member_key: str, activity_id: str) -> Optional[int]:
+    if not member_key or not activity_id:
+        return None
+    rows = db.execute(
+        "SELECT ts, details FROM event_log WHERE member_key=? AND kind='move' ORDER BY ts DESC LIMIT 200",
+        (member_key,),
+    ).fetchall()
+    for row in rows:
+        try:
+            details = json.loads(row["details"] or "{}")
+        except Exception:
+            continue
+        if str(details.get("to")) == activity_id:
+            return row["ts"]
+    return None
 
 
 def fetch_member(db: DatabaseLike, member_key: str) -> Optional[Mapping[str, Any]]:
@@ -1599,6 +2441,290 @@ def format_duration_ms(ms: Any) -> Optional[str]:
     return f"{minutes:02}:{seconds:02}"
 
 
+def parse_iso_date(value: Optional[str]) -> Optional[date]:
+    if not value:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    try:
+        return date.fromisoformat(candidate)
+    except ValueError:
+        return None
+
+
+def _normalize_epoch_ms(value: Any) -> Optional[int]:
+    ms = _coerce_int(value)
+    if ms is None:
+        return None
+    return max(0, ms)
+
+
+def _fetch_session_override_rows(
+    db: DatabaseLike,
+    *,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    member_filter: Optional[str] = None,
+    activity_filter: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    clauses: List[str] = []
+    params: List[Any] = []
+
+    if member_filter:
+        clauses.append("LOWER(member_key)=LOWER(?)")
+        params.append(member_filter.strip())
+    if activity_filter:
+        clauses.append("activity_id=?")
+        params.append(activity_filter.strip())
+
+    query = "SELECT * FROM activity_session_overrides"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY start_ts DESC"
+
+    rows = db.execute(query, tuple(params) if params else None).fetchall()
+    results: List[Dict[str, Any]] = []
+    for row in rows:
+        record = dict(row)
+        start_dt = datetime.fromtimestamp(record["start_ts"] / 1000, tz=timezone.utc).date()
+        if start_date and start_dt < start_date:
+            continue
+        if end_date and start_dt > end_date:
+            continue
+        results.append(record)
+    return results
+
+
+def _override_row_to_session(row: Mapping[str, Any]) -> Dict[str, Any]:
+    start_ts = int(row.get("start_ts") or 0)
+    end_ts_value = row.get("end_ts")
+    end_ts = int(end_ts_value) if end_ts_value is not None else start_ts
+    status = str(row.get("status") or "completed").lower()
+    net_ms = max(0, int(row.get("net_ms") or 0))
+    pause_ms = max(0, int(row.get("pause_ms") or 0))
+    pause_count = max(0, int(row.get("pause_count") or 0))
+    manual_entry = bool(row.get("manual_entry"))
+    note = row.get("note") or ""
+
+    payload = {
+        "member_key": row.get("member_key"),
+        "member_name": row.get("member_name"),
+        "activity_id": row.get("activity_id"),
+        "activity_label": row.get("activity_label") or row.get("activity_id"),
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "status": status if status in {"completed", "running"} else "completed",
+        "net_ms": net_ms,
+        "pause_ms": pause_ms,
+        "pause_count": pause_count,
+        "auto_closed": False,
+        "override_id": row.get("id"),
+        "manual_entry": manual_entry,
+        "note": note,
+        "source_member_key": row.get("source_member_key"),
+        "source_activity_id": row.get("source_activity_id"),
+        "source_start_ts": row.get("source_start_ts"),
+    }
+    return payload
+
+
+def build_session_rows(
+    db: DatabaseLike,
+    *,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    member_filter: Optional[str] = None,
+    activity_filter: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    activity_rows = db.execute(
+        "SELECT activity_id, label FROM activities ORDER BY sort_order, label"
+    ).fetchall()
+    activity_map = {row["activity_id"]: row["label"] for row in activity_rows}
+
+    query = (
+        "SELECT el.ts, el.kind, el.member_key, el.details, ms.member_name "
+        "FROM event_log el "
+        "LEFT JOIN member_state ms ON el.member_key = ms.member_key "
+        "WHERE el.kind IN ('move', 'finish_activity', 'pause_member', 'resume_member') "
+        "ORDER BY el.ts ASC"
+    )
+    event_rows = db.execute(query).fetchall()
+
+    member_filter_norm = member_filter.strip().lower() if member_filter else None
+    activity_filter_norm = activity_filter.strip() if activity_filter else None
+
+    sessions: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    for row in event_rows:
+        try:
+            details = json.loads(row["details"]) if row["details"] else {}
+        except json.JSONDecodeError:
+            details = {}
+
+        member_key = row["member_key"]
+        if not member_key:
+            continue
+
+        if member_filter_norm and member_key.lower() != member_filter_norm:
+            continue
+
+        if row["kind"] == "move":
+            activity_id = details.get("to")
+        else:
+            activity_id = details.get("activity_id")
+
+        if not activity_id:
+            continue
+
+        if activity_filter_norm and str(activity_id) != activity_filter_norm:
+            continue
+
+        ts = row["ts"]
+        if ts is None:
+            continue
+        dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        event_date = dt.date()
+        if start_date and event_date < start_date:
+            continue
+        if end_date and event_date > end_date:
+            continue
+
+        member_name = row["member_name"] or details.get("member_name") or "Operatore"
+
+        session_key = (member_key, str(activity_id))
+        if session_key not in sessions:
+            sessions[session_key] = {
+                "member_key": member_key,
+                "member_name": member_name,
+                "activity_id": str(activity_id),
+                "events": [],
+            }
+
+        sessions[session_key]["events"].append(
+            {
+                "ts": ts,
+                "dt": dt,
+                "kind": row["kind"],
+                "details": details,
+            }
+        )
+
+    if not sessions:
+        return []
+
+    now_utc = datetime.now(tz=timezone.utc)
+    results: List[Dict[str, Any]] = []
+
+    for session_key, session in sessions.items():
+        events = sorted(session["events"], key=lambda e: e["ts"])
+        if not events:
+            continue
+
+        member_key, activity_id = session_key
+        member_name = session["member_name"]
+        activity_label = activity_map.get(activity_id, activity_id)
+
+        start_event = None
+        end_event = None
+        pause_events: List[Dict[str, Any]] = []
+
+        for event in events:
+            if event["kind"] == "move" and event["details"].get("to") == activity_id:
+                if not start_event:
+                    start_event = event
+            elif event["kind"] == "pause_member":
+                pause_events.append(event)
+            elif event["kind"] == "finish_activity":
+                end_event = event
+
+        if not start_event:
+            start_event = events[0]
+        if not start_event:
+            continue
+
+        start_dt = start_event["dt"]
+        end_dt = end_event["dt"] if end_event else now_utc
+        total_duration_ms = max(0, int((end_dt - start_dt).total_seconds() * 1000))
+
+        net_duration_ms = total_duration_ms
+        pause_duration_ms = 0
+        if end_event:
+            net_duration_ms = int(end_event["details"].get("duration_ms", total_duration_ms))
+            pause_duration_ms = int(end_event["details"].get("pause_ms", max(0, total_duration_ms - net_duration_ms)))
+        else:
+            pause_duration_ms = max(0, total_duration_ms - net_duration_ms)
+
+        pause_count = len(pause_events)
+        status = "completed" if end_event else "running"
+
+        end_ts_value = int(end_dt.timestamp() * 1000)
+
+        results.append(
+            {
+                "member_key": member_key,
+                "member_name": member_name,
+                "activity_id": activity_id,
+                "activity_label": activity_label,
+                "start_ts": int(start_dt.timestamp() * 1000),
+                "end_ts": end_ts_value,
+                "status": status,
+                "net_ms": max(0, net_duration_ms),
+                "pause_ms": max(0, pause_duration_ms),
+                "pause_count": pause_count,
+                "auto_closed": bool(end_event and end_event["details"].get("auto_close")),
+                "override_id": None,
+                "manual_entry": False,
+                "note": "",
+                "source_member_key": member_key,
+                "source_activity_id": activity_id,
+                "source_start_ts": int(start_dt.timestamp() * 1000),
+            }
+        )
+
+    session_map: Dict[Tuple[str, str, int], Dict[str, Any]] = {
+        (item["member_key"], item["activity_id"], item["start_ts"]): item
+        for item in results
+    }
+
+    overrides = _fetch_session_override_rows(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        member_filter=member_filter,
+        activity_filter=activity_filter,
+    )
+
+    merged: List[Dict[str, Any]] = []
+    replaced_keys: Set[Tuple[str, str, int]] = set()
+
+    for override_row in overrides:
+        payload = _override_row_to_session(override_row)
+        key = None
+        if (
+            payload.get("source_member_key")
+            and payload.get("source_activity_id")
+            and payload.get("source_start_ts")
+        ):
+            key = (
+                str(payload["source_member_key"]),
+                str(payload["source_activity_id"]),
+                int(payload["source_start_ts"]),
+            )
+        if key and key in session_map:
+            replaced_keys.add(key)
+            session_map.pop(key, None)
+        merged.append(payload)
+
+    for key, item in session_map.items():
+        if key in replaced_keys:
+            continue
+        merged.append(item)
+
+    merged.sort(key=lambda item: item["start_ts"], reverse=True)
+    return merged
+
+
 def evaluate_overdue_activities(db: DatabaseLike) -> List[Dict[str, Any]]:
     meta = load_activity_meta(db)
     if not meta:
@@ -1626,7 +2752,7 @@ def evaluate_overdue_activities(db: DatabaseLike) -> List[Dict[str, Any]]:
         ).fetchall()
 
         assigned_count = len(member_rows)
-        running_rows = [row for row in member_rows if row["running"]]
+        running_rows = [row for row in member_rows if row["running"] == RUN_STATE_RUNNING]
         paused_count = sum(1 for row in member_rows if row["pause_start"] is not None)
         running_count = len(running_rows)
 
@@ -1846,8 +2972,9 @@ def evaluate_long_running_members(db: DatabaseLike) -> List[Dict[str, Any]]:
             a.label AS activity_label
         FROM member_state ms
         LEFT JOIN activities a ON a.activity_id = ms.activity_id
-        WHERE ms.running=1 AND ms.start_ts IS NOT NULL
+        WHERE ms.running=? AND ms.start_ts IS NOT NULL
         """,
+        (RUN_STATE_RUNNING,),
     ).fetchall()
 
     now = now_ms()
@@ -2180,42 +3307,68 @@ def api_login():
     if not username_input or not password:
         return jsonify({'success': False, 'error': 'Username e password richiesti'}), 400
     
-    users = load_users()
-    username_key = username_input.lower()
-    user = users.get(username_input) or users.get(username_key)
-    
-    if not user or not verify_password(password, user.get('password', '')):
+    db = get_db()
+    user_row = fetch_user_record(db, username_input)
+    if not user_row:
         return jsonify({'success': False, 'error': 'Credenziali non valide'}), 401
-    
-    display = user.get('display') or username_input
-    full_name = user.get('name') or display
-    session.permanent = True
-    session['user'] = username_key
-    session['user_display'] = display
-    session['user_name'] = full_name
-    session['user_initials'] = compute_initials(full_name)
-    return jsonify({'success': True})
+
+    if not user_row.get('is_active'):
+        return jsonify({'success': False, 'error': 'Account disabilitato'}), 403
+
+    password_hash = user_row.get('password_hash') or ''
+    if not verify_password(password, password_hash):
+        return jsonify({'success': False, 'error': 'Credenziali non valide'}), 401
+
+    username = user_row.get('username') or _normalize_username(username_input)
+    _apply_user_session({**dict(user_row), 'username': username})
+    response = jsonify({'success': True})
+    try:
+        token_value, expires_ts = _store_persistent_session(username)
+    except Exception:
+        app.logger.exception("Impossibile creare una sessione persistente per %s", username)
+    else:
+        _set_persistent_cookie(response, token_value, expires_ts)
+    return response
 
 
 @app.route("/logout")
 def logout():
     """Clear session and redirect to login."""
+    token = request.cookies.get(_persistent_cookie_name())
+    if token:
+        _delete_persistent_session(token)
     session.clear()
-    return redirect(url_for('login'))
+    response = redirect(url_for('login'))
+    response.delete_cookie(_persistent_cookie_name(), path='/')
+    return response
 
 
 @app.route("/")
 def home() -> ResponseReturnValue:
     if 'user' not in session:
         return redirect(url_for('login'))
+    db = get_db()
     display_name = session.get('user_display') or session.get('user_name') or session.get('user')
     primary_name = session.get('user_name') or display_name or session.get('user')
     initials = session.get('user_initials') or compute_initials(primary_name or "")
+    is_admin = bool(session.get('is_admin'))
+    project_code = get_app_state(db, "project_code")
+    project_name = get_app_state(db, "project_name")
+    initial_attachments = fetch_project_attachments(project_code)
+    initial_project = None
+    if project_code:
+        initial_project = {
+            "code": project_code,
+            "name": project_name or project_code,
+        }
     return render_template(
         "index.html",
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+        is_admin=is_admin,
+        initial_attachments=initial_attachments,
+        initial_project=initial_project,
     )
 
 
@@ -2545,15 +3698,18 @@ def api_state():
     paused_keys = {
         row["member_key"]
         for row in db.execute(
-            "SELECT member_key FROM member_state WHERE running=0 AND pause_start IS NOT NULL"
+            "SELECT member_key FROM member_state WHERE running=? AND pause_start IS NOT NULL",
+            (RUN_STATE_PAUSED,)
         ).fetchall()
     }
     for row in members:
+        running_state = int(row["running"])
         member = {
             "member_key": row["member_key"],
             "member_name": row["member_name"],
             "activity_id": row["activity_id"],
-            "running": bool(row["running"]),
+            "running": running_state == RUN_STATE_RUNNING,
+            "running_state": running_state,
             "elapsed": compute_elapsed(row, now),
             "paused": row["member_key"] in paused_keys,
         }
@@ -2651,6 +3807,19 @@ def api_events():
     return jsonify({"events": events})
 
 
+@app.get("/api/project/attachments")
+@login_required
+def api_project_attachments():
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"project": None, "attachments": []})
+
+    project_name = get_app_state(db, "project_name") or project_code
+    attachments = fetch_project_attachments(project_code)
+    return jsonify({"project": {"code": project_code, "name": project_name}, "attachments": attachments})
+
+
 @app.post("/api/load_project")
 @login_required
 def api_load_project():
@@ -2719,10 +3888,10 @@ def api_move():
         db.execute(
             """
             INSERT INTO member_state(
-                member_key, member_name, activity_id, running, start_ts, elapsed_cached, pause_start
-            ) VALUES(?,?,?,?,?,?,?)
+                member_key, member_name, activity_id, running, start_ts, elapsed_cached, pause_start, entered_ts
+            ) VALUES(?,?,?,?,?,?,?,?)
             """,
-            (member_key, member_name, None, 0, None, 0, None),
+            (member_key, member_name, None, 0, None, 0, None, None),
         )
         existing = db.execute(
             "SELECT * FROM member_state WHERE member_key=?",
@@ -2739,32 +3908,66 @@ def api_move():
         return jsonify({"ok": False, "error": "member_state_error"}), 500
 
     previous_activity = existing["activity_id"]
+    previous_entered_ts = row_value(existing, "entered_ts")
     prev_elapsed = compute_elapsed(existing, now)
     normalized_previous = str(previous_activity) if previous_activity else None
     normalized_target = str(activity_id) if activity_id else None
     same_activity = normalized_previous is not None and normalized_previous == normalized_target
 
-    running = 1 if activity_id else 0
+    running = RUN_STATE_RUNNING if activity_id else RUN_STATE_PAUSED
     start_ts = now if running else None
     reset_elapsed = bool(activity_id) and not same_activity
     elapsed_cached = 0 if reset_elapsed else prev_elapsed
+    next_entered_ts = previous_entered_ts
+    if activity_id and not same_activity:
+        next_entered_ts = now
+    if not activity_id:
+        next_entered_ts = None
 
     activity_meta = load_activity_meta(db)
     meta_changed = False
-    if normalized_previous and normalized_previous != normalized_target and prev_elapsed > 0:
-        meta_changed = increment_activity_runtime(activity_meta, normalized_previous, prev_elapsed)
+    auto_closed_previous = False
+    if normalized_previous and normalized_previous != normalized_target:
+        if prev_elapsed > 0:
+            meta_changed = increment_activity_runtime(activity_meta, normalized_previous, prev_elapsed)
+        auto_closed_previous = True
 
     db.execute(
         """
         UPDATE member_state
-        SET activity_id=?, running=?, start_ts=?, elapsed_cached=?, pause_start=NULL
+        SET activity_id=?, running=?, start_ts=?, elapsed_cached=?, pause_start=NULL, entered_ts=?
         WHERE member_key=?
         """,
-        (activity_id, running, start_ts, elapsed_cached, member_key),
+        (activity_id, running, start_ts, elapsed_cached, next_entered_ts, member_key),
     )
 
     if meta_changed:
         save_activity_meta(db, activity_meta)
+
+    if auto_closed_previous:
+        # Calcola il tempo totale partendo dall'ultimo move verso questa attività
+        activity_start_ts = find_last_move_ts(db, member_key, normalized_previous)
+        if activity_start_ts is None:
+            activity_start_ts = previous_entered_ts or existing["start_ts"]
+
+        total_ms = 0
+        if activity_start_ts:
+            total_ms = max(0, now - activity_start_ts)
+        
+        pause_ms = max(0, total_ms - prev_elapsed)
+        
+        finish_payload = {
+            "member_name": existing["member_name"],
+            "activity_id": normalized_previous,
+            "duration_ms": prev_elapsed,
+            "total_ms": total_ms,
+            "pause_ms": pause_ms,
+            "auto_close": True,
+        }
+        db.execute(
+            "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
+            (now, "finish_activity", member_key, json.dumps(finish_payload)),
+        )
 
     move_details = {
         "from": previous_activity,
@@ -2805,8 +4008,8 @@ def api_start_activity():
 
     # Trova tutti i membri assegnati a questa attività con timer non avviato
     rows = db.execute(
-        "SELECT member_key FROM member_state WHERE activity_id=? AND running=0",
-        (activity_id,),
+        "SELECT member_key FROM member_state WHERE activity_id=? AND running=?",
+        (activity_id, RUN_STATE_PAUSED),
     ).fetchall()
 
     if not rows:
@@ -2815,8 +4018,8 @@ def api_start_activity():
     affected = 0
     for row in rows:
         db.execute(
-            "UPDATE member_state SET running=1, start_ts=?, pause_start=NULL WHERE member_key=?",
-            (now, row["member_key"]),
+            "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
+            (RUN_STATE_RUNNING, now, row["member_key"]),
         )
         affected += 1
 
@@ -2854,13 +4057,13 @@ def api_start_member():
     if not member["activity_id"]:
         return jsonify({"ok": False, "error": "no_activity_assigned"}), 400
     
-    if member["running"]:
+    if member["running"] == RUN_STATE_RUNNING:
         return jsonify({"ok": False, "error": "already_running"}), 400
 
     # Avvia il timer
     db.execute(
-        "UPDATE member_state SET running=1, start_ts=?, pause_start=NULL WHERE member_key=?",
-        (now, member_key),
+        "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
+        (RUN_STATE_RUNNING, now, member_key),
     )
 
     db.execute(
@@ -2881,7 +4084,8 @@ def api_start_all():
 
     # Trova tutti i membri con activity_id assegnato ma non in esecuzione
     rows = db.execute(
-        "SELECT member_key FROM member_state WHERE activity_id IS NOT NULL AND running=0"
+        "SELECT member_key FROM member_state WHERE activity_id IS NOT NULL AND running=?",
+        (RUN_STATE_PAUSED,),
     ).fetchall()
 
     if not rows:
@@ -2890,8 +4094,8 @@ def api_start_all():
     affected = 0
     for row in rows:
         db.execute(
-            "UPDATE member_state SET running=1, start_ts=?, pause_start=NULL WHERE member_key=?",
-            (now, row["member_key"]),
+            "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
+            (RUN_STATE_RUNNING, now, row["member_key"]),
         )
         affected += 1
 
@@ -2911,7 +4115,8 @@ def api_pause_all():
     db = get_db()
 
     rows = db.execute(
-        "SELECT member_key, start_ts, elapsed_cached FROM member_state WHERE running=1"
+        "SELECT member_key, start_ts, elapsed_cached FROM member_state WHERE running=?",
+        (RUN_STATE_RUNNING,),
     ).fetchall()
 
     for row in rows:
@@ -2920,10 +4125,10 @@ def api_pause_all():
         db.execute(
             """
             UPDATE member_state
-            SET running=0, start_ts=NULL, elapsed_cached=?, pause_start=?
+            SET running=?, start_ts=NULL, elapsed_cached=?, pause_start=?
             WHERE member_key=?
             """,
-            (elapsed, now, row["member_key"]),
+            (RUN_STATE_PAUSED, elapsed, now, row["member_key"]),
         )
 
     if rows:
@@ -2943,13 +4148,14 @@ def api_resume_all():
     db = get_db()
 
     rows = db.execute(
-        "SELECT member_key FROM member_state WHERE running=0 AND pause_start IS NOT NULL"
+        "SELECT member_key FROM member_state WHERE running=? AND pause_start IS NOT NULL",
+        (RUN_STATE_PAUSED,),
     ).fetchall()
 
     for row in rows:
         db.execute(
-            "UPDATE member_state SET running=1, start_ts=?, pause_start=NULL WHERE member_key=?",
-            (now, row["member_key"]),
+            "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
+            (RUN_STATE_RUNNING, now, row["member_key"]),
         )
 
     if rows:
@@ -2980,13 +4186,24 @@ def api_finish_all():
         elapsed = compute_elapsed(row, now)
         if row["activity_id"] and elapsed > 0:
             meta_changed |= increment_activity_runtime(activity_meta, str(row["activity_id"]), elapsed)
+        
+        activity_start_ts = find_last_move_ts(db, row["member_key"], str(row["activity_id"]))
+        if activity_start_ts is None:
+            activity_start_ts = row["entered_ts"] or row["start_ts"]
+
+        total_ms = 0
+        if activity_start_ts:
+            total_ms = max(0, now - activity_start_ts)
+        
+        pause_ms = max(0, total_ms - elapsed)
+        
         db.execute(
             """
             UPDATE member_state
-            SET activity_id=NULL, running=0, start_ts=NULL, elapsed_cached=0, pause_start=NULL
+            SET activity_id=NULL, running=?, start_ts=NULL, elapsed_cached=0, pause_start=NULL, entered_ts=NULL
             WHERE member_key=?
             """,
-            (row["member_key"],),
+            (RUN_STATE_FINISHED, row["member_key"]),
         )
         db.execute(
             "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
@@ -2999,6 +4216,8 @@ def api_finish_all():
                         "member_name": row["member_name"],
                         "activity_id": row["activity_id"],
                         "duration_ms": elapsed,
+                        "total_ms": total_ms,
+                        "pause_ms": pause_ms,
                     }
                 ),
             ),
@@ -3041,7 +4260,7 @@ def api_member_pause():
     if member["pause_start"] is not None:
         return jsonify({"ok": True, "already_paused": True})
 
-    if not member["running"]:
+    if member["running"] != RUN_STATE_RUNNING:
         return jsonify({"ok": False, "error": "member_not_running"}), 400
 
     now = now_ms()
@@ -3050,10 +4269,10 @@ def api_member_pause():
     db.execute(
         """
         UPDATE member_state
-        SET running=0, start_ts=NULL, elapsed_cached=?, pause_start=?
+        SET running=?, start_ts=NULL, elapsed_cached=?, pause_start=?
         WHERE member_key=?
         """,
-        (elapsed, now, member_key),
+        (RUN_STATE_PAUSED, elapsed, now, member_key),
     )
 
     db.execute(
@@ -3092,7 +4311,7 @@ def api_member_resume():
     if not member["activity_id"]:
         return jsonify({"ok": False, "error": "member_not_assigned"}), 400
 
-    if member["running"]:
+    if member["running"] == RUN_STATE_RUNNING:
         return jsonify({"ok": True, "already_running": True})
 
     if member["pause_start"] is None:
@@ -3101,8 +4320,8 @@ def api_member_resume():
     now = now_ms()
 
     db.execute(
-        "UPDATE member_state SET running=1, start_ts=?, pause_start=NULL WHERE member_key=?",
-        (now, member_key),
+        "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
+        (RUN_STATE_RUNNING, now, member_key),
     )
 
     db.execute(
@@ -3147,13 +4366,22 @@ def api_member_finish():
     if member["activity_id"] and elapsed > 0:
         meta_changed = increment_activity_runtime(activity_meta, str(member["activity_id"]), elapsed)
 
+    activity_start_ts = find_last_move_ts(db, member_key, str(member["activity_id"]))
+    if activity_start_ts is None:
+        activity_start_ts = member["entered_ts"] or member["start_ts"]
+
+    total_ms = 0
+    if activity_start_ts:
+        total_ms = max(0, now - activity_start_ts)
+    pause_ms = max(0, total_ms - elapsed)
+
     db.execute(
         """
         UPDATE member_state
-        SET activity_id=NULL, running=0, start_ts=NULL, elapsed_cached=0, pause_start=NULL
+        SET activity_id=NULL, running=?, start_ts=NULL, elapsed_cached=0, pause_start=NULL, entered_ts=NULL
         WHERE member_key=?
         """,
-        (member_key,),
+        (RUN_STATE_FINISHED, member_key),
     )
 
     db.execute(
@@ -3167,6 +4395,8 @@ def api_member_finish():
                     "member_name": member["member_name"],
                     "activity_id": member["activity_id"],
                     "duration_ms": elapsed,
+                    "total_ms": total_ms,
+                    "pause_ms": pause_ms,
                 }
             ),
         ),
@@ -3204,154 +4434,36 @@ def api_export():
     if project_filter and project_filter != project_code:
         return jsonify({"ok": False, "error": "project_mismatch"}), 400
 
-    # Ottieni tutte le attività
-    activity_rows = db.execute(
-        "SELECT activity_id, label FROM activities ORDER BY sort_order, label"
-    ).fetchall()
-    
-    activity_map = {row["activity_id"]: row["label"] for row in activity_rows}
+    start_date_filter = parse_iso_date(start_date)
+    end_date_filter = parse_iso_date(end_date)
 
-    # Query per ottenere i log delle attività completate
-    query = """
-        SELECT 
-            el.ts,
-            el.kind,
-            el.member_key,
-            el.details,
-            ms.member_name
-        FROM event_log el
-        LEFT JOIN member_state ms ON el.member_key = ms.member_key
-        WHERE el.kind IN ('move', 'finish_activity', 'pause_member', 'resume_member')
-        ORDER BY el.ts ASC
-    """
-    
-    event_rows = db.execute(query).fetchall()
+    session_rows = build_session_rows(
+        db,
+        start_date=start_date_filter,
+        end_date=end_date_filter,
+    )
 
-    # Raggruppa eventi per operatore e attività per calcolare sessioni di lavoro
-    sessions = {}  # Key: (member_key, activity_id) -> lista di eventi
-    
-    app.logger.info(f"Export: trovati {len(event_rows)} eventi da processare")
-    
-    for row in event_rows:
-        try:
-            details = json.loads(row["details"]) if row["details"] else {}
-        except json.JSONDecodeError:
-            details = {}
-        
-        ts = row["ts"]
-        dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
-        
-        # Filtro per data
-        if start_date:
-            filter_date = datetime.fromisoformat(start_date).date()
-            if dt.date() < filter_date:
-                continue
-        if end_date:
-            filter_date = datetime.fromisoformat(end_date).date()
-            if dt.date() > filter_date:
-                continue
-        
-        member_key = row["member_key"]
-        member_name = row["member_name"] or details.get("member_name", "N/D")
-        
-        # Determina l'activity_id dall'evento
-        if row["kind"] == "move":
-            activity_id = details.get("to")
-        else:
-            activity_id = details.get("activity_id")
-        
-        if not activity_id or not member_key:
-            continue
-        
-        session_key = (member_key, activity_id)
-        
-        if session_key not in sessions:
-            sessions[session_key] = {
-                "member_name": member_name,
-                "activity_id": activity_id,
-                "events": []
-            }
-        
-        sessions[session_key]["events"].append({
-            "ts": ts,
-            "dt": dt,
-            "kind": row["kind"],
-            "details": details
-        })
-    
-    # Calcola statistiche per ogni sessione
     export_data = []
+    for session_row in session_rows:
+        start_dt = datetime.fromtimestamp(session_row["start_ts"] / 1000, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(session_row["end_ts"] / 1000, tz=timezone.utc)
+        status_label = "Completato" if session_row["status"] == "completed" else "In corso"
+        export_data.append(
+            {
+                "operatore": session_row["member_name"],
+                "attivita": session_row["activity_label"],
+                "data_inizio": start_dt.strftime("%d/%m/%Y"),
+                "ora_inizio": start_dt.strftime("%H:%M:%S"),
+                "data_fine": end_dt.strftime("%d/%m/%Y") if session_row["status"] == "completed" else "In corso",
+                "ora_fine": end_dt.strftime("%H:%M:%S") if session_row["status"] == "completed" else "-",
+                "durata_netta": format_duration_ms(session_row["net_ms"]) or "00:00:00",
+                "tempo_pausa": format_duration_ms(session_row["pause_ms"]) or "00:00:00",
+                "num_pause": str(session_row["pause_count"]),
+                "stato": status_label,
+            }
+        )
     
-    app.logger.info(f"Export: trovate {len(sessions)} sessioni uniche (operatore + attività)")
-    
-    for (member_key, activity_id), session in sessions.items():
-        events = sorted(session["events"], key=lambda e: e["ts"])
-        
-        if not events:
-            continue
-        
-        member_name = session["member_name"]
-        activity_label = activity_map.get(activity_id, "N/D")
-        
-        # Trova inizio e fine
-        start_event = None
-        end_event = None
-        pause_events = []
-        resume_events = []
-        
-        for event in events:
-            if event["kind"] == "move" and event["details"].get("to") == activity_id:
-                if not start_event:
-                    start_event = event
-            elif event["kind"] == "pause_member":
-                pause_events.append(event)
-            elif event["kind"] == "resume_member":
-                resume_events.append(event)
-            elif event["kind"] == "finish_activity":
-                end_event = event
-        
-        # Se non c'è evento di move, usa il primo evento come inizio
-        if not start_event and events:
-            start_event = events[0]
-        
-        # Se ancora non c'è inizio, salta
-        if not start_event:
-            continue
-        
-        start_dt = start_event["dt"]
-        end_dt = end_event["dt"] if end_event else datetime.now(tz=timezone.utc)
-        
-        # Calcola durata totale (tempo trascorso dall'inizio alla fine)
-        total_duration_ms = int((end_dt - start_dt).total_seconds() * 1000)
-        
-        # Calcola tempo netto (durata registrata nell'evento finish)
-        net_duration_ms = 0
-        if end_event:
-            net_duration_ms = end_event["details"].get("duration_ms", 0)
-        else:
-            # Se l'attività è ancora in corso, usa la durata totale
-            net_duration_ms = total_duration_ms
-        
-        # Calcola tempo in pausa (differenza tra totale e netto)
-        pause_duration_ms = max(0, total_duration_ms - net_duration_ms)
-        
-        # Conta numero di pause
-        num_pauses = len(pause_events)
-        
-        export_data.append({
-            "operatore": member_name,
-            "attivita": activity_label,
-            "data_inizio": start_dt.strftime("%d/%m/%Y"),
-            "ora_inizio": start_dt.strftime("%H:%M:%S"),
-            "data_fine": end_dt.strftime("%d/%m/%Y") if end_event else "In corso",
-            "ora_fine": end_dt.strftime("%H:%M:%S") if end_event else "-",
-            "durata_netta": format_duration_ms(net_duration_ms) or "00:00:00",
-            "tempo_pausa": format_duration_ms(pause_duration_ms) or "00:00:00",
-            "num_pause": str(num_pauses),
-            "stato": "Completato" if end_event else "In corso"
-        })
-    
-    app.logger.info(f"Export: generati {len(export_data)} record per l'export")
+    app.logger.info("Export: generati %s record per l'export", len(export_data))
 
     # Genera file in base al formato
     if export_format == "csv":
@@ -3541,6 +4653,288 @@ def generate_csv_export(data: List[Dict[str, Any]], project_code: str, project_n
         as_attachment=True,
         download_name=filename,
     )
+
+
+@app.get("/admin/sessions")
+@login_required
+def admin_sessions_page() -> ResponseReturnValue:
+    if not session.get("is_admin"):
+        abort(403)
+
+    display_name = session.get('user_display') or session.get('user_name') or session.get('user')
+    primary_name = session.get('user_name') or display_name or session.get('user')
+    initials = session.get('user_initials') or compute_initials(primary_name or "")
+
+    return render_template(
+        "admin_sessions.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+    )
+
+
+@app.get("/api/admin/sessions")
+@login_required
+def api_admin_sessions():
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+
+    start_date = parse_iso_date(request.args.get("start_date", ""))
+    end_date = parse_iso_date(request.args.get("end_date", ""))
+    member_filter = request.args.get("member")
+    activity_filter = request.args.get("activity_id")
+    search_term = (request.args.get("search") or "").strip().lower()
+
+    limit_param = request.args.get("limit")
+    try:
+        limit = int(limit_param) if limit_param else 200
+    except (TypeError, ValueError):
+        limit = 200
+    limit = max(50, min(limit, 1000))
+
+    sessions = build_session_rows(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        member_filter=member_filter,
+        activity_filter=activity_filter,
+    )
+
+    if search_term:
+        filtered: List[Dict[str, Any]] = []
+        for item in sessions:
+            haystacks = [
+                item.get("member_name", ""),
+                item.get("member_key", ""),
+                item.get("activity_label", ""),
+                item.get("activity_id", ""),
+            ]
+            if any(search_term in str(value).lower() for value in haystacks):
+                filtered.append(item)
+        sessions = filtered
+
+    sessions = sessions[:limit]
+
+    payload = []
+    for item in sessions:
+        start_dt = datetime.fromtimestamp(item["start_ts"] / 1000, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(item["end_ts"] / 1000, tz=timezone.utc)
+        payload.append(
+            {
+                "member_key": item["member_key"],
+                "member_name": item["member_name"],
+                "activity_id": item["activity_id"],
+                "activity_label": item["activity_label"],
+                "start_ts": item["start_ts"],
+                "end_ts": item["end_ts"],
+                "start_iso": start_dt.isoformat(),
+                "end_iso": end_dt.isoformat(),
+                "status": item["status"],
+                "net_ms": item["net_ms"],
+                "pause_ms": item["pause_ms"],
+                "pause_count": item["pause_count"],
+                "net_hms": format_duration_ms(item["net_ms"]) or "00:00:00",
+                "pause_hms": format_duration_ms(item["pause_ms"]) or "00:00:00",
+                "auto_closed": item["auto_closed"],
+                "override_id": item.get("override_id"),
+                "manual_entry": bool(item.get("manual_entry")),
+                "note": item.get("note") or "",
+                "source_member_key": item.get("source_member_key"),
+                "source_activity_id": item.get("source_activity_id"),
+                "source_start_ts": item.get("source_start_ts"),
+                "editable": True,
+            }
+        )
+
+    return jsonify(
+        {
+            "sessions": payload,
+            "count": len(payload),
+            "limit": limit,
+            "generated_at": now_ms(),
+        }
+    )
+
+
+def _admin_only() -> Optional[ResponseReturnValue]:
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+    return None
+
+
+def _json_error(message: str, status: int = 400) -> ResponseReturnValue:
+    return jsonify({"error": message}), status
+
+
+def _normalize_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+@app.post("/api/admin/sessions/save")
+@login_required
+def api_admin_sessions_save() -> ResponseReturnValue:
+    guard = _admin_only()
+    if guard is not None:
+        return guard
+
+    data = request.get_json(silent=True) or {}
+    member_key = _normalize_text(data.get("member_key"))
+    member_name = _normalize_text(data.get("member_name")) or "Operatore"
+    activity_id = _normalize_text(data.get("activity_id"))
+    activity_label = _normalize_text(data.get("activity_label")) or activity_id
+    if not member_key or not activity_id:
+        return _json_error("member_key e activity_id sono obbligatori")
+
+    start_ts = _normalize_epoch_ms(data.get("start_ts"))
+    if start_ts is None:
+        return _json_error("start_ts non valido")
+
+    end_ts_raw = data.get("end_ts")
+    end_ts_value = _normalize_epoch_ms(end_ts_raw) if end_ts_raw is not None else None
+    if end_ts_value is not None and end_ts_value < start_ts:
+        return _json_error("end_ts deve essere successivo a start_ts")
+
+    net_ms = _normalize_epoch_ms(data.get("net_ms"))
+    if net_ms is None:
+        if end_ts_value is not None:
+            net_ms = max(0, end_ts_value - start_ts)
+        else:
+            net_ms = 0
+
+    pause_ms = _normalize_epoch_ms(data.get("pause_ms")) or 0
+    pause_count = max(0, _coerce_int(data.get("pause_count")) or 0)
+    note = _normalize_text(data.get("note"))
+    override_id = _coerce_int(data.get("override_id"))
+
+    source_member_key = _normalize_text(data.get("source_member_key")) or None
+    source_activity_id = _normalize_text(data.get("source_activity_id")) or None
+    source_start_ts = data.get("source_start_ts")
+    source_start_ms = (
+        _normalize_epoch_ms(source_start_ts) if source_start_ts is not None else None
+    )
+
+    manual_entry = bool(data.get("manual_entry"))
+    if not manual_entry and not (source_member_key and source_activity_id and source_start_ms):
+        manual_entry = True
+
+    status = "completed" if end_ts_value is not None else "running"
+    end_ts_final = end_ts_value if end_ts_value is not None else start_ts
+    now = now_ms()
+    user = session.get("user") or "admin"
+
+    db = get_db()
+    ensure_session_override_table(db)
+
+    params = (
+        member_key,
+        member_name,
+        activity_id,
+        activity_label,
+        start_ts,
+        end_ts_final,
+        net_ms,
+        pause_ms,
+        pause_count,
+        status,
+        source_member_key,
+        source_activity_id,
+        source_start_ms,
+        1 if manual_entry else 0,
+        note or None,
+        user,
+        user,
+        now,
+        now,
+    )
+
+    if override_id:
+        existing = db.execute(
+            "SELECT id FROM activity_session_overrides WHERE id=?",
+            (override_id,),
+        ).fetchone()
+        if not existing:
+            return _json_error("override non trovato", 404)
+        db.execute(
+            """
+            UPDATE activity_session_overrides
+            SET member_key=?, member_name=?, activity_id=?, activity_label=?,
+                start_ts=?, end_ts=?, net_ms=?, pause_ms=?, pause_count=?, status=?,
+                source_member_key=?, source_activity_id=?, source_start_ts=?,
+                manual_entry=?, note=?, updated_by=?, updated_ts=?
+            WHERE id=?
+            """,
+            (
+                member_key,
+                member_name,
+                activity_id,
+                activity_label,
+                start_ts,
+                end_ts_final,
+                net_ms,
+                pause_ms,
+                pause_count,
+                status,
+                source_member_key,
+                source_activity_id,
+                source_start_ms,
+                1 if manual_entry else 0,
+                note or None,
+                user,
+                now,
+                override_id,
+            ),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO activity_session_overrides(
+                member_key, member_name, activity_id, activity_label,
+                start_ts, end_ts, net_ms, pause_ms, pause_count, status,
+                source_member_key, source_activity_id, source_start_ts,
+                manual_entry, note, created_by, updated_by, created_ts, updated_ts
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            params,
+        )
+        override_id = _last_insert_id(db)
+
+    db.commit()
+
+    if not override_id:
+        return jsonify({"ok": True})
+
+    row = db.execute(
+        "SELECT * FROM activity_session_overrides WHERE id=?",
+        (override_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({"ok": True})
+
+    payload = _override_row_to_session(dict(row))
+    return jsonify({"ok": True, "session": payload})
+
+
+@app.delete("/api/admin/sessions/<int:override_id>")
+@login_required
+def api_admin_sessions_delete(override_id: int) -> ResponseReturnValue:
+    guard = _admin_only()
+    if guard is not None:
+        return guard
+
+    db = get_db()
+    ensure_session_override_table(db)
+    existing = db.execute(
+        "SELECT id FROM activity_session_overrides WHERE id=?",
+        (override_id,),
+    ).fetchone()
+    if not existing:
+        return _json_error("override non trovato", 404)
+
+    db.execute("DELETE FROM activity_session_overrides WHERE id=?", (override_id,))
+    db.commit()
+    return jsonify({"ok": True})
 
 
 @app.post("/api/_reset")
