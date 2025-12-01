@@ -188,39 +188,183 @@ class RentmanClient:
         reference = f"/projects/{project_id}"
         return self._get_all("/subprojects", {"project": reference})
 
-    def get_project_files(self, project_id: int) -> List[Dict[str, Any]]:
+    def get_project_planned_equipment(self, project_id: int) -> List[Dict[str, Any]]:
+        """Return the equipment planned on a project (materials list)."""
+
+        logger.info("Rentman: recupero materiali pianificati per progetto %s", project_id)
+        try:
+            items = self._get_all(f"/projects/{project_id}/projectequipment")
+            logger.info("Rentman: projectequipment custom link -> %s righe", len(items))
+            return items
+        except RentmanNotFound:
+            logger.info(
+                "Rentman: endpoint /projects/%s/projectequipment non disponibile, provo fallback /projectequipment",
+                project_id,
+            )
+        except RentmanAPIError as exc:
+            logger.warning(
+                "Rentman: errore %s leggendo /projects/%s/projectequipment",
+                exc,
+                project_id,
+            )
+
+        project_ref = f"/projects/{project_id}"
+        try:
+            fallback_items = self._get_all("/projectequipment", {"project": project_ref})
+            logger.info("Rentman: fallback /projectequipment -> %s righe", len(fallback_items))
+            return fallback_items
+        except RentmanNotFound:
+            logger.info("Rentman: nessun materiale per progetto %s", project_id)
+        except RentmanAPIError as exc:
+            logger.warning(
+                "Rentman: errore %s leggendo /projectequipment?project=%s",
+                exc,
+                project_ref,
+            )
+        return []
+
+    def get_project_files(self, project_id: int, *, exhaustive: bool = True) -> List[Dict[str, Any]]:
+        collected: List[Dict[str, Any]] = []
+        seen_ids: set[int | str] = set()
+
+        def collect(items: Optional[List[Dict[str, Any]]], origin: str) -> None:
+            if not items:
+                logger.info("Rentman: nessun file da %s", origin)
+                return
+            added = 0
+            for entry in items:
+                if not isinstance(entry, dict):
+                    continue
+                file_id = entry.get("id")
+                if file_id in seen_ids:
+                    continue
+                seen_ids.add(file_id)
+                collected.append(entry)
+                added += 1
+            logger.info("Rentman: %s -> aggiunti %s nuovi file (tot=%s)", origin, added, len(collected))
+
         logger.info("Rentman: recupero allegati via /projects/%s/files", project_id)
         try:
-            result = self._get_all(f"/projects/{project_id}/files")
-            logger.info("Rentman: ricevuti %s items da /projects/%s/files", len(result), project_id)
-            if result:
-                return result
+            collect(self._get_all(f"/projects/{project_id}/files"), "/projects/{id}/files")
         except RentmanNotFound:
             logger.info("Rentman: endpoint /projects/%s/files non disponibile (404)", project_id)
         except RentmanAPIError as exc:
             logger.warning("Rentman: errore %s leggendo /projects/%s/files", exc, project_id)
 
-        logger.info("Rentman: provo fallback /files?itemtype=project&itemid=%s", project_id)
-        fallback_params = {
-            "itemtype": "project",
-            "itemid": project_id,
-        }
-        try:
-            fallback = self._get_all("/files", fallback_params)
-            logger.info(
-                "Rentman: fallback /files ha restituito %s items per il progetto %s",
-                len(fallback),
-                project_id,
-            )
-            return fallback
-        except RentmanNotFound:
-            logger.info("Rentman: endpoint /files non disponibile per fallback allegati")
-        except RentmanAPIError as exc:
-            logger.warning("Rentman: errore %s leggendo /files fallback per progetto %s", exc, project_id)
+        if not exhaustive:
+            if collected:
+                logger.info("Rentman: allegati base raccolti=%s (modalità light)", len(collected))
+            else:
+                logger.info("Rentman: nessun allegato in modalità light per progetto %s", project_id)
+            return collected
 
-        # Se anche il fallback non ritorna nulla, restituiamo lista vuota
+        def fetch_files(params: Dict[str, Any], tag: str) -> None:
+            try:
+                items = self._get_all("/files", params)
+            except RentmanNotFound:
+                logger.info("Rentman: /files%s non disponibile", tag)
+                return
+            except RentmanAPIError as exc:
+                logger.warning("Rentman: errore %s leggendo /files%s", exc, tag)
+                return
+            collect(items, f"/files{tag}")
+
+        project_ref = f"/projects/{project_id}"
+        fetch_files({"itemtype": "project", "itemid": project_id}, "?itemtype=project&itemid")
+        fetch_files({"item[eq]": project_ref}, "?item[eq]=project")
+
+        # Cartelle specifiche del progetto
+        folders = self.get_project_file_folders(project_id)
+        for folder in folders:
+            folder_id = folder.get("id")
+            if not folder_id:
+                continue
+            fetch_files({"folder[eq]": folder_id}, f"?folder={folder_id}")
+
+        # Allegati collegati ai sottoprogetti
+        try:
+            subprojects = self.get_project_subprojects(project_id)
+        except RentmanError:
+            subprojects = []
+        for sub in subprojects:
+            sub_id = sub.get("id")
+            if not sub_id:
+                continue
+            fetch_files({"item[eq]": f"/subprojects/{sub_id}"}, f"?item=subproject-{sub_id}")
+
+        if collected:
+            return collected
+
         logger.info("Rentman: nessun allegato trovato per progetto %s", project_id)
         return []
+
+    def get_project_file_folders(self, project_id: int) -> List[Dict[str, Any]]:
+        logger.info("Rentman: recupero cartelle file per progetto %s", project_id)
+        try:
+            folders = self._get_all(f"/projects/{project_id}/file_folders")
+            logger.info("Rentman: ottenute %s cartelle", len(folders))
+            return folders
+        except RentmanNotFound:
+            logger.info("Rentman: nessuna cartella per progetto %s", project_id)
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo file_folders per %s", exc, project_id)
+        return []
+
+    def get_project_equipment_groups(self, project_id: int) -> List[Dict[str, Any]]:
+        logger.info("Rentman: recupero gruppi materiali per progetto %s", project_id)
+        try:
+            groups = self._get_all(f"/projects/{project_id}/projectequipmentgroup")
+            logger.info("Rentman: /projects/%s/projectequipmentgroup -> %s gruppi", project_id, len(groups))
+            return groups
+        except RentmanNotFound:
+            logger.info("Rentman: endpoint /projects/%s/projectequipmentgroup non disponibile", project_id)
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo projectequipmentgroup per progetto %s", exc, project_id)
+
+        project_ref = f"/projects/{project_id}"
+        try:
+            fallback = self._get_all("/projectequipmentgroup", {"project": project_ref})
+            logger.info("Rentman: fallback /projectequipmentgroup -> %s gruppi", len(fallback))
+            return fallback
+        except RentmanNotFound:
+            logger.info("Rentman: nessun gruppo materiali per progetto %s", project_id)
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo /projectequipmentgroup?project=%s", exc, project_ref)
+        return []
+
+    def get_equipment(self, equipment_id: int) -> Optional[Dict[str, Any]]:
+        logger.info("Rentman: recupero dettaglio equipment %s", equipment_id)
+        try:
+            payload = self._request("GET", f"/equipment/{equipment_id}")
+        except RentmanNotFound:
+            logger.info("Rentman: equipment %s non trovato", equipment_id)
+            return None
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo equipment %s", exc, equipment_id)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if data:
+            return data
+        logger.info("Rentman: equipment %s senza payload dati", equipment_id)
+        return None
+
+    def get_file(self, file_id: int) -> Optional[Dict[str, Any]]:
+        logger.info("Rentman: recupero dettaglio file %s", file_id)
+        try:
+            payload = self._request("GET", f"/files/{file_id}")
+        except RentmanNotFound:
+            logger.info("Rentman: file %s non trovato", file_id)
+            return None
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo file %s", exc, file_id)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if data:
+            return data
+        logger.info("Rentman: file %s senza payload dati", file_id)
+        return None
 
     def get_project_crew_by_function_ids(self, function_ids: Iterable[int]) -> List[Dict[str, Any]]:
         refs = [f"/projectfunctions/{fid}" for fid in function_ids if fid is not None]

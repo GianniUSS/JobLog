@@ -1,3 +1,8 @@
+
+
+
+
+
 # JobLOG (Starter)
 
 ## Requisiti
@@ -14,6 +19,20 @@ python app.py
 ```
 
 L'applicazione espone l'interfaccia su `http://localhost:5000`. In modalità debug il reloader è disattivato: riavvia `python app.py` dopo ogni modifica server-side.
+
+## Installazione rapida su iPhone
+> 💡 Questa sezione è pensata per gli utenti finali: condividila in onboarding o nei materiali di training.
+
+1. Apri **Safari** e visita l'URL pubblico dell'app (es. `https://joblog.example.com`).
+2. Tocca il pulsante **Condividi** (icona con il quadrato e la freccia) → scorri e scegli **Aggiungi a Home**.
+3. Conferma il nome suggerito (es. *JobLog*) e premi **Aggiungi**: l'app apparirà tra le altre icone, in modalità full-screen.
+4. Al primo avvio tappa **Consenti** quando Safari chiede il permesso per le **Notifiche push** e per l'utilizzo dello spazio di archiviazione offline.
+5. Se l'app segnala "Aggiorna disponibile", tira giù per ricaricare oppure apri il menu ⋮ → **Ricarica** così da installare l'ultima release.
+
+Suggerimenti rapidi:
+- Per avere l'esperienza migliore assicurati che l'iPhone sia aggiornato a iOS 16+ (necessario per Web Push).
+- Se l'app non riceve notifiche, controlla in **Impostazioni → Notifiche → JobLog** che siano abilitate "Consenti notifiche" e "Avvisi".
+- In caso di problemi di cache forza la riapertura tenendo premuta l'icona sulla Home → **Rimuovi app** (mantiene i dati lato server) e ripeti i passaggi sopra.
 
 ## Gestione utenti
 Gli account vengono salvati nella tabella `app_users` del database configurato (SQLite di default o MySQL/MariaDB se abilitato). Lo script `manage_users.py` utilizza automaticamente le stesse impostazioni definite in `config.json` o tramite variabili `JOBLOG_DB_*`.

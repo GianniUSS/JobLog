@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - fallback when MySQL client not install
     pymysql_err = None
     DictCursor = None
 
-from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from flask_session import Session
 from flask.typing import ResponseReturnValue
 from openpyxl import Workbook
@@ -39,6 +39,7 @@ from rentman_client import (
     RentmanAPIError,
     RentmanAuthError,
     RentmanClient,
+    RentmanError,
     RentmanNotFound,
 )
 
@@ -826,6 +827,30 @@ def _slugify(value: str) -> str:
     return slug
 
 
+def _normalize_activity_id(value: str) -> str:
+    slug = _slugify(value)
+    if not slug:
+        return ""
+    return slug.replace("-", "_").upper()
+
+
+def _generate_activity_id(db: DatabaseLike, label: str) -> str:
+    base = _normalize_activity_id(label) or "ATTIVITA"
+    base = base[:24]
+    if not base:
+        base = "ATTIVITA"
+    candidate = base
+    suffix = 1
+    while True:
+        row = db.execute("SELECT 1 FROM activities WHERE activity_id=?", (candidate,)).fetchone()
+        if row is None:
+            return candidate
+        suffix += 1
+        padded = f"{suffix:02d}"
+        truncated = base[: max(4, 24 - len(padded) - 1)]
+        candidate = f"{truncated}_{padded}"
+
+
 def compute_planned_duration_ms(
     plan_start: Optional[str],
     plan_end: Optional[str],
@@ -1172,6 +1197,118 @@ CREATE INDEX IF NOT EXISTS idx_persistent_sessions_user ON persistent_sessions(u
 """
 
 
+EQUIPMENT_CHECKS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS equipment_checks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_code VARCHAR(128) NOT NULL,
+    item_key VARCHAR(512) NOT NULL,
+    checked_ts BIGINT NOT NULL,
+    username VARCHAR(190) DEFAULT NULL,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    UNIQUE KEY uq_equipment_project_item (project_code, item_key),
+    INDEX idx_equipment_project (project_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+EQUIPMENT_CHECKS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS equipment_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_code TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    checked_ts INTEGER NOT NULL,
+    username TEXT,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_equipment_project_item ON equipment_checks(project_code, item_key);
+CREATE INDEX IF NOT EXISTS idx_equipment_project ON equipment_checks(project_code);
+"""
+
+
+LOCAL_EQUIPMENT_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS local_equipment (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_code VARCHAR(128) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    notes TEXT,
+    group_name VARCHAR(255) DEFAULT 'Attrezzature extra',
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    INDEX idx_local_equipment_project (project_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+LOCAL_EQUIPMENT_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS local_equipment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    group_name TEXT DEFAULT 'Attrezzature extra',
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_local_equipment_project ON local_equipment(project_code);
+"""
+
+
+PROJECT_PHOTOS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS project_photos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_code VARCHAR(128) NOT NULL,
+    filename VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    caption TEXT,
+    created_ts BIGINT NOT NULL,
+    INDEX idx_project_photos_project (project_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+PROJECT_PHOTOS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS project_photos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_code TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    file_size INTEGER NOT NULL,
+    caption TEXT,
+    created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_photos_project ON project_photos(project_code);
+"""
+
+
+PROJECT_MATERIALS_CACHE_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS project_materials_cache (
+    project_code VARCHAR(128) PRIMARY KEY,
+    project_name VARCHAR(255) NOT NULL,
+    data_json LONGTEXT NOT NULL,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+PROJECT_MATERIALS_CACHE_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS project_materials_cache (
+    project_code TEXT PRIMARY KEY,
+    project_name TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+"""
+
+
 MYSQL_SCHEMA_STATEMENTS: List[str] = [
     """
     CREATE TABLE IF NOT EXISTS activities (
@@ -1248,6 +1385,9 @@ MYSQL_SCHEMA_STATEMENTS: List[str] = [
     """,
     APP_USERS_TABLE_MYSQL,
     SESSION_OVERRIDES_TABLE_MYSQL,
+    EQUIPMENT_CHECKS_TABLE_MYSQL,
+    PROJECT_MATERIALS_CACHE_TABLE_MYSQL,
+    LOCAL_EQUIPMENT_TABLE_MYSQL,
 ]
 
 
@@ -1771,8 +1911,185 @@ def _normalize_attachment_extension(value: Any) -> str:
     slug = value.strip().lstrip(".")
     return slug.upper()
 
+ATTACHMENT_IMAGE_EXTENSIONS: Set[str] = {
+    "JPG",
+    "JPEG",
+    "PNG",
+    "GIF",
+    "WEBP",
+    "BMP",
+    "TIFF",
+    "HEIC",
+}
 
-def fetch_project_attachments(project_code: Optional[str]) -> List[Dict[str, Any]]:
+
+def _attachment_is_image(entry: Mapping[str, Any]) -> bool:
+    if _is_truthy(entry.get("image")):
+        return True
+    extension = _normalize_attachment_extension(entry.get("extension") or entry.get("type"))
+    if extension and extension in ATTACHMENT_IMAGE_EXTENSIONS:
+        return True
+    description = entry.get("description")
+    if isinstance(description, str):
+        slug = description.lower()
+        if any(token in slug for token in ("photo", "immagine", "preview")):
+            return True
+    return False
+
+
+def _folder_display_name(entry: Mapping[str, Any]) -> str:
+    for key in ("displayname", "name", "readable_name"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    identifier = entry.get("id")
+    return f"Cartella {identifier}" if identifier is not None else "Cartella"
+
+
+def _build_folder_path(folder_id: int, lookup: Mapping[int, Mapping[str, Any]], max_depth: int = 20) -> str:
+    parts: List[str] = []
+    current = folder_id
+    visited: Set[int] = set()
+    depth = 0
+    while isinstance(current, int) and current not in visited and depth < max_depth:
+        visited.add(current)
+        entry = lookup.get(current)
+        if not entry:
+            break
+        parts.append(_folder_display_name(entry))
+        current = parse_reference(entry.get("parent"))
+        depth += 1
+    if not parts:
+        return ""
+    return " / ".join(reversed(parts))
+
+
+def _collect_project_folders(client: RentmanClient, project_id: int) -> List[Dict[str, Any]]:
+    try:
+        raw_folders = client.get_project_file_folders(project_id)
+    except RentmanError as exc:
+        app.logger.error("Rentman: errore recuperando le cartelle file del progetto %s: %s", project_id, exc)
+        return []
+
+    folder_lookup: Dict[int, Mapping[str, Any]] = {}
+    for entry in raw_folders:
+        folder_id = parse_reference(entry.get("id")) or entry.get("id")
+        if isinstance(folder_id, int):
+            folder_lookup[folder_id] = entry
+
+    try:
+        raw_files = client.get_project_files(project_id, exhaustive=False)
+    except RentmanError as exc:
+        app.logger.error("Rentman: errore recuperando i file per il progetto %s: %s", project_id, exc)
+        raw_files = []
+
+    folder_files: Dict[int, List[Dict[str, Any]]] = {}
+    for entry in raw_files:
+        folder_id = parse_reference(entry.get("folder"))
+        if not isinstance(folder_id, int):
+            continue
+        normalized = {
+            "id": entry.get("id"),
+            "name": _normalize_attachment_name(entry),
+            "extension": _normalize_attachment_extension(entry.get("extension") or entry.get("type")),
+            "url": entry.get("url"),
+            "preview_url": entry.get("proxy_url") or entry.get("url"),
+            "image": _attachment_is_image(entry),
+        }
+        folder_files.setdefault(folder_id, []).append(normalized)
+
+    folders: List[Dict[str, Any]] = []
+    for folder_id, entry in folder_lookup.items():
+        parent_id = parse_reference(entry.get("parent"))
+        path_value = entry.get("path") or _build_folder_path(folder_id, folder_lookup)
+        files = folder_files.get(folder_id, [])
+        image_file = next((item for item in files if item.get("image")), None)
+        if not image_file and files:
+            image_file = files[0]
+        folders.append(
+            {
+                "id": folder_id,
+                "name": _folder_display_name(entry),
+                "parent_id": parent_id,
+                "path": path_value or _folder_display_name(entry),
+                "file_count": len(files),
+                "photo": {
+                    "name": image_file.get("name"),
+                    "url": image_file.get("url"),
+                    "preview_url": image_file.get("preview_url"),
+                    "extension": image_file.get("extension"),
+                }
+                if image_file
+                else None,
+            }
+        )
+
+    folders.sort(key=lambda item: str(item.get("path") or item.get("name") or "").lower())
+    return folders
+
+
+def _equipment_group_display_name(entry: Mapping[str, Any]) -> str:
+    for key in ("path", "displayname", "name", "description"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    identifier = entry.get("id")
+    return f"Gruppo {identifier}" if identifier is not None else "Gruppo"
+
+
+def _build_equipment_group_path(
+    group_id: int,
+    lookup: Mapping[int, Mapping[str, Any]],
+    *,
+    max_depth: int = 20,
+) -> str:
+    parts: List[str] = []
+    current = group_id
+    visited: Set[int] = set()
+    depth = 0
+    while isinstance(current, int) and current not in visited and depth < max_depth:
+        visited.add(current)
+        entry = lookup.get(current)
+        if not entry:
+            break
+        parts.append(_equipment_group_display_name(entry))
+        current = parse_reference(entry.get("parent"))
+        depth += 1
+    if not parts:
+        return ""
+    return " / ".join(reversed(parts))
+
+
+def _collect_material_groups(client: RentmanClient, project_id: int) -> Dict[int, Dict[str, Any]]:
+    try:
+        raw_groups = client.get_project_equipment_groups(project_id)
+    except RentmanError as exc:
+        app.logger.error("Rentman: errore recuperando i gruppi materiali del progetto %s: %s", project_id, exc)
+        return {}
+
+    group_lookup: Dict[int, Mapping[str, Any]] = {}
+    for entry in raw_groups:
+        group_id = parse_reference(entry.get("id")) or entry.get("id")
+        if isinstance(group_id, int):
+            group_lookup[group_id] = entry
+
+    result: Dict[int, Dict[str, Any]] = {}
+    for group_id, entry in group_lookup.items():
+        parent_id = parse_reference(entry.get("parent"))
+        path_value = entry.get("path")
+        if not isinstance(path_value, str) or not path_value.strip():
+            path_value = _build_equipment_group_path(group_id, group_lookup)
+        result[group_id] = {
+            "id": group_id,
+            "name": _equipment_group_display_name(entry),
+            "parent_id": parent_id,
+            "path": path_value or _equipment_group_display_name(entry),
+        }
+
+    return result
+
+
+def fetch_project_attachments(project_code: Optional[str], *, exhaustive: bool = False) -> List[Dict[str, Any]]:
     attachments: List[Dict[str, Any]] = []
     code = (project_code or "").strip()
     if not code:
@@ -1801,8 +2118,13 @@ def fetch_project_attachments(project_code: Optional[str]) -> List[Dict[str, Any
         return attachments
 
     try:
-        app.logger.info("Rentman: recupero allegati progetto %s (id=%s)", code, project_id)
-        files = client.get_project_files(project_id)
+        app.logger.info(
+            "Rentman: recupero allegati progetto %s (id=%s, exhaustive=%s)",
+            code,
+            project_id,
+            exhaustive,
+        )
+        files = client.get_project_files(project_id, exhaustive=exhaustive)
         app.logger.info(
             "Rentman: payload files raw (primi 3)=\n%s",
             json.dumps(files[:3], ensure_ascii=False, indent=2) if files else "[]",
@@ -1842,6 +2164,274 @@ def fetch_project_attachments(project_code: Optional[str]) -> List[Dict[str, Any
     return attachments
 
 
+def _normalize_material_name(entry: Mapping[str, Any]) -> str:
+    for key in ("displayname", "name", "description"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    identifier = entry.get("id")
+    return f"Materiale {identifier}" if identifier is not None else "Materiale"
+
+
+def _extract_material_quantity(entry: Mapping[str, Any]) -> Tuple[Optional[float], str]:
+    numeric_candidate = entry.get("quantity_total")
+    quantity_label = ""
+    quantity_value: Optional[float] = None
+    if isinstance(numeric_candidate, (int, float)):
+        quantity_value = float(numeric_candidate)
+
+    raw_quantity = entry.get("quantity")
+    if quantity_value is None:
+        if isinstance(raw_quantity, (int, float)):
+            quantity_value = float(raw_quantity)
+        elif isinstance(raw_quantity, str):
+            slug = raw_quantity.strip().replace(",", ".")
+            try:
+                quantity_value = float(slug)
+            except ValueError:
+                quantity_value = None
+
+    if quantity_value is not None:
+        if quantity_value.is_integer():
+            quantity_label = str(int(quantity_value))
+        else:
+            quantity_label = f"{quantity_value:.2f}".rstrip("0").rstrip(".")
+
+    if not quantity_label and isinstance(raw_quantity, str) and raw_quantity.strip():
+        quantity_label = raw_quantity.strip()
+    elif not quantity_label and isinstance(numeric_candidate, (int, float)):
+        quantity_label = str(numeric_candidate)
+
+    return quantity_value, quantity_label or "0"
+
+
+def _material_status(entry: Mapping[str, Any]) -> Tuple[str, str]:
+    if _is_truthy(entry.get("has_missings")):
+        return "missing", "Mancanze"
+    if _is_truthy(entry.get("delay_notified")):
+        return "delayed", "In ritardo"
+    subrent = _coerce_int(entry.get("subrent_reservations")) or 0
+    if subrent > 0:
+        return "subrent", "Subnoleggio"
+    reserved = _coerce_int(entry.get("warehouse_reservations")) or 0
+    if reserved > 0:
+        return "reserved", "Riservato"
+    if _is_truthy(entry.get("is_option")):
+        return "option", "Opzione"
+    return "planned", "Pianificato"
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        slug = value.strip().replace(",", ".")
+        if not slug:
+            return None
+        try:
+            return float(slug)
+        except ValueError:
+            return None
+    return None
+
+
+def _format_dimension_value(value: Optional[float]) -> Optional[str]:
+    if value is None:
+        return None
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _format_dimensions_label(length: Optional[float], width: Optional[float], height: Optional[float]) -> str:
+    components: List[str] = []
+    for component in (length, width, height):
+        label = _format_dimension_value(component)
+        components.append(label or "0")
+    if not any(component for component in components if component != "0"):
+        return "---"
+    return "x".join(components)
+
+
+def _format_weight_label(value: Optional[float]) -> str:
+    if value is None:
+        return "---"
+    label = _format_dimension_value(value)
+    if not label:
+        return "---"
+    return f"{label} kg"
+
+
+def _resolve_equipment_meta(
+    equipment_ref: Any,
+    client: RentmanClient,
+    cache: Dict[int, Optional[Mapping[str, Any]]],
+) -> Optional[Mapping[str, Any]]:
+    equipment_id = parse_reference(equipment_ref)
+    if not isinstance(equipment_id, int):
+        return None
+    if equipment_id in cache:
+        return cache[equipment_id]
+    try:
+        meta = client.get_equipment(equipment_id)
+    except RentmanError as exc:
+        app.logger.error("Rentman: errore recuperando equipment %s: %s", equipment_id, exc)
+        cache[equipment_id] = None
+        return None
+    cache[equipment_id] = meta
+    return meta
+
+
+def _resolve_photo_payload(
+    reference: Any,
+    client: RentmanClient,
+    cache: Dict[int, Optional[Mapping[str, Any]]],
+) -> Optional[Dict[str, Any]]:
+    if not reference:
+        return None
+
+    if isinstance(reference, str) and reference.startswith("http"):
+        return {"name": "Foto materiale", "url": reference, "preview_url": reference}
+
+    file_id = parse_reference(reference)
+    if not isinstance(file_id, int):
+        return None
+
+    if file_id in cache:
+        file_entry = cache[file_id]
+    else:
+        try:
+            file_entry = client.get_file(file_id)
+        except RentmanError as exc:
+            app.logger.error("Rentman: errore recuperando file %s: %s", file_id, exc)
+            file_entry = None
+        cache[file_id] = file_entry
+
+    if not file_entry:
+        return None
+
+    url = file_entry.get("url")
+    preview = file_entry.get("proxy_url") or url
+    if not url and not preview:
+        return None
+
+    return {
+        "name": _normalize_attachment_name(file_entry),
+        "url": url or preview,
+        "preview_url": preview or url,
+        "extension": _normalize_attachment_extension(file_entry.get("extension") or file_entry.get("type")),
+    }
+
+
+def fetch_project_materials(project_code: Optional[str]) -> Dict[str, List[Dict[str, Any]]]:
+    result: Dict[str, List[Dict[str, Any]]] = {"items": [], "folders": []}
+    code = (project_code or "").strip()
+    if not code:
+        return result
+
+    client = get_rentman_client()
+    if not client:
+        return result
+
+    try:
+        project = client.find_project(code)
+    except RentmanNotFound:
+        app.logger.warning("Rentman: nessun progetto per materiali %s", code)
+        return result
+    except (RentmanAuthError, RentmanAPIError) as exc:
+        app.logger.error("Rentman: errore durante la ricerca dei materiali per %s: %s", code, exc)
+        return result
+
+    if not project:
+        app.logger.info("Rentman: progetto %s non trovato, nessun materiale", code)
+        return result
+
+    project_id = parse_reference(project.get("id")) or project.get("id")
+    if not isinstance(project_id, int):
+        app.logger.warning("Rentman: materiali non disponibili, id progetto non valido per %s (%s)", code, project.get("id"))
+        return result
+
+    try:
+        records = client.get_project_planned_equipment(project_id)
+        app.logger.info(
+            "Rentman: materiali pianificati raw (primi 3)=\n%s",
+            json.dumps(records[:3], ensure_ascii=False, indent=2) if records else "[]",
+        )
+    except RentmanError as exc:
+        app.logger.error("Rentman: errore leggendo i materiali del progetto %s: %s", code, exc)
+        return result
+
+    equipment_cache: Dict[int, Optional[Mapping[str, Any]]] = {}
+    file_cache: Dict[int, Optional[Mapping[str, Any]]] = {}
+    group_lookup = _collect_material_groups(client, project_id)
+    default_group_label = "Altri materiali"
+    materials: List[Dict[str, Any]] = []
+    for entry in records:
+        if not isinstance(entry, Mapping):
+            continue
+        quantity_value, quantity_label = _extract_material_quantity(entry)
+        status_code, status_label = _material_status(entry)
+        equipment_meta = _resolve_equipment_meta(entry.get("equipment"), client, equipment_cache)
+        length = _coerce_float(entry.get("length")) or ( _coerce_float(equipment_meta.get("length")) if equipment_meta else None)
+        width = _coerce_float(entry.get("width")) or ( _coerce_float(equipment_meta.get("width")) if equipment_meta else None)
+        height = _coerce_float(entry.get("height")) or ( _coerce_float(equipment_meta.get("height")) if equipment_meta else None)
+        weight_value = _coerce_float(entry.get("weight"))
+        if weight_value is None and equipment_meta:
+            weight_value = _coerce_float(equipment_meta.get("weight"))
+        dimensions_label = _format_dimensions_label(length, width, height)
+        weight_label = _format_weight_label(weight_value)
+        image_reference = entry.get("image") or (equipment_meta.get("image") if equipment_meta else None)
+        photo_payload = _resolve_photo_payload(image_reference, client, file_cache)
+        group_id = parse_reference(entry.get("equipment_group"))
+        group_entry = group_lookup.get(group_id) if isinstance(group_id, int) else None
+        group_name = group_entry.get("name") if group_entry else default_group_label
+        group_path = group_entry.get("path") if group_entry else group_name
+        notes: List[str] = []
+        for key in ("internal_remark", "external_remark"):
+            value = entry.get(key)
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped:
+                    notes.append(stripped)
+        note_text = " · ".join(dict.fromkeys(notes)) if notes else ""
+        materials.append(
+            {
+                "id": entry.get("id"),
+                "name": _normalize_material_name(entry),
+                "quantity": quantity_value,
+                "quantity_label": quantity_label,
+                "period_start": entry.get("planperiod_start"),
+                "period_end": entry.get("planperiod_end"),
+                "note": note_text,
+                "status": status_label,
+                "status_code": status_code,
+                "has_missings": bool(_is_truthy(entry.get("has_missings"))),
+                "is_option": bool(_is_truthy(entry.get("is_option"))),
+                "dimensions_label": dimensions_label,
+                "weight_label": weight_label,
+                "photo": photo_payload,
+                "group_id": group_id,
+                "group_name": group_name,
+                "group_path": group_path,
+            }
+        )
+
+    materials.sort(
+        key=lambda item: (
+            str(item.get("group_path") or item.get("group_name") or "").lower(),
+            item.get("status_code"),
+            str(item.get("name") or "").lower(),
+        )
+    )
+
+    folders = _collect_project_folders(client, project_id)
+    result["items"] = materials
+    result["folders"] = folders
+    return result
+
+
 def now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -1879,6 +2469,72 @@ def ensure_persistent_session_table(db: DatabaseLike) -> None:
             pass
 
 
+def ensure_equipment_checks_table(db: DatabaseLike) -> None:
+    statement = EQUIPMENT_CHECKS_TABLE_MYSQL if DB_VENDOR == "mysql" else EQUIPMENT_CHECKS_TABLE_SQLITE
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def ensure_project_materials_cache_table(db: DatabaseLike) -> None:
+    statement = (
+        PROJECT_MATERIALS_CACHE_TABLE_MYSQL if DB_VENDOR == "mysql" else PROJECT_MATERIALS_CACHE_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def ensure_local_equipment_table(db: DatabaseLike) -> None:
+    statement = LOCAL_EQUIPMENT_TABLE_MYSQL if DB_VENDOR == "mysql" else LOCAL_EQUIPMENT_TABLE_SQLITE
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def ensure_project_photos_table(db: DatabaseLike) -> None:
+    statement = PROJECT_PHOTOS_TABLE_MYSQL if DB_VENDOR == "mysql" else PROJECT_PHOTOS_TABLE_SQLITE
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+# Cartella per salvare le foto del progetto
+PHOTOS_UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "photos")
+os.makedirs(PHOTOS_UPLOAD_FOLDER, exist_ok=True)
+
+ALLOWED_PHOTO_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "heic", "heif"}
+MAX_PHOTO_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def allowed_photo_file(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_PHOTO_EXTENSIONS
+
+
 def _last_insert_id(db: DatabaseLike) -> Optional[int]:
     query = "SELECT LAST_INSERT_ID() AS lid" if DB_VENDOR == "mysql" else "SELECT last_insert_rowid() AS lid"
     row = db.execute(query).fetchone()
@@ -1914,6 +2570,8 @@ def init_db() -> None:
             ensure_app_users_table(db)
             ensure_session_override_table(db)
             ensure_persistent_session_table(db)
+            ensure_equipment_checks_table(db)
+            ensure_project_materials_cache_table(db)
             bootstrap_user_store(db)
             db.commit()
         finally:
@@ -2002,11 +2660,31 @@ def init_db() -> None:
                 created_ts INTEGER NOT NULL,
                 updated_ts INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS equipment_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT NOT NULL,
+                item_key TEXT NOT NULL,
+                checked_ts INTEGER NOT NULL,
+                username TEXT,
+                created_ts INTEGER NOT NULL,
+                updated_ts INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_equipment_project_item ON equipment_checks(project_code, item_key);
+            CREATE INDEX IF NOT EXISTS idx_equipment_project ON equipment_checks(project_code);
+            CREATE TABLE IF NOT EXISTS project_materials_cache (
+                project_code TEXT PRIMARY KEY,
+                project_name TEXT NOT NULL,
+                data_json TEXT NOT NULL,
+                created_ts INTEGER NOT NULL,
+                updated_ts INTEGER NOT NULL
+            );
             """
         )
         _ensure_entered_ts_column(db, "INTEGER")
         purge_legacy_seed(db)
         ensure_persistent_session_table(db)
+        ensure_equipment_checks_table(db)
+        ensure_project_materials_cache_table(db)
         bootstrap_user_store(db)
         db.commit()
     finally:
@@ -2139,12 +2817,31 @@ def parse_iso_to_ms(value: Optional[str]) -> Optional[int]:
 def clear_project_state(db: DatabaseLike) -> None:
     """Rimuove il progetto attivo e i relativi dati dal database."""
 
+    try:
+        previous_code = get_app_state(db, "project_code")
+    except Exception:
+        previous_code = None
     db.execute("DELETE FROM activities")
     db.execute("DELETE FROM member_state")
     db.execute("DELETE FROM event_log")
     db.execute(
         f"DELETE FROM app_state WHERE {APP_STATE_KEY_COLUMN} IN ('project_code','project_name','activity_plan_meta','push_notified_activities','long_running_member_notifications')"
     )
+    delete_project_materials_cache(db, previous_code)
+
+
+def has_active_member_sessions(db: DatabaseLike) -> bool:
+    """Restituisce True se esistono timer in corso o posti in pausa."""
+
+    row = db.execute(
+        """
+        SELECT 1 FROM member_state
+        WHERE running=? OR pause_start IS NOT NULL OR COALESCE(elapsed_cached, 0) > 0
+        LIMIT 1
+        """,
+        (RUN_STATE_RUNNING,),
+    ).fetchone()
+    return row is not None
 
 
 def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
@@ -2283,6 +2980,8 @@ def get_db() -> DatabaseLike:
             ensure_app_users_table(g.db)
             ensure_session_override_table(g.db)
             ensure_persistent_session_table(g.db)
+            ensure_equipment_checks_table(g.db)
+            ensure_project_materials_cache_table(g.db)
         except Exception:
             app.logger.exception("Impossibile aggiornare lo schema attività")
     return g.db
@@ -2313,6 +3012,147 @@ def row_value(row: Mapping[str, Any], key: str) -> Optional[Any]:
         return row[key]
     except Exception:
         return None
+
+
+def fetch_equipment_checks(db: DatabaseLike, project_code: Optional[str]) -> Dict[str, int]:
+    if not project_code:
+        return {}
+    rows = db.execute(
+        "SELECT item_key, checked_ts FROM equipment_checks WHERE project_code=?",
+        (project_code,),
+    ).fetchall()
+    result: Dict[str, int] = {}
+    for row in rows:
+        item_key = row_value(row, "item_key")
+        if not item_key:
+            continue
+        timestamp_raw = row_value(row, "checked_ts")
+        try:
+            timestamp_int = int(timestamp_raw)
+        except (TypeError, ValueError):
+            continue
+        result[str(item_key)] = timestamp_int
+    return result
+
+
+def persist_equipment_check(
+    db: DatabaseLike,
+    *,
+    project_code: str,
+    item_key: str,
+    checked: bool,
+    username: Optional[str] = None,
+) -> Optional[int]:
+    normalized_project = (project_code or "").strip()
+    normalized_item = (item_key or "").strip()
+    if not normalized_project or not normalized_item:
+        return None
+    if checked:
+        now = now_ms()
+        if DB_VENDOR == "mysql":
+            db.execute(
+                """
+                INSERT INTO equipment_checks(project_code, item_key, checked_ts, username, created_ts, updated_ts)
+                VALUES(?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE checked_ts=VALUES(checked_ts), username=VALUES(username), updated_ts=VALUES(updated_ts)
+                """,
+                (normalized_project, normalized_item, now, username, now, now),
+            )
+        else:
+            db.execute(
+                """
+                INSERT INTO equipment_checks(project_code, item_key, checked_ts, username, created_ts, updated_ts)
+                VALUES(?,?,?,?,?,?)
+                ON CONFLICT(project_code, item_key) DO UPDATE SET
+                    checked_ts=excluded.checked_ts,
+                    username=excluded.username,
+                    updated_ts=excluded.updated_ts
+                """,
+                (normalized_project, normalized_item, now, username, now, now),
+            )
+        return now
+
+    db.execute(
+        "DELETE FROM equipment_checks WHERE project_code=? AND item_key=?",
+        (normalized_project, normalized_item),
+    )
+    return None
+
+
+def load_project_materials_cache(db: DatabaseLike, project_code: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not project_code:
+        return None
+    row = db.execute(
+        "SELECT project_name, data_json, updated_ts FROM project_materials_cache WHERE project_code=?",
+        (project_code,),
+    ).fetchone()
+    if not row:
+        return None
+    raw_payload = row_value(row, "data_json")
+    try:
+        payload = json.loads(raw_payload) if raw_payload else {}
+    except json.JSONDecodeError:
+        payload = {}
+    items = payload.get("items")
+    if not isinstance(items, list):
+        items = []
+    folders = payload.get("folders")
+    if not isinstance(folders, list):
+        folders = []
+    return {
+        "project": {
+            "code": project_code,
+            "name": row_value(row, "project_name") or project_code,
+        },
+        "items": items,
+        "folders": folders,
+        "updated_ts": row_value(row, "updated_ts"),
+    }
+
+
+def save_project_materials_cache(
+    db: DatabaseLike,
+    project_code: Optional[str],
+    project_name: Optional[str],
+    *,
+    items: Sequence[Mapping[str, Any]] | Sequence[Any],
+    folders: Sequence[Mapping[str, Any]] | Sequence[Any],
+) -> int:
+    if not project_code:
+        return 0
+    normalized_name = project_name or project_code
+    sanitized_items = list(items or [])
+    sanitized_folders = list(folders or [])
+    payload = json.dumps({"items": sanitized_items, "folders": sanitized_folders}, ensure_ascii=False)
+    now = now_ms()
+    if DB_VENDOR == "mysql":
+        db.execute(
+            """
+            INSERT INTO project_materials_cache(project_code, project_name, data_json, created_ts, updated_ts)
+            VALUES(?,?,?,?,?)
+            ON DUPLICATE KEY UPDATE project_name=VALUES(project_name), data_json=VALUES(data_json), updated_ts=VALUES(updated_ts)
+            """,
+            (project_code, normalized_name, payload, now, now),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO project_materials_cache(project_code, project_name, data_json, created_ts, updated_ts)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(project_code) DO UPDATE SET
+                project_name=excluded.project_name,
+                data_json=excluded.data_json,
+                updated_ts=excluded.updated_ts
+            """,
+            (project_code, normalized_name, payload, now, now),
+        )
+    return now
+
+
+def delete_project_materials_cache(db: DatabaseLike, project_code: Optional[str]) -> None:
+    if not project_code:
+        return
+    db.execute("DELETE FROM project_materials_cache WHERE project_code=?", (project_code,))
 
 
 def find_last_move_ts(db: DatabaseLike, member_key: str, activity_id: str) -> Optional[int]:
@@ -3247,6 +4087,10 @@ def describe_event(kind: str, details: Dict[str, Any], activity_labels: Dict[str
             return f"Progetto {code} · {name}"
         return f"Progetto {code} attivato"
 
+    if kind == "create_activity":
+        label = details.get("label") or label_for(details.get("activity_id"))
+        return f"Nuova attività: {label or 'Attività'}"
+
     if kind == "pause_all":
         affected = details.get("affected") or 0
         return f"Pausa collettiva ({affected} operatori)"
@@ -3354,13 +4198,35 @@ def home() -> ResponseReturnValue:
     is_admin = bool(session.get('is_admin'))
     project_code = get_app_state(db, "project_code")
     project_name = get_app_state(db, "project_name")
-    initial_attachments = fetch_project_attachments(project_code)
+    initial_attachments: Dict[str, Any] = {"project": None, "items": []}
+    initial_materials: Dict[str, Any] = {
+        "project": None,
+        "items": [],
+        "folders": [],
+        "equipment_checks": {},
+        "updated_ts": None,
+        "from_cache": False,
+    }
     initial_project = None
     if project_code:
         initial_project = {
             "code": project_code,
             "name": project_name or project_code,
         }
+        initial_attachments["project"] = initial_project
+        initial_materials["project"] = initial_project
+        initial_materials["equipment_checks"] = fetch_equipment_checks(db, project_code)
+        cached_materials = load_project_materials_cache(db, project_code)
+        if cached_materials:
+            initial_materials["items"] = cached_materials.get("items", [])
+            initial_materials["folders"] = cached_materials.get("folders", [])
+            cached_project = cached_materials.get("project")
+            if cached_project:
+                initial_materials["project"] = cached_project
+            initial_materials["updated_ts"] = cached_materials.get("updated_ts")
+            initial_materials["from_cache"] = True
+    header_clock = datetime.now().strftime("%d/%m/%Y | %H:%M")
+
     return render_template(
         "index.html",
         user_name=primary_name,
@@ -3368,18 +4234,133 @@ def home() -> ResponseReturnValue:
         user_initials=initials,
         is_admin=is_admin,
         initial_attachments=initial_attachments,
+        initial_materials=initial_materials,
         initial_project=initial_project,
+        header_clock=header_clock,
     )
 
 
-@app.get("/api/activities")
+@app.route("/api/activities", methods=["GET", "POST"])
 @login_required
 def api_activities():
+    if request.method == "GET":
+        db = get_db()
+        rows = db.execute(
+            "SELECT activity_id, label FROM activities ORDER BY sort_order, label"
+        ).fetchall()
+        return jsonify({"activities": [dict(row) for row in rows]})
+
+    # POST - create new activity
+    data = request.get_json(silent=True) or {}
+    label = str(data.get("label") or "").strip()
+    if not label:
+        return jsonify({"ok": False, "error": "missing_label"}), 400
+
+    raw_id = data.get("activity_id")
+    requested_id = ""
+    if isinstance(raw_id, str) and raw_id.strip():
+        requested_id = _normalize_activity_id(raw_id)
+        if not requested_id:
+            return jsonify({"ok": False, "error": "invalid_activity_id"}), 400
+
     db = get_db()
-    rows = db.execute(
-        "SELECT activity_id, label FROM activities ORDER BY sort_order, label"
-    ).fetchall()
-    return jsonify({"activities": [dict(row) for row in rows]})
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_active_project"}), 409
+    project_name = get_app_state(db, "project_name") or project_code
+
+    if requested_id:
+        existing = db.execute(
+            "SELECT 1 FROM activities WHERE activity_id=?",
+            (requested_id,),
+        ).fetchone()
+        if existing is not None:
+            return jsonify({"ok": False, "error": "activity_id_in_use"}), 409
+        activity_id = requested_id
+    else:
+        activity_id = _generate_activity_id(db, label)
+
+    order_row = db.execute("SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM activities").fetchone()
+    max_order = 0
+    if order_row is not None:
+        value = row_value(order_row, "max_order")
+        if value is None:
+            value = row_value(order_row, 0)
+        if isinstance(value, (int, float)):
+            max_order = int(value)
+    sort_order = max_order + 1
+
+    plan_start = _normalize_datetime(data.get("plan_start"))
+    plan_end = _normalize_datetime(data.get("plan_end"))
+    planned_members = _coerce_int(data.get("planned_members"))
+    if planned_members is None or planned_members < 0:
+        planned_members = 0
+    notes_raw = data.get("notes")
+    notes = str(notes_raw).strip() if isinstance(notes_raw, str) and notes_raw.strip() else None
+    planned_duration_ms = compute_planned_duration_ms(plan_start, plan_end, planned_members)
+
+    db.execute(
+        """
+        INSERT INTO activities(
+            activity_id, label, sort_order, plan_start, plan_end,
+            planned_members, planned_duration_ms, notes
+        ) VALUES(?,?,?,?,?,?,?,?)
+        """,
+        (
+            activity_id,
+            label,
+            sort_order,
+            plan_start,
+            plan_end,
+            planned_members,
+            planned_duration_ms,
+            notes,
+        ),
+    )
+
+    meta = load_activity_meta(db)
+    meta[str(activity_id)] = {
+        "plan_start": plan_start,
+        "plan_end": plan_end,
+        "planned_members": planned_members,
+        "planned_duration_ms": planned_duration_ms,
+        "actual_runtime_ms": 0,
+    }
+    save_activity_meta(db, meta)
+
+    now = now_ms()
+    db.execute(
+        "INSERT INTO event_log(ts, kind, details) VALUES(?,?,?)",
+        (
+            now,
+            "create_activity",
+            json.dumps({"activity_id": activity_id, "label": label}),
+        ),
+    )
+
+    db.commit()
+
+    payload = {
+        "activity_id": activity_id,
+        "label": label,
+        "plan_start": plan_start,
+        "plan_end": plan_end,
+        "planned_members": planned_members,
+        "planned_duration_ms": planned_duration_ms,
+        "notes": notes,
+        "sort_order": sort_order,
+    }
+
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "activity": payload,
+                "project": {"code": project_code, "name": project_name},
+            }
+        ),
+        201,
+    )
 
 
 @app.get("/api/push/status")
@@ -3704,6 +4685,7 @@ def api_state():
     }
     for row in members:
         running_state = int(row["running"])
+        last_start_ts = row["entered_ts"] or row["start_ts"]
         member = {
             "member_key": row["member_key"],
             "member_name": row["member_name"],
@@ -3712,6 +4694,7 @@ def api_state():
             "running_state": running_state,
             "elapsed": compute_elapsed(row, now),
             "paused": row["member_key"] in paused_keys,
+            "last_start_ts": last_start_ts,
         }
         if row["activity_id"] and row["activity_id"] in activity_map:
             activity_map[row["activity_id"]]["members"].append(member)
@@ -3816,8 +4799,341 @@ def api_project_attachments():
         return jsonify({"project": None, "attachments": []})
 
     project_name = get_app_state(db, "project_name") or project_code
-    attachments = fetch_project_attachments(project_code)
+    exhaustive = request.args.get("mode") == "deep"
+    attachments = fetch_project_attachments(project_code, exhaustive=exhaustive)
     return jsonify({"project": {"code": project_code, "name": project_name}, "attachments": attachments})
+
+
+@app.get("/api/project/materials")
+@login_required
+def api_project_materials():
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"project": None, "materials": [], "folders": [], "equipment_checks": {}, "from_cache": False})
+
+    project_name = get_app_state(db, "project_name") or project_code
+    mode = (request.args.get("mode") or "").strip().lower()
+    refresh_requested = mode == "refresh"
+
+    cached_payload: Optional[Dict[str, Any]] = None
+    if not refresh_requested:
+        cached_payload = load_project_materials_cache(db, project_code)
+
+    if cached_payload:
+        equipment_checks = fetch_equipment_checks(db, project_code)
+        return jsonify(
+            {
+                "project": {"code": project_code, "name": project_name},
+                "materials": cached_payload.get("items", []),
+                "folders": cached_payload.get("folders", []),
+                "equipment_checks": equipment_checks,
+                "from_cache": True,
+                "updated_ts": cached_payload.get("updated_ts"),
+            }
+        )
+
+    materials_payload = fetch_project_materials(project_code)
+    items = materials_payload.get("items", [])
+    folders = materials_payload.get("folders", [])
+    saved_ts = save_project_materials_cache(
+        db,
+        project_code,
+        project_name,
+        items=items,
+        folders=folders,
+    )
+    try:
+        db.commit()
+    except Exception:
+        app.logger.exception("Impossibile salvare la cache materiali per il progetto %s", project_code)
+    equipment_checks = fetch_equipment_checks(db, project_code)
+    return jsonify(
+        {
+            "project": {"code": project_code, "name": project_name},
+            "materials": items,
+            "folders": folders,
+            "equipment_checks": equipment_checks,
+            "from_cache": False,
+            "updated_ts": saved_ts,
+        }
+    )
+
+
+@app.get("/api/project/equipment/checks")
+@login_required
+def api_project_equipment_checks():
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"project": None, "checks": {}})
+
+    project_name = get_app_state(db, "project_name") or project_code
+    checks = fetch_equipment_checks(db, project_code)
+    return jsonify({"project": {"code": project_code, "name": project_name}, "checks": checks})
+
+
+@app.post("/api/project/equipment/checks")
+@login_required
+def api_update_equipment_check():
+    data = request.get_json(silent=True) or {}
+    item_key = (data.get("item_key") or "").strip()
+    if not item_key:
+        return jsonify({"ok": False, "error": "missing_item_key"}), 400
+    if "checked" not in data:
+        return jsonify({"ok": False, "error": "missing_checked_flag"}), 400
+
+    checked = bool(data.get("checked"))
+
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_active_project"}), 400
+
+    username = session.get("user")
+    timestamp = persist_equipment_check(
+        db,
+        project_code=project_code,
+        item_key=item_key,
+        checked=checked,
+        username=username,
+    )
+    db.commit()
+
+    return jsonify({"ok": True, "checked": checked, "timestamp": timestamp})
+
+
+@app.route("/api/project/local-equipment", methods=["GET", "POST"])
+@login_required
+def api_local_equipment():
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_active_project"}), 400
+
+    ensure_local_equipment_table(db)
+
+    if request.method == "GET":
+        rows = db.execute(
+            "SELECT id, name, quantity, notes, group_name, created_ts, updated_ts "
+            "FROM local_equipment WHERE project_code = ? ORDER BY created_ts DESC",
+            (project_code,),
+        ).fetchall()
+        items = []
+        for row in rows:
+            if isinstance(row, Mapping):
+                items.append(dict(row))
+            elif isinstance(row, Sequence):
+                items.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "quantity": row[2],
+                    "notes": row[3],
+                    "group_name": row[4],
+                    "created_ts": row[5],
+                    "updated_ts": row[6],
+                })
+        return jsonify({"ok": True, "items": items})
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "missing_name"}), 400
+
+    quantity = int(data.get("quantity", 1))
+    notes = (data.get("notes") or "").strip() or None
+    group_name = (data.get("group_name") or "").strip() or "Attrezzature extra"
+    now = int(time.time() * 1000)
+
+    db.execute(
+        "INSERT INTO local_equipment (project_code, name, quantity, notes, group_name, created_ts, updated_ts) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (project_code, name, quantity, notes, group_name, now, now),
+    )
+    new_id = _last_insert_id(db)
+    db.commit()
+
+    return jsonify({
+        "ok": True,
+        "item": {
+            "id": new_id,
+            "name": name,
+            "quantity": quantity,
+            "notes": notes,
+            "group_name": group_name,
+            "created_ts": now,
+            "updated_ts": now,
+        },
+    })
+
+
+@app.delete("/api/project/local-equipment/<int:item_id>")
+@login_required
+def api_delete_local_equipment(item_id: int):
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_active_project"}), 400
+
+    ensure_local_equipment_table(db)
+    db.execute(
+        "DELETE FROM local_equipment WHERE id = ? AND project_code = ?",
+        (item_id, project_code),
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Foto progetto
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/project/photos", methods=["GET", "POST"])
+@login_required
+def api_project_photos():
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_active_project"}), 400
+
+    ensure_project_photos_table(db)
+
+    if request.method == "GET":
+        rows = db.execute(
+            "SELECT id, filename, original_name, mime_type, file_size, caption, created_ts "
+            "FROM project_photos WHERE project_code = ? ORDER BY created_ts DESC",
+            (project_code,),
+        ).fetchall()
+        items = []
+        for row in rows:
+            if isinstance(row, Mapping):
+                items.append(dict(row))
+            elif isinstance(row, Sequence):
+                items.append({
+                    "id": row[0],
+                    "filename": row[1],
+                    "original_name": row[2],
+                    "mime_type": row[3],
+                    "file_size": row[4],
+                    "caption": row[5],
+                    "created_ts": row[6],
+                })
+        return jsonify({"ok": True, "items": items, "project_code": project_code})
+
+    # POST - Upload nuova foto
+    if "photo" not in request.files:
+        return jsonify({"ok": False, "error": "no_file"}), 400
+
+    file = request.files["photo"]
+    if file.filename == "":
+        return jsonify({"ok": False, "error": "no_filename"}), 400
+
+    if not allowed_photo_file(file.filename):
+        return jsonify({"ok": False, "error": "invalid_file_type"}), 400
+
+    # Leggi il file in memoria per verificare la dimensione
+    file_data = file.read()
+    if len(file_data) > MAX_PHOTO_SIZE:
+        return jsonify({"ok": False, "error": "file_too_large"}), 400
+
+    # Genera nome file univoco
+    original_name = file.filename
+    ext = original_name.rsplit(".", 1)[1].lower() if "." in original_name else "jpg"
+    unique_filename = f"{project_code}_{int(time.time() * 1000)}_{os.urandom(4).hex()}.{ext}"
+
+    # Salva il file
+    file_path = os.path.join(PHOTOS_UPLOAD_FOLDER, unique_filename)
+    with open(file_path, "wb") as f:
+        f.write(file_data)
+
+    # Salva nel database
+    caption = request.form.get("caption", "").strip() or None
+    mime_type = file.content_type or f"image/{ext}"
+    now = int(time.time() * 1000)
+
+    db.execute(
+        "INSERT INTO project_photos (project_code, filename, original_name, mime_type, file_size, caption, created_ts) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (project_code, unique_filename, original_name, mime_type, len(file_data), caption, now),
+    )
+    new_id = _last_insert_id(db)
+    db.commit()
+
+    return jsonify({
+        "ok": True,
+        "item": {
+            "id": new_id,
+            "filename": unique_filename,
+            "original_name": original_name,
+            "mime_type": mime_type,
+            "file_size": len(file_data),
+            "caption": caption,
+            "created_ts": now,
+        },
+    })
+
+
+@app.get("/api/project/photos/<filename>")
+@login_required
+def api_get_photo(filename: str):
+    """Serve una foto dal filesystem"""
+    file_path = os.path.join(PHOTOS_UPLOAD_FOLDER, filename)
+    if not os.path.exists(file_path):
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    # Sicurezza: verifica che il file appartenga al progetto attivo
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    ensure_project_photos_table(db)
+
+    row = db.execute(
+        "SELECT id FROM project_photos WHERE filename = ? AND project_code = ?",
+        (filename, project_code),
+    ).fetchone()
+
+    if not row:
+        return jsonify({"ok": False, "error": "not_authorized"}), 403
+
+    return send_from_directory(PHOTOS_UPLOAD_FOLDER, filename)
+
+
+@app.delete("/api/project/photos/<int:photo_id>")
+@login_required
+def api_delete_photo(photo_id: int):
+    db = get_db()
+    project_code = get_app_state(db, "project_code")
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_active_project"}), 400
+
+    ensure_project_photos_table(db)
+
+    # Recupera il filename per eliminare il file
+    row = db.execute(
+        "SELECT filename FROM project_photos WHERE id = ? AND project_code = ?",
+        (photo_id, project_code),
+    ).fetchone()
+
+    if not row:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    filename = row["filename"] if isinstance(row, Mapping) else row[0]
+    file_path = os.path.join(PHOTOS_UPLOAD_FOLDER, filename)
+
+    # Elimina dal database
+    db.execute(
+        "DELETE FROM project_photos WHERE id = ? AND project_code = ?",
+        (photo_id, project_code),
+    )
+    db.commit()
+
+    # Elimina il file dal filesystem
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except OSError as e:
+        app.logger.warning("Impossibile eliminare file foto %s: %s", file_path, e)
+
+    return jsonify({"ok": True})
 
 
 @app.post("/api/load_project")
@@ -3831,8 +5147,20 @@ def api_load_project():
     if not project_date:
         return jsonify({"ok": False, "error": "missing_project_date"}), 400
 
-    plan = mock_fetch_project(project_code, project_date)
     db = get_db()
+    if has_active_member_sessions(db):
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "active_sessions_present",
+                    "message": "Sono presenti operatori con attività in corso o in pausa. Termina le sessioni prima di ricaricare il progetto.",
+                }
+            ),
+            409,
+        )
+
+    plan = mock_fetch_project(project_code, project_date)
     if plan is None:
         clear_project_state(db)
         db.commit()

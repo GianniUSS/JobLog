@@ -179,6 +179,7 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .attachments-loading { margin-top:12px; font-size:14px; color:var(--text-secondary); display:flex; align-items:center; gap:8px; }
 .team-header, .task-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 17px; margin-bottom: 10px; gap: 12px; }
 .team-header-info { display:flex; flex-direction:column; gap:4px; }
+.team-header-meta { display:flex; align-items:center; gap:8px; }
 .team-count { font-size:14px; font-weight:600; color:var(--text-secondary); }
 .task-header-info { display: flex; flex-direction: column; gap: 4px; }
 .task-schedule { font-size: 20px; font-weight: 700; color: #1d4ed8; letter-spacing:0.28px; }
@@ -189,7 +190,18 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .activity-time-value { font-family:"Courier New", monospace; font-size:18px; font-weight:700; color:var(--text-primary); }
 .activity-duration-summary { min-width:140px; }
 .activity-duration-summary .activity-time-value { color:#0f172a; }
-.team-actions { display:flex; gap:8px; align-items:center; }
+.team-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+.new-activity-form { display:flex; flex-direction:column; gap:16px; text-align:left; }
+.new-activity-form .form-group { display:flex; flex-direction:column; gap:6px; }
+.new-activity-form label { font-size:13px; font-weight:600; color:var(--text-secondary); display:flex; align-items:center; gap:6px; }
+.new-activity-form label .required { color:var(--warn); font-size:14px; }
+.new-activity-form input,
+.new-activity-form textarea { border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:14px; background:var(--bg); color:var(--text-primary); transition:border-color 0.2s ease; width:100%; box-sizing:border-box; }
+.new-activity-form input:focus,
+.new-activity-form textarea:focus { outline:none; border-color:var(--brand); }
+.new-activity-form textarea { min-height:70px; resize:vertical; font-family:inherit; }
+.new-activity-form .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.new-activity-form .form-hint { font-size:11px; color:var(--text-secondary); margin-top:-2px; }
 .btn { border:none; border-radius:12px; padding:14px 18px; font-size:15px; font-weight:600; color:white; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform 0.1s ease, background 0.2s ease; }
 .btn:active { transform: scale(0.96); }
 .btn-primary{ background: var(--brand); }
@@ -201,9 +213,14 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .team-member.selected, .member-task.selected { background: var(--member-selected-bg); border-left: 6px solid var(--brand); }
 .drop-zone { border: 2px dashed var(--brand); border-radius: 10px; padding: 10px; text-align: center; font-size: 16px; color: var(--brand); margin-top: 10px; }
 .task-header-row { display: flex; justify-content: space-between; align-items: center; }
+.member-name-block { display:flex; flex-direction:column; gap:2px; }
+.member-name { font-size:18px; font-weight:700; color:var(--text-primary); }
+.member-start { font-size:13px; color:var(--text-secondary); font-weight:600; }
 .timer-display { font-weight: 700; color: var(--brand); font-size: 17px; font-family: 'Courier New', monospace; letter-spacing: 0.5px; }
 .activity-select-btn { border:none; border-radius:999px; background:#2563eb; color:#fff; padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 0.1s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent; min-height:44px; }
 .activity-select-btn:active { transform: scale(0.95); }
+.team-add-activity-btn { background:#16a34a; color:#fff; }
+.team-add-activity-btn:active { background:#15803d; }
 .activity-complete-btn { border:none; border-radius:999px; background:#16a34a; color:#fff; padding:10px 20px; font-size:14px; font-weight:700; cursor:pointer; transition:transform 0.12s ease, box-shadow 0.2s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent; box-shadow:0 4px 14px rgba(22,163,74,0.22); min-height:44px; }
 .activity-complete-btn:active { transform:scale(0.95); box-shadow:0 2px 8px rgba(22,163,74,0.25); }
 .task-members { display:flex; flex-direction:column; gap:10px; }
@@ -234,9 +251,52 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .selection-pause { background: #f97316; }
 .selection-finish { background: #ef4444; }
 .modal { position: fixed; inset: 0; background: var(--overlay); display: none; align-items: center; justify-content: center; z-index: 300; padding: 16px; }
+.modal.open { display: flex; }
 .modal-card { background: var(--bg-card); width: 94vw; max-width: 520px; max-height: 90vh; border-radius: 16px; padding: 26px; text-align: center; box-shadow: 0 8px 20px var(--shadow-lg); display: flex; flex-direction: column; gap: 18px; transition: background-color 0.2s ease; }
 .modal-card h3 { color: var(--text-primary); }
 .modal-card h3 { margin: 0; }
+
+/* Foto Progetto Styles */
+.photos-modal-card { max-width: 800px; width: 96vw; padding: 16px; max-height: 92vh; overflow-y: auto; }
+.photos-card { display: flex; flex-direction: column; gap: 16px; }
+.photos-card-header { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.photos-title { font-size: 20px; font-weight: 700; display: block; }
+.photos-subtitle { font-size: 14px; color: var(--text-secondary); display: block; }
+.photos-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.photos-action-btn { border: none; border-radius: 999px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; background: #e2e8f0; color: #0f172a; transition: background 0.2s ease; }
+.photos-action-btn.primary { background: var(--brand); color: #fff; box-shadow: 0 6px 16px rgba(14,165,233,0.35); }
+.photos-action-btn.danger { background: #ef4444; color: #fff; }
+.photos-action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.photos-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; justify-content: space-between; }
+.photos-count { background: #e2e8f0; padding: 4px 10px; border-radius: 999px; }
+.photos-loading { padding: 40px; text-align: center; color: var(--text-secondary); font-size: 15px; }
+.photos-empty { border: 1px dashed var(--border); border-radius: 12px; padding: 40px 20px; text-align: center; font-size: 15px; color: var(--text-secondary); }
+.photos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.photo-thumb { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s ease, transform 0.15s ease; background: #f1f5f9; }
+.photo-thumb:hover { border-color: var(--brand); transform: scale(1.03); }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.photo-thumb-caption { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); color: #fff; font-size: 11px; padding: 20px 8px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.photo-preview-modal-card { max-width: 90vw; max-height: 90vh; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.photo-preview-image { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 12px; }
+.photo-preview-caption { font-size: 14px; color: var(--text-secondary); text-align: center; }
+.photo-preview-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+/* Camera Modal */
+.camera-modal-card { max-width: 100vw; width: 100%; height: 100%; max-height: 100vh; padding: 0; border-radius: 0; display: flex; flex-direction: column; background: #000; }
+.camera-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(0,0,0,0.8); }
+.camera-title { color: #fff; font-size: 18px; font-weight: 600; }
+.camera-header .photos-action-btn { background: rgba(255,255,255,0.2); color: #fff; }
+.camera-viewfinder { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+.camera-viewfinder video { width: 100%; height: 100%; object-fit: cover; }
+.camera-actions { padding: 20px; display: flex; justify-content: center; background: rgba(0,0,0,0.8); }
+.camera-capture-btn { width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff; background: rgba(255,255,255,0.3); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.15s ease, background 0.15s ease; }
+.camera-capture-btn:hover { background: rgba(255,255,255,0.5); }
+.camera-capture-btn:active { transform: scale(0.95); background: #fff; }
+.camera-capture-icon { font-size: 28px; }
+
+.modal-scroll-footer { position: sticky; bottom: 0; margin-top: auto; padding-top: 12px; background: linear-gradient(180deg, rgba(15,23,42,0) 0%, var(--bg-card) 55%, var(--bg-card) 100%); }
+.modal-scroll-footer-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.modal-scroll-footer .materials-action-btn { flex: 1; min-width: 140px; }
 .attachments-modal-card { max-width: 720px; padding: 10px; }
 .activity-search { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; font-size: 17px; box-sizing: border-box; background: var(--bg); color: var(--text-primary); transition: background-color 0.2s ease, border-color 0.2s ease; }
 .activity-search + #choices { margin-top: 4px; }
@@ -263,6 +323,85 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .feedback-submit:not(:disabled):active { background:#1558c0; }
 .feedback-cancel { border:none; background:transparent; color:#5f6368; font-size:15px; font-weight:600; cursor:pointer; }
 .feedback-cancel:hover { text-decoration:underline; }
+.materials-card { background:var(--bg-card); border-radius:16px; box-shadow:0 2px 6px var(--shadow); padding:20px; border:1px solid transparent; transition:border-color 0.2s ease, box-shadow 0.2s ease; display:flex; flex-direction:column; gap:16px; }
+.materials-card.active { border-color:rgba(14,165,233,0.35); box-shadow:0 10px 25px rgba(14,165,233,0.15); }
+.materials-header { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+.materials-title { font-size:20px; font-weight:700; display:block; }
+.materials-subtitle { font-size:14px; color:var(--text-secondary); }
+.materials-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.materials-action-btn { border:none; border-radius:999px; padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; background:#e2e8f0; color:#0f172a; transition:background 0.2s ease, color 0.2s ease; }
+.materials-action-btn.primary { background:var(--brand); color:#fff; box-shadow:0 6px 16px rgba(14,165,233,0.35); }
+.materials-action-btn:disabled { opacity:0.6; cursor:not-allowed; }
+.materials-stats { margin-top:12px; display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.4px; font-weight:600; }
+.materials-status-pill { padding:4px 10px; border-radius:999px; background:#e2e8f0; color:#0f172a; font-size:12px; letter-spacing:0.3px; }
+.materials-list { margin-top:16px; display:flex; flex-direction:column; gap:12px; }
+.materials-equipment { margin-top:24px; padding-top:20px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:12px; }
+.materials-equipment-heading { display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; align-items:flex-start; }
+.materials-equipment-title { font-size:16px; font-weight:700; color:var(--text-primary); }
+.materials-equipment-hint { font-size:13px; color:var(--text-secondary); }
+.materials-equipment-status { font-size:13px; font-weight:600; color:var(--text-secondary); }
+.materials-group { display:flex; flex-direction:column; gap:12px; padding:4px 0 12px; }
+.materials-group-header { display:flex; justify-content:space-between; align-items:center; padding:4px 4px 10px; border-bottom:1px solid var(--border); gap:12px; }
+.materials-group-toggle { border:none; background:transparent; font-size:16px; cursor:pointer; line-height:1; padding:4px; color:var(--text-secondary); border-radius:6px; }
+.materials-group-toggle:hover { background:rgba(148,163,184,0.2); color:var(--text-primary); }
+.materials-group-title { font-size:15px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px; flex:1; }
+.materials-group-count { font-size:13px; color:var(--text-secondary); font-weight:600; letter-spacing:0.3px; }
+.materials-group-body { display:flex; flex-direction:column; gap:12px; }
+.materials-group-materials { display:flex; flex-direction:column; gap:12px; }
+.materials-group-children { display:flex; flex-direction:column; gap:12px; border-left:2px solid var(--border); margin-left:12px; padding-left:12px; }
+.materials-group.collapsed .materials-group-body { display:none; }
+.material-row { border:1px solid var(--border); border-radius:14px; padding:16px; display:flex; gap:16px; align-items:flex-start; background:var(--bg); box-shadow:0 1px 3px var(--shadow); flex-wrap:wrap; }
+.equipment-row { border-color:rgba(59,130,246,0.3); }
+.equipment-checkbox-column { min-width:160px; display:flex; align-items:flex-start; }
+.equipment-checkbox { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--text-primary); }
+.equipment-checkbox-input { width:18px; height:18px; cursor:pointer; }
+.equipment-timestamp { margin-left:auto; font-size:12px; color:var(--text-secondary); font-weight:600; }
+.material-primary { flex:1; display:flex; flex-direction:column; gap:6px; }
+.material-name { font-size:16px; font-weight:700; color:var(--text-primary); }
+.material-note { font-size:13px; color:var(--text-secondary); }
+.material-period { font-size:13px; color:var(--text-secondary); font-weight:600; }
+.material-qty { min-width:80px; display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-family:"Courier New", monospace; font-size:18px; font-weight:700; color:var(--text-primary); }
+.material-qty-label { font-size:11px; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.4px; font-weight:600; }
+.material-details { display:flex; flex-direction:column; gap:8px; min-width:180px; }
+.material-detail { display:flex; flex-direction:column; gap:2px; }
+.material-detail-label { font-size:11px; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.4px; font-weight:600; }
+.material-detail-value { font-size:14px; font-weight:600; color:var(--text-primary); }
+.material-status { min-width:120px; text-align:right; font-size:13px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; padding:6px 10px; border-radius:999px; }
+.material-status-planned { background:rgba(16,185,129,0.15); color:#047857; }
+.material-status-reserved { background:rgba(59,130,246,0.15); color:#1d4ed8; }
+.material-status-subrent { background:rgba(245,158,11,0.18); color:#b45309; }
+.material-status-delayed { background:rgba(249,115,22,0.2); color:#c2410c; }
+.material-status-missing { background:rgba(239,68,68,0.18); color:#b91c1c; }
+.material-status-option { background:rgba(148,163,184,0.25); color:#334155; }
+.material-actions { display:flex; align-items:center; justify-content:flex-end; flex:1; min-width:160px; }
+.materials-empty { margin-top:16px; border:1px dashed var(--border); border-radius:12px; padding:20px; text-align:center; font-size:15px; color:var(--text-secondary); }
+.materials-modal-card { max-width:760px; width:94vw; padding:16px; max-height:90vh; overflow-y:auto; display:flex; }
+.materials-modal-card .materials-card { margin:0; box-shadow:none; border:none; width:100%; flex:1; }
+.materials-modal-card .materials-list { flex:1; overflow-y:auto; padding-right:8px; }
+.materials-modal-card .materials-list::-webkit-scrollbar { width:6px; }
+.materials-modal-card .materials-list::-webkit-scrollbar-thumb { background:rgba(148,163,184,0.6); border-radius:999px; }
+.materials-modal-card .materials-empty { flex:1; display:flex; align-items:center; justify-content:center; margin-top:0; }
+.materials-folders { margin-top:20px; padding-top:20px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:14px; }
+.materials-folder-heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; }
+.materials-folder-title { font-weight:700; font-size:16px; }
+.materials-folder-hint { font-size:13px; color:var(--text-secondary); }
+.materials-folder-list { display:flex; flex-direction:column; gap:12px; }
+.materials-folder-row { border:1px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--bg); box-shadow:0 1px 3px var(--shadow); display:flex; flex-direction:column; gap:10px; }
+.materials-folder-info { display:flex; flex-direction:column; gap:4px; }
+.materials-folder-name { font-weight:600; font-size:15px; color:var(--text-primary); }
+.materials-folder-path { font-size:13px; color:var(--text-secondary); word-break:break-word; }
+.materials-folder-meta { font-size:12px; color:var(--text-secondary); letter-spacing:0.3px; text-transform:uppercase; font-weight:600; }
+.materials-folder-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.materials-photo-btn { border:none; border-radius:999px; padding:10px 16px; font-size:13px; font-weight:600; cursor:pointer; background:var(--brand); color:#fff; box-shadow:0 6px 16px rgba(14,165,233,0.35); }
+.materials-photo-btn.secondary { background:#e2e8f0; color:var(--text-primary); box-shadow:none; }
+.materials-photo-btn:disabled { opacity:0.5; cursor:not-allowed; box-shadow:none; }
+.material-photo-modal-card { max-width:520px; width:92vw; align-items:center; text-align:center; gap:16px; }
+.material-photo-image { width:100%; max-height:60vh; object-fit:contain; border-radius:16px; box-shadow:0 8px 24px var(--shadow-lg); background:#000000; }
+.material-photo-caption { font-size:14px; color:var(--text-secondary); word-break:break-word; }
+.material-photo-actions { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+.material-photo-link { border-radius:999px; padding:10px 18px; background:var(--brand); color:#fff; font-weight:600; text-decoration:none; box-shadow:0 6px 16px rgba(14,165,233,0.35); }
+.material-photo-link:visited { color:#fff; }
+.material-photo-link.hidden { display:none; }
 /* Media Queries Mobile */
 @media (max-width: 640px) {
         header { padding: 12px 12px; }
@@ -286,6 +425,12 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
     .attachments-card-header { flex-direction: column; align-items: flex-start; }
     .attachments-actions { width: 100%; justify-content: flex-start; }
     .attachments-actions button { flex: 1; min-width: 0; }
+    .materials-actions { width: 100%; justify-content: flex-start; }
+    .material-actions { width: 100%; justify-content: flex-start; }
+    .material-details { width: 100%; }
+    .material-row { flex-direction: column; align-items: flex-start; }
+    .material-qty { align-items: flex-start; }
+    .material-status { text-align: left; }
         .popup { bottom: 90px; font-size: 16px; padding: 14px 20px; }
 }
 @media (max-width: 480px) {
@@ -347,7 +492,7 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 <span class="logo-title">🔷 JOBlog</span>
 </div>
 <div class="header-actions">
-<span id="clock">--/--/---- | --:--</span>
+<span id="clock">{{ header_clock or '--/--/---- | --:--' }}</span>
 <div class="header-user" title="Accesso come {{ user_name or user_display or 'Utente' }}">
 <span class="header-user-avatar">{{ user_initials or '?' }}</span>
 <span class="header-user-name">{{ user_name or user_display or 'Utente' }}</span>
@@ -394,15 +539,6 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 </button>
 </li>
 <li>
-<button class="side-menu-item" type="button" data-menu-action>
-<span class="side-menu-item-icon">⏱️</span>
-<span class="side-menu-item-label">
-<span class="side-menu-item-text">Attività in corso</span>
-<span class="side-menu-item-hint">Operatori e tempi live</span>
-</span>
-</button>
-</li>
-<li>
 <button id="attachmentsMenuBtn" class="side-menu-item" type="button" data-menu-action>
 <span class="side-menu-item-icon">📎</span>
 <span class="side-menu-item-label">
@@ -412,11 +548,29 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 </button>
 </li>
 <li>
-<button class="side-menu-item" type="button" data-menu-action>
-<span class="side-menu-item-icon">�</span>
+<button id="materialsMenuBtn" class="side-menu-item" type="button" data-menu-action>
+<span class="side-menu-item-icon">🧰</span>
 <span class="side-menu-item-label">
-<span class="side-menu-item-text">Storico operazioni</span>
-<span class="side-menu-item-hint">Registri e log recenti</span>
+<span class="side-menu-item-text">Materiali pianificati</span>
+<span class="side-menu-item-hint">Apri pannello dedicato</span>
+</span>
+</button>
+</li>
+<li>
+<button id="equipmentMenuBtn" class="side-menu-item" type="button" data-menu-action>
+<span class="side-menu-item-icon">⚙️</span>
+<span class="side-menu-item-label">
+<span class="side-menu-item-text">Attrezzature</span>
+<span class="side-menu-item-hint">Check-list dedicata</span>
+</span>
+</button>
+</li>
+<li>
+<button id="photosMenuBtn" class="side-menu-item" type="button" data-menu-action>
+<span class="side-menu-item-icon">📷</span>
+<span class="side-menu-item-label">
+<span class="side-menu-item-text">Foto Progetto</span>
+<span class="side-menu-item-hint">Galleria immagini del cantiere</span>
 </span>
 </button>
 </li>
@@ -434,8 +588,8 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 <a href="{{ url_for('admin_sessions_page') }}" class="side-menu-item side-menu-link" data-menu-action>
 <span class="side-menu-item-icon">📱</span>
 <span class="side-menu-item-label">
-<span class="side-menu-item-text">Report Sessioni</span>
-<span class="side-menu-item-hint">UI mobile solo Admin</span>
+<span class="side-menu-item-text">Gestione Sessioni</span>
+<span class="side-menu-item-hint">Verifica e aggiorna le sessioni</span>
 </span>
 </a>
 </li>
@@ -460,24 +614,6 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 <span class="side-menu-item-label">
 <span class="side-menu-item-text">Notifiche Push</span>
 <span class="side-menu-item-hint" id="pushStatus">Verifica supporto...</span>
-</span>
-</button>
-</li>
-<li>
-<button id="pushTestBtn" class="side-menu-item" type="button" disabled>
-<span class="side-menu-item-icon">📣</span>
-<span class="side-menu-item-label">
-<span class="side-menu-item-text">Invia notifica test</span>
-<span class="side-menu-item-hint" id="pushTestHint">Attiva le notifiche per provarle</span>
-</span>
-</button>
-</li>
-<li>
-<button id="exportToggle" class="side-menu-item" type="button">
-<span class="side-menu-item-icon">📊</span>
-<span class="side-menu-item-label">
-<span class="side-menu-item-text">Esporta Dati</span>
-<span class="side-menu-item-hint">Report Excel o CSV</span>
 </span>
 </button>
 </li>
@@ -546,10 +682,13 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 <span>👷 Squadra</span>
 <span id="teamMemberCount" class="team-count">0 operatori</span>
 </div>
-<div class="team-actions">
-<button id="teamSelectBtn" type="button" class="activity-select-btn" aria-pressed="false">Seleziona tutti</button>
+<div class="team-header-meta">
 <button id="teamCollapseBtn" type="button" class="activity-collapse-btn" aria-expanded="false">Mostra squadra</button>
 </div>
+</div>
+<div class="team-actions">
+<button id="teamSelectBtn" type="button" class="activity-select-btn" aria-pressed="false">Seleziona tutti</button>
+<button id="teamAddActivityBtn" type="button" class="activity-select-btn team-add-activity-btn" data-open-new-activity="true">➕ Nuova attività</button>
 </div>
 <div class="member-list hidden" id="memberList"></div>
 </div>
@@ -564,6 +703,53 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 <input id="activitySearch" class="activity-search" type="text" placeholder="Filtra attività" autocomplete="off" readonly onfocus="this.removeAttribute('readonly');" />
 <div id="choices"></div>
 <button class="btn-danger" id="cancelBtn">Annulla</button>
+</div>
+</div>
+
+
+<div id="newActivityModal" class="modal">
+<div class="modal-card">
+<h3>➕ Nuova attività</h3>
+<form id="newActivityForm" class="new-activity-form">
+<div class="form-group">
+<label for="newActivityLabelInput">Nome attività <span class="required">*</span></label>
+<input id="newActivityLabelInput" type="text" placeholder="Es. Montaggio palco" autocomplete="off" required />
+</div>
+
+<div class="form-group">
+<label for="newActivityIdInput">Codice (opzionale)</label>
+<input id="newActivityIdInput" type="text" placeholder="Es. MONT-001" autocomplete="off" />
+<div class="form-hint">Lascia vuoto per generazione automatica</div>
+</div>
+
+<div class="form-row">
+<div class="form-group">
+<label for="newActivityStartInput">Inizio</label>
+<input id="newActivityStartInput" type="datetime-local" />
+</div>
+<div class="form-group">
+<label for="newActivityEndInput">Fine</label>
+<input id="newActivityEndInput" type="datetime-local" />
+</div>
+</div>
+
+<div class="form-group">
+<label for="newActivityMembersInput">Operatori previsti</label>
+<input id="newActivityMembersInput" type="number" min="0" step="1" placeholder="0" inputmode="numeric" />
+</div>
+
+<div class="form-group">
+<label for="newActivityNotesInput">Note</label>
+<textarea id="newActivityNotesInput" placeholder="Dettagli o istruzioni..."></textarea>
+</div>
+
+<div class="modal-scroll-footer">
+<div class="modal-scroll-footer-actions">
+<button type="button" class="btn-secondary" id="newActivityCancelBtn">Annulla</button>
+<button type="submit" class="btn btn-primary" id="newActivitySaveBtn" disabled>Crea attività</button>
+</div>
+</div>
+</form>
 </div>
 </div>
 
@@ -704,11 +890,188 @@ e poi Aggiungi alla Home
 </div>
 
 
+<div id="materialsModal" class="modal">
+<div id="materialsModalCard" class="modal-card materials-modal-card">
+<div id="materialsCard" class="materials-card hidden" aria-live="polite">
+<div class="materials-header">
+<div>
+<span class="materials-title">🧰 Materiale pianificato</span>
+<span id="materialsSubtitle" class="materials-subtitle">Nessun progetto attivo</span>
+</div>
+<div class="materials-actions">
+<button id="materialsRefreshBtn" class="materials-action-btn primary" type="button">Aggiorna materiali</button>
+<button id="equipmentOpenBtn" class="materials-action-btn" type="button">Attrezzature</button>
+<button id="materialsCloseBtn" class="materials-action-btn" type="button">Chiudi</button>
+</div>
+</div>
+<div class="materials-stats">
+<span id="materialsCountLabel">0 elementi</span>
+<span id="materialsStatusPill" class="materials-status-pill hidden">Aggiornato ora</span>
+</div>
+<div id="materialsEmpty" class="materials-empty">Carica un progetto per visualizzare l'elenco dei materiali pianificati.</div>
+<div id="materialsList" class="materials-list hidden" role="list"></div>
+<div id="materialsFoldersSection" class="materials-folders hidden">
+<div class="materials-folder-heading">
+<span class="materials-folder-title">📂 Cartelle progetto</span>
+<span class="materials-folder-hint">Percorsi da Rentman e anteprima foto</span>
+</div>
+<div id="materialsFoldersEmpty" class="materials-empty">Nessuna cartella disponibile per questo progetto.</div>
+<div id="materialsFolderList" class="materials-folder-list hidden" role="list"></div>
+<div class="modal-scroll-footer">
+<div class="modal-scroll-footer-actions">
+<button id="materialsScrollTopBtn" class="materials-action-btn secondary" type="button">↑ Torna su</button>
+<button id="materialsCloseBottomBtn" class="materials-action-btn primary" type="button">Chiudi</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="equipmentModal" class="modal">
+<div id="equipmentModalCard" class="modal-card materials-modal-card equipment-modal-card">
+<div id="equipmentCard" class="materials-card hidden" aria-live="polite">
+<div class="materials-header">
+<div>
+<span class="materials-title">⚙️ Attrezzature</span>
+<span id="equipmentSubtitle" class="materials-subtitle">Nessun progetto attivo</span>
+</div>
+<div class="materials-actions">
+<button id="equipmentAddBtn" class="materials-action-btn" type="button">➕ Aggiungi</button>
+<button id="equipmentRefreshBtn" class="materials-action-btn primary" type="button">Aggiorna attrezzature</button>
+<button id="equipmentCloseBtn" class="materials-action-btn" type="button">Chiudi</button>
+</div>
+</div>
+<div class="materials-stats">
+<span id="equipmentCountLabel">0 elementi</span>
+<span id="equipmentStatusPill" class="materials-status-pill hidden">Aggiornato ora</span>
+<span id="equipmentCheckedSummary" class="materials-equipment-status hidden"></span>
+</div>
+<div class="materials-equipment-hint">Spunta ogni attrezzatura consegnata per registrare data e ora.</div>
+<div id="equipmentEmpty" class="materials-empty">Carica un progetto per visualizzare la checklist.</div>
+<div id="equipmentList" class="materials-list hidden" role="list"></div>
+<div class="modal-scroll-footer">
+<div class="modal-scroll-footer-actions">
+<button id="equipmentScrollTopBtn" class="materials-action-btn secondary" type="button">↑ Torna su</button>
+<button id="equipmentCloseBottomBtn" class="materials-action-btn primary" type="button">Chiudi</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+
+<div id="newEquipmentModal" class="modal">
+<div class="modal-card" style="max-width:420px;">
+<div class="modal-header">
+<h2 class="modal-title">➕ Nuova Attrezzatura</h2>
+<button id="newEquipmentCloseBtn" type="button" class="modal-close-btn" aria-label="Chiudi">&times;</button>
+</div>
+<form id="newEquipmentForm" class="modal-form">
+<div class="form-group">
+<label for="newEquipmentName">Nome <span class="required">*</span></label>
+<input type="text" id="newEquipmentName" name="name" placeholder="Es. Cavo HDMI 10m" required>
+</div>
+<div class="form-group">
+<label for="newEquipmentQuantity">Quantità</label>
+<input type="number" id="newEquipmentQuantity" name="quantity" value="1" min="1">
+</div>
+<div class="form-group">
+<label for="newEquipmentGroup">Gruppo</label>
+<input type="text" id="newEquipmentGroup" name="group_name" placeholder="Attrezzature extra">
+</div>
+<div class="form-group">
+<label for="newEquipmentNotes">Note</label>
+<textarea id="newEquipmentNotes" name="notes" rows="2" placeholder="Note aggiuntive..."></textarea>
+</div>
+<div class="form-actions">
+<button type="button" id="newEquipmentCancelBtn" class="btn btn-secondary">Annulla</button>
+<button type="submit" class="btn btn-primary">Aggiungi</button>
+</div>
+</form>
+</div>
+</div>
+
+
+<div id="photosModal" class="modal">
+<div class="modal-card photos-modal-card">
+<div class="photos-card" aria-live="polite">
+<div class="photos-card-header">
+<div>
+<span class="photos-title">📷 Foto Progetto</span>
+<span class="photos-subtitle">Scatta e carica foto del cantiere</span>
+</div>
+<div class="photos-actions">
+<button id="photosRefreshBtn" class="photos-action-btn" type="button">Aggiorna</button>
+<button id="photosCameraBtn" class="photos-action-btn primary" type="button">📸 Fotocamera</button>
+<label id="photosUploadBtn" class="photos-action-btn" tabindex="0">
+📁 Galleria
+<input type="file" id="photosFileInput" accept="image/*" multiple hidden>
+</label>
+<button id="photosCloseBtn" class="photos-action-btn" type="button">Chiudi</button>
+</div>
+</div>
+<div class="photos-meta">
+<span id="photosProjectLabel">Nessun progetto attivo</span>
+<span class="photos-count"><span id="photosCount">0</span> foto</span>
+</div>
+<div id="photosLoading" class="photos-loading hidden">Caricamento in corso...</div>
+<div id="photosGrid" class="photos-grid hidden"></div>
+<div id="photosEmpty" class="photos-empty">Carica un progetto per visualizzare e aggiungere foto.</div>
+</div>
+</div>
+</div>
+
+<!-- Input nascosto per la fotocamera (fallback) -->
+<input type="file" id="photosCameraInput" accept="image/*" capture="environment" hidden>
+
+<!-- Modal Fotocamera -->
+<div id="cameraModal" class="modal">
+<div class="modal-card camera-modal-card">
+<div class="camera-header">
+<span class="camera-title">📸 Fotocamera</span>
+<button id="cameraCloseBtn" class="photos-action-btn" type="button">✕</button>
+</div>
+<div class="camera-viewfinder">
+<video id="cameraVideo" autoplay playsinline muted></video>
+<canvas id="cameraCanvas" hidden></canvas>
+</div>
+<div class="camera-actions">
+<button id="cameraCaptureBtn" class="camera-capture-btn" type="button">
+<span class="camera-capture-icon">📷</span>
+</button>
+</div>
+</div>
+</div>
+
+<div id="photoPreviewModal" class="modal">
+<div class="modal-card photo-preview-modal-card">
+<img id="photoPreviewImage" class="photo-preview-image" src="" alt="Anteprima foto" />
+<div id="photoPreviewCaption" class="photo-preview-caption"></div>
+<div class="photo-preview-actions">
+<button id="photoDeleteBtn" class="photos-action-btn danger" type="button">🗑️ Elimina</button>
+<button id="photoPreviewCloseBtn" class="photos-action-btn" type="button">Chiudi</button>
+</div>
+</div>
+</div>
+
+
+<div id="materialPhotoModal" class="modal">
+<div class="modal-card material-photo-modal-card">
+<img id="materialPhotoImage" class="material-photo-image" src="" alt="Anteprima foto materiale" />
+<div id="materialPhotoCaption" class="material-photo-caption">–</div>
+<div class="material-photo-actions">
+<a id="materialPhotoLink" class="material-photo-link" href="#" target="_blank" rel="noopener noreferrer">Apri originale</a>
+<button id="materialPhotoCloseBtn" class="materials-action-btn" type="button">Chiudi</button>
+</div>
+</div>
+</div>
+
+
 <script>
-window.__INITIAL_ATTACHMENTS__ = {
-project: {{ initial_project|tojson|safe }},
-items: {{ initial_attachments|tojson|safe }}
-};
+window.__INITIAL_ATTACHMENTS__ = {{ initial_attachments|tojson|safe }};
+window.__INITIAL_MATERIALS__ = {{ initial_materials|tojson|safe }};
 </script>
 <script src="{{ static_version('js/app.js') }}"></script>
 <script>

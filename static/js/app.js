@@ -16,6 +16,9 @@ let timelineOpen = false;
 let activitySearchTerm = "";
 let activitySearchInitialized = false;
 let selectionToolbarWasVisible = false;
+let newActivityModalOpen = false;
+let newActivityToolbarWasVisible = false;
+let newActivitySaving = false;
 const collapsedActivities = new Set();
 const activityTotalDisplays = new Map();
 const activityOverdueTrackers = new Map();
@@ -25,6 +28,24 @@ const clientElapsedState = new Map();
 const seenActivityIds = new Set();
 const ACTIVITY_DELAY_GRACE_MS = 0;
 const APP_RELEASE = "v2025.11.22f";
+const planningDateFormatter = new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+});
+const planningTimeFormatter = new Intl.DateTimeFormat("it-IT", {
+    hour: "2-digit",
+    minute: "2-digit",
+});
+const notificationTimestampFormatter = new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+});
 let menuOpen = false;
 let feedbackContext = null;
 let feedbackToolbarWasVisible = false;
@@ -37,6 +58,21 @@ let pushNotificationsModalOpen = false;
 let lastKnownState = null;
 let teamCollapsed = true;
 const initialAttachmentsPayload = (typeof window !== "undefined" && window.__INITIAL_ATTACHMENTS__) || {};
+const STORAGE_AVAILABLE = (() => {
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+        return false;
+    }
+    try {
+        const key = '__joblog_cache_test__';
+        window.localStorage.setItem(key, 'ok');
+        window.localStorage.removeItem(key);
+        return true;
+    } catch (error) {
+        console.warn('LocalStorage non disponibile', error);
+        return false;
+    }
+})();
+
 const attachmentsState = {
     project: initialAttachmentsPayload && initialAttachmentsPayload.project ? initialAttachmentsPayload.project : null,
     items:
@@ -44,21 +80,73 @@ const attachmentsState = {
             ? initialAttachmentsPayload.items
             : [],
     loading: false,
+    lastUpdated: null,
 };
-let attachmentsInitialized = Boolean(attachmentsState.project);
 if (attachmentsState.project && attachmentsState.items.length > 0) {
-    attachmentsInitialized = true;
+    attachmentsState.lastUpdated = Date.now();
 }
 let attachmentsModalOpen = false;
+const initialMaterialsPayload = (typeof window !== "undefined" && window.__INITIAL_MATERIALS__) || {};
+const materialsState = {
+    project: initialMaterialsPayload && initialMaterialsPayload.project ? initialMaterialsPayload.project : null,
+    items:
+        initialMaterialsPayload && Array.isArray(initialMaterialsPayload.items)
+            ? initialMaterialsPayload.items
+            : [],
+    folders:
+        initialMaterialsPayload && Array.isArray(initialMaterialsPayload.folders)
+            ? initialMaterialsPayload.folders
+            : [],
+    loading: false,
+    lastUpdated: null,
+};
+const materialsTreeExpansion = new Map();
+const EQUIPMENT_CHECKS_KEY = "joblog-equipment-checks";
+let equipmentChecksStore = loadEquipmentChecksStore();
+const equipmentViewState = {
+    tree: [],
+    itemKeys: [],
+};
+let localEquipmentItems = [];
+
+// Stato foto progetto
+const photosState = {
+    project: null,
+    items: [],
+    loading: false,
+};
+let currentPreviewPhotoId = null;
+
+const LAST_STATE_KEY = 'joblog-cache-state';
+const LAST_EVENTS_KEY = 'joblog-cache-events';
+const LAST_PUSH_KEY = 'joblog-cache-push';
+if (
+    initialMaterialsPayload &&
+    initialMaterialsPayload.project &&
+    initialMaterialsPayload.equipment_checks &&
+    typeof initialMaterialsPayload.equipment_checks === "object"
+) {
+    replaceEquipmentChecksForProject(initialMaterialsPayload.project.code, initialMaterialsPayload.equipment_checks);
+}
+const initialMaterialsTimestamp = Number(initialMaterialsPayload && initialMaterialsPayload.updated_ts);
+if (Number.isFinite(initialMaterialsTimestamp) && initialMaterialsTimestamp > 0) {
+    materialsState.lastUpdated = initialMaterialsTimestamp;
+} else if (
+    materialsState.project &&
+    (materialsState.items.length > 0 || materialsState.folders.length > 0) &&
+    !materialsState.lastUpdated
+) {
+    materialsState.lastUpdated = Date.now();
+}
+let materialsModalOpen = false;
+let materialPhotoModalOpen = false;
+let equipmentModalOpen = false;
 const pushState = {
     supported: typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && typeof Notification !== "undefined",
     configured: false,
     subscribed: false,
     publicKey: null,
 };
-const LAST_STATE_KEY = 'joblog-cache-state';
-const LAST_EVENTS_KEY = 'joblog-cache-events';
-const LAST_PUSH_KEY = 'joblog-cache-push';
 let offlineMode = typeof navigator !== 'undefined' ? !navigator.onLine : false;
 let offlineHydrated = false;
 let offlineNotified = false;
@@ -79,11 +167,11 @@ const QUEUE_ACTION_LABELS = {
     '/api/pause_all': 'Pausa di gruppo',
     '/api/resume_all': 'Ripresa di gruppo',
     '/api/finish_all': 'Chiusura di gruppo',
+    '/api/activities': 'Nuova attività',
 };
 const PUSH_NOTIFICATIONS_LIMIT = 'all';
 
 async function postJson(url, payload) {
-
     const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,6 +183,9 @@ async function postJson(url, payload) {
         error.url = url;
         if (res.status === 401) {
             handleUnauthenticated();
+            if (materialsModalOpen) {
+                closeMaterialsModal();
+            }
         }
         throw error;
     }
@@ -138,35 +229,6 @@ function formatDurationFromMs(ms) {
     return `${hours}h ${fmt2(minutes)}m`;
 }
 
-function urlBase64ToUint8Array(base64String) {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; i += 1) {
-        outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-}
-
-const planningDateFormatter = new Intl.DateTimeFormat("it-IT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-});
-
-const planningTimeFormatter = new Intl.DateTimeFormat("it-IT", {
-    hour: "2-digit",
-    minute: "2-digit",
-});
-
-const notificationTimestampFormatter = new Intl.DateTimeFormat("it-IT", {
-    dateStyle: "short",
-    timeStyle: "short",
-});
-
 function parsePlanningDate(value) {
     if (!value) {
         return null;
@@ -176,6 +238,17 @@ function parsePlanningDate(value) {
         return null;
     }
     return date;
+}
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i += 1) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
 }
 
 function sortActivitiesForPicker(activities) {
@@ -537,6 +610,511 @@ function formatAttachmentTimestamp(value) {
     return `${dateLabel} · ${timeLabel}`;
 }
 
+function formatMaterialDate(value) {
+    if (!value) {
+        return "-";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return "-";
+    }
+    return date.toLocaleString("it-IT", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function formatMaterialPeriod(material) {
+    if (!material) {
+        return "-";
+    }
+    const start = formatMaterialDate(material.period_start);
+    const end = formatMaterialDate(material.period_end);
+    if (start === "-" && end === "-") {
+        return "Impegno non disponibile";
+    }
+    if (start !== "-" && end !== "-") {
+        return `${start} → ${end}`;
+    }
+    return start !== "-" ? `Da ${start}` : `Fino a ${end}`;
+}
+
+function resolveMaterialGroupSegments(material) {
+    if (!material) {
+        return ["Altri materiali"];
+    }
+    const path = typeof material.group_path === "string" ? material.group_path.trim() : "";
+    if (path) {
+        const parts = path
+            .split("/")
+            .map((part) => part.trim())
+            .filter(Boolean);
+        if (parts.length) {
+            return parts;
+        }
+    }
+    const name = typeof material.group_name === "string" ? material.group_name.trim() : "";
+    if (name) {
+        return [name];
+    }
+    return ["Altri materiali"];
+}
+
+function resolveMaterialGroupLabel(material) {
+    return resolveMaterialGroupSegments(material).join(" / ");
+}
+
+function buildMaterialsTree(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return [];
+    }
+    const createNode = (label, path) => ({ label, path, children: [], materials: [], _key: label.toLowerCase() });
+    const rootNodes = [];
+
+    items.forEach((item) => {
+        const segments = resolveMaterialGroupSegments(item);
+        let currentList = rootNodes;
+        let parentPath = "";
+        let currentNode = null;
+        segments.forEach((segment) => {
+            const normalized = segment.toLowerCase();
+            let node = currentList.find((entry) => entry._key === normalized);
+            if (!node) {
+                const path = parentPath ? `${parentPath} / ${segment}` : segment;
+                node = createNode(segment, path);
+                currentList.push(node);
+            }
+            currentNode = node;
+            parentPath = node.path;
+            currentList = node.children;
+        });
+        if (!currentNode) {
+            currentNode = createNode("Altri materiali", "Altri materiali");
+            rootNodes.push(currentNode);
+        }
+        currentNode.materials.push(item);
+    });
+
+    const finalizeTree = (nodes) => {
+        nodes.sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
+        nodes.forEach((node) => {
+            finalizeTree(node.children || []);
+            const mats = Array.isArray(node.materials) ? node.materials : [];
+            const childTotal = (node.children || []).reduce((acc, child) => acc + (child.totalMaterials || 0), 0);
+            node.totalMaterials = mats.length + childTotal;
+            if (node._key) {
+                delete node._key;
+            }
+        });
+    };
+
+    finalizeTree(rootNodes);
+    return rootNodes;
+}
+
+function isEquipmentFolderLabel(label) {
+    if (!label) {
+        return false;
+    }
+    const normalized = String(label)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[^a-z0-9]/g, "");
+    return normalized.includes("attrezz");
+}
+
+function partitionMaterialsTree(nodes) {
+    const materialsTree = [];
+    const equipmentTree = [];
+    nodes.forEach((node) => {
+        if (!node || typeof node !== "object") {
+            return;
+        }
+        if (isEquipmentFolderLabel(node.label)) {
+            equipmentTree.push(node);
+        } else {
+            materialsTree.push(node);
+        }
+    });
+    return { materialsTree, equipmentTree };
+}
+
+function collectTreeItemKeys(nodes) {
+    const keys = [];
+    if (!Array.isArray(nodes)) {
+        return keys;
+    }
+    nodes.forEach((node) => {
+        if (!node) {
+            return;
+        }
+        if (Array.isArray(node.materials)) {
+            node.materials.forEach((item) => {
+                keys.push(buildEquipmentItemKey(item));
+            });
+        }
+        if (Array.isArray(node.children) && node.children.length > 0) {
+            keys.push(...collectTreeItemKeys(node.children));
+        }
+    });
+    return keys;
+}
+
+function buildEquipmentItemKey(item) {
+    const parts = [];
+    if (item && item.id !== undefined && item.id !== null) {
+        parts.push(String(item.id));
+    }
+    if (parts.length === 0 && item && item.name) {
+        parts.push(String(item.name));
+    }
+    if (item && item.group_path) {
+        parts.push(String(item.group_path));
+    } else if (item && item.group_name) {
+        parts.push(String(item.group_name));
+    }
+    if (parts.length === 0) {
+        const fallback = item && (item.period_start || item.period_end || item.status_code)
+            ? [item.period_start, item.period_end, item.status_code].join("::")
+            : "material";
+        parts.push(fallback);
+    }
+    return parts.join("::");
+}
+
+function formatEquipmentTimestamp(value) {
+    const ts = Number(value);
+    if (!Number.isFinite(ts)) {
+        return "Non verificato";
+    }
+    const date = new Date(ts);
+    if (Number.isNaN(date.getTime())) {
+        return "Non verificato";
+    }
+    return date.toLocaleString("it-IT", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function updateEquipmentStatusLabel(node, itemKeys, checks) {
+    if (!node) {
+        return;
+    }
+    const total = Array.isArray(itemKeys) ? itemKeys.length : 0;
+    if (total === 0) {
+        node.textContent = "";
+        node.classList.add("hidden");
+        return;
+    }
+    const map = checks && typeof checks === "object" ? checks : {};
+    const checked = itemKeys.reduce((count, key) => (map[key] ? count + 1 : count), 0);
+    node.textContent = `${checked}/${total} spuntate`;
+    node.classList.remove("hidden");
+}
+
+function createMaterialRow(item) {
+    const row = document.createElement("div");
+    row.className = "material-row";
+    row.setAttribute("role", "listitem");
+
+    const primary = document.createElement("div");
+    primary.className = "material-primary";
+    const name = document.createElement("div");
+    name.className = "material-name";
+    name.textContent = item.name || "Materiale";
+    primary.appendChild(name);
+
+    const note = document.createElement("div");
+    note.className = "material-note";
+    note.textContent = item.note || "Nessuna nota";
+    primary.appendChild(note);
+
+    const periodNode = document.createElement("div");
+    periodNode.className = "material-period";
+    periodNode.textContent = formatMaterialPeriod(item);
+    primary.appendChild(periodNode);
+    row.appendChild(primary);
+
+    const qty = document.createElement("div");
+    qty.className = "material-qty";
+    const qtyLabel = document.createElement("span");
+    qtyLabel.className = "material-qty-label";
+    qtyLabel.textContent = "Quantità";
+    const qtyValue = document.createElement("span");
+    qtyValue.textContent = item.quantity_label || String(item.quantity || "0");
+    qty.appendChild(qtyLabel);
+    qty.appendChild(qtyValue);
+    row.appendChild(qty);
+
+    const details = document.createElement("div");
+    details.className = "material-details";
+    const detailEntries = [
+        { label: "Impegno", value: formatMaterialPeriod(item) },
+        { label: "Peso", value: getMaterialWeightLabel(item) },
+        { label: "Dimensioni", value: getMaterialDimensionsLabel(item) },
+    ];
+    detailEntries.forEach((entry) => {
+        const detail = document.createElement("div");
+        detail.className = "material-detail";
+        const detailLabel = document.createElement("span");
+        detailLabel.className = "material-detail-label";
+        detailLabel.textContent = entry.label;
+        const detailValue = document.createElement("span");
+        detailValue.className = "material-detail-value";
+        detailValue.textContent = entry.value || "---";
+        detail.appendChild(detailLabel);
+        detail.appendChild(detailValue);
+        details.appendChild(detail);
+    });
+    row.appendChild(details);
+
+    const status = document.createElement("div");
+    const statusClass = getMaterialStatusClass(item.status_code);
+    status.className = `material-status ${statusClass}`;
+    status.textContent = item.status || "Pianificato";
+    row.appendChild(status);
+
+    const actions = document.createElement("div");
+    actions.className = "material-actions";
+    const photoBtn = document.createElement("button");
+    photoBtn.type = "button";
+    photoBtn.className = "materials-photo-btn";
+    if (materialHasPhoto(item)) {
+        photoBtn.textContent = "👁️ Mostra foto";
+        photoBtn.addEventListener("click", () =>
+            openMaterialPhotoPreview({
+                name: item.name,
+                path: item.group_path || resolveMaterialGroupLabel(item) || formatMaterialPeriod(item),
+                photo: item.photo,
+            })
+        );
+    } else {
+        photoBtn.textContent = "Nessuna foto";
+        photoBtn.disabled = true;
+        photoBtn.classList.add("secondary");
+    }
+    actions.appendChild(photoBtn);
+    row.appendChild(actions);
+
+    return row;
+}
+
+function createEquipmentRow(item, options) {
+    const context = options || {};
+    const row = createMaterialRow(item);
+    row.classList.add("equipment-row");
+    const projectKey = context.projectKey || getMaterialsProjectKey();
+    const checks = context.checks || {};
+    const itemKey = buildEquipmentItemKey(item);
+    const storedTs = checks[itemKey];
+    let lastKnownTimestamp = storedTs || null;
+
+    const checkboxColumn = document.createElement("div");
+    checkboxColumn.className = "equipment-checkbox-column";
+    const checkboxLabel = document.createElement("label");
+    checkboxLabel.className = "equipment-checkbox";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "equipment-checkbox-input";
+    checkbox.checked = Boolean(storedTs);
+    const checkboxText = document.createElement("span");
+    checkboxText.textContent = "Verificato";
+    checkboxLabel.appendChild(checkbox);
+    checkboxLabel.appendChild(checkboxText);
+    checkboxColumn.appendChild(checkboxLabel);
+    row.insertBefore(checkboxColumn, row.firstChild);
+
+    const timestamp = document.createElement("div");
+    timestamp.className = "equipment-timestamp";
+    timestamp.textContent = storedTs ? formatEquipmentTimestamp(storedTs) : "Non verificato";
+    row.appendChild(timestamp);
+
+    checkbox.addEventListener("change", async () => {
+        if (checkbox.dataset.syncing === "true") {
+            return;
+        }
+        const desiredChecked = checkbox.checked;
+        const previousTimestamp = lastKnownTimestamp;
+        const previousChecked = Boolean(previousTimestamp);
+        checkbox.disabled = true;
+        checkbox.dataset.syncing = "true";
+        timestamp.textContent = desiredChecked ? "Salvo la verifica..." : "Aggiorno la checklist...";
+        try {
+            const nextTs = await persistEquipmentCheckStateOnServer(projectKey, itemKey, desiredChecked);
+            lastKnownTimestamp = nextTs || null;
+            timestamp.textContent = nextTs ? formatEquipmentTimestamp(nextTs) : "Non verificato";
+            if (typeof context.onStatusChange === "function") {
+                context.onStatusChange();
+            }
+        } catch (error) {
+            console.warn("persistEquipmentCheckStateOnServer", error);
+            const message = desiredChecked
+                ? "⚠️ Impossibile salvare la verifica. Riprova."
+                : "⚠️ Impossibile annullare la verifica. Riprova.";
+            showPopup(message);
+            checkbox.checked = previousChecked;
+            const fallbackTs = previousTimestamp;
+            timestamp.textContent = fallbackTs ? formatEquipmentTimestamp(fallbackTs) : "Non verificato";
+        } finally {
+            checkbox.disabled = false;
+            delete checkbox.dataset.syncing;
+        }
+    });
+
+    return row;
+}
+
+function isMaterialsNodeExpanded(key) {
+    if (!key) {
+        return false;
+    }
+    if (!materialsTreeExpansion.has(key)) {
+        materialsTreeExpansion.set(key, false);
+    }
+    return Boolean(materialsTreeExpansion.get(key));
+}
+
+function setMaterialsNodeExpanded(key, value) {
+    if (!key) {
+        return;
+    }
+    materialsTreeExpansion.set(key, Boolean(value));
+}
+
+function toggleMaterialsNode(key) {
+    if (!key) {
+        return;
+    }
+    const current = isMaterialsNodeExpanded(key);
+    materialsTreeExpansion.set(key, !current);
+    renderMaterials();
+}
+
+function renderMaterialsTree(target, nodes, depth, options) {
+    if (!target || !Array.isArray(nodes) || nodes.length === 0) {
+        return;
+    }
+    const settings = options || {};
+    const nodeKeyPrefix = settings.nodeKeyPrefix || "";
+    const rowRenderer = typeof settings.rowRenderer === "function" ? settings.rowRenderer : createMaterialRow;
+    nodes.forEach((node) => {
+        const section = document.createElement("div");
+        section.className = "materials-group";
+        section.dataset.depth = String(depth);
+        if (depth > 0) {
+            section.style.marginLeft = `${depth * 18}px`;
+        }
+
+        const header = document.createElement("div");
+        header.className = "materials-group-header";
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "materials-group-toggle";
+        const nodeKey = nodeKeyPrefix ? `${nodeKeyPrefix}:${node.path}` : node.path;
+        const expanded = isMaterialsNodeExpanded(nodeKey);
+        toggleBtn.textContent = expanded ? "▾" : "▸";
+        toggleBtn.title = expanded ? "Comprimi cartella" : "Espandi cartella";
+        toggleBtn.addEventListener("click", () => toggleMaterialsNode(nodeKey));
+        header.appendChild(toggleBtn);
+
+        const title = document.createElement("div");
+        title.className = "materials-group-title";
+        title.textContent = `📂 ${node.label}`;
+        header.appendChild(title);
+
+        const count = document.createElement("span");
+        count.className = "materials-group-count";
+        const materialsArr = Array.isArray(node.materials) ? node.materials : [];
+        const total = Number(node.totalMaterials || materialsArr.length);
+        count.textContent = total === 1 ? "1 materiale" : `${total} materiali`;
+        header.appendChild(count);
+        section.appendChild(header);
+
+        const body = document.createElement("div");
+        body.className = "materials-group-body";
+        if (!expanded) {
+            section.classList.add("collapsed");
+        }
+
+        if (Array.isArray(node.materials) && node.materials.length > 0) {
+            const materialsContainer = document.createElement("div");
+            materialsContainer.className = "materials-group-materials";
+            node.materials.forEach((item) => {
+                const rowNode = rowRenderer(item);
+                if (rowNode) {
+                    materialsContainer.appendChild(rowNode);
+                }
+            });
+            body.appendChild(materialsContainer);
+        }
+
+        if (Array.isArray(node.children) && node.children.length > 0) {
+            const childrenContainer = document.createElement("div");
+            childrenContainer.className = "materials-group-children";
+            renderMaterialsTree(childrenContainer, node.children, depth + 1, options);
+            body.appendChild(childrenContainer);
+        }
+
+        section.appendChild(body);
+
+        target.appendChild(section);
+    });
+}
+
+function getMaterialWeightLabel(material) {
+    if (!material) {
+        return "---";
+    }
+    return material.weight_label || "---";
+}
+
+function getMaterialDimensionsLabel(material) {
+    if (!material) {
+        return "---";
+    }
+    return material.dimensions_label || "---";
+}
+
+function materialHasPhoto(material) {
+    return Boolean(material && material.photo && (material.photo.preview_url || material.photo.url));
+}
+
+function formatMemberStartLabel(member) {
+    if (!member) {
+        return "";
+    }
+    let numeric = Number(member.last_start_ts);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        const elapsedMs = Number(member.elapsed);
+        if (member.running && Number.isFinite(elapsedMs) && elapsedMs > 0) {
+            numeric = Date.now() - elapsedMs;
+        }
+    }
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return "";
+    }
+    const date = new Date(numeric);
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+    const now = new Date();
+    const sameDay =
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate();
+    const timeLabel = date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+    if (sameDay) {
+        return `Ultimo avvio ${timeLabel}`;
+    }
+    const dateLabel = date.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" });
+    return `Ultimo avvio ${dateLabel} ${timeLabel}`;
+}
+
 function getAttachmentIcon(type) {
     const slug = String(type || "").toUpperCase();
     if (!slug) {
@@ -647,7 +1225,7 @@ function renderAttachments() {
         emptyState.classList.remove("hidden");
         emptyState.textContent = attachmentsState.loading
             ? "Sto recuperando gli allegati dal server..."
-            : "Nessun allegato disponibile per questo progetto.";
+            : "Premi \"Aggiorna allegati\" per caricare la lista.";
         return;
     }
     grid.classList.remove("hidden");
@@ -725,11 +1303,6 @@ function openAttachmentsModal(options) {
     modal.style.display = "flex";
     markBodyModalOpen();
     renderAttachments();
-    const needsFetch = attachmentsState.project && !attachmentsState.items.length && !attachmentsState.loading;
-    const silent = !(options && options.forceToast);
-    if (needsFetch) {
-        fetchProjectAttachments({ silent });
-    }
 }
 
 function closeAttachmentsModal() {
@@ -745,6 +1318,7 @@ function closeAttachmentsModal() {
 async function fetchProjectAttachments(options) {
     const settings = options || {};
     const silent = Boolean(settings.silent);
+    const mode = settings.mode === "deep" ? "deep" : null;
     const refreshBtn = document.getElementById("attachmentsRefreshBtn");
     if (refreshBtn && !refreshBtn.dataset.label) {
         refreshBtn.dataset.label = refreshBtn.textContent || "Aggiorna";
@@ -753,7 +1327,7 @@ async function fetchProjectAttachments(options) {
     if (!currentCode) {
         attachmentsState.project = null;
         attachmentsState.items = [];
-        attachmentsInitialized = false;
+        attachmentsState.lastUpdated = null;
         renderAttachments();
         if (!silent) {
             showPopup("⚠️ Nessun progetto attivo");
@@ -767,11 +1341,12 @@ async function fetchProjectAttachments(options) {
     }
     renderAttachments();
     try {
-        const data = await fetchJson("/api/project/attachments");
+        const url = mode === "deep" ? "/api/project/attachments?mode=deep" : "/api/project/attachments";
+        const data = await fetchJson(url);
         const project = data && data.project ? data.project : attachmentsState.project;
         attachmentsState.project = project || null;
         attachmentsState.items = data && Array.isArray(data.attachments) ? data.attachments : [];
-        attachmentsInitialized = Boolean(attachmentsState.project);
+        attachmentsState.lastUpdated = Date.now();
         renderAttachments();
         if (!silent) {
             showPopup("📎 Allegati aggiornati");
@@ -797,7 +1372,7 @@ function syncAttachmentsProject(project) {
     if (!nextCode) {
         attachmentsState.project = null;
         attachmentsState.items = [];
-        attachmentsInitialized = false;
+        attachmentsState.lastUpdated = null;
         renderAttachments();
         if (attachmentsModalOpen) {
             closeAttachmentsModal();
@@ -808,20 +1383,939 @@ function syncAttachmentsProject(project) {
     const changed = currentCode !== nextCode;
     if (changed) {
         attachmentsState.items = [];
-        attachmentsInitialized = true;
+        attachmentsState.lastUpdated = null;
         renderAttachments();
-        fetchProjectAttachments({ silent: true });
-        return;
-    }
-    if (!attachmentsInitialized) {
-        attachmentsInitialized = true;
-        renderAttachments();
-        if (!attachmentsState.items.length) {
+        if (attachmentsModalOpen) {
             fetchProjectAttachments({ silent: true });
         }
         return;
     }
     renderAttachments();
+}
+
+function openMaterialsModal(options) {
+    if (equipmentModalOpen) {
+        closeEquipmentModal();
+    }
+    const modal = document.getElementById("materialsModal");
+    if (!modal) {
+        return;
+    }
+    if (materialsModalOpen) {
+        renderMaterials();
+        return;
+    }
+    materialsModalOpen = true;
+    modal.style.display = "flex";
+    markBodyModalOpen();
+    renderMaterials();
+}
+
+function closeMaterialsModal() {
+    const modal = document.getElementById("materialsModal");
+    if (!modal) {
+        return;
+    }
+    if (!materialsModalOpen) {
+        modal.style.display = "none";
+        return;
+    }
+    materialsModalOpen = false;
+    modal.style.display = "none";
+    releaseBodyModalState();
+}
+
+function openEquipmentModal(options) {
+    if (materialsModalOpen) {
+        closeMaterialsModal();
+    }
+    const modal = document.getElementById("equipmentModal");
+    if (!modal) {
+        return;
+    }
+    if (equipmentModalOpen) {
+        renderEquipment();
+        return;
+    }
+    equipmentModalOpen = true;
+    modal.style.display = "flex";
+    markBodyModalOpen();
+    renderEquipment();
+}
+
+function closeEquipmentModal() {
+    const modal = document.getElementById("equipmentModal");
+    if (!modal) {
+        return;
+    }
+    if (!equipmentModalOpen) {
+        modal.style.display = "none";
+        return;
+    }
+    equipmentModalOpen = false;
+    modal.style.display = "none";
+    releaseBodyModalState();
+}
+
+function getMaterialStatusClass(statusCode) {
+    switch (statusCode) {
+        case "missing":
+            return "material-status-missing";
+        case "delayed":
+            return "material-status-delayed";
+        case "reserved":
+            return "material-status-reserved";
+        case "subrent":
+            return "material-status-subrent";
+        case "option":
+            return "material-status-option";
+        default:
+            return "material-status-planned";
+    }
+}
+
+function formatMaterialsTimestamp(value) {
+    if (!value) {
+        return "";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+    return planningTimeFormatter.format(date);
+}
+
+function renderMaterials() {
+    const card = document.getElementById("materialsCard");
+    if (!card) {
+        return;
+    }
+    card.classList.remove("hidden");
+    const list = document.getElementById("materialsList");
+    const emptyNode = document.getElementById("materialsEmpty");
+    const countLabel = document.getElementById("materialsCountLabel");
+    const subtitle = document.getElementById("materialsSubtitle");
+    const refreshBtn = document.getElementById("materialsRefreshBtn");
+    const pill = document.getElementById("materialsStatusPill");
+    const folderSection = document.getElementById("materialsFoldersSection");
+    const folderList = document.getElementById("materialsFolderList");
+    const folderEmpty = document.getElementById("materialsFoldersEmpty");
+    const equipBtn = document.getElementById("equipmentOpenBtn");
+    const hasProject = Boolean(materialsState.project);
+    const items = Array.isArray(materialsState.items) ? materialsState.items : [];
+    const folders = Array.isArray(materialsState.folders) ? materialsState.folders : [];
+    if (subtitle) {
+        if (materialsState.project) {
+            const { code, name } = materialsState.project;
+            subtitle.textContent = code && name ? `${code} · ${name}` : name || code || "Progetto attivo";
+        } else {
+            subtitle.textContent = "Nessun progetto attivo";
+        }
+    }
+    if (countLabel) {
+        countLabel.textContent = `${items.length} materiale${items.length === 1 ? "" : "i"}`;
+    }
+    if (refreshBtn) {
+        refreshBtn.disabled = !hasProject || materialsState.loading;
+    }
+    if (pill) {
+        if (materialsState.lastUpdated) {
+            pill.textContent = `Aggiornato ${formatMaterialsTimestamp(materialsState.lastUpdated)}`;
+            pill.classList.remove("hidden");
+        } else {
+            pill.classList.add("hidden");
+        }
+    }
+    card.classList.toggle("active", hasProject && items.length > 0);
+    if (!list || !emptyNode) {
+        return;
+    }
+    list.innerHTML = "";
+    const noItems = items.length === 0;
+    if (!hasProject) {
+        emptyNode.classList.remove("hidden");
+        emptyNode.textContent = "Carica un progetto per visualizzare i materiali.";
+        list.classList.add("hidden");
+        equipmentViewState.tree = [];
+        equipmentViewState.itemKeys = [];
+        if (equipBtn) {
+            equipBtn.disabled = true;
+        }
+        renderEquipment();
+        return;
+    }
+    if (materialsState.loading) {
+        emptyNode.classList.remove("hidden");
+        emptyNode.textContent = "Sto recuperando i materiali dal server...";
+        list.classList.add("hidden");
+        if (equipBtn) {
+            equipBtn.disabled = true;
+        }
+        renderEquipment();
+        return;
+    }
+    if (noItems) {
+        emptyNode.classList.remove("hidden");
+        emptyNode.textContent = "Premi \"Aggiorna materiali\" per scaricare l'elenco da Rentman.";
+        list.classList.add("hidden");
+        equipmentViewState.tree = [];
+        equipmentViewState.itemKeys = [];
+        if (equipBtn) {
+            equipBtn.disabled = true;
+        }
+        renderEquipment();
+        return;
+    }
+    const treeNodes = buildMaterialsTree(items);
+    const { materialsTree, equipmentTree } = partitionMaterialsTree(treeNodes);
+    
+    // Rinomina i folder di attrezzatura pianificata
+    equipmentTree.forEach((node) => {
+        if (isEquipmentFolderLabel(node.label)) {
+            node.label = "Attrezzature pianificate";
+        }
+    });
+    
+    // Aggiungi le attrezzature extra (locali) all'equipment tree
+    const finalEquipmentTree = [...equipmentTree];
+    if (localEquipmentItems.length > 0) {
+        const localGroup = {
+            type: "folder",
+            label: "Attrezzature extra",
+            materials: localEquipmentItems.map((item) => ({
+                type: "item",
+                name: item.name,
+                quantity: item.quantity,
+                key: `local-${item.id}`,
+                notes: item.notes,
+                isLocal: true,
+                localId: item.id,
+            })),
+            children: [],
+        };
+        finalEquipmentTree.push(localGroup);
+    }
+    
+    const hasGeneralMaterials = materialsTree.length > 0;
+    const hasEquipmentMaterials = finalEquipmentTree.length > 0;
+
+    equipmentViewState.tree = finalEquipmentTree;
+    equipmentViewState.itemKeys = collectTreeItemKeys(finalEquipmentTree);
+    if (equipBtn) {
+        equipBtn.disabled = !hasProject || materialsState.loading || finalEquipmentTree.length === 0;
+    }
+
+    if (hasGeneralMaterials) {
+        emptyNode.classList.add("hidden");
+        list.classList.remove("hidden");
+        list.innerHTML = "";
+        const fragment = document.createDocumentFragment();
+        renderMaterialsTree(fragment, materialsTree, 0, { nodeKeyPrefix: "materials" });
+        list.appendChild(fragment);
+    } else {
+        list.classList.add("hidden");
+        emptyNode.classList.remove("hidden");
+        emptyNode.textContent = hasEquipmentMaterials
+            ? "I materiali generali non sono disponibili. Consulta la sezione Attrezzature."
+            : "Nessun materiale disponibile per questo progetto.";
+    }
+
+    renderEquipment();
+
+    if (folderSection && folderList && folderEmpty) {
+        if (!hasProject) {
+            folderSection.classList.add("hidden");
+            folderList.innerHTML = "";
+            folderList.classList.add("hidden");
+            folderEmpty.textContent = "Carica un progetto per visualizzare le cartelle disponibili.";
+            folderEmpty.classList.remove("hidden");
+        } else {
+            folderSection.classList.remove("hidden");
+            folderList.innerHTML = "";
+            if (!folders.length) {
+                folderEmpty.textContent = materialsState.loading
+                    ? "Sto recuperando le cartelle collegate..."
+                    : "Nessuna cartella disponibile per questo progetto.";
+                folderEmpty.classList.remove("hidden");
+                folderList.classList.add("hidden");
+            } else {
+                folderEmpty.classList.add("hidden");
+                folderList.classList.remove("hidden");
+                const foldersFragment = document.createDocumentFragment();
+                folders.forEach((folder) => {
+                    if (!folder) {
+                        return;
+                    }
+                    const row = document.createElement("div");
+                    row.className = "materials-folder-row";
+                    row.setAttribute("role", "listitem");
+
+                    const info = document.createElement("div");
+                    info.className = "materials-folder-info";
+                    const name = document.createElement("div");
+                    name.className = "materials-folder-name";
+                    name.textContent = folder.name || "Cartella";
+                    info.appendChild(name);
+                    const path = document.createElement("div");
+                    path.className = "materials-folder-path";
+                    path.textContent = folder.path || "Percorso non disponibile";
+                    info.appendChild(path);
+                    row.appendChild(info);
+
+                    const meta = document.createElement("div");
+                    meta.className = "materials-folder-meta";
+                    const metaParts = [];
+                    if (folder.id !== undefined && folder.id !== null) {
+                        metaParts.push(`#${folder.id}`);
+                    }
+                    if (typeof folder.file_count === "number") {
+                        metaParts.push(folder.file_count === 1 ? "1 file" : `${folder.file_count} file`);
+                    }
+                    meta.textContent = metaParts.length ? metaParts.join(" · ") : "Cartella";
+                    row.appendChild(meta);
+
+                    const actions = document.createElement("div");
+                    actions.className = "materials-folder-actions";
+                    const photoBtn = document.createElement("button");
+                    photoBtn.type = "button";
+                    photoBtn.className = "materials-photo-btn";
+                    const photo = folder.photo || {};
+                    const previewUrl = photo.preview_url || photo.url;
+                    if (previewUrl) {
+                        photoBtn.textContent = "👁️ Mostra foto";
+                        photoBtn.addEventListener("click", () => openMaterialPhotoPreview(folder));
+                    } else {
+                        photoBtn.textContent = "Nessuna foto";
+                        photoBtn.disabled = true;
+                        photoBtn.classList.add("secondary");
+                    }
+                    actions.appendChild(photoBtn);
+                    row.appendChild(actions);
+
+                    foldersFragment.appendChild(row);
+                });
+                folderList.appendChild(foldersFragment);
+            }
+        }
+    }
+}
+
+function renderEquipment() {
+    const card = document.getElementById("equipmentCard");
+    if (!card) {
+        return;
+    }
+    card.classList.remove("hidden");
+    const list = document.getElementById("equipmentList");
+    const emptyNode = document.getElementById("equipmentEmpty");
+    const countLabel = document.getElementById("equipmentCountLabel");
+    const subtitle = document.getElementById("equipmentSubtitle");
+    const pill = document.getElementById("equipmentStatusPill");
+    const summary = document.getElementById("equipmentCheckedSummary");
+    const refreshBtn = document.getElementById("equipmentRefreshBtn");
+    const hasProject = Boolean(materialsState.project);
+    const isLoading = materialsState.loading;
+    const tree = Array.isArray(equipmentViewState.tree) ? equipmentViewState.tree : [];
+    const equipmentContext = getEquipmentCheckContext();
+    const itemKeys = collectTreeItemKeys(tree);
+    equipmentViewState.itemKeys = itemKeys;
+
+    if (subtitle) {
+        if (materialsState.project) {
+            const { code, name } = materialsState.project;
+            subtitle.textContent = code && name ? `${code} · ${name}` : name || code || "Progetto attivo";
+        } else {
+            subtitle.textContent = "Nessun progetto attivo";
+        }
+    }
+
+    if (countLabel) {
+        countLabel.textContent = `${itemKeys.length} attrezzatura${itemKeys.length === 1 ? "" : "e"}`;
+    }
+
+    if (pill) {
+        if (materialsState.lastUpdated) {
+            pill.textContent = `Aggiornato ${formatMaterialsTimestamp(materialsState.lastUpdated)}`;
+            pill.classList.remove("hidden");
+        } else {
+            pill.classList.add("hidden");
+        }
+    }
+
+    if (refreshBtn) {
+        if (!refreshBtn.dataset.label) {
+            refreshBtn.dataset.label = refreshBtn.textContent || "Aggiorna attrezzature";
+        }
+        refreshBtn.disabled = !hasProject || isLoading;
+        if (isLoading) {
+            refreshBtn.textContent = "Aggiorno...";
+        } else {
+            refreshBtn.textContent = refreshBtn.dataset.label;
+        }
+    }
+
+    if (!list || !emptyNode) {
+        return;
+    }
+
+    if (!hasProject) {
+        emptyNode.classList.remove("hidden");
+        emptyNode.textContent = "Carica un progetto per visualizzare la checklist.";
+        list.classList.add("hidden");
+        if (summary) {
+            summary.classList.add("hidden");
+        }
+        return;
+    }
+
+    if (isLoading) {
+        emptyNode.classList.remove("hidden");
+        emptyNode.textContent = "Sto recuperando le attrezzature dal server...";
+        list.classList.add("hidden");
+        if (summary) {
+            summary.classList.add("hidden");
+        }
+        return;
+    }
+
+    if (!tree.length) {
+        emptyNode.classList.remove("hidden");
+        emptyNode.textContent = "Nessuna cartella Attrezzature disponibile per questo progetto.";
+        list.classList.add("hidden");
+        if (summary) {
+            summary.classList.add("hidden");
+        }
+        return;
+    }
+
+    emptyNode.classList.add("hidden");
+    list.classList.remove("hidden");
+    list.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    const statusUpdater = () => updateEquipmentStatusLabel(summary, itemKeys, equipmentContext.checks);
+    const equipmentRowRenderer = (item) =>
+        createEquipmentRow(item, {
+            projectKey: equipmentContext.projectKey,
+            checks: equipmentContext.checks,
+            onStatusChange: statusUpdater,
+        });
+    renderMaterialsTree(fragment, tree, 0, {
+        nodeKeyPrefix: "equipment",
+        rowRenderer: equipmentRowRenderer,
+    });
+    list.appendChild(fragment);
+    if (summary) {
+        statusUpdater();
+    }
+}
+
+function openMaterialPhotoPreview(source) {
+    if (!source || !source.photo) {
+        showPopup("⚠️ Nessuna foto disponibile per questo elemento");
+        return;
+    }
+    const photo = source.photo;
+    const previewUrl = photo.preview_url || photo.url;
+    if (!previewUrl) {
+        showPopup("⚠️ Foto non disponibile");
+        return;
+    }
+    const modal = document.getElementById("materialPhotoModal");
+    if (!modal) {
+        window.open(previewUrl, "_blank", "noopener,noreferrer");
+        return;
+    }
+    const image = document.getElementById("materialPhotoImage");
+    if (image) {
+        image.src = previewUrl;
+        image.alt = source.name ? `Foto ${source.name}` : "Foto materiale";
+    }
+    const caption = document.getElementById("materialPhotoCaption");
+    if (caption) {
+        const parts = [];
+        if (source.name) {
+            parts.push(source.name);
+        }
+        if (source.path) {
+            parts.push(source.path);
+        }
+        caption.textContent = parts.length ? parts.join(" · ") : "Anteprima foto materiale";
+    }
+    const link = document.getElementById("materialPhotoLink");
+    if (link) {
+        const href = photo.url || previewUrl;
+        if (href) {
+            link.href = href;
+            link.classList.remove("hidden");
+        } else {
+            link.href = "#";
+            link.classList.add("hidden");
+        }
+    }
+    modal.style.display = "flex";
+    materialPhotoModalOpen = true;
+    markBodyModalOpen();
+}
+
+function closeMaterialPhotoPreview() {
+    const modal = document.getElementById("materialPhotoModal");
+    if (!modal) {
+        return;
+    }
+    if (!materialPhotoModalOpen) {
+        return;
+    }
+    modal.style.display = "none";
+    const image = document.getElementById("materialPhotoImage");
+    if (image) {
+        image.src = "";
+    }
+    materialPhotoModalOpen = false;
+    releaseBodyModalState();
+}
+
+async function fetchProjectMaterials(options) {
+    const settings = options || {};
+    const silent = Boolean(settings.silent);
+    const refresh = Boolean(settings.refresh);
+    const refreshBtn = document.getElementById("materialsRefreshBtn");
+    if (refreshBtn && !refreshBtn.dataset.label) {
+        refreshBtn.dataset.label = refreshBtn.textContent || "Aggiorna materiali";
+    }
+    const currentCode = materialsState.project && materialsState.project.code;
+    if (!currentCode) {
+        materialsState.project = null;
+        materialsState.items = [];
+        materialsState.folders = [];
+        materialsState.lastUpdated = null;
+        materialsTreeExpansion.clear();
+        renderMaterials();
+        if (!silent) {
+            showPopup("⚠️ Nessun progetto attivo");
+        }
+        return;
+    }
+    materialsState.loading = true;
+    if (refreshBtn && !silent) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Aggiorno...";
+    }
+    renderMaterials();
+    try {
+        const endpoint = refresh ? "/api/project/materials?mode=refresh" : "/api/project/materials";
+        const [data, localEquipData] = await Promise.all([
+            fetchJson(endpoint),
+            fetchJson("/api/project/local-equipment").catch(() => ({ ok: true, items: [] })),
+        ]);
+        const project = data && data.project ? data.project : materialsState.project;
+        materialsState.project = project || null;
+        materialsState.items = data && Array.isArray(data.materials) ? data.materials : [];
+        materialsState.folders = data && Array.isArray(data.folders) ? data.folders : [];
+        if (data && Object.prototype.hasOwnProperty.call(data, "equipment_checks")) {
+            replaceEquipmentChecksForProject(project && project.code, data.equipment_checks);
+        }
+        localEquipmentItems = localEquipData && localEquipData.ok && Array.isArray(localEquipData.items) ? localEquipData.items : [];
+        const updatedTs = data && Number(data.updated_ts);
+        materialsState.lastUpdated = Number.isFinite(updatedTs) ? updatedTs : Date.now();
+        renderMaterials();
+        if (!silent) {
+            const message = refresh ? "🧰 Materiali aggiornati" : "🧰 Elenco attrezzature caricato";
+            showPopup(message);
+        }
+    } catch (error) {
+        console.warn("fetchProjectMaterials", error);
+        if (!silent) {
+            showPopup("⚠️ Impossibile aggiornare i materiali");
+        }
+    } finally {
+        materialsState.loading = false;
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = refreshBtn.dataset.label || "Aggiorna materiali";
+        }
+        renderMaterials();
+    }
+}
+
+async function fetchLocalEquipment(options) {
+    const settings = options || {};
+    const silent = Boolean(settings.silent);
+    try {
+        const data = await fetchJson("/api/project/local-equipment");
+        if (data && data.ok && Array.isArray(data.items)) {
+            localEquipmentItems = data.items;
+        } else {
+            localEquipmentItems = [];
+        }
+    } catch (error) {
+        console.warn("fetchLocalEquipment", error);
+        localEquipmentItems = [];
+        if (!silent) {
+            showPopup("⚠️ Impossibile caricare le attrezzature locali");
+        }
+    }
+    renderMaterials();
+}
+
+function syncMaterialsProject(project) {
+    const nextCode = project && project.code ? String(project.code) : "";
+    const currentCode = materialsState.project && materialsState.project.code ? String(materialsState.project.code) : "";
+    if (!nextCode) {
+        materialsState.project = null;
+        materialsState.items = [];
+        materialsState.folders = [];
+        materialsState.lastUpdated = null;
+        localEquipmentItems = [];
+        materialsTreeExpansion.clear();
+        renderMaterials();
+        return;
+    }
+    materialsState.project = project;
+    const changed = nextCode !== currentCode;
+    if (changed) {
+        materialsState.items = [];
+        materialsState.folders = [];
+        materialsState.lastUpdated = null;
+        localEquipmentItems = [];
+        materialsTreeExpansion.clear();
+        renderMaterials();
+        // Carica automaticamente le attrezzature quando cambia progetto
+        fetchProjectMaterials({ silent: true, refresh: false });
+    }
+    renderMaterials();
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Foto Progetto
+// ──────────────────────────────────────────────────────────────────────────────
+
+function renderPhotos() {
+    const grid = document.getElementById("photosGrid");
+    const empty = document.getElementById("photosEmpty");
+    const loading = document.getElementById("photosLoading");
+    const countEl = document.getElementById("photosCount");
+    const projectLabel = document.getElementById("photosProjectLabel");
+
+    if (projectLabel) {
+        projectLabel.textContent = photosState.project
+            ? `Progetto ${photosState.project.code}`
+            : "Nessun progetto attivo";
+    }
+
+    if (countEl) {
+        countEl.textContent = String(photosState.items.length);
+    }
+
+    if (photosState.loading) {
+        if (loading) loading.classList.remove("hidden");
+        if (grid) grid.classList.add("hidden");
+        if (empty) empty.classList.add("hidden");
+        return;
+    }
+
+    if (loading) loading.classList.add("hidden");
+
+    if (!photosState.project || photosState.items.length === 0) {
+        if (grid) grid.classList.add("hidden");
+        if (empty) {
+            empty.classList.remove("hidden");
+            empty.textContent = photosState.project
+                ? "Nessuna foto caricata per questo progetto."
+                : "Carica un progetto per visualizzare e aggiungere foto.";
+        }
+        return;
+    }
+
+    if (empty) empty.classList.add("hidden");
+    if (grid) {
+        grid.classList.remove("hidden");
+        grid.innerHTML = "";
+
+        const fragment = document.createDocumentFragment();
+        photosState.items.forEach((photo) => {
+            const thumb = document.createElement("div");
+            thumb.className = "photo-thumb";
+            thumb.dataset.photoId = photo.id;
+
+            const img = document.createElement("img");
+            img.src = `/api/project/photos/${photo.filename}`;
+            img.alt = photo.original_name || "Foto";
+            img.loading = "lazy";
+
+            thumb.appendChild(img);
+
+            if (photo.caption) {
+                const caption = document.createElement("div");
+                caption.className = "photo-thumb-caption";
+                caption.textContent = photo.caption;
+                thumb.appendChild(caption);
+            }
+
+            thumb.addEventListener("click", () => openPhotoPreview(photo));
+            fragment.appendChild(thumb);
+        });
+
+        grid.appendChild(fragment);
+    }
+}
+
+function openPhotosModal() {
+    const modal = document.getElementById("photosModal");
+    if (modal) {
+        modal.classList.add("open");
+        fetchPhotos({ silent: true });
+    }
+}
+
+function closePhotosModal() {
+    const modal = document.getElementById("photosModal");
+    if (modal) {
+        modal.classList.remove("open");
+    }
+}
+
+async function fetchPhotos(options) {
+    const settings = options || {};
+    const silent = Boolean(settings.silent);
+
+    if (!materialsState.project) {
+        photosState.project = null;
+        photosState.items = [];
+        renderPhotos();
+        return;
+    }
+
+    photosState.project = materialsState.project;
+    photosState.loading = true;
+    renderPhotos();
+
+    try {
+        const data = await fetchJson("/api/project/photos");
+        if (data && data.ok && Array.isArray(data.items)) {
+            photosState.items = data.items;
+        } else {
+            photosState.items = [];
+        }
+        if (!silent && data.items.length > 0) {
+            showPopup(`📷 ${data.items.length} foto caricate`);
+        }
+    } catch (error) {
+        console.warn("fetchPhotos", error);
+        photosState.items = [];
+        if (!silent) {
+            showPopup("⚠️ Impossibile caricare le foto");
+        }
+    } finally {
+        photosState.loading = false;
+        renderPhotos();
+    }
+}
+
+async function uploadPhoto(file) {
+    if (!materialsState.project) {
+        showPopup("⚠️ Carica prima un progetto");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("photo", file);
+
+    try {
+        showPopup("📤 Caricamento in corso...");
+        const response = await fetch("/api/project/photos", {
+            method: "POST",
+            body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            const errorMsg = data.error === "file_too_large" 
+                ? "File troppo grande (max 10 MB)"
+                : data.error === "invalid_file_type"
+                ? "Tipo file non supportato"
+                : data.error || "Errore durante il caricamento";
+            showPopup("⚠️ " + errorMsg);
+            return;
+        }
+        showPopup("✅ Foto caricata con successo");
+        fetchPhotos({ silent: true });
+    } catch (error) {
+        console.error("uploadPhoto", error);
+        showPopup("⚠️ Errore di rete");
+    }
+}
+
+function openPhotoPreview(photo) {
+    const modal = document.getElementById("photoPreviewModal");
+    const img = document.getElementById("photoPreviewImage");
+    const caption = document.getElementById("photoPreviewCaption");
+
+    if (!modal || !img) return;
+
+    currentPreviewPhotoId = photo.id;
+    img.src = `/api/project/photos/${photo.filename}`;
+    img.alt = photo.original_name || "Foto";
+
+    if (caption) {
+        caption.textContent = photo.caption || photo.original_name || "";
+    }
+
+    modal.classList.add("open");
+}
+
+function closePhotoPreview() {
+    const modal = document.getElementById("photoPreviewModal");
+    if (modal) {
+        modal.classList.remove("open");
+        currentPreviewPhotoId = null;
+    }
+}
+
+async function deleteCurrentPhoto() {
+    if (!currentPreviewPhotoId) return;
+
+    const confirmed = confirm("Eliminare questa foto?");
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/project/photos/${currentPreviewPhotoId}`, {
+            method: "DELETE",
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            showPopup("⚠️ Impossibile eliminare la foto");
+            return;
+        }
+        showPopup("🗑️ Foto eliminata");
+        closePhotoPreview();
+        fetchPhotos({ silent: true });
+    } catch (error) {
+        console.error("deleteCurrentPhoto", error);
+        showPopup("⚠️ Errore di rete");
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Fotocamera nativa
+// ──────────────────────────────────────────────────────────────────────────────
+
+let cameraStream = null;
+
+async function openCameraModal() {
+    if (!materialsState.project) {
+        showPopup("⚠️ Carica prima un progetto");
+        return;
+    }
+
+    const modal = document.getElementById("cameraModal");
+    const video = document.getElementById("cameraVideo");
+    
+    if (!modal || !video) {
+        // Fallback: prova con input capture
+        const input = document.getElementById("photosCameraInput");
+        if (input) input.click();
+        return;
+    }
+
+    try {
+        // Richiedi accesso alla fotocamera posteriore
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: "environment" },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            },
+            audio: false
+        });
+
+        video.srcObject = cameraStream;
+        await video.play();
+        modal.classList.add("open");
+    } catch (error) {
+        console.error("openCameraModal", error);
+        if (error.name === "NotAllowedError") {
+            showPopup("⚠️ Permesso fotocamera negato");
+        } else if (error.name === "NotFoundError") {
+            showPopup("⚠️ Nessuna fotocamera trovata");
+            // Fallback: apri input file
+            const input = document.getElementById("photosCameraInput");
+            if (input) input.click();
+        } else {
+            showPopup("⚠️ Impossibile aprire la fotocamera");
+            // Fallback: apri input file
+            const input = document.getElementById("photosCameraInput");
+            if (input) input.click();
+        }
+    }
+}
+
+function closeCameraModal() {
+    const modal = document.getElementById("cameraModal");
+    const video = document.getElementById("cameraVideo");
+
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+
+    if (video) {
+        video.srcObject = null;
+    }
+
+    if (modal) {
+        modal.classList.remove("open");
+    }
+}
+
+async function capturePhoto() {
+    const video = document.getElementById("cameraVideo");
+    const canvas = document.getElementById("cameraCanvas");
+
+    if (!video || !canvas) return;
+
+    // Imposta dimensioni canvas uguali al video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    // Disegna il frame corrente sul canvas
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    // Converti in blob
+    canvas.toBlob(async (blob) => {
+        if (!blob) {
+            showPopup("⚠️ Errore durante la cattura");
+            return;
+        }
+
+        // Crea un file dalla foto
+        const filename = `foto_${Date.now()}.jpg`;
+        const file = new File([blob], filename, { type: "image/jpeg" });
+
+        // Chiudi la fotocamera
+        closeCameraModal();
+
+        // Carica la foto
+        await uploadPhoto(file);
+    }, "image/jpeg", 0.9);
+}
+
+function syncPhotosProject(project) {
+    const nextCode = project && project.code ? String(project.code) : "";
+    const currentCode = photosState.project && photosState.project.code ? String(photosState.project.code) : "";
+
+    if (!nextCode) {
+        photosState.project = null;
+        photosState.items = [];
+        renderPhotos();
+        return;
+    }
+
+    photosState.project = project;
+    const changed = nextCode !== currentCode;
+    if (changed) {
+        photosState.items = [];
+        renderPhotos();
+    }
 }
 
 function handleAttachmentUpload() {
@@ -831,21 +2325,6 @@ function handleAttachmentUpload() {
     }
     showPopup("🚧 Upload allegati in arrivo");
 }
-
-const STORAGE_AVAILABLE = (() => {
-    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-        return false;
-    }
-    try {
-        const key = '__joblog_cache_test__';
-        window.localStorage.setItem(key, 'ok');
-        window.localStorage.removeItem(key);
-        return true;
-    } catch (error) {
-        console.warn('LocalStorage non disponibile', error);
-        return false;
-    }
-})();
 
 function saveCachedPayload(key, value) {
     if (!STORAGE_AVAILABLE) {
@@ -875,6 +2354,102 @@ function readCachedPayload(key) {
         console.warn('readCachedPayload', key, error);
     }
     return null;
+}
+
+function loadEquipmentChecksStore() {
+    const payload = readCachedPayload(EQUIPMENT_CHECKS_KEY);
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        return payload;
+    }
+    return {};
+}
+
+function persistEquipmentChecksStore() {
+    saveCachedPayload(EQUIPMENT_CHECKS_KEY, equipmentChecksStore);
+}
+
+function sanitizeEquipmentChecksPayload(payload) {
+    if (!payload || typeof payload !== "object") {
+        return {};
+    }
+    const sanitized = {};
+    Object.keys(payload).forEach((itemKey) => {
+        const timestamp = Number(payload[itemKey]);
+        if (Number.isFinite(timestamp)) {
+            sanitized[itemKey] = timestamp;
+        }
+    });
+    return sanitized;
+}
+
+function normalizeProjectKey(value) {
+    if (value === undefined || value === null) {
+        return "DEFAULT";
+    }
+    const slug = String(value).trim().toUpperCase();
+    return slug || "DEFAULT";
+}
+
+function replaceEquipmentChecksForProject(projectCode, payload) {
+    const fallback = materialsState.project && materialsState.project.code ? materialsState.project.code : "DEFAULT";
+    const key = normalizeProjectKey(projectCode || fallback);
+    const sanitized = sanitizeEquipmentChecksPayload(payload);
+    equipmentChecksStore[key] = sanitized;
+    persistEquipmentChecksStore();
+    return sanitized;
+}
+
+function getMaterialsProjectKey() {
+    const raw = materialsState.project && materialsState.project.code ? String(materialsState.project.code) : "";
+    return normalizeProjectKey(raw);
+}
+
+function getEquipmentCheckContext() {
+    const projectKey = getMaterialsProjectKey();
+    if (!equipmentChecksStore[projectKey]) {
+        equipmentChecksStore[projectKey] = {};
+    }
+    return { projectKey, checks: equipmentChecksStore[projectKey] };
+}
+
+function setEquipmentCheckState(projectKey, itemKey, checked, options) {
+    const key = normalizeProjectKey(projectKey);
+    if (!equipmentChecksStore[key]) {
+        equipmentChecksStore[key] = {};
+    }
+    let timestamp = null;
+    if (checked) {
+        const settings = options || {};
+        const candidate = Number(settings.timestamp);
+        timestamp = Number.isFinite(candidate) ? candidate : Date.now();
+        equipmentChecksStore[key][itemKey] = timestamp;
+    } else {
+        delete equipmentChecksStore[key][itemKey];
+    }
+    persistEquipmentChecksStore();
+    return timestamp;
+}
+
+async function persistEquipmentCheckStateOnServer(projectKey, itemKey, checked) {
+    if (!itemKey) {
+        throw new Error("missing_item_key");
+    }
+    const payload = {
+        item_key: itemKey,
+        checked,
+    };
+    const response = await postJson("/api/project/equipment/checks", payload);
+    if (response && response.ok === false) {
+        const error = new Error(response.error || "equipment_check_failed");
+        error.details = response;
+        throw error;
+    }
+    let timestamp = null;
+    if (checked) {
+        const serverTimestamp = response && response.timestamp !== undefined ? Number(response.timestamp) : NaN;
+        timestamp = Number.isFinite(serverTimestamp) ? serverTimestamp : Date.now();
+    }
+    return setEquipmentCheckState(projectKey, itemKey, checked, { timestamp });
 }
 
 function loadCachedStateAndEvents() {
@@ -1682,6 +3257,8 @@ function forceCloseOverlays() {
     // Reset any dimming layers that might linger after navigation/back-forward cache restores.
     closeMenu();
     closeTimeline();
+    closeMaterialsModal();
+    closeEquipmentModal();
 }
 
 function openPushNotificationsModal() {
@@ -1755,19 +3332,8 @@ function updatePushUI() {
     const toggle = document.getElementById('pushToggle');
     const statusLabel = document.getElementById('pushStatus');
     const textLabel = toggle ? toggle.querySelector('.side-menu-item-text') : null;
-    const testBtn = document.getElementById('pushTestBtn');
-    const testHint = document.getElementById('pushTestHint');
-    const setTestState = (enabled, hint) => {
-        if (testBtn) {
-            testBtn.disabled = !enabled;
-        }
-        if (testHint && typeof hint === 'string') {
-            testHint.textContent = hint;
-        }
-    };
 
     if (!toggle || !statusLabel || !textLabel) {
-        setTestState(false, 'Attiva le notifiche per provarle');
         return;
     }
 
@@ -1775,7 +3341,6 @@ function updatePushUI() {
         toggle.disabled = true;
         textLabel.textContent = 'Notifiche Push';
         statusLabel.textContent = 'Non supportato';
-        setTestState(false, 'Non disponibile nel browser');
         return;
     }
 
@@ -1783,7 +3348,6 @@ function updatePushUI() {
         toggle.disabled = true;
         textLabel.textContent = 'Notifiche Push';
         statusLabel.textContent = 'Disattivate dal server';
-        setTestState(false, 'Server non configurato');
         return;
     }
 
@@ -1791,7 +3355,6 @@ function updatePushUI() {
         toggle.disabled = true;
         textLabel.textContent = 'Notifiche Push';
         statusLabel.textContent = 'Permesso negato';
-        setTestState(false, 'Permesso notifiche negato');
         return;
     }
 
@@ -1799,13 +3362,11 @@ function updatePushUI() {
     if (pushState.subscribed) {
         textLabel.textContent = 'Disattiva notifiche';
         statusLabel.textContent = 'Attive';
-        setTestState(true, 'Invia notifica immediata');
     } else {
         textLabel.textContent = 'Attiva notifiche';
         statusLabel.textContent = (typeof Notification !== 'undefined' && Notification.permission === 'granted')
             ? 'Disponibili'
             : 'Richiedono permesso';
-        setTestState(false, 'Attiva le notifiche per provarle');
     }
 }
 
@@ -1953,34 +3514,6 @@ async function handlePushToggle() {
     }
 }
 
-async function sendPushTest() {
-    if (!pushState.supported || !pushState.configured || !pushState.subscribed) {
-        showPopup('⚠️ Attiva prima le notifiche');
-        return;
-    }
-
-    const testBtn = document.getElementById('pushTestBtn');
-    if (testBtn) {
-        testBtn.disabled = true;
-    }
-
-    try {
-        await postJson('/api/push/test', {});
-        await fetchPushNotifications({ silent: true });
-        showPopup('📬 Notifica di prova inviata');
-    } catch (error) {
-        console.error('sendPushTest', error);
-        if (error && error.status === 404) {
-            showPopup('⚠️ Nessuna iscrizione push trovata');
-        } else if (error && error.status === 400) {
-            showPopup('⚠️ Server push non configurato');
-        } else {
-            showPopup('⚠️ Invio notifica di prova fallito');
-        }
-    } finally {
-        await refreshPushState();
-    }
-}
 
 function registerServiceWorkerMessaging() {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
@@ -2208,7 +3741,10 @@ function setProjectVisibility(active) {
         }
     });
 
+    updateTeamAddActivityButtonState();
+
     if (!active) {
+        closeNewActivityModal();
         document
             .querySelectorAll(".team-member.selected, .member-task.selected")
             .forEach((node) => {
@@ -2576,10 +4112,14 @@ function createMemberNode(member, baseClass) {
         : member.paused
         ? "In pausa"
         : "In attesa";
+    const startLabel = formatMemberStartLabel(member);
     
     node.innerHTML = `
         <div class="task-header-row">
-            <span>${member.member_name}</span>
+            <div class="member-name-block">
+                <span class="member-name">${member.member_name}</span>
+                ${startLabel ? `<span class="member-start">${startLabel}</span>` : ""}
+            </div>
             <span class="timer-display" id="${timerId}">${formatTime(member.elapsed)}</span>
         </div>
         <div class="pause-info">${statusLabel}</div>
@@ -2637,6 +4177,31 @@ function toggleTeamSelection() {
         node.classList.toggle("selected", shouldSelect);
     });
     updateSelectionToolbar();
+}
+
+function handleTeamAddActivityClick(event) {
+    if (event && typeof event.preventDefault === "function") {
+        event.preventDefault();
+        if (typeof event.stopPropagation === "function") {
+            event.stopPropagation();
+        }
+    }
+    if (!projectVisible) {
+        showPopup("⚠️ Carica un progetto per aggiungere attività");
+        return;
+    }
+    const opened = openNewActivityModal();
+    if (!opened) {
+        showPopup("⚠️ Impossibile aprire il modulo. Aggiorna la pagina.");
+    }
+}
+
+function updateTeamAddActivityButtonState() {
+    const btn = document.getElementById("teamAddActivityBtn");
+    if (!btn) {
+        return;
+    }
+    btn.disabled = !projectVisible || newActivitySaving;
 }
 
 function updateTeamCollapseUI() {
@@ -2849,6 +4414,7 @@ function renderActivities(activities) {
         }
     });
     updateActivitySelectButtons();
+    updateTeamAddActivityButtonState();
 }
 
 function updateToggleButton() {
@@ -2882,11 +4448,19 @@ function resetProjectStateUI() {
     setProjectLabel(null);
     attachmentsState.project = null;
     attachmentsState.items = [];
-    attachmentsInitialized = false;
+    attachmentsState.lastUpdated = null;
     renderAttachments();
     if (attachmentsModalOpen) {
         closeAttachmentsModal();
     }
+    if (materialsModalOpen) {
+        closeMaterialsModal();
+    }
+    materialsState.project = null;
+    materialsState.items = [];
+    materialsState.loading = false;
+    materialsState.lastUpdated = null;
+    renderMaterials();
     eventsCache = [];
     renderEvents([]);
     updateToggleButton();
@@ -2952,10 +4526,13 @@ function applyState(state) {
     suppressSelectionRestore = false;
 
     cachedActivities = state.activities || [];
+    updateTeamAddActivityButtonState();
     allPaused = state.allPaused;
     setProjectVisibility(hasProject);
     setProjectLabel(state.project || null);
     syncAttachmentsProject(state.project || null);
+    syncMaterialsProject(state.project || null);
+    syncPhotosProject(state.project || null);
     updateToggleButton();
     updateSelectionToolbar();
     refreshTotalRunningTimeDisplay();
@@ -3185,6 +4762,181 @@ async function startSelection() {
     } catch (err) {
         console.error("startSelection", err);
         showPopup("⚠️ Impossibile avviare gli operatori");
+    }
+}
+
+function resetNewActivityForm() {
+    [
+        "newActivityLabelInput",
+        "newActivityIdInput",
+        "newActivityStartInput",
+        "newActivityEndInput",
+        "newActivityMembersInput",
+        "newActivityNotesInput",
+    ].forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.value = "";
+        }
+    });
+    syncNewActivitySubmitState();
+}
+
+function syncNewActivitySubmitState() {
+    const labelInput = document.getElementById("newActivityLabelInput");
+    const saveBtn = document.getElementById("newActivitySaveBtn");
+    if (!saveBtn) {
+        return;
+    }
+    if (newActivitySaving) {
+        saveBtn.disabled = true;
+        return;
+    }
+    const hasLabel = Boolean(labelInput && labelInput.value.trim());
+    saveBtn.disabled = !hasLabel;
+}
+
+function collectNewActivityPayload() {
+    const labelInput = document.getElementById("newActivityLabelInput");
+    const idInput = document.getElementById("newActivityIdInput");
+    const startInput = document.getElementById("newActivityStartInput");
+    const endInput = document.getElementById("newActivityEndInput");
+    const membersInput = document.getElementById("newActivityMembersInput");
+    const notesInput = document.getElementById("newActivityNotesInput");
+
+    const payload = {
+        label: labelInput ? labelInput.value.trim() : "",
+    };
+    if (idInput && idInput.value.trim()) {
+        payload.activity_id = idInput.value.trim();
+    }
+    if (startInput && startInput.value) {
+        payload.plan_start = startInput.value;
+    }
+    if (endInput && endInput.value) {
+        payload.plan_end = endInput.value;
+    }
+    if (membersInput && membersInput.value !== "") {
+        const parsed = parseInt(membersInput.value, 10);
+        if (!Number.isNaN(parsed)) {
+            payload.planned_members = parsed;
+        }
+    }
+    if (notesInput && notesInput.value.trim()) {
+        payload.notes = notesInput.value.trim();
+    }
+    return payload;
+}
+
+function openNewActivityModal() {
+    const modal = document.getElementById("newActivityModal");
+    if (!modal) {
+        return false;
+    }
+    resetNewActivityForm();
+    modal.style.display = "flex";
+    newActivityModalOpen = true;
+    markBodyModalOpen();
+    const toolbar = document.getElementById("selectionToolbar");
+    newActivityToolbarWasVisible = false;
+    if (toolbar) {
+        newActivityToolbarWasVisible = !toolbar.classList.contains("hidden");
+        toolbar.dataset.modalSuppressed = "true";
+        toolbar.classList.add("hidden");
+        syncSelectionToolbarOffset(toolbar);
+    }
+    setTimeout(() => {
+        const labelInput = document.getElementById("newActivityLabelInput");
+        if (labelInput) {
+            labelInput.focus();
+        }
+    }, 80);
+    return true;
+}
+
+function closeNewActivityModal() {
+    const modal = document.getElementById("newActivityModal");
+    if (!modal) {
+        newActivityModalOpen = false;
+        return;
+    }
+    if (!newActivityModalOpen) {
+        modal.style.display = "none";
+        return;
+    }
+    modal.style.display = "none";
+    newActivityModalOpen = false;
+    resetNewActivityForm();
+    releaseBodyModalState();
+    const toolbar = document.getElementById("selectionToolbar");
+    if (toolbar && toolbar.dataset.modalSuppressed) {
+        delete toolbar.dataset.modalSuppressed;
+        if (newActivityToolbarWasVisible) {
+            toolbar.classList.remove("hidden");
+        }
+        syncSelectionToolbarOffset(toolbar);
+    }
+    newActivityToolbarWasVisible = false;
+}
+
+async function submitNewActivity(event) {
+    if (event && typeof event.preventDefault === "function") {
+        event.preventDefault();
+    }
+    if (newActivitySaving) {
+        return;
+    }
+    const payload = collectNewActivityPayload();
+    if (!payload.label) {
+        showPopup("⚠️ Inserisci il nome dell'attività");
+        return;
+    }
+    const saveBtn = document.getElementById("newActivitySaveBtn");
+    if (saveBtn && !saveBtn.dataset.label) {
+        saveBtn.dataset.label = saveBtn.textContent || "Crea attività";
+    }
+    newActivitySaving = true;
+    updateTeamAddActivityButtonState();
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Creazione...";
+    }
+    try {
+        const hadSelection = getSelectedMemberNodes().length > 0;
+        const result = await postJson("/api/activities", payload);
+        const created = result && result.activity ? result.activity : null;
+        const createdLabel = created && created.label ? created.label : payload.label;
+        showPopup(`🆕 Attività "${createdLabel}" creata`);
+        closeNewActivityModal();
+        let refreshFailed = false;
+        try {
+            await refreshState();
+        } catch (refreshErr) {
+            refreshFailed = true;
+            console.error("refreshState after create", refreshErr);
+            showPopup("⚠️ Attività creata, ricarica se non la vedi");
+        }
+        if (!refreshFailed && hadSelection) {
+            activitySearchTerm = createdLabel || "";
+            openActivityModal();
+        }
+    } catch (err) {
+        console.error("submitNewActivity", err);
+        const status = err && err.status;
+        if (status === 409) {
+            showPopup("⚠️ Codice attività già in uso o progetto non disponibile");
+        } else if (status === 400) {
+            showPopup("⚠️ Dati attività non validi");
+        } else {
+            showPopup("⚠️ Impossibile creare l'attività");
+        }
+    } finally {
+        newActivitySaving = false;
+        updateTeamAddActivityButtonState();
+        if (saveBtn) {
+            saveBtn.textContent = saveBtn.dataset.label || "Crea attività";
+            syncNewActivitySubmitState();
+        }
     }
 }
 
@@ -3522,6 +5274,18 @@ async function loadProject(projectCode) {
             resetProjectStateUI();
             showPopup("⚠️ Progetto non trovato");
             await refreshState();
+        } else if (res.status === 409) {
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (parseError) {
+                console.warn("loadProject payload", parseError);
+            }
+            const warning =
+                (payload && (payload.message || payload.error)) ||
+                "⚠️ Impossibile ricaricare: attività in corso";
+            showPopup(warning);
+            await refreshState();
         } else {
             throw new Error(`HTTP ${res.status}`);
         }
@@ -3559,18 +5323,54 @@ function bindUI() {
     const feedbackCancelBtn = document.getElementById("feedbackCancelBtn");
     const feedbackStars = document.querySelectorAll(".feedback-star");
     const pushToggle = document.getElementById("pushToggle");
-    const pushTestBtn = document.getElementById("pushTestBtn");
     const refreshPushNotificationsBtn = document.getElementById("refreshPushNotificationsBtn");
     const notificationsBtn = document.getElementById("notificationsBtn");
     const closePushNotificationsBtn = document.getElementById("closePushNotificationsBtn");
     const pushNotificationsModal = document.getElementById("pushNotificationsModal");
     const teamSelectBtn = document.getElementById("teamSelectBtn");
+    const teamAddActivityBtn = document.getElementById("teamAddActivityBtn");
     const teamCollapseBtn = document.getElementById("teamCollapseBtn");
+    const newActivityModal = document.getElementById("newActivityModal");
+    const newActivityForm = document.getElementById("newActivityForm");
+    const newActivityCancelBtn = document.getElementById("newActivityCancelBtn");
+    const newActivityLabelInput = document.getElementById("newActivityLabelInput");
+    const newActivityIdInput = document.getElementById("newActivityIdInput");
+    const newActivityStartInput = document.getElementById("newActivityStartInput");
+    const newActivityEndInput = document.getElementById("newActivityEndInput");
+    const newActivityMembersInput = document.getElementById("newActivityMembersInput");
+    const newActivityNotesInput = document.getElementById("newActivityNotesInput");
     const attachmentsMenuBtn = document.getElementById("attachmentsMenuBtn");
     const attachmentsRefreshBtn = document.getElementById("attachmentsRefreshBtn");
     const attachmentsUploadBtn = document.getElementById("attachmentsUploadBtn");
     const attachmentsCloseBtn = document.getElementById("attachmentsCloseBtn");
     const attachmentsModal = document.getElementById("attachmentsModal");
+    const materialsRefreshBtn = document.getElementById("materialsRefreshBtn");
+    const materialsMenuBtn = document.getElementById("materialsMenuBtn");
+    const materialsCloseBtn = document.getElementById("materialsCloseBtn");
+    const materialsCloseBottomBtn = document.getElementById("materialsCloseBottomBtn");
+    const materialsScrollTopBtn = document.getElementById("materialsScrollTopBtn");
+    const materialsModal = document.getElementById("materialsModal");
+    const materialsModalCard = document.getElementById("materialsModalCard");
+    const equipmentMenuBtn = document.getElementById("equipmentMenuBtn");
+    const equipmentOpenBtn = document.getElementById("equipmentOpenBtn");
+    const equipmentRefreshBtn = document.getElementById("equipmentRefreshBtn");
+    const equipmentCloseBtn = document.getElementById("equipmentCloseBtn");
+    const equipmentCloseBottomBtn = document.getElementById("equipmentCloseBottomBtn");
+    const equipmentScrollTopBtn = document.getElementById("equipmentScrollTopBtn");
+    const equipmentModal = document.getElementById("equipmentModal");
+    const equipmentModalCard = document.getElementById("equipmentModalCard");
+    const materialPhotoCloseBtn = document.getElementById("materialPhotoCloseBtn");
+    const materialPhotoModal = document.getElementById("materialPhotoModal");
+    const photosMenuBtn = document.getElementById("photosMenuBtn");
+    const photosRefreshBtn = document.getElementById("photosRefreshBtn");
+    const photosCloseBtn = document.getElementById("photosCloseBtn");
+    const photosModal = document.getElementById("photosModal");
+    const photosFileInput = document.getElementById("photosFileInput");
+    const photosCameraBtn = document.getElementById("photosCameraBtn");
+    const photosCameraInput = document.getElementById("photosCameraInput");
+    const photoPreviewModal = document.getElementById("photoPreviewModal");
+    const photoPreviewCloseBtn = document.getElementById("photoPreviewCloseBtn");
+    const photoDeleteBtn = document.getElementById("photoDeleteBtn");
 
     if (startAllBtn) {
         startAllBtn.addEventListener("click", async () => {
@@ -3652,9 +5452,6 @@ function bindUI() {
         pushToggle.addEventListener("click", handlePushToggle);
     }
 
-    if (pushTestBtn) {
-        pushTestBtn.addEventListener("click", sendPushTest);
-    }
 
     if (refreshPushNotificationsBtn) {
         refreshPushNotificationsBtn.dataset.label = refreshPushNotificationsBtn.textContent || "Aggiorna";
@@ -3681,9 +5478,33 @@ function bindUI() {
         });
     }
 
+    if (materialsMenuBtn) {
+        materialsMenuBtn.addEventListener("click", () => {
+            closeMenu();
+            openMaterialsModal({ forceToast: false });
+        });
+    }
+
+    if (equipmentMenuBtn) {
+        equipmentMenuBtn.addEventListener("click", () => {
+            closeMenu();
+            openEquipmentModal({ forceToast: false });
+        });
+    }
+
     if (attachmentsRefreshBtn) {
         attachmentsRefreshBtn.dataset.label = attachmentsRefreshBtn.textContent || "Aggiorna";
         attachmentsRefreshBtn.addEventListener("click", () => fetchProjectAttachments({ silent: false }));
+    }
+
+    if (materialsRefreshBtn) {
+        materialsRefreshBtn.dataset.label = materialsRefreshBtn.textContent || "Aggiorna materiali";
+        materialsRefreshBtn.addEventListener("click", () => fetchProjectMaterials({ silent: false, refresh: true }));
+    }
+
+    if (equipmentRefreshBtn) {
+        equipmentRefreshBtn.dataset.label = equipmentRefreshBtn.textContent || "Aggiorna attrezzature";
+        equipmentRefreshBtn.addEventListener("click", () => fetchProjectMaterials({ silent: false, refresh: true }));
     }
 
     if (attachmentsUploadBtn) {
@@ -3692,6 +5513,217 @@ function bindUI() {
 
     if (attachmentsCloseBtn) {
         attachmentsCloseBtn.addEventListener("click", closeAttachmentsModal);
+    }
+
+    if (materialsCloseBtn) {
+        materialsCloseBtn.addEventListener("click", closeMaterialsModal);
+    }
+
+    if (materialsCloseBottomBtn) {
+        materialsCloseBottomBtn.addEventListener("click", closeMaterialsModal);
+    }
+
+    if (materialsScrollTopBtn && materialsModalCard) {
+        materialsScrollTopBtn.addEventListener("click", () => {
+            materialsModalCard.scrollTo({ top: 0, behavior: "smooth" });
+        });
+    }
+
+    if (equipmentOpenBtn) {
+        equipmentOpenBtn.addEventListener("click", () => {
+            openEquipmentModal({ source: "materials" });
+        });
+    }
+
+    if (equipmentCloseBtn) {
+        equipmentCloseBtn.addEventListener("click", closeEquipmentModal);
+    }
+
+    if (equipmentCloseBottomBtn) {
+        equipmentCloseBottomBtn.addEventListener("click", closeEquipmentModal);
+    }
+
+    if (equipmentScrollTopBtn && equipmentModalCard) {
+        equipmentScrollTopBtn.addEventListener("click", () => {
+            equipmentModalCard.scrollTo({ top: 0, behavior: "smooth" });
+        });
+    }
+
+    const equipmentAddBtn = document.getElementById("equipmentAddBtn");
+    const newEquipmentModal = document.getElementById("newEquipmentModal");
+    const newEquipmentForm = document.getElementById("newEquipmentForm");
+    const newEquipmentCloseBtn = document.getElementById("newEquipmentCloseBtn");
+    const newEquipmentCancelBtn = document.getElementById("newEquipmentCancelBtn");
+
+    function openNewEquipmentModal() {
+        if (!newEquipmentModal) return;
+        newEquipmentModal.classList.add("open");
+        const nameInput = document.getElementById("newEquipmentName");
+        if (nameInput) nameInput.focus();
+    }
+
+    function closeNewEquipmentModal() {
+        if (!newEquipmentModal) return;
+        newEquipmentModal.classList.remove("open");
+        if (newEquipmentForm) newEquipmentForm.reset();
+    }
+
+    if (equipmentAddBtn) {
+        equipmentAddBtn.addEventListener("click", openNewEquipmentModal);
+    }
+
+    if (newEquipmentCloseBtn) {
+        newEquipmentCloseBtn.addEventListener("click", closeNewEquipmentModal);
+    }
+
+    if (newEquipmentCancelBtn) {
+        newEquipmentCancelBtn.addEventListener("click", closeNewEquipmentModal);
+    }
+
+    if (newEquipmentModal) {
+        newEquipmentModal.addEventListener("click", (event) => {
+            if (event.target === newEquipmentModal) {
+                closeNewEquipmentModal();
+            }
+        });
+    }
+
+    if (newEquipmentForm) {
+        newEquipmentForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const nameInput = document.getElementById("newEquipmentName");
+            const quantityInput = document.getElementById("newEquipmentQuantity");
+            const groupInput = document.getElementById("newEquipmentGroup");
+            const notesInput = document.getElementById("newEquipmentNotes");
+
+            const name = (nameInput && nameInput.value || "").trim();
+            if (!name) {
+                showPopup("⚠️ Inserisci il nome dell'attrezzatura");
+                return;
+            }
+
+            const quantity = parseInt(quantityInput && quantityInput.value, 10) || 1;
+            const groupName = (groupInput && groupInput.value || "").trim() || "Attrezzature extra";
+            const notes = (notesInput && notesInput.value || "").trim();
+
+            try {
+                const response = await fetch("/api/project/local-equipment", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name, quantity, group_name: groupName, notes }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.ok) {
+                    showPopup("⚠️ " + (data.error || "Errore durante l'aggiunta"));
+                    return;
+                }
+                showPopup(`✅ Attrezzatura "${name}" aggiunta`);
+                closeNewEquipmentModal();
+                fetchProjectMaterials({ silent: true, refresh: true });
+            } catch (err) {
+                console.error("Errore aggiunta attrezzatura locale:", err);
+                showPopup("⚠️ Errore di rete");
+            }
+        });
+    }
+
+    if (materialPhotoCloseBtn) {
+        materialPhotoCloseBtn.addEventListener("click", closeMaterialPhotoPreview);
+    }
+
+    if (materialPhotoModal) {
+        materialPhotoModal.addEventListener("click", (event) => {
+            if (event.target === materialPhotoModal) {
+                closeMaterialPhotoPreview();
+            }
+        });
+    }
+
+    // Foto progetto handlers
+    if (photosMenuBtn) {
+        photosMenuBtn.addEventListener("click", () => {
+            closeMenu();
+            openPhotosModal();
+        });
+    }
+
+    if (photosRefreshBtn) {
+        photosRefreshBtn.addEventListener("click", () => fetchPhotos({ silent: false }));
+    }
+
+    if (photosCloseBtn) {
+        photosCloseBtn.addEventListener("click", closePhotosModal);
+    }
+
+    if (photosModal) {
+        photosModal.addEventListener("click", (event) => {
+            if (event.target === photosModal) {
+                closePhotosModal();
+            }
+        });
+    }
+
+    if (photosFileInput) {
+        photosFileInput.addEventListener("change", (event) => {
+            const files = event.target.files;
+            if (files && files.length > 0) {
+                Array.from(files).forEach((file) => uploadPhoto(file));
+            }
+            photosFileInput.value = "";
+        });
+    }
+
+    // Pulsante fotocamera - usa API MediaDevices
+    if (photosCameraBtn) {
+        photosCameraBtn.addEventListener("click", openCameraModal);
+    }
+
+    // Fallback: input file con capture (usato se API MediaDevices fallisce)
+    if (photosCameraInput) {
+        photosCameraInput.addEventListener("change", (event) => {
+            const files = event.target.files;
+            if (files && files.length > 0) {
+                uploadPhoto(files[0]);
+            }
+            photosCameraInput.value = "";
+        });
+    }
+
+    // Camera modal buttons
+    const cameraCloseBtn = document.getElementById("cameraCloseBtn");
+    const cameraCaptureBtn = document.getElementById("cameraCaptureBtn");
+    const cameraModal = document.getElementById("cameraModal");
+
+    if (cameraCloseBtn) {
+        cameraCloseBtn.addEventListener("click", closeCameraModal);
+    }
+
+    if (cameraCaptureBtn) {
+        cameraCaptureBtn.addEventListener("click", capturePhoto);
+    }
+
+    if (cameraModal) {
+        cameraModal.addEventListener("click", (event) => {
+            if (event.target === cameraModal) {
+                closeCameraModal();
+            }
+        });
+    }
+
+    if (photoPreviewCloseBtn) {
+        photoPreviewCloseBtn.addEventListener("click", closePhotoPreview);
+    }
+
+    if (photoDeleteBtn) {
+        photoDeleteBtn.addEventListener("click", deleteCurrentPhoto);
+    }
+
+    if (photoPreviewModal) {
+        photoPreviewModal.addEventListener("click", (event) => {
+            if (event.target === photoPreviewModal) {
+                closePhotoPreview();
+            }
+        });
     }
 
     if (menuToggleBtn) {
@@ -3713,10 +5745,6 @@ function bindUI() {
         });
     }
 
-    const exportToggle = document.getElementById('exportToggle');
-    if (exportToggle) {
-        exportToggle.addEventListener('click', openExportModal);
-    }
 
     const exportExcelBtn = document.getElementById('exportExcelBtn');
     if (exportExcelBtn) {
@@ -3751,6 +5779,14 @@ function bindUI() {
             closeMenu();
             openPushNotificationsModal();
         });
+    });
+
+    document.addEventListener("click", (event) => {
+        const trigger = event.target.closest("[data-open-new-activity]");
+        if (!trigger) {
+            return;
+        }
+        handleTeamAddActivityClick(event);
     });
 
     ensureActivitySearch();
@@ -3833,8 +5869,61 @@ function bindUI() {
         });
     }
 
+    if (materialsModal) {
+        materialsModal.addEventListener("click", (event) => {
+            if (event.target === materialsModal) {
+                closeMaterialsModal();
+            }
+        });
+    }
+
+    if (equipmentModal) {
+        equipmentModal.addEventListener("click", (event) => {
+            if (event.target === equipmentModal) {
+                closeEquipmentModal();
+            }
+        });
+    }
+
+    if (newActivityModal) {
+        newActivityModal.addEventListener("click", (event) => {
+            if (event.target === newActivityModal && !newActivitySaving) {
+                closeNewActivityModal();
+            }
+        });
+    }
+
+    if (newActivityForm) {
+        newActivityForm.addEventListener("submit", submitNewActivity);
+    }
+
+    [
+        newActivityLabelInput,
+        newActivityIdInput,
+        newActivityStartInput,
+        newActivityEndInput,
+        newActivityMembersInput,
+        newActivityNotesInput,
+    ]
+        .filter(Boolean)
+        .forEach((input) => {
+            input.addEventListener("input", syncNewActivitySubmitState);
+        });
+
+    if (newActivityCancelBtn) {
+        newActivityCancelBtn.addEventListener("click", () => {
+            if (!newActivitySaving) {
+                closeNewActivityModal();
+            }
+        });
+    }
+
     if (teamSelectBtn) {
         teamSelectBtn.addEventListener("click", toggleTeamSelection);
+    }
+
+    if (teamAddActivityBtn) {
+        teamAddActivityBtn.addEventListener("click", handleTeamAddActivityClick);
     }
 
     if (teamCollapseBtn) {
@@ -3847,11 +5936,16 @@ function bindUI() {
         if (event.key === "Escape") {
             closeFeedbackModal();
             closeActivityModal();
+            if (!newActivitySaving) {
+                closeNewActivityModal();
+            }
             closeTimeline();
             closeMenu();
             closeExportModal();
             closePushNotificationsModal();
             closeAttachmentsModal();
+            closeMaterialsModal();
+            closeEquipmentModal();
         }
     });
 
@@ -3878,6 +5972,7 @@ async function init() {
     setProjectDefaultDate();
     hydrateInitialContentFromCache();
     renderAttachments();
+    renderMaterials();
     setOfflineMode(offlineMode, { silent: true });
     const releaseTarget = document.getElementById("menuReleaseVersion");
     if (releaseTarget) {
@@ -3891,6 +5986,7 @@ async function init() {
     await initPushNotifications();
     await fetchPushNotifications({ silent: true });
     await refreshState();
+    fetchProjectMaterials({ silent: true, refresh: false });
 }
 
 window.addEventListener('online', handleOnlineEvent);
