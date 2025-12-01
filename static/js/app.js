@@ -82,6 +82,47 @@ const attachmentsState = {
     loading: false,
     lastUpdated: null,
 };
+
+// Chiave localStorage per allegati
+const ATTACHMENTS_CACHE_KEY = 'joblog-attachments-cache';
+
+// Carica allegati da localStorage
+function loadAttachmentsFromCache() {
+    if (!STORAGE_AVAILABLE) return null;
+    try {
+        const cached = localStorage.getItem(ATTACHMENTS_CACHE_KEY);
+        if (!cached) return null;
+        const data = JSON.parse(cached);
+        if (data && data.projectCode && Array.isArray(data.items)) {
+            return data;
+        }
+    } catch (e) {
+        console.warn('Errore caricamento cache allegati', e);
+    }
+    return null;
+}
+
+// Salva allegati in localStorage
+function saveAttachmentsToCache() {
+    if (!STORAGE_AVAILABLE) return;
+    try {
+        const projectCode = attachmentsState.project && attachmentsState.project.code;
+        if (!projectCode || !attachmentsState.items.length) {
+            localStorage.removeItem(ATTACHMENTS_CACHE_KEY);
+            return;
+        }
+        const data = {
+            projectCode: String(projectCode),
+            project: attachmentsState.project,
+            items: attachmentsState.items,
+            savedAt: Date.now()
+        };
+        localStorage.setItem(ATTACHMENTS_CACHE_KEY, JSON.stringify(data));
+    } catch (e) {
+        console.warn('Errore salvataggio cache allegati', e);
+    }
+}
+
 if (attachmentsState.project && attachmentsState.items.length > 0) {
     attachmentsState.lastUpdated = Date.now();
 }
@@ -819,73 +860,80 @@ function updateEquipmentStatusLabel(node, itemKeys, checks) {
 
 function createMaterialRow(item) {
     const row = document.createElement("div");
-    row.className = "material-row";
+    row.className = "material-row material-row-compact";
     row.setAttribute("role", "listitem");
 
-    const primary = document.createElement("div");
-    primary.className = "material-primary";
-    const name = document.createElement("div");
+    // Header compatto: nome + quantità sulla stessa riga
+    const header = document.createElement("div");
+    header.className = "material-header-compact";
+    
+    const name = document.createElement("span");
     name.className = "material-name";
     name.textContent = item.name || "Materiale";
-    primary.appendChild(name);
+    header.appendChild(name);
 
-    const note = document.createElement("div");
-    note.className = "material-note";
-    note.textContent = item.note || "Nessuna nota";
-    primary.appendChild(note);
+    const qtyBadge = document.createElement("span");
+    qtyBadge.className = "material-qty-badge";
+    qtyBadge.textContent = `Qtà: ${item.quantity_label || String(item.quantity || "0")}`;
+    header.appendChild(qtyBadge);
+    
+    row.appendChild(header);
 
-    const periodNode = document.createElement("div");
-    periodNode.className = "material-period";
-    periodNode.textContent = formatMaterialPeriod(item);
-    primary.appendChild(periodNode);
-    row.appendChild(primary);
+    // Note (se presente)
+    if (item.note && item.note.trim()) {
+        const note = document.createElement("div");
+        note.className = "material-note";
+        note.textContent = item.note;
+        row.appendChild(note);
+    }
 
-    const qty = document.createElement("div");
-    qty.className = "material-qty";
-    const qtyLabel = document.createElement("span");
-    qtyLabel.className = "material-qty-label";
-    qtyLabel.textContent = "Quantità";
-    const qtyValue = document.createElement("span");
-    qtyValue.textContent = item.quantity_label || String(item.quantity || "0");
-    qty.appendChild(qtyLabel);
-    qty.appendChild(qtyValue);
-    row.appendChild(qty);
+    // Info compatte su una riga: periodo + peso + dimensioni
+    const infoRow = document.createElement("div");
+    infoRow.className = "material-info-row";
+    
+    const period = formatMaterialPeriod(item);
+    const weight = getMaterialWeightLabel(item);
+    const dimensions = getMaterialDimensionsLabel(item);
+    
+    // Periodo
+    const periodSpan = document.createElement("span");
+    periodSpan.className = "material-info-item";
+    periodSpan.innerHTML = `📅 ${period}`;
+    infoRow.appendChild(periodSpan);
+    
+    // Peso (solo se disponibile)
+    if (weight && weight !== "---") {
+        const weightSpan = document.createElement("span");
+        weightSpan.className = "material-info-item";
+        weightSpan.innerHTML = `⚖️ ${weight}`;
+        infoRow.appendChild(weightSpan);
+    }
+    
+    // Dimensioni (solo se disponibili)
+    if (dimensions && dimensions !== "---") {
+        const dimSpan = document.createElement("span");
+        dimSpan.className = "material-info-item";
+        dimSpan.innerHTML = `📐 ${dimensions}`;
+        infoRow.appendChild(dimSpan);
+    }
+    
+    row.appendChild(infoRow);
 
-    const details = document.createElement("div");
-    details.className = "material-details";
-    const detailEntries = [
-        { label: "Impegno", value: formatMaterialPeriod(item) },
-        { label: "Peso", value: getMaterialWeightLabel(item) },
-        { label: "Dimensioni", value: getMaterialDimensionsLabel(item) },
-    ];
-    detailEntries.forEach((entry) => {
-        const detail = document.createElement("div");
-        detail.className = "material-detail";
-        const detailLabel = document.createElement("span");
-        detailLabel.className = "material-detail-label";
-        detailLabel.textContent = entry.label;
-        const detailValue = document.createElement("span");
-        detailValue.className = "material-detail-value";
-        detailValue.textContent = entry.value || "---";
-        detail.appendChild(detailLabel);
-        detail.appendChild(detailValue);
-        details.appendChild(detail);
-    });
-    row.appendChild(details);
+    // Footer: stato + pulsante foto
+    const footer = document.createElement("div");
+    footer.className = "material-footer-compact";
 
-    const status = document.createElement("div");
+    const status = document.createElement("span");
     const statusClass = getMaterialStatusClass(item.status_code);
     status.className = `material-status ${statusClass}`;
     status.textContent = item.status || "Pianificato";
-    row.appendChild(status);
+    footer.appendChild(status);
 
-    const actions = document.createElement("div");
-    actions.className = "material-actions";
     const photoBtn = document.createElement("button");
     photoBtn.type = "button";
-    photoBtn.className = "materials-photo-btn";
+    photoBtn.className = "materials-photo-btn compact";
     if (materialHasPhoto(item)) {
-        photoBtn.textContent = "👁️ Mostra foto";
+        photoBtn.textContent = "👁️ Foto";
         photoBtn.addEventListener("click", () =>
             openMaterialPhotoPreview({
                 name: item.name,
@@ -894,12 +942,13 @@ function createMaterialRow(item) {
             })
         );
     } else {
-        photoBtn.textContent = "Nessuna foto";
+        photoBtn.textContent = "No foto";
         photoBtn.disabled = true;
         photoBtn.classList.add("secondary");
     }
-    actions.appendChild(photoBtn);
-    row.appendChild(actions);
+    footer.appendChild(photoBtn);
+    
+    row.appendChild(footer);
 
     return row;
 }
@@ -1017,7 +1066,7 @@ function renderMaterialsTree(target, nodes, depth, options) {
         toggleBtn.className = "materials-group-toggle";
         const nodeKey = nodeKeyPrefix ? `${nodeKeyPrefix}:${node.path}` : node.path;
         const expanded = isMaterialsNodeExpanded(nodeKey);
-        toggleBtn.textContent = expanded ? "▾" : "▸";
+        toggleBtn.textContent = expanded ? "▼" : "▶";
         toggleBtn.title = expanded ? "Comprimi cartella" : "Espandi cartella";
         toggleBtn.addEventListener("click", () => toggleMaterialsNode(nodeKey));
         header.appendChild(toggleBtn);
@@ -1302,7 +1351,22 @@ function openAttachmentsModal(options) {
     attachmentsModalOpen = true;
     modal.style.display = "flex";
     markBodyModalOpen();
-    renderAttachments();
+    
+    // Carica da cache se disponibile, altrimenti fetch
+    const projectCode = attachmentsState.project && attachmentsState.project.code;
+    if (projectCode && attachmentsState.items.length === 0) {
+        const cached = loadAttachmentsFromCache();
+        if (cached && cached.projectCode === String(projectCode)) {
+            attachmentsState.items = cached.items;
+            attachmentsState.lastUpdated = cached.savedAt || Date.now();
+            renderAttachments();
+        } else {
+            // Nessuna cache, fetch automatico
+            fetchProjectAttachments({ silent: true });
+        }
+    } else {
+        renderAttachments();
+    }
 }
 
 function closeAttachmentsModal() {
@@ -1347,6 +1411,7 @@ async function fetchProjectAttachments(options) {
         attachmentsState.project = project || null;
         attachmentsState.items = data && Array.isArray(data.attachments) ? data.attachments : [];
         attachmentsState.lastUpdated = Date.now();
+        saveAttachmentsToCache(); // Salva in localStorage
         renderAttachments();
         if (!silent) {
             showPopup("📎 Allegati aggiornati");
@@ -1382,10 +1447,23 @@ function syncAttachmentsProject(project) {
     attachmentsState.project = project;
     const changed = currentCode !== nextCode;
     if (changed) {
-        attachmentsState.items = [];
-        attachmentsState.lastUpdated = null;
-        renderAttachments();
-        if (attachmentsModalOpen) {
+        // Prova a caricare da cache
+        const cached = loadAttachmentsFromCache();
+        if (cached && cached.projectCode === nextCode) {
+            attachmentsState.project = cached.project || project;
+            attachmentsState.items = cached.items;
+            attachmentsState.lastUpdated = cached.savedAt || Date.now();
+            renderAttachments();
+            // Aggiorna in background se la cache è vecchia (più di 5 minuti)
+            const cacheAge = Date.now() - (cached.savedAt || 0);
+            if (cacheAge > 5 * 60 * 1000) {
+                fetchProjectAttachments({ silent: true });
+            }
+        } else {
+            // Nessuna cache, fetch automatico
+            attachmentsState.items = [];
+            attachmentsState.lastUpdated = null;
+            renderAttachments();
             fetchProjectAttachments({ silent: true });
         }
         return;
@@ -4792,8 +4870,7 @@ function syncNewActivitySubmitState() {
         saveBtn.disabled = true;
         return;
     }
-    const hasLabel = Boolean(labelInput && labelInput.value.trim());
-    saveBtn.disabled = !hasLabel;
+    saveBtn.disabled = false;
 }
 
 function collectNewActivityPayload() {
