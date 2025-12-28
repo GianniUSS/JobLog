@@ -1,9 +1,12 @@
 """Client helper for interacting with the Rentman REST API."""
 from __future__ import annotations
 
-import os
+import json
 import logging
-from typing import Any, Dict, Iterable, List, Optional
+import os
+from datetime import date as date_cls, datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 import requests
 
@@ -58,6 +61,18 @@ class RentmanClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.token = (token or os.environ.get("RENTMAN_API_TOKEN", "")).strip()
+        if not self.token:
+            config_path = Path(__file__).with_name("config.json")
+            if config_path.exists():
+                try:
+                    with config_path.open("r", encoding="utf-8") as handle:
+                        payload = json.load(handle)
+                    if isinstance(payload, dict):
+                        raw_token = payload.get("rentman_api_token")
+                        if isinstance(raw_token, str):
+                            self.token = raw_token.strip()
+                except (json.JSONDecodeError, OSError):
+                    logger.debug("Rentman: impossibile leggere config.json per il token", exc_info=True)
         if not self.token:
             raise RentmanAuthError("Rentman API token non configurato")
 
@@ -130,6 +145,238 @@ class RentmanClient:
             offset += limit
 
         return items
+
+    def iter_collection(
+        self,
+        path: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        limit_total: int = 2000,
+    ) -> Iterator[Dict[str, Any]]:
+        """Iterate a collection endpoint, paging until *limit_total* items are yielded."""
+
+        base_params = dict(params or {})
+        limit = int(base_params.get("limit", MAX_LIMIT)) or MAX_LIMIT
+        limit = min(limit, MAX_LIMIT)
+
+        offset = int(base_params.get("offset", 0))
+        yielded = 0
+
+        while True:
+            if yielded >= limit_total:
+                break
+
+            page_params = dict(base_params)
+            page_params["limit"] = limit
+            page_params["offset"] = offset
+            payload = self._request("GET", path, params=page_params)
+            data = payload.get("data") or []
+            if not data:
+                break
+
+            for entry in data:
+                if not isinstance(entry, dict):
+                    continue
+                yield entry
+                yielded += 1
+                if yielded >= limit_total:
+                    break
+
+            if len(data) < limit:
+                break
+            offset += limit
+
+    def iter_projects(self, *, limit_total: int = 2000, params: Optional[Dict[str, Any]] = None) -> Iterator[Dict[str, Any]]:
+        return self.iter_collection("/projects", params=params, limit_total=limit_total)
+
+    def get_project_statuses(self) -> List[Dict[str, Any]]:
+        """Best-effort fetch of project statuses."""
+        try:
+            return self._get_all("/projectstatuses")
+        except RentmanNotFound:
+            pass
+        except RentmanAuthError as exc:
+            logger.debug("Rentman: accesso projectstatuses negato (%s)", exc)
+        except RentmanAPIError as exc:
+            logger.debug("Rentman: projectstatuses non disponibili (%s)", exc)
+
+        try:
+            return self._get_all("/statuses")
+        except RentmanNotFound:
+            return []
+        except RentmanAuthError as exc:
+            logger.debug("Rentman: accesso statuses negato (%s)", exc)
+            return []
+        except RentmanAPIError as exc:
+            logger.debug("Rentman: statuses non disponibili (%s)", exc)
+            return []
+
+    def get_projects(self, *, limit_total: int = 2000, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        return list(self.iter_projects(limit_total=limit_total, params=params))
+
+    def fetch_active_projects(
+        self,
+        *,
+        date: str,
+        statuses: Optional[Iterable[str]] = None,
+        limit_total: int = 500,
+    ) -> List[Dict[str, Any]]:
+        """Fetch a reduced project selection around *date* and optionally filter by custom status codes."""
+
+        date_iso = (date or "").strip()
+        if not date_iso:
+            raise ValueError("date richiesto")
+
+        target_date: Optional[datetime] = None
+        try:
+            target_date = datetime.fromisoformat(date_iso)
+        except ValueError:
+            target_date = None
+
+        status_codes = {
+            str(code).strip()
+            for code in (statuses or [])
+            if code is not None and str(code).strip()
+        }
+
+        def parse_date(value: Any) -> Optional[date_cls]:
+            if isinstance(value, str):
+                candidate = value.strip()
+                if len(candidate) < 8:
+                    return None
+                normalized = candidate.replace(" ", "T").replace("Z", "+00:00")
+                # Gestione rapida dei separatori tipo "YYYY/MM/DD"
+                if "T" not in normalized and "+" not in normalized and "-" not in normalized and ":" not in normalized:
+                    normalized = candidate.replace("/", "-")
+                try:
+                    dt_value = datetime.fromisoformat(normalized)
+                except ValueError:
+                    try:
+                        dt_value = datetime.fromisoformat(f"{normalized}T00:00:00")
+                    except ValueError:
+                        try:
+                            dt_value = datetime.strptime(candidate, "%d/%m/%Y")
+                        except ValueError:
+                            try:
+                                dt_value = datetime.strptime(candidate, "%Y/%m/%d")
+                            except ValueError:
+                                return None
+                return dt_value.date()
+            return None
+
+        target_day: Optional[date_cls] = target_date.date() if target_date is not None else None
+
+        attempts: List[Dict[str, Any]] = []
+        if target_date is not None:
+            window_start = (target_date - timedelta(days=365)).date().isoformat()
+            attempts.append({"limit": MAX_LIMIT, "modified[gte]": window_start})
+        attempts.append({"limit": MAX_LIMIT})
+
+        collected: List[Dict[str, Any]] = []
+        seen_ids: set[Any] = set()
+
+        for attempt_params in attempts:
+            remaining = limit_total - len(collected)
+            if remaining <= 0:
+                break
+
+            params = dict(attempt_params)
+            base_limit = int(params.get("limit", MAX_LIMIT)) or MAX_LIMIT
+            params["limit"] = max(20, min(base_limit, remaining, 120))
+
+            for project in self.iter_projects(limit_total=remaining, params=params):
+                if not isinstance(project, dict):
+                    continue
+
+                project_id = project.get("id")
+                if project_id in seen_ids:
+                    continue
+                seen_ids.add(project_id)
+
+                if status_codes:
+                    custom_payload = project.get("custom")
+                    status_value: Optional[str] = None
+                    if isinstance(custom_payload, dict):
+                        raw_custom = custom_payload.get("custom_6")
+                        if isinstance(raw_custom, str):
+                            status_value = raw_custom.strip()
+                        elif isinstance(raw_custom, (int, float)):
+                            status_value = str(int(raw_custom))
+                    if status_value is None:
+                        current_value = project.get("current")
+                        if isinstance(current_value, (int, float)):
+                            status_value = str(int(current_value))
+                        elif isinstance(current_value, str) and current_value.strip():
+                            status_value = current_value.strip()
+                    if status_value is None or status_value not in status_codes:
+                        continue
+
+                if target_day is not None:
+                    start_dates: List[date_cls] = []
+                    end_dates: List[date_cls] = []
+
+                    for key in (
+                        "equipment_period_from",
+                        "usageperiod_start",
+                        "planperiod_start",
+                        "projectperiod_start",
+                        "period_start",
+                        "start",
+                    ):
+                        parsed = parse_date(project.get(key))
+                        if parsed is not None:
+                            start_dates.append(parsed)
+
+                    for key in (
+                        "equipment_period_to",
+                        "usageperiod_end",
+                        "planperiod_end",
+                        "projectperiod_end",
+                        "period_end",
+                        "end",
+                    ):
+                        parsed = parse_date(project.get(key))
+                        if parsed is not None:
+                            end_dates.append(parsed)
+
+                    custom_payload = project.get("custom") if isinstance(project.get("custom"), dict) else None
+                    if custom_payload:
+                        custom_single = custom_payload.get("custom_13") or custom_payload.get("custom_41")
+                        single_date = parse_date(custom_single)
+                        if single_date is not None and not start_dates and not end_dates:
+                            start_dates.append(single_date)
+                            end_dates.append(single_date)
+
+                        custom_range = custom_payload.get("custom_38") or custom_payload.get("custom_40")
+                        if isinstance(custom_range, str) and custom_range.strip() and not start_dates and not end_dates:
+                            tokens = [token.strip() for token in custom_range.replace("\\", "/").split("/") if token.strip()]
+                            if tokens:
+                                first = parse_date(tokens[0])
+                                last = parse_date(tokens[-1])
+                                if first is not None:
+                                    start_dates.append(first)
+                                if last is not None:
+                                    end_dates.append(last)
+
+                    start_day = min(start_dates) if start_dates else None
+                    end_day = max(end_dates) if end_dates else None
+
+                    if start_day is None and end_day is None:
+                        continue
+                    if start_day is None:
+                        start_day = end_day
+                    if end_day is None:
+                        end_day = start_day
+                    if start_day is None or end_day is None:
+                        continue
+                    if end_day < start_day:
+                        start_day, end_day = end_day, start_day
+                    if not (start_day <= target_day <= end_day):
+                        continue
+
+                collected.append(project)
+
+        return collected
 
     # ------------------------------------------------------------------
     # High level helpers

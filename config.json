@@ -6,7 +6,7 @@
     "port": 3306,
     "user": "tim_root",
     "password": "gianni225524",
-    "name": "joblog"
+    "name": "2025-"
   },
   "webpush": {
     "vapid_public": "BIrn69C16abPXMHCQ0sCjGWnl_uwBBLNOfcgTD_SJR7JrdvbeL-ZmYL3SgSk6IHTka-Xs7ug6fiVKmxEhrmzz5A",

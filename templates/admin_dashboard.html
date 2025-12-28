@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard Admin · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+
+            --bg-card: var(--bg-panel);
+            --text-primary: var(--text);
+            --text-secondary: var(--muted);
+            --shadow-lg: rgba(15, 23, 42, 0.2);
+            --overlay: rgba(32,33,36,0.32);
+        }
+        :root {
+            --bg-card: var(--bg-panel);
+            --text-primary: var(--text);
+            --text-secondary: var(--muted);
+            --shadow-lg: rgba(0,0,0,0.5);
+            --overlay: rgba(0,0,0,0.6);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: radial-gradient(circle at 10% 20%, rgba(56,189,248,0.08), transparent 40%),
+                        radial-gradient(circle at 80% 0%, rgba(14,165,233,0.18), transparent 35%),
+                        var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        body.menu-open { overflow: hidden; }
+        .hidden { display: none !important; }
+        header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,0.9));
+            color: #f8fafc;
+            padding: 14px 16px;
+            font-size: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 10px 30px rgba(3,7,18,0.35);
+        }
+        .header-row-top { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        .header-row-bottom { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 12px; }
+        .header-left { display:flex; align-items:center; gap:12px; }
+        .logo-title { font-weight: 700; font-size: 22px; letter-spacing: 0.4px; }
+        .header-actions { display:flex; align-items:center; gap: 12px; }
+        .header-icon-btn { width:44px; height:44px; border:none; border-radius:12px; background:rgba(255,255,255,0.12); color:white; font-size:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.2s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        .header-icon-btn:active { background:rgba(255,255,255,0.28); transform: scale(0.95); }
+        .header-user { display:flex; align-items:center; gap:8px; padding:6px 10px; background:rgba(255,255,255,0.15); border:none; border-radius:999px; color:white; }
+        .header-user:hover { background:rgba(255,255,255,0.25); }
+        .header-user-avatar { width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,0.3); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; text-transform:uppercase; }
+        .header-user-name { font-weight:600; font-size:14px; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+        .menu-overlay { position:fixed; inset:0; background:var(--overlay); z-index:210; }
+        .side-menu { position:fixed; top:0; left:0; height:100vh; height:100dvh; width:320px; max-width:92vw; background:var(--bg-card); z-index:220; box-shadow:2px 0 24px var(--shadow-lg); padding:16px 16px; display:flex; flex-direction:column; gap:12px; transform:translateX(-105%); transition:transform 0.24s ease, background-color 0.2s ease; overflow:hidden; }
+        .side-menu.open { transform:translateX(0); }
+        .side-menu-header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+        .side-menu-brand { display:flex; align-items:center; gap:12px; }
+        .side-menu-avatar { width:42px; height:42px; border-radius:50%; background:var(--brand-strong); color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; text-transform:uppercase; }
+        .side-menu-brand-text { display:flex; flex-direction:column; gap:1px; min-width: 0; }
+        .side-menu-title { font-size:16px; font-weight:700; color:var(--text-primary); max-width:190px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .side-menu-subtitle { font-size:12px; color:var(--text-secondary); font-weight:600; }
+        .side-menu-close { border:none; border-radius:50%; background:transparent; color:var(--text-secondary); width:36px; height:36px; font-size:18px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.2s ease, color 0.2s ease; flex-shrink:0; }
+        .side-menu-close:active { background:rgba(56,189,248,0.12); color:var(--brand-strong); }
+        .side-menu-body { flex:1; display:flex; flex-direction:column; gap:12px; overflow-y:auto; overflow-x:hidden; padding-right:4px; padding-bottom:20px; -webkit-overflow-scrolling:touch; }
+        .side-menu-section { display:flex; flex-direction:column; gap:6px; }
+        .side-menu-section-title { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-secondary); margin:0 0 2px 4px; }
+        .side-menu-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:2px; }
+        .side-menu-item { border:none; border-radius:12px; padding:10px 12px; background:transparent; color:var(--text-primary); font-size:14px; font-weight:700; text-align:left; cursor:pointer; transition:background 0.2s ease, color 0.2s ease; display:flex; align-items:center; gap:12px; text-decoration:none; }
+        .side-menu-item:visited { color:var(--text-primary); }
+        .side-menu-item:active, .side-menu-item:focus { background:rgba(56,189,248,0.12); color:var(--brand-strong); outline:none; }
+        .side-menu-item-icon { width:32px; height:32px; border-radius:50%; background:rgba(148,163,184,0.18); display:flex; align-items:center; justify-content:center; font-size:16px; color:var(--text-secondary); flex-shrink:0; }
+        .side-menu-item:active .side-menu-item-icon, .side-menu-item:focus .side-menu-item-icon { background:rgba(56,189,248,0.18); color:var(--brand-strong); }
+        .side-menu-item-label { flex:1; display:flex; flex-direction:column; gap:1px; min-width:0; }
+        .side-menu-item-text { font-weight:800; font-size:14px; }
+        .side-menu-item-hint { font-size:11px; color:var(--text-secondary); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        main { padding: 24px clamp(14px, 4vw, 32px) 60px; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: var(--shadow);
+        }
+        .stat-value { font-size: 28px; font-weight: 700; }
+        .stat-label { color: var(--muted); font-weight: 600; font-size: 13px; }
+        .stat-dual { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; align-items: center; }
+        .stat-dual .muted { font-size: 13px; font-weight: 700; }
+        .section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 28px 0 12px;
+            gap: 10px;
+        }
+        .section-head h2 { margin: 0; font-size: 18px; }
+        .pill {
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 6px 12px;
+            color: var(--muted);
+            font-weight: 700;
+            font-size: 12px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+        th { color: var(--muted); font-weight: 700; }
+        .badge {
+            padding: 4px 10px;
+            border-radius: 10px;
+            background: rgba(56,189,248,0.18);
+            color: var(--brand);
+            font-weight: 700;
+            font-size: 12px;
+        }
+        .muted { color: var(--muted); }
+        .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .date-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .date-controls label { font-weight: 700; color: var(--muted); font-size: 13px; }
+        .date-controls input[type="date"] { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-panel); color: var(--text); }
+        .date-controls button { min-width: 120px; }
+        .btn {
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.06);
+            color: #f8fafc;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.12s ease, background 0.2s ease;
+        }
+        .btn:hover { background: rgba(255,255,255,0.12); }
+        .btn:active { transform: scale(0.97); }
+        .btn.primary { background: #38bdf8; color: #0b1224; border-color: transparent; }
+        .btn.ghost { background: transparent; border-color: rgba(255,255,255,0.2); }
+        .status { margin: 0; margin-top: 8px; color: var(--muted); font-weight: 600; }
+        .hero {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+        .empty { border: 1px dashed var(--border); border-radius: 14px; padding: 16px; color: var(--muted); font-weight: 700; text-align: center; }
+        .error { color: var(--danger); }
+        @media (max-width: 640px) {
+            header { padding: 12px 14px; gap: 6px; }
+            .header-actions { gap: 8px; }
+            .header-user { padding: 5px 8px; gap: 6px; }
+            .header-user-avatar { width: 28px; height: 28px; font-size: 12px; }
+            .header-user-name { max-width: 120px; font-size: 13px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-row-top">
+            <div class="header-left">
+                <button id="menuToggle" class="header-icon-btn" aria-label="Apri menu">☰</button>
+                <span class="logo-title">📊 Dashboard Admin</span>
+            </div>
+        </div>
+        <div class="header-row-bottom">
+            <div class="header-actions">
+                <button class="header-icon-btn" id="refreshBtn" aria-label="Aggiorna">↻</button>
+            </div>
+            <div class="header-user" title="Accesso come {{ user_name or 'Admin' }}">
+                <span class="header-user-avatar">{{ user_initials or '?' }}</span>
+                <span class="header-user-name">{{ user_name or 'Admin' }}</span>
+            </div>
+        </div>
+    </header>
+
+    <div id="menuOverlay" class="menu-overlay hidden"></div>
+    <nav id="sideMenu" class="side-menu" aria-hidden="true">
+        <div class="side-menu-header">
+            <div class="side-menu-brand">
+                <span class="side-menu-avatar">{{ user_initials or '?' }}</span>
+                <div class="side-menu-brand-text">
+                    <span class="side-menu-title">{{ user_name or 'Admin' }}</span>
+                    <span class="side-menu-subtitle">Verifica ed esportazione sessioni</span>
+                </div>
+            </div>
+            <button id="menuCloseBtn" class="side-menu-close" aria-label="Chiudi menu">✕</button>
+        </div>
+        <div class="side-menu-body">
+            <div class="side-menu-section">
+                <span class="side-menu-section-title">Navigazione</span>
+                <ul class="side-menu-list">
+                    <li>
+                        <a href="{{ url_for('home') }}" class="side-menu-item" data-menu-action>
+                            <span class="side-menu-item-icon">🏠</span>
+                            <span class="side-menu-item-label">
+                                <span class="side-menu-item-text">Dashboard</span>
+                                <span class="side-menu-item-hint">Torna alla dashboard</span>
+                            </span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('admin_sessions_page') }}" class="side-menu-item" data-menu-action>
+                            <span class="side-menu-item-icon">🗒</span>
+                            <span class="side-menu-item-label">
+                                <span class="side-menu-item-text">Sessioni</span>
+                                <span class="side-menu-item-hint">Vista completa e filtri</span>
+                            </span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="side-menu-section">
+                <span class="side-menu-section-title">Esportazione</span>
+                <ul class="side-menu-list">
+                    <li>
+                        <button id="exportExcelBtn" class="side-menu-item" type="button" data-menu-action>
+                            <span class="side-menu-item-icon">📥</span>
+                            <span class="side-menu-item-label">
+                                <span class="side-menu-item-text">Esporta Excel</span>
+                                <span class="side-menu-item-hint">Scarica .xlsx (data selezionata)</span>
+                            </span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+            <div class="side-menu-section">
+                <span class="side-menu-section-title">Aspetto</span>
+                <ul class="side-menu-list">
+                    <li>
+                        <button id="themeToggle" class="side-menu-item" type="button" data-menu-action>
+                            <span class="side-menu-item-icon">🌓</span>
+                            <span class="side-menu-item-label">
+                                <span class="side-menu-item-text">Tema</span>
+                                <span class="side-menu-item-hint">Chiaro / Scuro</span>
+                            </span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+            <div class="side-menu-section">
+                <span class="side-menu-section-title">Account</span>
+                <ul class="side-menu-list">
+                    <li>
+                        <a href="{{ url_for('logout') }}" class="side-menu-item" data-menu-action>
+                            <span class="side-menu-item-icon">⏻</span>
+                            <span class="side-menu-item-label">
+                                <span class="side-menu-item-text">Logout</span>
+                                <span class="side-menu-item-hint">Esci dall'app</span>
+                            </span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <div class="hero">
+            <div class="card">
+                <div class="stat-label" id="hoursLabel">Ore registrate</div>
+                <div class="stat-dual">
+                    <div>
+                        <div class="muted">Magazzino</div>
+                        <div class="stat-value" id="hoursTotal">-</div>
+                    </div>
+                    <div>
+                        <div class="muted">Squadra</div>
+                        <div class="stat-value" id="hoursTeam">-</div>
+                    </div>
+                </div>
+                <p class="status" id="hoursStatus">Caricamento...</p>
+            </div>
+            <div class="card">
+                <div class="stat-label">Sessioni salvate</div>
+                <div class="stat-value" id="sessionsTotal">-</div>
+                <p class="status" id="sessionsStatus">Caricamento...</p>
+            </div>
+        </div>
+
+        <div class="section-head" style="margin-top:22px;">
+            <h2>Sessioni per data</h2>
+            <span class="pill" id="summaryDate">Oggi</span>
+        </div>
+        <div class="card">
+            <div class="date-controls" style="margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                <label for="dateInputStart">Da</label>
+                <input id="dateInputStart" type="date" />
+                <label for="dateInputEnd">A</label>
+                <input id="dateInputEnd" type="date" />
+                <button id="applyDate" class="btn primary">Applica</button>
+            </div>
+
+            <div style="overflow-x:auto;">
+                <table id="sessionsTable">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Fonte</th>
+                            <th>Progetto</th>
+                            <th>Utente</th>
+                            <th>Attività</th>
+                            <th>Ore</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="sessionsEmpty" class="empty" style="display:none;">Nessuna sessione per la data.</div>
+        </div>
+    </main>
+
+    <script>
+        window.__ADMIN_DASHBOARD__ = {
+            summaryUrl: "{{ url_for('api_admin_magazzino_summary') }}",
+            dayUrl: "{{ url_for('api_admin_day_sessions') }}",
+            exportUrl: "{{ url_for('api_admin_day_sessions_export_xlsx') }}",
+            sessionsUrl: "{{ url_for('admin_sessions_page') }}",
+            homeUrl: "{{ url_for('home') }}"
+        };
+    </script>
+    <script>
+        (function initAdminMenu() {
+            const body = document.body;
+            const overlay = document.getElementById('menuOverlay');
+            const menu = document.getElementById('sideMenu');
+            const openBtn = document.getElementById('menuToggle');
+            const closeBtn = document.getElementById('menuCloseBtn');
+
+            function openMenu() {
+                if (!overlay || !menu) return;
+                overlay.classList.remove('hidden');
+                menu.classList.add('open');
+                menu.setAttribute('aria-hidden', 'false');
+                body.classList.add('menu-open');
+            }
+
+            function closeMenu() {
+                if (!overlay || !menu) return;
+                overlay.classList.add('hidden');
+                menu.classList.remove('open');
+                menu.setAttribute('aria-hidden', 'true');
+                body.classList.remove('menu-open');
+            }
+
+            openBtn && openBtn.addEventListener('click', openMenu);
+            closeBtn && closeBtn.addEventListener('click', closeMenu);
+            overlay && overlay.addEventListener('click', closeMenu);
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeMenu();
+            });
+            document.querySelectorAll('[data-menu-action]').forEach((el) => {
+                el.addEventListener('click', closeMenu);
+            });
+        })();
+    </script>
+    <script type="module" src="{{ static_version('js/admin_dashboard.js') }}"></script>
+</body>
+</html>

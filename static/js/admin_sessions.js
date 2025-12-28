@@ -1,3 +1,4 @@
+// v2.1 - Data odierna default + colonna Data nel grid
 const root = document.documentElement;
 const ctx = window.__ADMIN_SESSION_CONTEXT__ || {};
 
@@ -25,6 +26,8 @@ const formMemberKey = document.getElementById('formMemberKey');
 const formOperator = document.getElementById('formOperator');
 const formActivityId = document.getElementById('formActivityId');
 const formActivityLabel = document.getElementById('formActivityLabel');
+const formSource = document.getElementById('formSource');
+const formProjectCode = document.getElementById('formProjectCode');
 const formStart = document.getElementById('formStart');
 const formEnd = document.getElementById('formEnd');
 const formDuration = document.getElementById('formDuration');
@@ -39,7 +42,7 @@ let pauseDurationTouched = false;
 
 const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
     dateStyle: 'short',
-    timeStyle: 'short'
+    timeStyle: 'medium'
 });
 
 const state = {
@@ -58,8 +61,7 @@ function formatDateInput(date) {
 function initDefaultFilters() {
     if (!startInput || !endInput) return;
     const today = new Date();
-    const sevenDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
-    if (!startInput.value) startInput.value = formatDateInput(sevenDaysAgo);
+    if (!startInput.value) startInput.value = formatDateInput(today);
     if (!endInput.value) endInput.value = formatDateInput(today);
 }
 
@@ -204,6 +206,15 @@ function renderSessions(sessions) {
 
         const badges = document.createElement('div');
         badges.className = 'session-badges';
+
+        // Badge fonte (Squadra/Magazzino)
+        const sourceChip = document.createElement('span');
+        sourceChip.className = 'session-badge';
+        sourceChip.style.background = session.source === 'Magazzino' ? 'rgba(251, 146, 60, 0.2)' : 'rgba(34, 197, 94, 0.2)';
+        sourceChip.style.color = session.source === 'Magazzino' ? '#ea580c' : '#16a34a';
+        sourceChip.textContent = session.source || 'Squadra';
+        badges.appendChild(sourceChip);
+
         const statusChip = document.createElement('span');
         statusChip.className = `status-chip ${session.status === 'completed' ? 'status-completed' : 'status-running'}`;
         statusChip.textContent = session.status === 'completed' ? 'Completata' : 'In corso';
@@ -216,6 +227,11 @@ function renderSessions(sessions) {
 
         const body = document.createElement('div');
         body.className = 'session-body';
+        // Estrai la data dalla sessione
+        const sessionDate = session.start_ts ? new Date(session.start_ts).toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+        body.appendChild(buildField('Data', sessionDate));
+        const projectField = session.project_code ? buildField('Progetto', session.project_code) : null;
+        if (projectField) body.appendChild(projectField);
         body.append(
             buildField('Inizio', formatDateTime(session.start_ts)),
             buildField('Fine', session.status === 'completed' ? formatDateTime(session.end_ts) : 'In corso'),
@@ -250,12 +266,16 @@ function renderSessions(sessions) {
 
         const actions = document.createElement('div');
         actions.className = 'session-actions';
-        const editBtn = document.createElement('button');
-        editBtn.type = 'button';
-        editBtn.className = 'edit-btn';
-        editBtn.textContent = '✏️ Modifica';
-        editBtn.addEventListener('click', () => openSheetFor(session));
-        actions.appendChild(editBtn);
+
+        // Mostra modifica solo se editable (non per magazzino)
+        if (session.editable !== false) {
+            const editBtn = document.createElement('button');
+            editBtn.type = 'button';
+            editBtn.className = 'edit-btn';
+            editBtn.textContent = '✏️ Modifica';
+            editBtn.addEventListener('click', () => openSheetFor(session));
+            actions.appendChild(editBtn);
+        }
 
         if (session.override_id) {
             const delBtn = document.createElement('button');
@@ -379,6 +399,8 @@ function populateForm(session) {
     durationTouched = false;
     pauseDurationTouched = false;
     overrideIdInput.value = session?.override_id ?? '';
+    if (formSource) formSource.value = session?.source || 'Squadra';
+    if (formProjectCode) formProjectCode.value = session?.project_code || '';
     formMemberKey.value = session?.member_key ?? '';
     formOperator.value = session?.member_name ?? '';
     formActivityId.value = session?.activity_id ?? '';
@@ -402,18 +424,20 @@ function populateForm(session) {
 }
 
 function gatherPayload() {
+    const source = formSource ? formSource.value : 'Squadra';
+    const projectCode = formProjectCode ? formProjectCode.value.trim() : '';
     const memberKey = formMemberKey.value.trim();
     const memberName = formOperator.value.trim() || memberKey;
     const activityId = formActivityId.value.trim();
     const activityLabel = formActivityLabel.value.trim() || activityId;
-    if (!memberKey) throw new Error('ID operatore obbligatorio.');
-    if (!activityId) throw new Error('ID attività obbligatorio.');
+    if (!memberKey) throw new Error('ID operatore / Username obbligatorio.');
+    if (!activityLabel) throw new Error('Descrizione attività obbligatoria.');
 
     const startMs = fromDateTimeLocalValue(formStart.value);
     if (startMs === null) throw new Error('Data/ora di inizio non valida.');
     const endMs = fromDateTimeLocalValue(formEnd.value);
     const durationMs = minutesToMs(formDuration.value);
-    const pauseMs = minutesToMs(formPause.value) ?? 0;
+    let pauseMs = minutesToMs(formPause.value) ?? 0;
     const pauseCount = 0;
     const manualEntry = formManualEntry ? Boolean(formManualEntry.checked) : true;
     const netMs = durationMs ?? (endMs ? Math.max(0, endMs - startMs) : 0);
@@ -430,9 +454,11 @@ function gatherPayload() {
     }
 
     const payload = {
+        source: source,
+        project_code: projectCode,
         member_key: memberKey,
         member_name: memberName,
-        activity_id: activityId,
+        activity_id: activityId || activityLabel,
         activity_label: activityLabel,
         start_ts: startMs,
         end_ts: endMs,
@@ -448,11 +474,11 @@ function gatherPayload() {
         payload.override_id = overrideId;
     }
 
-    const source = state.activeSession;
-    if (source) {
-        const sourceMemberKey = source.source_member_key || source.member_key;
-        const sourceActivityId = source.source_activity_id || source.activity_id;
-        const sourceStart = source.source_start_ts || source.start_ts;
+    const activeSession = state.activeSession;
+    if (activeSession) {
+        const sourceMemberKey = activeSession.source_member_key || activeSession.member_key;
+        const sourceActivityId = activeSession.source_activity_id || activeSession.activity_id;
+        const sourceStart = activeSession.source_start_ts || activeSession.start_ts;
         if (sourceMemberKey && sourceActivityId && sourceStart) {
             payload.source_member_key = sourceMemberKey;
             payload.source_activity_id = sourceActivityId;

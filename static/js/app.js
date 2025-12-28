@@ -3364,6 +3364,154 @@ function closePushNotificationsModal() {
     releaseBodyModalState();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  QR TIMBRATURA MODAL
+// ═══════════════════════════════════════════════════════════════════════════════
+let qrTimbraturaModalOpen = false;
+let qrRefreshInterval = null;
+let qrProgressInterval = null;
+let qrRefreshSeconds = 10;
+
+function openQrTimbraturaModal() {
+    const modal = document.getElementById("qrTimbraturaModal");
+    if (!modal || qrTimbraturaModalOpen) return;
+    
+    qrTimbraturaModalOpen = true;
+    modal.classList.add("open");
+    markBodyModalOpen();
+    
+    // Avvia il caricamento del QR
+    loadQrTimbratura();
+}
+
+function closeQrTimbraturaModal() {
+    const modal = document.getElementById("qrTimbraturaModal");
+    if (!modal) return;
+    
+    qrTimbraturaModalOpen = false;
+    modal.classList.remove("open");
+    releaseBodyModalState();
+    
+    // Ferma i timer
+    if (qrRefreshInterval) {
+        clearInterval(qrRefreshInterval);
+        qrRefreshInterval = null;
+    }
+    if (qrProgressInterval) {
+        clearInterval(qrProgressInterval);
+        qrProgressInterval = null;
+    }
+}
+
+async function loadQrTimbratura() {
+    const container = document.getElementById("qrTimbraturaContainer");
+    const loading = document.getElementById("qrTimbraturaLoading");
+    const image = document.getElementById("qrTimbraturaImage");
+    const timeEl = document.getElementById("qrTimbraturaTime");
+    const deviceIdEl = document.getElementById("qrDeviceId");
+    const refreshSecondsEl = document.getElementById("qrRefreshSeconds");
+    const progressBar = document.getElementById("qrRefreshProgress");
+    
+    if (!container) return;
+    
+    // Mostra loading
+    if (loading) loading.style.display = "flex";
+    if (image) image.classList.remove("loaded");
+    
+    try {
+        const res = await fetch("/api/qr-timbratura");
+        if (!res.ok) throw new Error("Errore nel caricamento QR");
+        
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Errore QR");
+        
+        // Aggiorna immagine
+        if (image) {
+            image.src = data.image;
+            image.classList.add("loaded");
+        }
+        if (loading) loading.style.display = "none";
+        
+        // Aggiorna device ID
+        if (deviceIdEl && data.payload) {
+            deviceIdEl.textContent = data.payload.dev || "";
+        }
+        
+        // Aggiorna tempo di refresh
+        qrRefreshSeconds = data.refresh_seconds || 10;
+        if (refreshSecondsEl) {
+            refreshSecondsEl.textContent = qrRefreshSeconds;
+        }
+        
+        // Avvia/riavvia i timer
+        startQrRefreshTimers(progressBar);
+        
+    } catch (err) {
+        console.error("QR Timbratura error:", err);
+        if (loading) {
+            loading.innerHTML = `<span style="color:#ef4444;">❌ ${err.message}</span>`;
+        }
+    }
+    
+    // Aggiorna orologio
+    updateQrClock(timeEl);
+}
+
+function startQrRefreshTimers(progressBar) {
+    // Ferma timer esistenti
+    if (qrRefreshInterval) clearInterval(qrRefreshInterval);
+    if (qrProgressInterval) clearInterval(qrProgressInterval);
+    
+    // Progress bar animation
+    let elapsed = 0;
+    const interval = 100; // 100ms
+    
+    if (progressBar) {
+        progressBar.style.transition = "none";
+        progressBar.style.width = "100%";
+        
+        qrProgressInterval = setInterval(() => {
+            elapsed += interval;
+            const remaining = Math.max(0, 100 - (elapsed / (qrRefreshSeconds * 1000)) * 100);
+            progressBar.style.width = remaining + "%";
+        }, interval);
+    }
+    
+    // Refresh QR ogni N secondi
+    qrRefreshInterval = setInterval(() => {
+        elapsed = 0;
+        if (progressBar) {
+            progressBar.style.width = "100%";
+        }
+        loadQrTimbratura();
+    }, qrRefreshSeconds * 1000);
+}
+
+function updateQrClock(element) {
+    if (!element) return;
+    
+    const updateTime = () => {
+        const now = new Date();
+        const time = now.toLocaleTimeString("it-IT", { 
+            hour: "2-digit", 
+            minute: "2-digit", 
+            second: "2-digit" 
+        });
+        element.textContent = time;
+    };
+    
+    updateTime();
+    
+    // Aggiorna ogni secondo se modal aperto
+    const clockInterval = setInterval(() => {
+        if (!qrTimbraturaModalOpen) {
+            clearInterval(clockInterval);
+            return;
+        }
+        updateTime();
+    }, 1000);
+}
+
 function initTheme() {
     const savedTheme = localStorage.getItem('joblog-theme');
     const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -5546,6 +5694,28 @@ function bindUI() {
 
     if (closePushNotificationsBtn) {
         closePushNotificationsBtn.addEventListener("click", closePushNotificationsModal);
+    }
+
+    // QR Timbratura handlers
+    const qrTimbraturaMenuBtn = document.getElementById("qrTimbraturaMenuBtn");
+    const qrTimbraturaModal = document.getElementById("qrTimbraturaModal");
+    const qrTimbraturaCloseBtn = document.getElementById("qrTimbraturaCloseBtn");
+    
+    if (qrTimbraturaMenuBtn) {
+        qrTimbraturaMenuBtn.addEventListener("click", () => {
+            closeMenu();
+            openQrTimbraturaModal();
+        });
+    }
+    
+    if (qrTimbraturaCloseBtn) {
+        qrTimbraturaCloseBtn.addEventListener("click", closeQrTimbraturaModal);
+    }
+    
+    if (qrTimbraturaModal) {
+        qrTimbraturaModal.addEventListener("click", (e) => {
+            if (e.target === qrTimbraturaModal) closeQrTimbraturaModal();
+        });
     }
 
     if (attachmentsMenuBtn) {

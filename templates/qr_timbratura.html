@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>QR Timbratura – {{ device_id }}</title>
+<meta name="theme-color" content="#0ea5e9">
+<style>
+:root {
+    --bg: #f8fafc;
+    --bg-card: #ffffff;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --brand: #0ea5e9;
+    --brand-gradient: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+}
+
+[data-theme="dark"] {
+    --bg: #0f172a;
+    --bg-card: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.qr-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    max-width: 500px;
+    width: 100%;
+}
+
+.qr-header {
+    text-align: center;
+}
+
+.qr-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: var(--brand-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.qr-device {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.qr-clock {
+    font-size: 56px;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.qr-date {
+    font-size: 18px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.qr-container {
+    position: relative;
+    width: 320px;
+    height: 320px;
+    background: #fff;
+    border-radius: 24px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.qr-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.qr-spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #e2e8f0;
+    border-top-color: var(--brand);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.qr-image {
+    width: 300px;
+    height: 300px;
+    object-fit: contain;
+    display: none;
+}
+
+.qr-image.loaded {
+    display: block;
+}
+
+.qr-progress-container {
+    width: 100%;
+    max-width: 320px;
+}
+
+.qr-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.qr-progress {
+    height: 100%;
+    background: var(--brand-gradient);
+    width: 100%;
+    transition: width linear;
+}
+
+.qr-info {
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.qr-info strong {
+    color: var(--brand);
+}
+
+.qr-footer {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.qr-btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.qr-btn:hover {
+    transform: translateY(-2px);
+}
+
+.qr-btn:active {
+    transform: translateY(0);
+}
+
+.qr-btn-primary {
+    background: var(--brand-gradient);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(14, 165, 233, 0.4);
+}
+
+.qr-btn-secondary {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid #e2e8f0;
+}
+
+.qr-error {
+    color: #ef4444;
+    text-align: center;
+}
+
+/* Fullscreen mode */
+body.fullscreen {
+    padding: 0;
+}
+
+body.fullscreen .qr-page {
+    max-width: none;
+    height: 100vh;
+    justify-content: center;
+}
+
+body.fullscreen .qr-container {
+    width: 400px;
+    height: 400px;
+}
+
+body.fullscreen .qr-image {
+    width: 380px;
+    height: 380px;
+}
+
+body.fullscreen .qr-clock {
+    font-size: 72px;
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+    .qr-clock {
+        font-size: 42px;
+    }
+    
+    .qr-container {
+        width: 280px;
+        height: 280px;
+    }
+    
+    .qr-image {
+        width: 260px;
+        height: 260px;
+    }
+}
+</style>
+</head>
+<body>
+<div class="qr-page">
+    <div class="qr-header">
+        <h1 class="qr-title">📱 QR Timbratura</h1>
+        <div class="qr-device">Device: <strong id="deviceId">{{ device_id }}</strong></div>
+    </div>
+    
+    <div class="qr-clock" id="clock">--:--:--</div>
+    <div class="qr-date" id="date"></div>
+    
+    <div class="qr-container" id="qrContainer">
+        <div class="qr-loading" id="qrLoading">
+            <div class="qr-spinner"></div>
+            <span>Generazione QR...</span>
+        </div>
+        <img class="qr-image" id="qrImage" alt="QR Code Timbratura" />
+    </div>
+    
+    <div class="qr-progress-container">
+        <div class="qr-progress-bar">
+            <div class="qr-progress" id="qrProgress"></div>
+        </div>
+    </div>
+    
+    <div class="qr-info">
+        🔄 Aggiornamento automatico ogni <strong id="refreshSeconds">{{ refresh_seconds }}</strong> secondi
+    </div>
+    
+    <div class="qr-footer">
+        <button class="qr-btn qr-btn-secondary" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+        <button class="qr-btn qr-btn-secondary" onclick="toggleTheme()">🌙 Tema</button>
+        <a href="/" class="qr-btn qr-btn-primary">🏠 Home</a>
+    </div>
+</div>
+
+<script>
+const REFRESH_SECONDS = {{ refresh_seconds }};
+let refreshInterval = null;
+let progressInterval = null;
+let darkMode = false;
+
+// Clock
+function updateClock() {
+    const now = new Date();
+    const clock = document.getElementById('clock');
+    const dateEl = document.getElementById('date');
+    
+    if (clock) {
+        clock.textContent = now.toLocaleTimeString('it-IT', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+    
+    if (dateEl) {
+        dateEl.textContent = now.toLocaleDateString('it-IT', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        });
+    }
+}
+
+// QR Loading
+async function loadQR() {
+    const loading = document.getElementById('qrLoading');
+    const image = document.getElementById('qrImage');
+    const progress = document.getElementById('qrProgress');
+    
+    if (loading) loading.style.display = 'flex';
+    if (image) image.classList.remove('loaded');
+    
+    try {
+        const res = await fetch('/api/qr-timbratura');
+        if (!res.ok) throw new Error('Errore caricamento');
+        
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Errore');
+        
+        if (image) {
+            image.src = data.image;
+            image.classList.add('loaded');
+        }
+        if (loading) loading.style.display = 'none';
+        
+        // Reset progress bar
+        startProgressBar(progress);
+        
+    } catch (err) {
+        console.error('QR error:', err);
+        if (loading) {
+            loading.innerHTML = `<span class="qr-error">❌ ${err.message}</span>`;
+        }
+    }
+}
+
+function startProgressBar(progressEl) {
+    if (progressInterval) clearInterval(progressInterval);
+    
+    let elapsed = 0;
+    const interval = 100;
+    
+    if (progressEl) {
+        progressEl.style.width = '100%';
+        
+        progressInterval = setInterval(() => {
+            elapsed += interval;
+            const remaining = Math.max(0, 100 - (elapsed / (REFRESH_SECONDS * 1000)) * 100);
+            progressEl.style.width = remaining + '%';
+        }, interval);
+    }
+}
+
+function startRefresh() {
+    if (refreshInterval) clearInterval(refreshInterval);
+    
+    loadQR();
+    refreshInterval = setInterval(loadQR, REFRESH_SECONDS * 1000);
+}
+
+// Theme toggle
+function toggleTheme() {
+    darkMode = !darkMode;
+    if (darkMode) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+    }
+}
+
+// Fullscreen toggle
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(() => {
+            document.body.classList.add('fullscreen');
+        }).catch(err => {
+            console.log('Fullscreen non supportato:', err);
+        });
+    } else {
+        document.exitFullscreen().then(() => {
+            document.body.classList.remove('fullscreen');
+        });
+    }
+}
+
+// Init
+document.addEventListener('DOMContentLoaded', () => {
+    updateClock();
+    setInterval(updateClock, 1000);
+    startRefresh();
+    
+    // Check system theme
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        darkMode = true;
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
+});
+</script>
+</body>
+</html>

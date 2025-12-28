@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Magazzino · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <style>
+        :root {
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --accent: #0ea5e9;
+            --success: #16a34a;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --border: rgba(15,23,42,0.12);
+        }
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --success: #22c55e;
+            --warning: #eab308;
+            --danger: #ef4444;
+            --border: rgba(148,163,184,0.15);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { 
+            height: 100%; 
+            overflow: hidden;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Header compatto */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .logo { font-size: 16px; font-weight: 700; }
+        .user-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .avatar {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 12px;
+        }
+        .logout-btn {
+            background: none;
+            border: none;
+            color: var(--muted);
+            font-size: 18px;
+            padding: 6px;
+            cursor: pointer;
+        }
+        .theme-btn {
+            background: none;
+            border: none;
+            color: var(--muted);
+            font-size: 18px;
+            padding: 6px;
+            cursor: pointer;
+        }
+
+        /* Main content */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 12px;
+            gap: 10px;
+        }
+
+        /* Timer grande */
+        .timer-box {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+            border: 2px solid var(--border);
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .timer-box.running { border-color: var(--success); box-shadow: 0 0 20px rgba(34,197,94,0.2); }
+        .timer-box.paused { border-color: var(--warning); box-shadow: 0 0 20px rgba(234,179,8,0.2); }
+        
+        .timer-context {
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 6px;
+            min-height: 16px;
+        }
+        .timer-context strong { color: var(--text); }
+        
+        .timer-display {
+            font-family: "SF Mono", "Courier New", monospace;
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            line-height: 1;
+            margin: 8px 0;
+        }
+        
+        .timer-status {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+        .timer-status.running { color: var(--success); }
+        .timer-status.paused { color: var(--warning); }
+
+        /* Pulsanti timer */
+        .timer-btns {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        .btn-timer {
+            flex: 1;
+            max-width: 140px;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.1s;
+        }
+        .btn-timer:active { transform: scale(0.95); }
+        .btn-timer:disabled { opacity: 0.4; }
+        .btn-start { background: var(--success); color: #fff; }
+        .btn-pause { background: var(--warning); color: #000; }
+        .btn-stop { background: var(--danger); color: #fff; }
+        .hide { display: none !important; }
+
+        /* Selettori veloci */
+        .quick-select {
+            background: var(--card);
+            border-radius: 14px;
+            padding: 12px;
+        }
+        .quick-label {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        
+        /* Progetti - scroll orizzontale */
+        .proj-scroll {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            max-height: 180px;
+            overflow-y: auto;
+            padding-right: 2px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .proj-card {
+            padding: 12px 12px;
+            border-radius: 12px;
+            background: rgba(148,163,184,0.08);
+            border: 1px solid var(--border);
+            color: var(--text);
+            text-align: left;
+            cursor: pointer;
+            transition: background 0.1s, border-color 0.1s, transform 0.08s;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .proj-card:active { transform: scale(0.98); }
+        .proj-card.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--bg);
+        }
+        .proj-card:disabled { opacity: 0.45; }
+        .proj-code { font-weight: 800; font-size: 15px; }
+        .proj-name { font-size: 12px; color: var(--muted); line-height: 1.3; }
+        .proj-card.active .proj-name { color: rgba(255,255,255,0.85); }
+
+        .add-btn {
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-weight: 700;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        /* Modal */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15,23,42,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+        }
+        .modal-backdrop.hide { display: none; }
+        .modal {
+            width: min(340px, 92vw);
+            background: var(--card);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 10px 40px rgba(15,23,42,0.2);
+            border: 1px solid var(--border);
+        }
+        .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+        .modal-label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+        .input-display {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 18px;
+            font-weight: 700;
+            min-height: 42px;
+            background: rgba(148,163,184,0.08);
+        }
+        .text-input {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 14px;
+            background: var(--card);
+            color: var(--text);
+        }
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin: 12px 0;
+        }
+        .keypad button {
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: rgba(148,163,184,0.12);
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .keypad button[data-k="ok"] { background: var(--success); color: #fff; }
+        .keypad button[data-k="clear"] { background: var(--danger); color: #fff; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+        .modal-btn {
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .modal-btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+        .modal-btn.ghost { background: transparent; color: var(--text); }
+
+        @media (max-width: 480px) {
+            header { padding: 8px 10px; }
+            .logo { font-size: 15px; }
+            .avatar { width: 26px; height: 26px; font-size: 11px; }
+            main { padding: 10px; gap: 8px; }
+            .timer-box { padding: 14px; }
+            .timer-display { font-size: 40px; letter-spacing: 1px; }
+            .timer-btns { gap: 8px; }
+            .btn-timer { max-width: none; padding: 12px; font-size: 14px; }
+            .quick-select { padding: 10px; }
+            .proj-scroll { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; max-height: 200px; }
+            .proj-card { padding: 12px; }
+            .proj-code { font-size: 14px; }
+            .proj-name { font-size: 12px; }
+            .act-grid { grid-template-columns: repeat(2, 1fr); }
+            .act-btn { padding: 12px; font-size: 13px; }
+            .sessions-box { min-height: 140px; }
+        }
+        
+        /* Attività - griglia */
+        .act-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .act-btn {
+            padding: 12px 8px;
+            border-radius: 10px;
+            background: rgba(148,163,184,0.1);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.1s, border-color 0.1s;
+            text-align: center;
+        }
+        .act-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--bg);
+        }
+        .act-btn:disabled { opacity: 0.4; }
+        .act-btn .icon { font-size: 18px; display: block; margin-bottom: 4px; }
+
+        /* Lista sessioni */
+        .sessions-box {
+            flex: 1;
+            background: var(--card);
+            border-radius: 14px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 120px;
+            border: 1px solid var(--border);
+        }
+        .sessions-header {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+            display: flex;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .sessions-list {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .session-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            background: var(--card);
+        }
+        .session-item:nth-child(odd) {
+            background: color-mix(in srgb, var(--bg) 50%, var(--card));
+        }
+        .session-item:last-child { border-bottom: none; }
+        .session-info { font-size: 13px; }
+        .session-proj { color: var(--muted); font-size: 11px; }
+        .session-time {
+            font-family: monospace;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .sessions-empty {
+            padding: 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        /* Loading overlay */
+        .loading {
+            position: fixed;
+            inset: 0;
+            background: rgba(15,23,42,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .loading.hide { display: none; }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--card);
+            border: 1px solid var(--border);
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0;
+            transition: transform 0.2s, opacity 0.2s;
+            z-index: 200;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        .toast.ok { border-color: var(--success); color: var(--success); }
+        .toast.err { border-color: var(--danger); color: var(--danger); }
+    </style>
+</head>
+<body>
+    <header>
+        <span class="logo">📦 Magazzino</span>
+        <div class="user-badge">
+            <button class="theme-btn" id="themeBtn" title="Cambia tema">🌓</button>
+            <span class="avatar">{{ user_initials or '?' }}</span>
+            <a href="{{ url_for('logout') }}" class="logout-btn">⏻</a>
+        </div>
+    </header>
+
+    <main>
+        <!-- Timer -->
+        <div class="timer-box" id="timerBox">
+            <div class="timer-context" id="timerContext">Seleziona progetto e attività</div>
+            <div class="timer-display" id="timerDisplay">00:00:00</div>
+            <div class="timer-status" id="timerStatus">—</div>
+            <div class="timer-btns">
+                <button class="btn-timer btn-start" id="btnStart" disabled>▶ AVVIA</button>
+                <button class="btn-timer btn-pause hide" id="btnPause">⏸ PAUSA</button>
+                <button class="btn-timer btn-stop hide" id="btnStop">✓ SALVA</button>
+            </div>
+        </div>
+
+        <!-- Progetti -->
+        <div class="quick-select">
+            <div class="quick-label" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <span>Progetto</span>
+                <button class="add-btn" id="addProjBtn">+ Aggiungi</button>
+            </div>
+            <div class="proj-scroll" id="projList">
+                <div style="color:var(--muted);font-size:13px;padding:10px;">Caricamento...</div>
+            </div>
+        </div>
+
+        <!-- Attività -->
+        <div class="quick-select">
+            <div class="quick-label">Attività</div>
+            <div class="act-grid" id="actGrid">
+                <button class="act-btn" data-act="Preparazione"><span class="icon">📦</span>Preparazione</button>
+                <button class="act-btn" data-act="Carico"><span class="icon">🚚</span>Carico</button>
+                <button class="act-btn" data-act="Scarico"><span class="icon">📥</span>Scarico</button>
+                <button class="act-btn" data-act="Controllo"><span class="icon">🔍</span>Controllo</button>
+                <button class="act-btn" data-act="Manutenzione"><span class="icon">🔧</span>Manutenzione</button>
+                <button class="act-btn" data-act="Altro"><span class="icon">📝</span>Altro</button>
+            </div>
+        </div>
+
+        <!-- Sessioni -->
+        <div class="sessions-box">
+            <div class="sessions-header">
+                <span>Sessioni di oggi</span>
+                <span id="totalTime">—</span>
+            </div>
+            <div class="sessions-list" id="sessionsList">
+                <div class="sessions-empty">Nessuna sessione</div>
+            </div>
+        </div>
+    </main>
+
+    <div class="loading hide" id="loading"><div class="spinner"></div></div>
+    <div class="toast" id="toast"></div>
+
+    <!-- Modal aggiungi progetto -->
+    <div class="modal-backdrop hide" id="addModal">
+        <div class="modal">
+            <div class="modal-title">Aggiungi progetto</div>
+            <label class="modal-label">Numero</label>
+            <div class="input-display" id="manualCode">—</div>
+            <label class="modal-label">Titolo (opzionale)</label>
+            <input class="text-input" id="manualName" maxlength="80" placeholder="Titolo progetto" />
+            <div class="keypad" id="keypad">
+                <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+                <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+                <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+                <button data-k="clear">⌫</button><button data-k="0">0</button><button data-k="ok">OK</button>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn ghost" id="cancelAdd">Annulla</button>
+                <button class="modal-btn primary" id="confirmAdd">Aggiungi</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ static_version('js/magazzino.js') }}"></script>
+</body>
+</html>

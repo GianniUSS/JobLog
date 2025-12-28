@@ -4,3 +4,5 @@ openpyxl==3.1.2
 PyMySQL==1.1.0
 pywebpush==2.1.2
 Flask-Session==0.5.0
+qrcode[pil]==8.0
+Pillow>=10.0.0

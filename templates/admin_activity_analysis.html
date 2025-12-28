@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analisi Attività · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --purple: #a855f7;
+            --pink: #ec4899;
+            --cyan: #06b6d4;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --purple: #9333ea;
+            --pink: #db2777;
+            --cyan: #0891b2;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .hidden { display: none !important; }
+        
+        /* Header */
+        header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(88,28,135,0.85));
+            color: #f8fafc;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Main Layout */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            flex: 1;
+            min-height: 0;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+        .sidebar-section { display: flex; flex-direction: column; gap: 10px; }
+        .sidebar-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+        .sidebar-field { display: flex; flex-direction: column; gap: 4px; }
+        .sidebar-field label { font-size: 12px; font-weight: 700; color: var(--muted); }
+        .sidebar-field input, .sidebar-field select {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .sidebar-field input:focus, .sidebar-field select:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        
+        .btn {
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.06);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn:hover { background: rgba(255,255,255,0.12); }
+        .btn:active { transform: scale(0.97); }
+        .btn.primary { background: var(--purple); color: white; border-color: transparent; }
+        .btn.primary:hover { background: var(--pink); }
+        .btn.full { width: 100%; }
+        .btn-group { display: flex; gap: 8px; }
+        .btn-group .btn { flex: 1; }
+
+        /* Activity Pills */
+        .activity-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .activity-pill {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--bg-soft);
+            border: 2px solid transparent;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .activity-pill:hover { border-color: var(--purple); }
+        .activity-pill.selected {
+            background: rgba(168, 85, 247, 0.15);
+            border-color: var(--purple);
+        }
+        .activity-pill-check {
+            width: 20px; height: 20px;
+            border-radius: 6px;
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            transition: all 0.15s ease;
+        }
+        .activity-pill.selected .activity-pill-check {
+            background: var(--purple);
+            border-color: var(--purple);
+            color: white;
+        }
+        .activity-pill-info { flex: 1; }
+        .activity-pill-name { font-weight: 700; font-size: 13px; }
+        .activity-pill-stats { font-size: 11px; color: var(--muted); }
+        .activity-pill-hours {
+            font-weight: 800;
+            font-size: 14px;
+            color: var(--brand);
+        }
+
+        /* Content */
+        .content {
+            padding: 20px 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        /* Page Title */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .page-title {
+            font-size: 26px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--purple), var(--pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .page-subtitle { font-size: 14px; color: var(--muted); font-weight: 600; }
+
+        /* Summary Cards */
+        .summary-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+        .summary-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            position: relative;
+            overflow: hidden;
+        }
+        .summary-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--purple), var(--pink));
+        }
+        .summary-card.green::before { background: linear-gradient(90deg, var(--success), var(--cyan)); }
+        .summary-card.orange::before { background: linear-gradient(90deg, var(--warning), var(--danger)); }
+        .summary-card.blue::before { background: linear-gradient(90deg, var(--brand), var(--cyan)); }
+        .summary-card-label { font-size: 12px; color: var(--muted); font-weight: 700; }
+        .summary-card-value { font-size: 28px; font-weight: 800; }
+        .summary-card-sub { font-size: 12px; color: var(--muted); font-weight: 600; }
+
+        /* Comparison Chart Area */
+        .comparison-section {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+        }
+        .comparison-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .comparison-title { font-size: 18px; font-weight: 800; }
+        .comparison-tabs { display: flex; gap: 8px; }
+        .comparison-tab {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--muted);
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .comparison-tab.active {
+            background: var(--purple);
+            color: white;
+            border-color: var(--purple);
+        }
+        .comparison-tab:hover:not(.active) { background: var(--bg-soft); }
+        .chart-container {
+            min-height: 350px;
+            position: relative;
+        }
+
+        /* Detailed Table */
+        .detail-section {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .detail-title { font-size: 18px; font-weight: 800; }
+        .detail-search {
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 13px;
+            width: 220px;
+        }
+        .table-wrapper {
+            flex: 1;
+            overflow: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th, td {
+            text-align: left;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            background: var(--bg-soft);
+            color: var(--muted);
+            font-weight: 700;
+            position: sticky;
+            top: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+        th:hover { background: var(--bg-panel); }
+        tbody tr:hover { background: var(--bg-soft); }
+        .badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 11px;
+        }
+        .badge-project {
+            background: rgba(168, 85, 247, 0.2);
+            color: var(--purple);
+        }
+        .empty-state {
+            padding: 60px;
+            text-align: center;
+            color: var(--muted);
+            font-weight: 600;
+        }
+        .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+        .empty-state-text { font-size: 16px; }
+
+        /* Project Color Dots */
+        .project-dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        /* Loading */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(11,18,36,0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+        }
+        .loading-spinner {
+            width: 48px; height: 48px;
+            border: 4px solid var(--border);
+            border-top-color: var(--purple);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .summary-row { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 900px) {
+            .main-layout { grid-template-columns: 1fr; }
+            .sidebar { display: none; }
+            .summary-row { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <header>
+        <div class="header-left">
+            <a href="{{ url_for('admin_dashboard_page') }}" class="header-icon-btn" title="Torna alla Dashboard">←</a>
+            <span class="logo-title">🔬 Analisi Attività</span>
+        </div>
+        <div class="header-actions">
+            <button class="header-icon-btn" id="refreshBtn" title="Aggiorna">↻</button>
+            <button class="header-icon-btn" id="exportBtn" title="Esporta">📥</button>
+            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <!-- Sidebar con filtri -->
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <span class="sidebar-title">📅 Periodo di Analisi</span>
+                <div class="sidebar-field">
+                    <label for="dateStart">Da</label>
+                    <input type="date" id="dateStart" />
+                </div>
+                <div class="sidebar-field">
+                    <label for="dateEnd">A</label>
+                    <input type="date" id="dateEnd" />
+                </div>
+                <div class="btn-group">
+                    <button class="btn" id="btnWeek">Settimana</button>
+                    <button class="btn" id="btnMonth">Mese</button>
+                    <button class="btn" id="btn3Months">3 Mesi</button>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <span class="sidebar-title">🔧 Seleziona Attività</span>
+                <div class="sidebar-field">
+                    <input type="search" id="activitySearch" placeholder="Cerca attività..." />
+                </div>
+                <div class="activity-list" id="activityList">
+                    <!-- Populated by JS -->
+                </div>
+                <button class="btn full" id="btnSelectAll">Seleziona Tutte</button>
+            </div>
+
+            <div class="sidebar-section">
+                <button class="btn primary full" id="btnAnalyze">
+                    <span>🔍</span>
+                    <span>Analizza</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Contenuto principale -->
+        <main class="content">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Confronto Cross-Progetto</h1>
+                    <p class="page-subtitle">Analizza le stesse attività su progetti diversi per ottimizzare i tempi</p>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-row">
+                <div class="summary-card">
+                    <span class="summary-card-label">Attività Selezionate</span>
+                    <span class="summary-card-value" id="summaryActivities">0</span>
+                    <span class="summary-card-sub">su <span id="summaryTotalAct">0</span> totali</span>
+                </div>
+                <div class="summary-card green">
+                    <span class="summary-card-label">Progetti Coinvolti</span>
+                    <span class="summary-card-value" id="summaryProjects">0</span>
+                    <span class="summary-card-sub">nel periodo selezionato</span>
+                </div>
+                <div class="summary-card orange">
+                    <span class="summary-card-label">Ore Totali</span>
+                    <span class="summary-card-value" id="summaryHours">0h</span>
+                    <span class="summary-card-sub" id="summarySessions">0 sessioni</span>
+                </div>
+                <div class="summary-card blue">
+                    <span class="summary-card-label">Media per Progetto</span>
+                    <span class="summary-card-value" id="summaryAvg">0h</span>
+                    <span class="summary-card-sub">per attività</span>
+                </div>
+            </div>
+
+            <!-- Comparison Chart -->
+            <div class="comparison-section">
+                <div class="comparison-header">
+                    <span class="comparison-title">📊 Confronto Ore per Progetto</span>
+                    <div class="comparison-tabs">
+                        <button class="comparison-tab active" data-view="grouped">Raggruppato</button>
+                        <button class="comparison-tab" data-view="stacked">Impilato</button>
+                        <button class="comparison-tab" data-view="radar">Radar</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="comparisonChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Detail Table -->
+            <div class="detail-section">
+                <div class="detail-header">
+                    <span class="detail-title">📋 Dettaglio per Progetto e Attività</span>
+                    <input type="search" class="detail-search" id="detailSearch" placeholder="Filtra risultati..." />
+                </div>
+                <div class="table-wrapper">
+                    <table id="detailTable">
+                        <thead>
+                            <tr>
+                                <th data-sort="project">Progetto</th>
+                                <th data-sort="activity">Attività</th>
+                                <th data-sort="sessions">Sessioni</th>
+                                <th data-sort="total">Ore Totali</th>
+                                <th data-sort="avg">Media Sessione</th>
+                                <th data-sort="min">Min</th>
+                                <th data-sort="max">Max</th>
+                                <th data-sort="variance">Varianza</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="empty-state hidden" id="emptyState">
+                    <div class="empty-state-icon">📊</div>
+                    <div class="empty-state-text">Seleziona attività e clicca "Analizza" per vedere i risultati</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        window.__ACTIVITY_ANALYSIS__ = {
+            analysisUrl: "{{ url_for('api_admin_activity_analysis') }}",
+            dashboardUrl: "{{ url_for('admin_dashboard_page') }}",
+            exportUrl: "{{ url_for('api_admin_activity_analysis_export') }}"
+        };
+    </script>
+    <script src="{{ static_version('js/admin_activity_analysis.js') }}" defer></script>
+</body>
+</html>

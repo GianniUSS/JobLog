@@ -514,22 +514,35 @@
                     <div class="sheet-grid">
                         <div class="sheet-row">
                             <div class="filter-field">
-                                <label for="formMemberKey">ID Operatore *</label>
-                                <input type="text" id="formMemberKey" required />
+                                <label for="formSource">Fonte *</label>
+                                <select id="formSource" required>
+                                    <option value="Squadra">Squadra</option>
+                                    <option value="Magazzino">Magazzino</option>
+                                </select>
                             </div>
                             <div class="filter-field">
-                                <label for="formOperator">Nome Operatore</label>
-                                <input type="text" id="formOperator" required />
+                                <label for="formProjectCode">Codice Progetto</label>
+                                <input type="text" id="formProjectCode" placeholder="es. 2899" />
                             </div>
                         </div>
                         <div class="sheet-row">
                             <div class="filter-field">
-                                <label for="formActivityId">ID Attività *</label>
-                                <input type="text" id="formActivityId" required />
+                                <label for="formMemberKey">ID Operatore / Username *</label>
+                                <input type="text" id="formMemberKey" required />
                             </div>
                             <div class="filter-field">
-                                <label for="formActivityLabel">Descrizione attività</label>
-                                <input type="text" id="formActivityLabel" />
+                                <label for="formOperator">Nome Operatore</label>
+                                <input type="text" id="formOperator" />
+                            </div>
+                        </div>
+                        <div class="sheet-row">
+                            <div class="filter-field">
+                                <label for="formActivityId">ID Attività</label>
+                                <input type="text" id="formActivityId" />
+                            </div>
+                            <div class="filter-field">
+                                <label for="formActivityLabel">Descrizione attività *</label>
+                                <input type="text" id="formActivityLabel" required />
                             </div>
                         </div>
                         <div class="sheet-row">

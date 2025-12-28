@@ -1,5 +1,5 @@
 
-
+ E:/Progetti/JOBLogApp/.venv-1/Scripts/python.exe manage_users.py create ciro --role magazzino --display-name "Ciro" --name "Ciro"
 
 
 

@@ -8,9 +8,12 @@ import io
 import json
 import logging
 import os
+import random
 import secrets
 import sqlite3
 import time
+import re
+from decimal import Decimal
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
@@ -35,12 +38,14 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 from pywebpush import WebPushException, webpush
+import qrcode
 from rentman_client import (
     RentmanAPIError,
     RentmanAuthError,
     RentmanClient,
     RentmanError,
     RentmanNotFound,
+    MAX_LIMIT,
 )
 
 
@@ -337,7 +342,8 @@ VALID_RUN_STATES = {RUN_STATE_PAUSED, RUN_STATE_RUNNING, RUN_STATE_FINISHED}
 ROLE_USER = "user"
 ROLE_SUPERVISOR = "supervisor"
 ROLE_ADMIN = "admin"
-VALID_USER_ROLES = {ROLE_USER, ROLE_SUPERVISOR, ROLE_ADMIN}
+ROLE_MAGAZZINO = "magazzino"
+VALID_USER_ROLES = {ROLE_USER, ROLE_SUPERVISOR, ROLE_ADMIN, ROLE_MAGAZZINO}
 
 
 # Authentication helpers
@@ -406,6 +412,8 @@ def _role_from_legacy_entry(entry: Mapping[str, Any]) -> str:
             return ROLE_ADMIN
         if normalized == ROLE_SUPERVISOR:
             return ROLE_SUPERVISOR
+        if normalized == ROLE_MAGAZZINO:
+            return ROLE_MAGAZZINO
 
     is_admin_flag = entry.get("is_admin")
     if isinstance(is_admin_flag, bool) and is_admin_flag:
@@ -554,6 +562,16 @@ def _apply_user_session(user_row: Mapping[str, Any]) -> None:
     session['user_role'] = role
     session['is_admin'] = role == ROLE_ADMIN
     session['is_supervisor'] = role in {ROLE_SUPERVISOR, ROLE_ADMIN}
+    session['is_magazzino'] = role in {ROLE_MAGAZZINO, ROLE_ADMIN}
+
+
+def _magazzino_only() -> Optional[ResponseReturnValue]:
+    role = session.get('user_role')
+    if role not in {ROLE_MAGAZZINO, ROLE_ADMIN}:
+        if request.path.startswith('/api/'):
+            return jsonify({"error": "forbidden"}), 403
+        return ("Forbidden", 403)
+    return None
 
 
 @app.before_request
@@ -783,10 +801,56 @@ def _extract_iso_date(value: Optional[str]) -> Optional[str]:
     return dt.date().isoformat()
 
 
+def _parse_date_any(value: Any) -> Optional[date]:
+    """Parsa una data da vari formati (ISO, timestamp, dd/mm/yyyy, dd-mm-yyyy)."""
+
+    if value is None:
+        return None
+
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc).date()
+        except (ValueError, OSError):
+            return None
+
+    if isinstance(value, str):
+        slug = value.strip()
+        if not slug:
+            return None
+        slug = slug.replace("Z", "+00:00")
+        # ISO 8601 (date o datetime)
+        try:
+            return datetime.fromisoformat(slug).date()
+        except ValueError:
+            pass
+        # Se contiene un datetime ma non ISO perfetto, prova a prendere YYYY-MM-DD
+        if len(slug) >= 10:
+            head = slug[:10]
+            try:
+                return datetime.strptime(head, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        # Formati europei
+        for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y"):
+            try:
+                return datetime.strptime(slug[:10], fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    return None
+
+
 def _coerce_int(value: Any) -> Optional[int]:
     if isinstance(value, bool):
         return int(value)
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float, Decimal)):
         return int(value)
     if isinstance(value, str):
         slug = value.strip()
@@ -941,23 +1005,27 @@ def increment_activity_runtime(meta: Dict[str, Any], activity_id: Optional[str],
 
 def _activity_matches_date(plan_start: Optional[str], plan_end: Optional[str], expected: str) -> bool:
     """Verifica se la data selezionata cade nell'intervallo dell'attività."""
-    start_date = _extract_iso_date(plan_start)
-    end_date = _extract_iso_date(plan_end)
-    
-    # Se non abbiamo date valide, escludiamo l'attività
-    if not start_date and not end_date:
+    expected_date = _parse_date_any(expected)
+    start = _parse_date_any(plan_start)
+    end = _parse_date_any(plan_end)
+
+    if expected_date is None:
         return False
-    
+
+    # Se non abbiamo date valide, escludiamo l'attività
+    if start is None and end is None:
+        return False
+
     # Se abbiamo solo una data, verifichiamo l'uguaglianza
-    if start_date and not end_date:
-        return start_date == expected
-    if end_date and not start_date:
-        return end_date == expected
-    
-    # Se abbiamo entrambe le date, verifichiamo che expected sia nell'intervallo
-    # A questo punto sappiamo che entrambe sono stringhe non-None
-    assert start_date is not None and end_date is not None
-    return start_date <= expected <= end_date
+    if start is not None and end is None:
+        return start == expected_date
+    if end is not None and start is None:
+        return end == expected_date
+
+    assert start is not None and end is not None
+    if end < start:
+        start, end = end, start
+    return start <= expected_date <= end
 
 
 def load_external_projects() -> Dict[str, Dict[str, Any]]:
@@ -1121,6 +1189,7 @@ CREATE TABLE IF NOT EXISTS activity_session_overrides (
     member_name VARCHAR(255) NOT NULL,
     activity_id VARCHAR(255) NOT NULL,
     activity_label VARCHAR(255) DEFAULT NULL,
+    project_code VARCHAR(64) DEFAULT NULL,
     start_ts BIGINT NOT NULL,
     end_ts BIGINT DEFAULT NULL,
     net_ms BIGINT DEFAULT NULL,
@@ -1138,7 +1207,8 @@ CREATE TABLE IF NOT EXISTS activity_session_overrides (
     updated_ts BIGINT NOT NULL,
     INDEX idx_session_override_source (source_member_key, source_activity_id, source_start_ts),
     INDEX idx_session_override_member (member_key),
-    INDEX idx_session_override_activity (activity_id)
+    INDEX idx_session_override_activity (activity_id),
+    INDEX idx_session_override_project (project_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
 
@@ -1149,6 +1219,7 @@ CREATE TABLE IF NOT EXISTS activity_session_overrides (
     member_name TEXT NOT NULL,
     activity_id TEXT NOT NULL,
     activity_label TEXT,
+    project_code TEXT,
     start_ts INTEGER NOT NULL,
     end_ts INTEGER,
     net_ms INTEGER,
@@ -1168,6 +1239,7 @@ CREATE TABLE IF NOT EXISTS activity_session_overrides (
 CREATE INDEX IF NOT EXISTS idx_session_override_source ON activity_session_overrides(source_member_key, source_activity_id, source_start_ts);
 CREATE INDEX IF NOT EXISTS idx_session_override_member ON activity_session_overrides(member_key);
 CREATE INDEX IF NOT EXISTS idx_session_override_activity ON activity_session_overrides(activity_id);
+CREATE INDEX IF NOT EXISTS idx_session_override_project ON activity_session_overrides(project_code);
 """
 
 PERSISTENT_SESSIONS_TABLE_MYSQL = """
@@ -2452,6 +2524,17 @@ def ensure_session_override_table(db: DatabaseLike) -> None:
             cursor.close()
         except AttributeError:
             pass
+        # Migrazione: aggiungi colonna project_code se non esiste
+        try:
+            db.execute("ALTER TABLE activity_session_overrides ADD COLUMN project_code VARCHAR(64) DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass  # Colonna già esistente
+        try:
+            db.execute("CREATE INDEX idx_session_override_project ON activity_session_overrides(project_code)")
+            db.commit()
+        except Exception:
+            pass  # Indice già esistente
 
 
 def ensure_persistent_session_table(db: DatabaseLike) -> None:
@@ -2982,6 +3065,7 @@ def get_db() -> DatabaseLike:
             ensure_persistent_session_table(g.db)
             ensure_equipment_checks_table(g.db)
             ensure_project_materials_cache_table(g.db)
+            ensure_warehouse_manual_projects_table(g.db)
         except Exception:
             app.logger.exception("Impossibile aggiornare lo schema attività")
     return g.db
@@ -3340,18 +3424,19 @@ def _override_row_to_session(row: Mapping[str, Any]) -> Dict[str, Any]:
     start_ts = int(row.get("start_ts") or 0)
     end_ts_value = row.get("end_ts")
     end_ts = int(end_ts_value) if end_ts_value is not None else start_ts
-    status = str(row.get("status") or "completed").lower()
     net_ms = max(0, int(row.get("net_ms") or 0))
     pause_ms = max(0, int(row.get("pause_ms") or 0))
     pause_count = max(0, int(row.get("pause_count") or 0))
     manual_entry = bool(row.get("manual_entry"))
     note = row.get("note") or ""
+    status = row.get("status") or "completed"
 
     payload = {
         "member_key": row.get("member_key"),
         "member_name": row.get("member_name"),
         "activity_id": row.get("activity_id"),
         "activity_label": row.get("activity_label") or row.get("activity_id"),
+        "project_code": row.get("project_code") or "",
         "start_ts": start_ts,
         "end_ts": end_ts,
         "status": status if status in {"completed", "running"} else "completed",
@@ -3378,15 +3463,16 @@ def build_session_rows(
     activity_filter: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     activity_rows = db.execute(
-        "SELECT activity_id, label FROM activities ORDER BY sort_order, label"
+        "SELECT activity_id, label, planned_duration_ms FROM activities ORDER BY sort_order, label"
     ).fetchall()
     activity_map = {row["activity_id"]: row["label"] for row in activity_rows}
+    activity_planned_map = {row["activity_id"]: row["planned_duration_ms"] for row in activity_rows}
 
     query = (
         "SELECT el.ts, el.kind, el.member_key, el.details, ms.member_name "
         "FROM event_log el "
         "LEFT JOIN member_state ms ON el.member_key = ms.member_key "
-        "WHERE el.kind IN ('move', 'finish_activity', 'pause_member', 'resume_member') "
+        "WHERE el.kind IN ('project_load', 'move', 'finish_activity', 'pause_member', 'resume_member') "
         "ORDER BY el.ts ASC"
     )
     event_rows = db.execute(query).fetchall()
@@ -3395,12 +3481,22 @@ def build_session_rows(
     activity_filter_norm = activity_filter.strip() if activity_filter else None
 
     sessions: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    last_project_code: Optional[str] = None
 
     for row in event_rows:
         try:
             details = json.loads(row["details"]) if row["details"] else {}
         except json.JSONDecodeError:
             details = {}
+
+        if row["kind"] == "project_load":
+            candidate = details.get("project_code")
+            if candidate:
+                last_project_code = str(candidate).strip() or last_project_code
+            continue
+
+        if last_project_code and not details.get("project_code"):
+            details["project_code"] = last_project_code
 
         member_key = row["member_key"]
         if not member_key:
@@ -3468,15 +3564,18 @@ def build_session_rows(
         start_event = None
         end_event = None
         pause_events: List[Dict[str, Any]] = []
+        project_code = None
 
         for event in events:
-            if event["kind"] == "move" and event["details"].get("to") == activity_id:
+            if event["kind"] == "move" and str(event["details"].get("to") or "") == activity_id:
                 if not start_event:
                     start_event = event
+                project_code = project_code or event["details"].get("project_code")
             elif event["kind"] == "pause_member":
                 pause_events.append(event)
             elif event["kind"] == "finish_activity":
                 end_event = event
+                project_code = project_code or event["details"].get("project_code")
 
         if not start_event:
             start_event = events[0]
@@ -3499,6 +3598,9 @@ def build_session_rows(
         status = "completed" if end_event else "running"
 
         end_ts_value = int(end_dt.timestamp() * 1000)
+        
+        # Ore preventivate per questa attività
+        planned_ms = activity_planned_map.get(activity_id) or 0
 
         results.append(
             {
@@ -3513,6 +3615,8 @@ def build_session_rows(
                 "pause_ms": max(0, pause_duration_ms),
                 "pause_count": pause_count,
                 "auto_closed": bool(end_event and end_event["details"].get("auto_close")),
+                "project_code": project_code,
+                "planned_ms": planned_ms,
                 "override_id": None,
                 "manual_entry": False,
                 "note": "",
@@ -4191,6 +4295,10 @@ def logout():
 def home() -> ResponseReturnValue:
     if 'user' not in session:
         return redirect(url_for('login'))
+    if session.get('is_admin'):
+        return redirect(url_for('admin_dashboard_page'))
+    if session.get('user_role') == ROLE_MAGAZZINO:
+        return redirect(url_for('magazzino_home'))
     db = get_db()
     display_name = session.get('user_display') or session.get('user_name') or session.get('user')
     primary_name = session.get('user_name') or display_name or session.get('user')
@@ -4238,6 +4346,670 @@ def home() -> ResponseReturnValue:
         initial_project=initial_project,
         header_clock=header_clock,
     )
+
+
+@app.get("/magazzino")
+@login_required
+def magazzino_home() -> ResponseReturnValue:
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    display_name = session.get('user_display') or session.get('user_name') or session.get('user')
+    primary_name = session.get('user_name') or display_name or session.get('user')
+    initials = session.get('user_initials') or compute_initials(primary_name or "")
+    header_clock = datetime.now().strftime("%d/%m/%Y | %H:%M")
+
+    return render_template(
+        "magazzino.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+        header_clock=header_clock,
+    )
+
+
+WAREHOUSE_ACTIVITIES_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS warehouse_activities (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_code VARCHAR(128) NOT NULL,
+    activity_label VARCHAR(255) NOT NULL,
+    note TEXT,
+    username VARCHAR(190) DEFAULT NULL,
+    created_ts BIGINT NOT NULL,
+    INDEX idx_warehouse_project (project_code),
+    INDEX idx_warehouse_created (created_ts)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+WAREHOUSE_ACTIVITIES_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS warehouse_activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_code TEXT NOT NULL,
+    activity_label TEXT NOT NULL,
+    note TEXT,
+    username TEXT,
+    created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_warehouse_project ON warehouse_activities(project_code);
+CREATE INDEX IF NOT EXISTS idx_warehouse_created ON warehouse_activities(created_ts);
+"""
+
+
+# Tabella per sessioni di lavoro magazzino (con timer)
+WAREHOUSE_SESSIONS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS warehouse_sessions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_code VARCHAR(128) NOT NULL,
+    activity_label VARCHAR(255) NOT NULL,
+    elapsed_ms BIGINT NOT NULL DEFAULT 0,
+    note TEXT,
+    username VARCHAR(190) DEFAULT NULL,
+    created_ts BIGINT NOT NULL,
+    INDEX idx_wh_sessions_project (project_code),
+    INDEX idx_wh_sessions_created (created_ts),
+    INDEX idx_wh_sessions_user (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+WAREHOUSE_SESSIONS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS warehouse_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_code TEXT NOT NULL,
+    activity_label TEXT NOT NULL,
+    elapsed_ms INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    username TEXT,
+    created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wh_sessions_project ON warehouse_sessions(project_code);
+CREATE INDEX IF NOT EXISTS idx_wh_sessions_created ON warehouse_sessions(created_ts);
+CREATE INDEX IF NOT EXISTS idx_wh_sessions_user ON warehouse_sessions(username);
+"""
+
+
+# Progetti manuali magazzino (persistenza cross-device per utente)
+WAREHOUSE_MANUAL_PROJECTS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS warehouse_manual_projects (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_code VARCHAR(128) NOT NULL,
+    name VARCHAR(255) DEFAULT NULL,
+    username VARCHAR(190) NOT NULL,
+    created_ts BIGINT NOT NULL,
+    UNIQUE KEY uniq_wh_manual_user_code (username, project_code),
+    INDEX idx_wh_manual_user (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+WAREHOUSE_MANUAL_PROJECTS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS warehouse_manual_projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_code TEXT NOT NULL,
+    name TEXT,
+    username TEXT NOT NULL,
+    created_ts INTEGER NOT NULL,
+    UNIQUE(username, project_code)
+);
+CREATE INDEX IF NOT EXISTS idx_wh_manual_user ON warehouse_manual_projects(username);
+"""
+
+
+def ensure_warehouse_activities_table(db: DatabaseLike) -> None:
+    statement = (
+        WAREHOUSE_ACTIVITIES_TABLE_MYSQL if DB_VENDOR == "mysql" else WAREHOUSE_ACTIVITIES_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def ensure_warehouse_sessions_table(db: DatabaseLike) -> None:
+    statement = (
+        WAREHOUSE_SESSIONS_TABLE_MYSQL if DB_VENDOR == "mysql" else WAREHOUSE_SESSIONS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def ensure_warehouse_manual_projects_table(db: DatabaseLike) -> None:
+    statement = (
+        WAREHOUSE_MANUAL_PROJECTS_TABLE_MYSQL
+        if DB_VENDOR == "mysql"
+        else WAREHOUSE_MANUAL_PROJECTS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+@app.get("/api/magazzino/projects/today")
+@login_required
+def api_magazzino_projects_today() -> ResponseReturnValue:
+    """Recupera progetti attivi per la data specificata.
+
+    Secondo la documentazione API Rentman (oas.json):
+    - I progetti (projects) NON hanno un campo status diretto
+    - Lo STATUS è nel SUBPROJECT (/subprojects) come riferimento "/statuses/ID"
+    - Ogni progetto ha almeno un subproject
+
+    Logica: recuperiamo i subprojects, filtriamo per status e data,
+    poi raggruppiamo per progetto padre.
+    """
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    requested = _normalize_date(request.args.get("date"))
+    target_date = requested or datetime.now().date().isoformat()
+    debug = _is_truthy(request.args.get("debug"))
+
+    rentman_info: Dict[str, Any] = {"available": False, "used": False}
+
+    # Keywords per filtrare gli status
+    allowed_status_keywords: Tuple[str, ...] = (
+        "confermat",
+        "confirm",
+        "in location",
+        "locat",
+        "pronto",
+        "ready",
+    )
+    cancelled_keywords: Tuple[str, ...] = ("annull", "cancel")
+
+    def normalize_status(value: str) -> str:
+        cleaned = str(value or "").strip().lower()
+        cleaned = cleaned.replace("_", " ")
+        return " ".join(cleaned.split())
+
+    def is_status_allowed(status_name: str) -> bool:
+        normalized = normalize_status(status_name)
+        if any(kw in normalized for kw in cancelled_keywords):
+            return False
+        if any(kw in normalized for kw in allowed_status_keywords):
+            return True
+        return False
+
+    def subproject_matches_date(subproject: Mapping[str, Any], target: date) -> bool:
+        date_fields = [
+            ("equipment_period_from", "equipment_period_to"),
+            ("usageperiod_start", "usageperiod_end"),
+            ("planperiod_start", "planperiod_end"),
+        ]
+        for start_key, end_key in date_fields:
+            start_val = _parse_date_any(subproject.get(start_key))
+            end_val = _parse_date_any(subproject.get(end_key))
+            if start_val is not None or end_val is not None:
+                if start_val is None:
+                    start_val = end_val
+                if end_val is None:
+                    end_val = start_val
+                if start_val and end_val:
+                    if end_val < start_val:
+                        start_val, end_val = end_val, start_val
+                    if start_val <= target <= end_val:
+                        return True
+        return False
+
+    client = get_rentman_client()
+    if client:
+        rentman_info["available"] = True
+        scan_limit = _coerce_int(os.environ.get("JOBLOG_RENTMAN_SUBPROJECT_SCAN_LIMIT")) or 15000
+        scan_limit = max(1000, min(scan_limit, 30000))
+
+        # 1) Recupera status map
+        status_map: Dict[int, str] = {}
+        try:
+            for entry in client.get_project_statuses():
+                status_id = entry.get("id")
+                if isinstance(status_id, int):
+                    status_name = entry.get("displayname") or entry.get("name") or str(status_id)
+                    status_map[status_id] = str(status_name)
+        except Exception:
+            status_map = {}
+
+        # 2) Recupera tutti i subprojects
+        subprojects_all: List[Dict[str, Any]] = []
+        rentman_error_type: Optional[str] = None
+        rentman_error_detail: Optional[str] = None
+        try:
+            for sub in client.iter_collection("/subprojects", limit_total=scan_limit):
+                subprojects_all.append(sub)
+        except Exception as exc:
+            app.logger.exception("Rentman: errore durante scansione subprojects")
+            rentman_error_type = type(exc).__name__
+            rentman_error_detail = str(exc)
+
+        if rentman_error_type is None:
+            target_date_obj = _parse_date_any(target_date)
+            if target_date_obj is None:
+                target_date_obj = datetime.now().date()
+
+            # 3) Filtra subprojects per status e data
+            valid_subprojects: List[Dict[str, Any]] = []
+            projects_seen: Set[str] = set()
+
+            for sub in subprojects_all:
+                status_ref = sub.get("status")
+                status_id = parse_reference(status_ref)
+                status_name = status_map.get(status_id, "") if isinstance(status_id, int) else ""
+
+                if not is_status_allowed(status_name):
+                    continue
+
+                if not subproject_matches_date(sub, target_date_obj):
+                    continue
+
+                project_ref = sub.get("project")
+                if not project_ref:
+                    continue
+
+                valid_subprojects.append({
+                    "subproject_id": sub.get("id"),
+                    "project_ref": project_ref,
+                    "status_id": status_id,
+                    "status_name": status_name,
+                })
+                projects_seen.add(project_ref)
+
+            # 4) Recupera dettagli progetti padre
+            projects_rentman: List[Dict[str, Any]] = []
+            seen_codes: Set[str] = set()
+
+            for project_ref in projects_seen:
+                project_id = parse_reference(project_ref)
+                if project_id is None:
+                    continue
+
+                try:
+                    payload = client._request("GET", f"/projects/{project_id}")
+                    project_data = payload.get("data", {})
+
+                    code = str(project_data.get("number") or project_data.get("reference") or project_id).strip().upper()
+                    if not code or code in seen_codes:
+                        continue
+                    seen_codes.add(code)
+
+                    name = project_data.get("displayname") or project_data.get("name") or code
+                    projects_rentman.append({"code": code, "name": str(name)})
+                except Exception:
+                    continue
+
+            rentman_info["used"] = True
+            projects_rentman.sort(key=lambda item: (str(item.get("code") or ""), str(item.get("name") or "")))
+
+            response: Dict[str, Any] = {
+                "ok": True,
+                "date": target_date,
+                "projects": projects_rentman,
+                "count": len(projects_rentman),
+                "source": "rentman",
+            }
+            if debug:
+                response["debug"] = {
+                    "scan_limit": scan_limit,
+                    "subprojects_total": len(subprojects_all),
+                    "subprojects_valid": len(valid_subprojects),
+                    "status_map_count": len(status_map),
+                    "status_map": status_map,
+                }
+            return jsonify(response)
+
+        if debug:
+            if rentman_error_type:
+                rentman_info["error"] = rentman_error_type
+            if rentman_error_detail:
+                rentman_info["error_detail"] = rentman_error_detail[:1200]
+    else:
+        rentman_info["available"] = False
+        rentman_info["reason"] = "client_unavailable"
+
+    # Fallback locale: projects.json (solo se Rentman non è disponibile o ha fallito)
+    catalog = load_external_projects()
+    projects: List[Dict[str, Any]] = []
+    for entry in catalog.values():
+        code = str(entry.get("project_code") or "").strip().upper()
+        name = str(entry.get("project_name") or code).strip() or code
+        activities_any = entry.get("activities")
+        activities: List[Any] = activities_any if isinstance(activities_any, list) else []
+        active = False
+        for act in activities:
+            if not isinstance(act, dict):
+                continue
+            if _activity_matches_date(act.get("plan_start"), act.get("plan_end"), target_date):
+                active = True
+                break
+        if active:
+            projects.append({"code": code, "name": name})
+
+    projects.sort(key=lambda item: (str(item.get("code") or ""), str(item.get("name") or "")))
+    response_local: Dict[str, Any] = {"ok": True, "date": target_date, "projects": projects, "count": len(projects), "source": "local"}
+    if debug:
+        response_local["debug"] = {"rentman": rentman_info}
+    return jsonify(response_local)
+
+
+@app.get("/api/magazzino/projects/manual")
+@login_required
+def api_magazzino_projects_manual_list() -> ResponseReturnValue:
+    """Restituisce i progetti manuali salvati per l'utente (persistenti cross-device)."""
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    db = get_db()
+    ensure_warehouse_manual_projects_table(db)
+    username = session.get("user")
+    rows = db.execute(
+        """
+        SELECT project_code AS code, name, created_ts
+        FROM warehouse_manual_projects
+        WHERE username = ?
+        ORDER BY created_ts DESC
+        LIMIT 500
+        """,
+        (username,),
+    ).fetchall()
+    items = [dict(row) for row in rows] if rows else []
+    return jsonify({"ok": True, "items": items})
+
+
+@app.post("/api/magazzino/projects/manual")
+@login_required
+def api_magazzino_projects_manual_upsert() -> ResponseReturnValue:
+    """Salva o aggiorna un progetto manuale per l'utente corrente."""
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    data = request.get_json(silent=True) or {}
+    code = _normalize_text(data.get("code"))
+    name = _normalize_text(data.get("name"))
+    if not code:
+        return jsonify({"ok": False, "error": "missing_code"}), 400
+
+    db = get_db()
+    ensure_warehouse_manual_projects_table(db)
+    username = session.get("user")
+    now = now_ms()
+
+    if DB_VENDOR == "mysql":
+        db.execute(
+            """
+            INSERT INTO warehouse_manual_projects(project_code, name, username, created_ts)
+            VALUES(%s,%s,%s,%s)
+            ON DUPLICATE KEY UPDATE name=VALUES(name), created_ts=VALUES(created_ts)
+            """,
+            (code, name, username, now),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO warehouse_manual_projects(project_code, name, username, created_ts)
+            VALUES(?,?,?,?)
+            ON CONFLICT(username, project_code) DO UPDATE SET name=excluded.name, created_ts=excluded.created_ts
+            """,
+            (code, name, username, now),
+        )
+    try:
+        db.commit()
+    except Exception:
+        pass
+    return jsonify({"ok": True, "code": code, "name": name, "created_ts": now})
+
+
+@app.get("/api/magazzino/projects/lookup")
+@login_required
+def api_magazzino_projects_lookup() -> ResponseReturnValue:
+    """Recupera un progetto per codice (numero) anche fuori data odierna.
+
+    Prova prima Rentman (se configurato), altrimenti il catalogo locale.
+    """
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    code = _normalize_text(request.args.get("code")).upper()
+    if not code:
+        return jsonify({"ok": False, "error": "missing_code"}), 400
+
+    project: Optional[Dict[str, str]] = None
+    source = "local"
+    debug = _is_truthy(request.args.get("debug"))
+    rentman_debug: Dict[str, Any] = {}
+
+    client = get_rentman_client()
+    if client:
+        try:
+            # Riduci batch per evitare limiti dimensione risposta Rentman
+            batch = 150  # < 300 e payload più piccolo
+            max_total = 7500
+            scanned = 0
+            found = False
+            offset = 0
+
+            def norm(val: str) -> str:
+                return str(val or "").strip().upper()
+
+            while scanned < max_total:
+                payload = client._request(
+                    "GET",
+                    "/projects",
+                    params={
+                        "limit": batch,
+                        "offset": offset,
+                        "fields": "number,reference,displayname,name",
+                    },
+                )
+                data = payload.get("data") if isinstance(payload, dict) else None
+                if debug:
+                    rentman_debug.setdefault("pages", []).append(len(data) if isinstance(data, list) else None)
+                if not isinstance(data, list) or not data:
+                    break
+
+                for entry in data:
+                    num = norm(entry.get("number") or entry.get("reference"))
+                    disp = norm(entry.get("displayname") or entry.get("name"))
+                    if num == code or disp == code or code in num:
+                        name = entry.get("displayname") or entry.get("name") or num
+                        project = {"code": num or code, "name": str(name)}
+                        source = "rentman"
+                        found = True
+                        break
+
+                scanned += len(data)
+                if found:
+                    break
+                if len(data) < batch:
+                    break
+                offset += batch
+
+            if debug:
+                rentman_debug["scanned"] = scanned
+                rentman_debug["found"] = bool(project)
+
+        except Exception as exc:
+            project = None
+            if debug:
+                rentman_debug["error"] = True
+                rentman_debug["error_type"] = type(exc).__name__
+                rentman_debug["error_detail"] = str(exc)[:400]
+
+    if project is None:
+        catalog = load_external_projects()
+        entry = catalog.get(code)
+        if entry:
+            name = str(entry.get("project_name") or code).strip() or code
+            project = {"code": code, "name": name}
+            source = "local"
+
+    if project is None:
+        resp: Dict[str, Any] = {"ok": False, "error": "not_found"}
+        if debug:
+            resp["rentman_debug"] = rentman_debug
+        return jsonify(resp), 404
+
+    resp: Dict[str, Any] = {"ok": True, "project": project, "source": source}
+    if debug:
+        resp["rentman_debug"] = rentman_debug
+    return jsonify(resp)
+
+
+@app.get("/api/magazzino/activities")
+@login_required
+def api_magazzino_activities_list() -> ResponseReturnValue:
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    project_code = _normalize_text(request.args.get("project_code")).upper()
+    if not project_code:
+        return jsonify({"ok": False, "error": "missing_project_code"}), 400
+
+    db = get_db()
+    ensure_warehouse_activities_table(db)
+    rows = db.execute(
+        """
+        SELECT id, project_code, activity_label, note, username, created_ts
+        FROM warehouse_activities
+        WHERE project_code = ?
+        ORDER BY created_ts DESC
+        LIMIT 200
+        """,
+        (project_code,),
+    ).fetchall()
+    items = [dict(row) for row in rows] if rows else []
+    return jsonify({"ok": True, "project_code": project_code, "items": items})
+
+
+@app.post("/api/magazzino/activities")
+@login_required
+def api_magazzino_activities_create() -> ResponseReturnValue:
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    data = request.get_json(silent=True) or {}
+    project_code = _normalize_text(data.get("project_code")).upper()
+    activity_label = _normalize_text(data.get("activity_label"))
+    note = _normalize_text(data.get("note"))
+    if not project_code:
+        return jsonify({"ok": False, "error": "missing_project_code"}), 400
+    if not activity_label:
+        return jsonify({"ok": False, "error": "missing_activity_label"}), 400
+
+    db = get_db()
+    ensure_warehouse_activities_table(db)
+    now = now_ms()
+    username = session.get("user")
+    db.execute(
+        """
+        INSERT INTO warehouse_activities(project_code, activity_label, note, username, created_ts)
+        VALUES(?,?,?,?,?)
+        """,
+        (project_code, activity_label, note or None, username, now),
+    )
+    try:
+        db.commit()
+    except Exception:
+        pass
+    return jsonify({"ok": True, "created_ts": now})
+
+
+# ============== Sessioni Magazzino (Timer) ==============
+
+@app.get("/api/magazzino/sessions")
+@login_required
+def api_magazzino_sessions_list() -> ResponseReturnValue:
+    """Lista sessioni di lavoro magazzino per progetto."""
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    project_code = _normalize_text(request.args.get("project_code")).upper()
+    if not project_code:
+        return jsonify({"ok": False, "error": "missing_project_code"}), 400
+
+    db = get_db()
+    ensure_warehouse_sessions_table(db)
+
+    # Filtra sessioni di oggi per default
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_ms = int(today_start.timestamp() * 1000)
+
+    rows = db.execute(
+        """
+        SELECT id, project_code, activity_label, elapsed_ms, note, username, created_ts
+        FROM warehouse_sessions
+        WHERE project_code = ? AND created_ts >= ?
+        ORDER BY created_ts DESC
+        LIMIT 100
+        """,
+        (project_code, today_start_ms),
+    ).fetchall()
+    items = [dict(row) for row in rows] if rows else []
+    return jsonify({"ok": True, "project_code": project_code, "items": items})
+
+
+@app.post("/api/magazzino/sessions")
+@login_required
+def api_magazzino_sessions_create() -> ResponseReturnValue:
+    """Salva una nuova sessione di lavoro magazzino."""
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    data = request.get_json(silent=True) or {}
+    project_code = _normalize_text(data.get("project_code")).upper()
+    activity_label = _normalize_text(data.get("activity_label"))
+    elapsed_ms = _coerce_int(data.get("elapsed_ms"))
+    note = _normalize_text(data.get("note"))
+
+    if not project_code:
+        return jsonify({"ok": False, "error": "missing_project_code"}), 400
+    if not activity_label:
+        return jsonify({"ok": False, "error": "missing_activity_label"}), 400
+    if elapsed_ms is None or elapsed_ms < 0:
+        elapsed_ms = 0
+
+    db = get_db()
+    ensure_warehouse_sessions_table(db)
+    now = now_ms()
+    username = session.get("user")
+
+    db.execute(
+        """
+        INSERT INTO warehouse_sessions(project_code, activity_label, elapsed_ms, note, username, created_ts)
+        VALUES(?,?,?,?,?,?)
+        """,
+        (project_code, activity_label, elapsed_ms, note or None, username, now),
+    )
+    try:
+        db.commit()
+    except Exception:
+        pass
+    return jsonify({"ok": True, "created_ts": now, "elapsed_ms": elapsed_ms})
 
 
 @app.route("/api/activities", methods=["GET", "POST"])
@@ -5272,6 +6044,8 @@ def api_move():
     if meta_changed:
         save_activity_meta(db, activity_meta)
 
+    current_project_code = get_app_state(db, "project_code")
+
     if auto_closed_previous:
         # Calcola il tempo totale partendo dall'ultimo move verso questa attività
         activity_start_ts = find_last_move_ts(db, member_key, normalized_previous)
@@ -5291,6 +6065,7 @@ def api_move():
             "total_ms": total_ms,
             "pause_ms": pause_ms,
             "auto_close": True,
+            "project_code": current_project_code,
         }
         db.execute(
             "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
@@ -5302,6 +6077,7 @@ def api_move():
         "to": activity_id,
         "member_name": member_name,
         "duration_ms": prev_elapsed,
+        "project_code": current_project_code,
     }
     db.execute(
         "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
@@ -5983,6 +6759,25 @@ def generate_csv_export(data: List[Dict[str, Any]], project_code: str, project_n
     )
 
 
+@app.get("/admin")
+@app.get("/admin/dashboard")
+@login_required
+def admin_dashboard_page() -> ResponseReturnValue:
+    if not session.get("is_admin"):
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    return render_template(
+        "admin_dashboard_new.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+    )
+
+
 @app.get("/admin/sessions")
 @login_required
 def admin_sessions_page() -> ResponseReturnValue:
@@ -5998,6 +6793,315 @@ def admin_sessions_page() -> ResponseReturnValue:
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+    )
+
+
+@app.get("/api/admin/magazzino/summary")
+@login_required
+def api_admin_magazzino_summary() -> ResponseReturnValue:
+    """Riepilogo ore magazzino per progetto (range date)."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    # Supporto range date: date_start/date_end oppure date singola (retrocompatibilità)
+    date_start = parse_iso_date(request.args.get("date_start")) or parse_iso_date(request.args.get("date")) or datetime.now().date()
+    date_end = parse_iso_date(request.args.get("date_end")) or date_start
+    
+    # Assicura che date_end >= date_start
+    if date_end < date_start:
+        date_start, date_end = date_end, date_start
+
+    start_dt = datetime.combine(date_start, datetime.min.time())
+    end_dt = datetime.combine(date_end, datetime.min.time()) + timedelta(days=1)
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+
+    db = get_db()
+    ensure_warehouse_sessions_table(db)
+
+    rows = db.execute(
+        """
+        SELECT project_code, COUNT(*) AS sessions, COALESCE(SUM(elapsed_ms), 0) AS total_ms
+        FROM warehouse_sessions
+        WHERE created_ts >= ? AND created_ts < ?
+        GROUP BY project_code
+        ORDER BY total_ms DESC, project_code ASC
+        """,
+        (start_ms, end_ms),
+    ).fetchall()
+
+    team_sessions = build_session_rows(
+        db,
+        start_date=date_start,
+        end_date=date_end,
+    )
+    team_total_ms = sum(_coerce_int(s.get("net_ms")) or 0 for s in team_sessions)
+    team_total_sessions = len(team_sessions)
+
+    items: List[Dict[str, Any]] = []
+    total_ms = 0
+    total_sessions = 0
+    for row in rows or []:
+        ms_value = _coerce_int(row["total_ms"]) or 0
+        sessions_count = _coerce_int(row["sessions"]) or 0
+        total_ms += ms_value
+        total_sessions += sessions_count
+        items.append(
+            {
+                "project_code": row["project_code"],
+                "sessions": sessions_count,
+                "total_ms": ms_value,
+            }
+        )
+
+    return jsonify(
+        {
+            "ok": True,
+            "date": date_start.isoformat() if date_start == date_end else f"{date_start.isoformat()} - {date_end.isoformat()}",
+            "items": items,
+            "total_ms": total_ms,
+            "total_sessions": total_sessions,
+            "team_total_ms": team_total_ms,
+            "team_total_sessions": team_total_sessions,
+        }
+    )
+
+
+@app.route("/api/admin/day-sessions", methods=["GET"], endpoint="api_admin_day_sessions")
+@login_required
+def api_admin_day_sessions() -> ResponseReturnValue:
+    """Restituisce sessioni di squadra e magazzino per il range di date indicato."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    # Supporto range date: date_start/date_end oppure date singola (retrocompatibilità)
+    date_start = parse_iso_date(request.args.get("date_start")) or parse_iso_date(request.args.get("date")) or datetime.now().date()
+    date_end = parse_iso_date(request.args.get("date_end")) or date_start
+    
+    # Assicura che date_end >= date_start
+    if date_end < date_start:
+        date_start, date_end = date_end, date_start
+
+    start_dt = datetime.combine(date_start, datetime.min.time())
+    end_dt = datetime.combine(date_end, datetime.min.time()) + timedelta(days=1)
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+
+    db = get_db()
+
+    team_sessions = build_session_rows(
+        db,
+        start_date=date_start,
+        end_date=date_end,
+    )
+
+    ensure_warehouse_sessions_table(db)
+    wh_rows = db.execute(
+        """
+        SELECT project_code, activity_label, elapsed_ms, username, created_ts
+        FROM warehouse_sessions
+        WHERE created_ts >= ? AND created_ts < ?
+        ORDER BY created_ts DESC
+        LIMIT 500
+        """,
+        (start_ms, end_ms),
+    ).fetchall()
+
+    magazzino_sessions = [
+        {
+            "project_code": row["project_code"],
+            "activity_label": row["activity_label"],
+            "elapsed_ms": _coerce_int(row["elapsed_ms"]) or 0,
+            "username": row["username"],
+            "created_ts": _coerce_int(row["created_ts"]) or 0,
+        }
+        for row in wh_rows or []
+    ]
+
+    return jsonify(
+        {
+            "ok": True,
+            "date": date_start.isoformat() if date_start == date_end else f"{date_start.isoformat()} - {date_end.isoformat()}",
+            "team_sessions": team_sessions,
+            "magazzino_sessions": magazzino_sessions,
+        }
+    )
+
+
+@app.route(
+    "/api/admin/day-sessions/export.xlsx",
+    methods=["GET"],
+    endpoint="api_admin_day_sessions_export_xlsx",
+)
+@login_required
+def api_admin_day_sessions_export_xlsx() -> ResponseReturnValue:
+    """Esporta in Excel le sessioni (Squadra + Magazzino) per il range di date indicato."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    # Supporto range date: date_start/date_end oppure date singola (retrocompatibilità)
+    date_start = parse_iso_date(request.args.get("date_start")) or parse_iso_date(request.args.get("date")) or datetime.now().date()
+    date_end = parse_iso_date(request.args.get("date_end")) or date_start
+    
+    # Assicura che date_end >= date_start
+    if date_end < date_start:
+        date_start, date_end = date_end, date_start
+
+    start_dt = datetime.combine(date_start, datetime.min.time())
+    end_dt = datetime.combine(date_end, datetime.min.time()) + timedelta(days=1)
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+
+    db = get_db()
+
+    team_sessions = build_session_rows(
+        db,
+        start_date=date_start,
+        end_date=date_end,
+    )
+
+    ensure_warehouse_sessions_table(db)
+    wh_rows = db.execute(
+        """
+        SELECT project_code, activity_label, elapsed_ms, username, created_ts
+        FROM warehouse_sessions
+        WHERE created_ts >= ? AND created_ts < ?
+        ORDER BY created_ts DESC
+        LIMIT 2000
+        """,
+        (start_ms, end_ms),
+    ).fetchall()
+
+    merged_rows: List[Dict[str, Any]] = []
+    for s in team_sessions or []:
+        # Estrai data dalla sessione (usa timezone locale)
+        start_ts = s.get("start_ts") or s.get("end_ts")
+        if start_ts:
+            try:
+                dt = datetime.fromtimestamp(start_ts / 1000)  # Timezone locale
+                date_str = dt.strftime("%d/%m/%Y")
+            except Exception:
+                date_str = ""
+        else:
+            date_str = ""
+        merged_rows.append(
+            {
+                "date": date_str,
+                "source": "Squadra",
+                "project_code": s.get("project_code") or "",
+                "user": s.get("member_name") or s.get("member_key") or "",
+                "activity": s.get("activity_label") or s.get("activity_id") or "",
+                "duration_ms": _coerce_int(s.get("net_ms")) or 0,
+                "sort_ts": start_ts or 0,
+            }
+        )
+
+    for row in wh_rows or []:
+        # Estrai data dalla sessione magazzino (usa timezone locale)
+        created_ts = _coerce_int(row.get("created_ts")) or 0
+        if created_ts:
+            try:
+                dt = datetime.fromtimestamp(created_ts / 1000)  # Timezone locale
+                date_str = dt.strftime("%d/%m/%Y")
+            except Exception:
+                date_str = ""
+        else:
+            date_str = ""
+        merged_rows.append(
+            {
+                "date": date_str,
+                "source": "Magazzino",
+                "project_code": row.get("project_code") or "",
+                "user": row.get("username") or "",
+                "activity": row.get("activity_label") or "",
+                "duration_ms": _coerce_int(row.get("elapsed_ms")) or 0,
+                "sort_ts": created_ts,
+            }
+        )
+    
+    # Ordina per data/timestamp (più recenti prima)
+    merged_rows.sort(key=lambda x: x.get("sort_ts", 0), reverse=True)
+
+    wb = Workbook()
+    ws_raw = wb.active
+    if ws_raw is None:  # pragma: no cover
+        ws_raw = wb.create_sheet(title="Sessioni")
+    ws: Worksheet = cast(Worksheet, ws_raw)
+    ws.title = "Sessioni"
+
+    title_font = Font(name="Calibri", size=16, bold=True, color="1E293B")
+    subtitle_font = Font(name="Calibri", size=11, color="64748B")
+    header_font = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="0EA5E9", end_color="0EA5E9", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    cell_font = Font(name="Calibri", size=11)
+    cell_alignment = Alignment(horizontal="left", vertical="center")
+    border_thin = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="thin", color="CBD5E1"),
+    )
+
+    ws["A1"] = "JobLog - Export sessioni"
+    ws.merge_cells("A1:F1")
+    ws["A1"].font = title_font
+    ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
+
+    ws["A2"] = f"Data: {date_start.strftime('%d/%m/%Y')}" if date_start == date_end else f"Periodo: {date_start.strftime('%d/%m/%Y')} - {date_end.strftime('%d/%m/%Y')}"
+    ws.merge_cells("A2:F2")
+    ws["A2"].font = subtitle_font
+    ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
+
+    ws.append([])
+
+    headers = ["Data", "Fonte", "Progetto", "Utente", "Attività", "Ore"]
+    ws.append(headers)
+    header_row = ws.max_row
+    for col_num, header in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border_thin
+
+    for item in merged_rows:
+        ws.append(
+            [
+                item["date"],
+                item["source"],
+                str(item["project_code"] or ""),
+                str(item["user"] or ""),
+                str(item["activity"] or ""),
+                format_duration_ms(item["duration_ms"]) or "00:00:00",
+            ]
+        )
+        row_num = ws.max_row
+        for col_num in range(1, 7):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.font = cell_font
+            cell.alignment = cell_alignment
+            cell.border = border_thin
+            if row_num % 2 == 0:
+                cell.fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+
+    ws.column_dimensions[get_column_letter(1)].width = 12
+    ws.column_dimensions[get_column_letter(2)].width = 12
+    ws.column_dimensions[get_column_letter(3)].width = 14
+    ws.column_dimensions[get_column_letter(4)].width = 22
+    ws.column_dimensions[get_column_letter(5)].width = 42
+    ws.column_dimensions[get_column_letter(6)].width = 12
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"sessioni_{date_start.isoformat()}.xlsx" if date_start == date_end else f"sessioni_{date_start.isoformat()}_{date_end.isoformat()}.xlsx"
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
     )
 
 
@@ -6020,9 +7124,10 @@ def api_admin_sessions():
         limit = int(limit_param) if limit_param else 200
     except (TypeError, ValueError):
         limit = 200
-    limit = max(50, min(limit, 1000))
+    limit = max(50, min(limit, 2000))
 
-    sessions = build_session_rows(
+    # --- Sessioni squadra ---
+    team_sessions = build_session_rows(
         db,
         start_date=start_date,
         end_date=end_date,
@@ -6030,49 +7135,115 @@ def api_admin_sessions():
         activity_filter=activity_filter,
     )
 
+    # --- Sessioni magazzino ---
+    ensure_warehouse_sessions_table(db)
+    wh_conditions: List[str] = []
+    wh_params: List[Any] = []
+    if start_date:
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        wh_conditions.append("created_ts >= ?")
+        wh_params.append(int(start_dt.timestamp() * 1000))
+    if end_date:
+        end_dt = datetime.combine(end_date, datetime.min.time()) + timedelta(days=1)
+        wh_conditions.append("created_ts < ?")
+        wh_params.append(int(end_dt.timestamp() * 1000))
+    if member_filter:
+        wh_conditions.append("username = ?")
+        wh_params.append(member_filter)
+    wh_where = (" WHERE " + " AND ".join(wh_conditions)) if wh_conditions else ""
+    wh_rows = db.execute(
+        f"""
+        SELECT id, project_code, activity_label, elapsed_ms, username, created_ts
+        FROM warehouse_sessions
+        {wh_where}
+        ORDER BY created_ts DESC
+        LIMIT 1000
+        """,
+        tuple(wh_params),
+    ).fetchall()
+
+    # Unisci e filtra
+    all_sessions: List[Dict[str, Any]] = []
+
+    for item in team_sessions:
+        all_sessions.append({**item, "_source": "Squadra", "_sort_ts": item.get("end_ts") or item.get("start_ts") or 0})
+
+    for row in wh_rows or []:
+        created_ts = _coerce_int(row["created_ts"]) or 0
+        elapsed_ms = _coerce_int(row["elapsed_ms"]) or 0
+        all_sessions.append({
+            "_source": "Magazzino",
+            "_sort_ts": created_ts,
+            "member_key": row["username"] or "",
+            "member_name": row["username"] or "",
+            "activity_id": "",
+            "activity_label": row["activity_label"] or "",
+            "project_code": row["project_code"] or "",
+            "start_ts": created_ts - elapsed_ms if elapsed_ms else created_ts,
+            "end_ts": created_ts,
+            "status": "completed",
+            "net_ms": elapsed_ms,
+            "pause_ms": 0,
+            "pause_count": 0,
+            "auto_closed": False,
+            "override_id": None,
+            "manual_entry": False,
+            "note": "",
+            "wh_id": row["id"],
+        })
+
+    # Filtra per search_term
     if search_term:
         filtered: List[Dict[str, Any]] = []
-        for item in sessions:
+        for item in all_sessions:
             haystacks = [
                 item.get("member_name", ""),
                 item.get("member_key", ""),
                 item.get("activity_label", ""),
                 item.get("activity_id", ""),
+                item.get("project_code", ""),
             ]
             if any(search_term in str(value).lower() for value in haystacks):
                 filtered.append(item)
-        sessions = filtered
+        all_sessions = filtered
 
-    sessions = sessions[:limit]
+    # Ordina per timestamp decrescente
+    all_sessions.sort(key=lambda x: x.get("_sort_ts") or 0, reverse=True)
+    all_sessions = all_sessions[:limit]
 
     payload = []
-    for item in sessions:
-        start_dt = datetime.fromtimestamp(item["start_ts"] / 1000, tz=timezone.utc)
-        end_dt = datetime.fromtimestamp(item["end_ts"] / 1000, tz=timezone.utc)
+    for item in all_sessions:
+        start_ts = item.get("start_ts") or 0
+        end_ts = item.get("end_ts") or 0
+        start_dt = datetime.fromtimestamp(start_ts / 1000, tz=timezone.utc) if start_ts else None
+        end_dt = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc) if end_ts else None
         payload.append(
             {
-                "member_key": item["member_key"],
-                "member_name": item["member_name"],
-                "activity_id": item["activity_id"],
-                "activity_label": item["activity_label"],
-                "start_ts": item["start_ts"],
-                "end_ts": item["end_ts"],
-                "start_iso": start_dt.isoformat(),
-                "end_iso": end_dt.isoformat(),
-                "status": item["status"],
-                "net_ms": item["net_ms"],
-                "pause_ms": item["pause_ms"],
-                "pause_count": item["pause_count"],
-                "net_hms": format_duration_ms(item["net_ms"]) or "00:00:00",
-                "pause_hms": format_duration_ms(item["pause_ms"]) or "00:00:00",
-                "auto_closed": item["auto_closed"],
+                "source": item.get("_source", "Squadra"),
+                "member_key": item.get("member_key", ""),
+                "member_name": item.get("member_name", ""),
+                "activity_id": item.get("activity_id", ""),
+                "activity_label": item.get("activity_label", ""),
+                "project_code": item.get("project_code", ""),
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+                "start_iso": start_dt.isoformat() if start_dt else "",
+                "end_iso": end_dt.isoformat() if end_dt else "",
+                "status": item.get("status", "completed"),
+                "net_ms": item.get("net_ms", 0),
+                "pause_ms": item.get("pause_ms", 0),
+                "pause_count": item.get("pause_count", 0),
+                "net_hms": format_duration_ms(item.get("net_ms")) or "00:00:00",
+                "pause_hms": format_duration_ms(item.get("pause_ms")) or "00:00:00",
+                "auto_closed": item.get("auto_closed", False),
                 "override_id": item.get("override_id"),
                 "manual_entry": bool(item.get("manual_entry")),
                 "note": item.get("note") or "",
                 "source_member_key": item.get("source_member_key"),
                 "source_activity_id": item.get("source_activity_id"),
                 "source_start_ts": item.get("source_start_ts"),
-                "editable": True,
+                "editable": item.get("_source") == "Squadra",
+                "wh_id": item.get("wh_id"),
             }
         )
 
@@ -6108,12 +7279,16 @@ def api_admin_sessions_save() -> ResponseReturnValue:
         return guard
 
     data = request.get_json(silent=True) or {}
+    source = _normalize_text(data.get("source")) or "Squadra"
+    project_code = _normalize_text(data.get("project_code")) or ""
     member_key = _normalize_text(data.get("member_key"))
-    member_name = _normalize_text(data.get("member_name")) or "Operatore"
+    member_name = _normalize_text(data.get("member_name")) or member_key or "Operatore"
     activity_id = _normalize_text(data.get("activity_id"))
-    activity_label = _normalize_text(data.get("activity_label")) or activity_id
-    if not member_key or not activity_id:
-        return _json_error("member_key e activity_id sono obbligatori")
+    activity_label = _normalize_text(data.get("activity_label")) or activity_id or "Attività"
+    if not member_key:
+        return _json_error("member_key (ID operatore / Username) è obbligatorio")
+    if not activity_label:
+        return _json_error("activity_label (Descrizione attività) è obbligatoria")
 
     start_ts = _normalize_epoch_ms(data.get("start_ts"))
     if start_ts is None:
@@ -6136,6 +7311,28 @@ def api_admin_sessions_save() -> ResponseReturnValue:
     note = _normalize_text(data.get("note"))
     override_id = _coerce_int(data.get("override_id"))
 
+    db = get_db()
+    user = session.get("user") or "admin"
+    now = now_ms()
+
+    # Sessione MAGAZZINO: salva in warehouse_sessions
+    if source == "Magazzino":
+        ensure_warehouse_sessions_table(db)
+        created_ts = end_ts_value if end_ts_value else start_ts + net_ms
+        db.execute(
+            """
+            INSERT INTO warehouse_sessions(project_code, activity_label, elapsed_ms, username, created_ts)
+            VALUES(?,?,?,?,?)
+            """,
+            (project_code, activity_label, net_ms, member_key, created_ts),
+        )
+        db.commit()
+        return jsonify({"ok": True, "source": "Magazzino"})
+
+    # Sessione SQUADRA: salva in activity_session_overrides
+    if not activity_id:
+        activity_id = activity_label
+
     source_member_key = _normalize_text(data.get("source_member_key")) or None
     source_activity_id = _normalize_text(data.get("source_activity_id")) or None
     source_start_ts = data.get("source_start_ts")
@@ -6149,10 +7346,7 @@ def api_admin_sessions_save() -> ResponseReturnValue:
 
     status = "completed" if end_ts_value is not None else "running"
     end_ts_final = end_ts_value if end_ts_value is not None else start_ts
-    now = now_ms()
-    user = session.get("user") or "admin"
 
-    db = get_db()
     ensure_session_override_table(db)
 
     params = (
@@ -6160,6 +7354,7 @@ def api_admin_sessions_save() -> ResponseReturnValue:
         member_name,
         activity_id,
         activity_label,
+        project_code,
         start_ts,
         end_ts_final,
         net_ms,
@@ -6187,7 +7382,7 @@ def api_admin_sessions_save() -> ResponseReturnValue:
         db.execute(
             """
             UPDATE activity_session_overrides
-            SET member_key=?, member_name=?, activity_id=?, activity_label=?,
+            SET member_key=?, member_name=?, activity_id=?, activity_label=?, project_code=?,
                 start_ts=?, end_ts=?, net_ms=?, pause_ms=?, pause_count=?, status=?,
                 source_member_key=?, source_activity_id=?, source_start_ts=?,
                 manual_entry=?, note=?, updated_by=?, updated_ts=?
@@ -6198,6 +7393,7 @@ def api_admin_sessions_save() -> ResponseReturnValue:
                 member_name,
                 activity_id,
                 activity_label,
+                project_code,
                 start_ts,
                 end_ts_final,
                 net_ms,
@@ -6218,11 +7414,11 @@ def api_admin_sessions_save() -> ResponseReturnValue:
         db.execute(
             """
             INSERT INTO activity_session_overrides(
-                member_key, member_name, activity_id, activity_label,
+                member_key, member_name, activity_id, activity_label, project_code,
                 start_ts, end_ts, net_ms, pause_ms, pause_count, status,
                 source_member_key, source_activity_id, source_start_ts,
                 manual_entry, note, created_by, updated_by, created_ts, updated_ts
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             params,
         )
@@ -6274,6 +7470,368 @@ def api_reset():
     return jsonify({"ok": True})
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ANALISI ATTIVITÀ CROSS-PROGETTO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/activity-analysis")
+@login_required
+def admin_activity_analysis_page() -> ResponseReturnValue:
+    """Pagina analisi attività cross-progetto."""
+    if not session.get("is_admin"):
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    return render_template(
+        "admin_activity_analysis.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+    )
+
+
+@app.get("/api/admin/activity-analysis")
+@login_required
+def api_admin_activity_analysis() -> ResponseReturnValue:
+    """API per analisi cross-progetto delle attività."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    mode = request.args.get("mode", "list")  # 'list' o 'analysis'
+    date_start = parse_iso_date(request.args.get("date_start")) or (datetime.now().date() - timedelta(days=30))
+    date_end = parse_iso_date(request.args.get("date_end")) or datetime.now().date()
+
+    if date_end < date_start:
+        date_start, date_end = date_end, date_start
+
+    start_dt = datetime.combine(date_start, datetime.min.time())
+    end_dt = datetime.combine(date_end, datetime.min.time()) + timedelta(days=1)
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+
+    db = get_db()
+
+    # Raccogli sessioni da squadra
+    team_sessions = build_session_rows(db, start_date=date_start, end_date=date_end)
+
+    # Raccogli sessioni magazzino
+    ensure_warehouse_sessions_table(db)
+    wh_rows = db.execute(
+        """
+        SELECT project_code, activity_label, elapsed_ms, username, created_ts
+        FROM warehouse_sessions
+        WHERE created_ts >= ? AND created_ts < ?
+        """,
+        (start_ms, end_ms),
+    ).fetchall()
+
+    # Unisci tutte le sessioni
+    all_sessions: List[Dict[str, Any]] = []
+
+    for s in team_sessions:
+        all_sessions.append({
+            "project": s.get("project_code") or "N/A",
+            "activity": s.get("activity_label") or s.get("activity_id") or "N/A",
+            "duration_ms": _coerce_int(s.get("net_ms")) or 0,
+            "source": "Squadra"
+        })
+
+    for row in wh_rows or []:
+        all_sessions.append({
+            "project": row["project_code"] or "N/A",
+            "activity": row["activity_label"] or "N/A",
+            "duration_ms": _coerce_int(row["elapsed_ms"]) or 0,
+            "source": "Magazzino"
+        })
+
+    if mode == "list":
+        # Restituisci lista attività con statistiche aggregate
+        activity_stats: Dict[str, Dict[str, Any]] = {}
+        for s in all_sessions:
+            act = s["activity"]
+            if act not in activity_stats:
+                activity_stats[act] = {
+                    "name": act,
+                    "total_ms": 0,
+                    "sessions": 0,
+                    "projects": set()
+                }
+            activity_stats[act]["total_ms"] += s["duration_ms"]
+            activity_stats[act]["sessions"] += 1
+            activity_stats[act]["projects"].add(s["project"])
+
+        activities = sorted(
+            [
+                {
+                    "name": v["name"],
+                    "total_ms": v["total_ms"],
+                    "sessions": v["sessions"],
+                    "projects": len(v["projects"])
+                }
+                for v in activity_stats.values()
+            ],
+            key=lambda x: x["total_ms"],
+            reverse=True
+        )
+
+        return jsonify({
+            "ok": True,
+            "activities": activities,
+            "date_start": date_start.isoformat(),
+            "date_end": date_end.isoformat()
+        })
+
+    # mode == 'analysis': analisi dettagliata per attività selezionate
+    selected_activities = request.args.getlist("activity")
+    if not selected_activities:
+        return jsonify({"error": "Nessuna attività selezionata"}), 400
+
+    # Filtra sessioni per attività selezionate
+    filtered = [s for s in all_sessions if s["activity"] in selected_activities]
+
+    # Raggruppa per progetto e attività
+    matrix: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    projects_set: Set[str] = set()
+    details: List[Dict[str, Any]] = []
+
+    # Raccogli dati per matrice
+    grouped: Dict[str, Dict[str, List[int]]] = {}
+    for s in filtered:
+        proj = s["project"]
+        act = s["activity"]
+        projects_set.add(proj)
+
+        if proj not in grouped:
+            grouped[proj] = {}
+        if act not in grouped[proj]:
+            grouped[proj][act] = []
+        grouped[proj][act].append(s["duration_ms"])
+
+    # Calcola statistiche per ogni combinazione progetto/attività
+    total_ms = 0
+    total_sessions = 0
+
+    for proj, acts in grouped.items():
+        if proj not in matrix:
+            matrix[proj] = {}
+        for act, durations in acts.items():
+            n = len(durations)
+            tot = sum(durations)
+            avg = tot / n if n > 0 else 0
+            min_d = min(durations) if durations else 0
+            max_d = max(durations) if durations else 0
+
+            # Calcola varianza percentuale (coefficiente di variazione)
+            if avg > 0 and n > 1:
+                variance = sum((d - avg) ** 2 for d in durations) / n
+                std_dev = variance ** 0.5
+                cv_pct = (std_dev / avg) * 100
+            else:
+                cv_pct = 0
+
+            matrix[proj][act] = {
+                "total_ms": tot,
+                "sessions": n,
+                "avg_ms": int(avg),
+                "min_ms": min_d,
+                "max_ms": max_d
+            }
+
+            details.append({
+                "project": proj,
+                "activity": act,
+                "sessions": n,
+                "total_ms": tot,
+                "avg_ms": int(avg),
+                "min_ms": min_d,
+                "max_ms": max_d,
+                "variance_pct": round(cv_pct, 1)
+            })
+
+            total_ms += tot
+            total_sessions += n
+
+    # Ordina dettagli per ore totali decrescenti
+    details.sort(key=lambda x: x["total_ms"], reverse=True)
+
+    return jsonify({
+        "ok": True,
+        "projects": sorted(projects_set),
+        "activities": selected_activities,
+        "matrix": matrix,
+        "details": details,
+        "total_ms": total_ms,
+        "total_sessions": total_sessions,
+        "date_start": date_start.isoformat(),
+        "date_end": date_end.isoformat()
+    })
+
+
+@app.get("/api/admin/activity-analysis/export.xlsx")
+@login_required
+def api_admin_activity_analysis_export() -> ResponseReturnValue:
+    """Esporta analisi attività in Excel."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    date_start = parse_iso_date(request.args.get("date_start")) or (datetime.now().date() - timedelta(days=30))
+    date_end = parse_iso_date(request.args.get("date_end")) or datetime.now().date()
+    selected_activities = request.args.getlist("activity")
+
+    if not selected_activities:
+        return jsonify({"error": "Nessuna attività selezionata"}), 400
+
+    # Riusa la logica dell'API
+    if date_end < date_start:
+        date_start, date_end = date_end, date_start
+
+    start_dt = datetime.combine(date_start, datetime.min.time())
+    end_dt = datetime.combine(date_end, datetime.min.time()) + timedelta(days=1)
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+
+    db = get_db()
+    team_sessions = build_session_rows(db, start_date=date_start, end_date=date_end)
+
+    ensure_warehouse_sessions_table(db)
+    wh_rows = db.execute(
+        """
+        SELECT project_code, activity_label, elapsed_ms
+        FROM warehouse_sessions
+        WHERE created_ts >= ? AND created_ts < ?
+        """,
+        (start_ms, end_ms),
+    ).fetchall()
+
+    all_sessions: List[Dict[str, Any]] = []
+    for s in team_sessions:
+        all_sessions.append({
+            "project": s.get("project_code") or "N/A",
+            "activity": s.get("activity_label") or "N/A",
+            "duration_ms": _coerce_int(s.get("net_ms")) or 0,
+        })
+    for row in wh_rows or []:
+        all_sessions.append({
+            "project": row["project_code"] or "N/A",
+            "activity": row["activity_label"] or "N/A",
+            "duration_ms": _coerce_int(row["elapsed_ms"]) or 0,
+        })
+
+    filtered = [s for s in all_sessions if s["activity"] in selected_activities]
+
+    # Raggruppa e calcola statistiche
+    grouped: Dict[str, Dict[str, List[int]]] = {}
+    for s in filtered:
+        proj, act = s["project"], s["activity"]
+        if proj not in grouped:
+            grouped[proj] = {}
+        if act not in grouped[proj]:
+            grouped[proj][act] = []
+        grouped[proj][act].append(s["duration_ms"])
+
+    rows_data: List[Dict[str, Any]] = []
+    for proj, acts in grouped.items():
+        for act, durations in acts.items():
+            n = len(durations)
+            tot = sum(durations)
+            avg = tot / n if n > 0 else 0
+            rows_data.append({
+                "project": proj,
+                "activity": act,
+                "sessions": n,
+                "total_ms": tot,
+                "avg_ms": int(avg),
+                "min_ms": min(durations) if durations else 0,
+                "max_ms": max(durations) if durations else 0,
+            })
+
+    rows_data.sort(key=lambda x: x["total_ms"], reverse=True)
+
+    # Genera Excel
+    wb = Workbook()
+    ws_raw = wb.active
+    if ws_raw is None:
+        ws_raw = wb.create_sheet(title="Analisi Attività")
+    ws: Worksheet = cast(Worksheet, ws_raw)
+    ws.title = "Analisi Attività"
+
+    title_font = Font(name="Calibri", size=16, bold=True, color="1E293B")
+    subtitle_font = Font(name="Calibri", size=11, color="64748B")
+    header_font = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="7C3AED", end_color="7C3AED", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    cell_font = Font(name="Calibri", size=11)
+    cell_alignment = Alignment(horizontal="left", vertical="center")
+    border_thin = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="thin", color="CBD5E1"),
+    )
+
+    ws["A1"] = "🔬 JobLog - Analisi Attività Cross-Progetto"
+    ws.merge_cells("A1:G1")
+    ws["A1"].font = title_font
+
+    period_str = f"Periodo: {date_start.strftime('%d/%m/%Y')} - {date_end.strftime('%d/%m/%Y')}"
+    ws["A2"] = period_str
+    ws.merge_cells("A2:G2")
+    ws["A2"].font = subtitle_font
+
+    ws["A3"] = f"Attività analizzate: {', '.join(selected_activities)}"
+    ws.merge_cells("A3:G3")
+    ws["A3"].font = subtitle_font
+
+    ws.append([])
+
+    headers = ["Progetto", "Attività", "Sessioni", "Ore Totali", "Media", "Min", "Max"]
+    ws.append(headers)
+    header_row = ws.max_row
+    for col_num, header in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border_thin
+
+    for item in rows_data:
+        ws.append([
+            item["project"],
+            item["activity"],
+            item["sessions"],
+            format_duration_ms(item["total_ms"]) or "00:00:00",
+            format_duration_ms(item["avg_ms"]) or "00:00:00",
+            format_duration_ms(item["min_ms"]) or "00:00:00",
+            format_duration_ms(item["max_ms"]) or "00:00:00",
+        ])
+        row_num = ws.max_row
+        for col_num in range(1, 8):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.font = cell_font
+            cell.alignment = cell_alignment
+            cell.border = border_thin
+            if row_num % 2 == 0:
+                cell.fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+
+    for col_letter, width in {"A": 18, "B": 30, "C": 12, "D": 14, "E": 12, "F": 12, "G": 12}.items():
+        ws.column_dimensions[col_letter].width = width
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"analisi_attivita_{date_start.isoformat()}_{date_end.isoformat()}.xlsx"
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
 # Registrazione lazy del worker: si assicura che il thread sia attivo al primo accesso
 @app.before_request
 def _ensure_notification_worker() -> None:
@@ -6282,6 +7840,84 @@ def _ensure_notification_worker() -> None:
 
 
 atexit.register(stop_notification_worker)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  QR CODE TIMBRATURA - GiQR LEVEL 4 LITE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+QR_DEVICE_ID = os.environ.get("QR_DEVICE_ID", "WebApp-001")
+QR_REFRESH_SECONDS = int(os.environ.get("QR_REFRESH_SECONDS", "10"))
+
+
+def _generate_giqr_payload() -> dict:
+    """Genera payload GiQR Level 4 Lite con firma."""
+    now = datetime.now()
+    
+    dt_str = now.strftime("%Y%m%d%H%M%S")
+    nonce = random.randint(0, 65535)
+    
+    # Firma semplice (algoritmo dal codice originale)
+    sig = (
+        now.hour * 97 +
+        now.minute * 59 +
+        now.second * 31 +
+        now.year +
+        now.month +
+        now.day +
+        sum(QR_DEVICE_ID.encode())
+    ) % 100000
+    
+    return {
+        "v": 1,
+        "dt": dt_str,
+        "dev": QR_DEVICE_ID,
+        "n": nonce,
+        "sig": sig
+    }
+
+
+@app.route("/api/qr-timbratura", methods=["GET"])
+@login_required
+def api_qr_timbratura():
+    """Genera QR code dinamico per timbratura in formato base64 PNG."""
+    payload = _generate_giqr_payload()
+    
+    # JSON → bytes → Base64
+    raw_json = json.dumps(payload).encode("utf-8")
+    b64_payload = base64.b64encode(raw_json).decode("utf-8")
+    
+    # Genera QR code
+    qr = qrcode.QRCode(box_size=8, border=2)
+    qr.add_data(b64_payload)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # Converti in base64 per invio al frontend
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    
+    return jsonify({
+        "ok": True,
+        "image": f"data:image/png;base64,{img_base64}",
+        "payload": payload,
+        "refresh_seconds": QR_REFRESH_SECONDS,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@app.route("/qr-timbratura")
+@login_required
+def qr_timbratura_page():
+    """Pagina standalone per QR timbratura (schermo intero)."""
+    return render_template(
+        "qr_timbratura.html",
+        refresh_seconds=QR_REFRESH_SECONDS,
+        device_id=QR_DEVICE_ID
+    )
 
 
 if __name__ == "__main__":

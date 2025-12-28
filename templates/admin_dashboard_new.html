@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard Admin · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        body.menu-open { overflow: hidden; }
+        .hidden { display: none !important; }
+        
+        /* Header */
+        header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,0.9));
+            color: #f8fafc;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+        .header-icon-btn:active { transform: scale(0.95); }
+        .header-user {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border: none; border-radius: 999px;
+            color: white;
+        }
+        .header-user-avatar {
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 13px;
+        }
+        .header-user-name { font-weight: 600; font-size: 14px; }
+        .kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 11px;
+            font-weight: 700;
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+            margin-left: 4px;
+        }
+
+        /* Main Layout */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            flex: 1;
+            min-height: 0;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+        .sidebar-section { display: flex; flex-direction: column; gap: 10px; }
+        .sidebar-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+        .sidebar-field { display: flex; flex-direction: column; gap: 4px; }
+        .sidebar-field label { font-size: 12px; font-weight: 700; color: var(--muted); }
+        .sidebar-field input, .sidebar-field select {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .sidebar-field input:focus, .sidebar-field select:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .sidebar-stats {
+            background: var(--bg-soft);
+            border-radius: 12px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .sidebar-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .sidebar-stat-label { font-size: 13px; color: var(--muted); font-weight: 600; }
+        .sidebar-stat-value { font-size: 16px; font-weight: 700; color: var(--text); }
+        .sidebar-stat-value.brand { color: var(--brand); }
+        .sidebar-stat-value.success { color: var(--success); }
+        .sidebar-stat-value.warning { color: var(--warning); }
+        
+        .btn {
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.06);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn:hover { background: rgba(255,255,255,0.12); }
+        .btn:active { transform: scale(0.97); }
+        .btn.primary { background: var(--brand); color: #0b1224; border-color: transparent; }
+        .btn.primary:hover { background: var(--brand-strong); }
+        .btn.success { background: var(--success); color: white; border-color: transparent; }
+        .btn.full { width: 100%; }
+        .btn-group { display: flex; gap: 8px; }
+        .btn-group .btn { flex: 1; }
+
+        /* Content */
+        .content {
+            padding: 20px 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        /* Stats Cards */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+        .stat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .stat-card-label { font-size: 12px; color: var(--muted); font-weight: 700; }
+        .stat-card-value { font-size: 28px; font-weight: 700; }
+        .stat-card-sub { font-size: 12px; color: var(--muted); font-weight: 600; }
+        
+        /* Charts Row */
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .chart-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-card-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--text);
+        }
+        .chart-container {
+            flex: 1;
+            min-height: 200px;
+            position: relative;
+        }
+        
+        /* Table */
+        .table-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            gap: 12px;
+        }
+        .table-title { font-size: 16px; font-weight: 700; }
+        .table-actions { display: flex; gap: 8px; align-items: center; }
+        .table-search {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 13px;
+            width: 200px;
+        }
+        .table-wrapper {
+            flex: 1;
+            overflow: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        th {
+            background: var(--bg-soft);
+            color: var(--muted);
+            font-weight: 700;
+            position: sticky;
+            top: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+        th:hover { background: var(--bg-panel); }
+        th.sorted-asc::after { content: ' ▲'; font-size: 10px; }
+        th.sorted-desc::after { content: ' ▼'; font-size: 10px; }
+        tbody tr:hover { background: var(--bg-soft); }
+        .badge {
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 11px;
+        }
+        .badge-squadra { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .badge-magazzino { background: rgba(251, 146, 60, 0.2); color: var(--warning); }
+        .empty-state {
+            padding: 40px;
+            text-align: center;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        /* Keyboard hint */
+        .keyboard-hints {
+            display: flex;
+            gap: 16px;
+            padding: 8px 12px;
+            background: var(--bg-soft);
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .keyboard-hint { display: flex; align-items: center; gap: 4px; }
+        .keyboard-hint kbd {
+            padding: 2px 6px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 11px;
+        }
+
+        /* Hamburger Menu */
+        .menu-container { position: relative; }
+        .hamburger-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 8px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            min-width: 220px;
+            z-index: 300;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+        }
+        .hamburger-menu.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.15s ease;
+        }
+        .menu-item:hover { background: var(--bg-soft); }
+        .menu-item-icon { font-size: 18px; }
+        .menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 4px 0;
+        }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .charts-row { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 900px) {
+            .main-layout { grid-template-columns: 1fr; }
+            .sidebar { display: none; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .charts-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <div class="menu-container">
+                <button id="menuToggle" class="header-icon-btn" aria-label="Menu">☰</button>
+                <nav class="hamburger-menu" id="hamburgerMenu">
+                    <a href="{{ url_for('home') }}" class="menu-item">
+                        <span class="menu-item-icon">🏠</span>
+                        <span>Home</span>
+                    </a>
+                    <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🗓️</span>
+                        <span>Gestione Sessioni</span>
+                    </a>
+                    <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🔬</span>
+                        <span>Analisi Attività</span>
+                    </a>
+                    <div class="menu-divider"></div>
+                    <a href="{{ url_for('api_admin_day_sessions_export_xlsx') }}?date_start=" id="menuExport" class="menu-item">
+                        <span class="menu-item-icon">📥</span>
+                        <span>Esporta Excel</span>
+                    </a>
+                    <div class="menu-divider"></div>
+                    <a href="{{ url_for('logout') }}" class="menu-item danger">
+                        <span class="menu-item-icon">🚪</span>
+                        <span>Logout</span>
+                    </a>
+                </nav>
+            </div>
+            <span class="logo-title">📊 Dashboard Admin</span>
+        </div>
+        <div class="header-actions">
+            <button class="header-icon-btn" id="refreshBtn" title="Aggiorna (R)">↻</button>
+            <button class="header-icon-btn" id="exportBtn" title="Esporta Excel (E)">📥</button>
+            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <div class="header-user" title="{{ user_name or 'Admin' }}">
+                <span class="header-user-avatar">{{ user_initials or '?' }}</span>
+                <span class="header-user-name">{{ user_name or 'Admin' }}</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <!-- Sidebar con filtri -->
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <span class="sidebar-title">📅 Periodo</span>
+                <div class="sidebar-field">
+                    <label for="dateStart">Da</label>
+                    <input type="date" id="dateStart" />
+                </div>
+                <div class="sidebar-field">
+                    <label for="dateEnd">A</label>
+                    <input type="date" id="dateEnd" />
+                </div>
+                <div class="btn-group">
+                    <button class="btn" id="btnToday" title="T">Oggi</button>
+                    <button class="btn" id="btnWeek">Settimana</button>
+                    <button class="btn" id="btnMonth">Mese</button>
+                </div>
+                <button class="btn primary full" id="btnApply">Applica filtri</button>
+            </div>
+
+            <div class="sidebar-section">
+                <span class="sidebar-title">🔍 Filtri avanzati</span>
+                <div class="sidebar-field">
+                    <label for="filterSource">Fonte</label>
+                    <select id="filterSource">
+                        <option value="">Tutte</option>
+                        <option value="Squadra">Solo Squadra</option>
+                        <option value="Magazzino">Solo Magazzino</option>
+                    </select>
+                </div>
+                <div class="sidebar-field">
+                    <label for="filterProject">Progetto</label>
+                    <input type="text" id="filterProject" placeholder="Codice progetto..." />
+                </div>
+                <div class="sidebar-field">
+                    <label for="filterUser">Operatore</label>
+                    <input type="text" id="filterUser" placeholder="Nome operatore..." />
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <span class="sidebar-title">📊 Riepilogo</span>
+                <div class="sidebar-stats">
+                    <div class="sidebar-stat">
+                        <span class="sidebar-stat-label">Totale ore</span>
+                        <span class="sidebar-stat-value brand" id="statTotalHours">--:--</span>
+                    </div>
+                    <div class="sidebar-stat">
+                        <span class="sidebar-stat-label">Ore Squadra</span>
+                        <span class="sidebar-stat-value success" id="statTeamHours">--:--</span>
+                    </div>
+                    <div class="sidebar-stat">
+                        <span class="sidebar-stat-label">Ore Magazzino</span>
+                        <span class="sidebar-stat-value warning" id="statMagHours">--:--</span>
+                    </div>
+                    <div class="sidebar-stat">
+                        <span class="sidebar-stat-label">Sessioni</span>
+                        <span class="sidebar-stat-value" id="statSessions">--</span>
+                    </div>
+                    <div class="sidebar-stat">
+                        <span class="sidebar-stat-label">Progetti</span>
+                        <span class="sidebar-stat-value" id="statProjects">--</span>
+                    </div>
+                    <div class="sidebar-stat">
+                        <span class="sidebar-stat-label">Operatori</span>
+                        <span class="sidebar-stat-value" id="statOperators">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-section" style="margin-top:auto;">
+                <div class="keyboard-hints">
+                    <div class="keyboard-hint"><kbd>R</kbd> Refresh</div>
+                    <div class="keyboard-hint"><kbd>E</kbd> Export</div>
+                    <div class="keyboard-hint"><kbd>T</kbd> Oggi</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Contenuto principale -->
+        <main class="content">
+            <!-- Stats Row -->
+            <div class="stats-row">
+                <div class="stat-card">
+                    <span class="stat-card-label">Ore Totali</span>
+                    <span class="stat-card-value" id="cardTotalHours">--:--:--</span>
+                    <span class="stat-card-sub" id="cardPeriodLabel">Oggi</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-card-label">Ore Squadra</span>
+                    <span class="stat-card-value" style="color:var(--success)" id="cardTeamHours">--:--:--</span>
+                    <span class="stat-card-sub" id="cardTeamSessions">0 sessioni</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-card-label">Ore Magazzino</span>
+                    <span class="stat-card-value" style="color:var(--warning)" id="cardMagHours">--:--:--</span>
+                    <span class="stat-card-sub" id="cardMagSessions">0 sessioni</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-card-label">Sessioni Totali</span>
+                    <span class="stat-card-value" id="cardTotalSessions">0</span>
+                    <span class="stat-card-sub" id="cardAvgDuration">Media: --:--</span>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="charts-row">
+                <div class="chart-card">
+                    <span class="chart-card-title">📊 Ore per Progetto</span>
+                    <div class="chart-container">
+                        <canvas id="chartProjects"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <span class="chart-card-title">🔧 Ore per Attività</span>
+                    <div class="chart-container">
+                        <canvas id="chartActivities"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card" style="grid-column: span 2;">
+                    <span class="chart-card-title">⏱️ Preventivato vs Effettivo (Squadra)</span>
+                    <div class="chart-container">
+                        <canvas id="chartComparison"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card" style="grid-column: span 2;">
+                    <span class="chart-card-title">📈 Trend Giornaliero</span>
+                    <div class="chart-container">
+                        <canvas id="chartTrend"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Full Table -->
+            <div class="table-card">
+                <div class="table-header">
+                    <span class="table-title">📋 Tutte le Sessioni</span>
+                    <div class="table-actions">
+                        <input type="search" class="table-search" id="tableSearch" placeholder="Cerca..." />
+                        <button class="btn" id="btnExportTable">📥 Esporta</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table id="mainTable">
+                        <thead>
+                            <tr>
+                                <th data-sort="date">Data</th>
+                                <th data-sort="source">Fonte</th>
+                                <th data-sort="project">Progetto</th>
+                                <th data-sort="user">Utente</th>
+                                <th data-sort="activity">Attività</th>
+                                <th data-sort="start">Inizio</th>
+                                <th data-sort="end">Fine</th>
+                                <th data-sort="duration">Durata</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mainTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="empty-state hidden" id="tableEmpty">Nessuna sessione trovata</div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        window.__ADMIN_DASHBOARD__ = {
+            summaryUrl: "{{ url_for('api_admin_magazzino_summary') }}",
+            dayUrl: "{{ url_for('api_admin_day_sessions') }}",
+            exportUrl: "{{ url_for('api_admin_day_sessions_export_xlsx') }}",
+            sessionsUrl: "{{ url_for('admin_sessions_page') }}",
+            homeUrl: "{{ url_for('home') }}"
+        };
+    </script>
+    <script src="{{ static_version('js/admin_dashboard_new.js') }}" defer></script>
+</body>
+</html>

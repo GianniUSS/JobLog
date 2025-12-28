@@ -29,8 +29,8 @@
   --bg-card: #ffffff;
   --text-primary: #1e293b;
   --text-secondary: #64748b;
-  --brand: #0ea5e9;
-  --brand-hover: #0284c7;
+    --brand: #2563eb;
+    --brand-hover: #1d4ed8;
   --ok: #28a745;
   --warn: #dc3545;
   --border: #e2e8f0;
@@ -46,24 +46,24 @@
 
 /* Dark Mode Variables */
 [data-theme="dark"] {
-  --bg: #0f172a;
-  --bg-card: #1e293b;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --brand: #38bdf8;
-  --brand-hover: #0ea5e9;
-  --ok: #4ade80;
-  --warn: #f87171;
-  --border: #334155;
-  --shadow: rgba(0,0,0,0.3);
-  --shadow-lg: rgba(0,0,0,0.5);
-  --overlay: rgba(0,0,0,0.6);
-  --member-bg: #334155;
-  --member-selected-bg: #475569;
+    --bg: #0f172a;
+    --bg-card: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --brand: #38bdf8;
+    --brand-hover: #0ea5e9;
+    --ok: #4ade80;
+    --warn: #f87171;
+    --border: #334155;
+    --shadow: rgba(0,0,0,0.3);
+    --shadow-lg: rgba(0,0,0,0.5);
+    --overlay: rgba(0,0,0,0.6);
+    --member-bg: #334155;
+    --member-selected-bg: #475569;
 }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: var(--bg); color: var(--text-primary); margin: 0; padding: 0; -webkit-font-smoothing: antialiased; transition: background-color 0.2s ease, color 0.2s ease; }
 body.modal-open, body.menu-open { overflow: hidden; }
-header { background: var(--brand); color: white; padding: 14px 16px; font-size: 18px; display: flex; flex-direction: column; gap: 8px; position: sticky; top: 0; z-index: 220; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+header { background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,0.9)); color: #f8fafc; padding: 14px 16px; font-size: 18px; display: flex; flex-direction: column; gap: 8px; position: sticky; top: 0; z-index: 220; box-shadow: 0 10px 30px rgba(3,7,18,0.35); }
 .header-row-top { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .header-row-bottom { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .header-left { display:flex; align-items:center; gap:12px; }
@@ -286,9 +286,34 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 .selection-finish { background: #ef4444; }
 .modal { position: fixed; inset: 0; background: var(--overlay); display: none; align-items: center; justify-content: center; z-index: 300; padding: 16px; overflow: hidden; box-sizing: border-box; }
 .modal.open { display: flex; }
-.modal-card { background: var(--bg-card); width: 94vw; max-width: 520px; max-height: 90vh; border-radius: 16px; padding: 26px; text-align: center; box-shadow: 0 8px 20px var(--shadow-lg); display: flex; flex-direction: column; gap: 18px; transition: background-color 0.2s ease; overflow: hidden; box-sizing: border-box; }
+.modal-card { background: var(--bg-card); width: 94vw; max-width: 520px; max-height: 90vh; border-radius: 16px; padding: 26px; text-align: center; box-shadow: 0 8px 20px var(--shadow-lg); display: flex; flex-direction: column; gap: 18px; transition: background-color 0.2s ease; overflow-y: auto; overflow-x: hidden; box-sizing: border-box; -webkit-overflow-scrolling: touch; }
 .modal-card h3 { color: var(--text-primary); }
 .modal-card h3 { margin: 0; }
+
+/* QR Timbratura Modal Styles */
+.qr-modal-card { max-width: 420px; width: 94vw; padding: 0; overflow: hidden; }
+.qr-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); color: #fff; }
+.qr-modal-title { display: flex; align-items: center; gap: 12px; }
+.qr-modal-icon { font-size: 28px; }
+.qr-modal-title-text h2 { margin: 0; font-size: 20px; font-weight: 700; }
+.qr-device-id { font-size: 12px; opacity: 0.85; font-weight: 500; }
+.qr-modal-actions { display: flex; align-items: center; gap: 8px; }
+.qr-fullscreen-btn { width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.2); color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: background 0.2s ease; }
+.qr-fullscreen-btn:hover { background: rgba(255,255,255,0.3); }
+.qr-modal-header .modal-close-btn { position: static; width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.2); color: #fff; font-size: 22px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s ease; }
+.qr-modal-header .modal-close-btn:hover { background: rgba(255,255,255,0.3); }
+.qr-modal-body { padding: 24px 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.qr-container { position: relative; width: 280px; height: 280px; background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.qr-loading { display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 14px; }
+.qr-spinner { width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top-color: var(--brand); border-radius: 50%; animation: qr-spin 0.8s linear infinite; }
+@keyframes qr-spin { to { transform: rotate(360deg); } }
+.qr-image { width: 260px; height: 260px; object-fit: contain; display: none; }
+.qr-image.loaded { display: block; }
+.qr-time { font-size: 32px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.qr-refresh-bar { width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; }
+.qr-refresh-progress { height: 100%; background: linear-gradient(90deg, #0ea5e9, #2563eb); width: 100%; transition: width linear; }
+.qr-info { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.qr-info strong { color: var(--brand); }
 
 /* Foto Progetto Styles */
 .photos-modal-card { max-width: 800px; width: 96vw; padding: 16px; max-height: 92vh; overflow-y: auto; overflow-x: hidden; }
@@ -712,10 +737,19 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 </span>
 </button>
 </li>
+<li>
+<button id="qrTimbraturaMenuBtn" class="side-menu-item" type="button" data-menu-action>
+<span class="side-menu-item-icon">📱</span>
+<span class="side-menu-item-label">
+<span class="side-menu-item-text">QR Timbratura</span>
+<span class="side-menu-item-hint">Mostra QR per timbratura operatori</span>
+</span>
+</button>
+</li>
 {% if is_admin %}
 <li>
 <a href="{{ url_for('admin_sessions_page') }}" class="side-menu-item side-menu-link" data-menu-action>
-<span class="side-menu-item-icon">📱</span>
+<span class="side-menu-item-icon">⚙️</span>
 <span class="side-menu-item-label">
 <span class="side-menu-item-text">Gestione Sessioni</span>
 <span class="side-menu-item-hint">Verifica e aggiorna le sessioni</span>
@@ -854,22 +888,6 @@ header { background: var(--brand); color: white; padding: 14px 16px; font-size: 
 <div class="form-hint">Lascia vuoto per generazione automatica</div>
 </div>
 
-<div class="form-row">
-<div class="form-group">
-<label for="newActivityStartInput">Inizio</label>
-<input id="newActivityStartInput" type="datetime-local" />
-</div>
-<div class="form-group">
-<label for="newActivityEndInput">Fine</label>
-<input id="newActivityEndInput" type="datetime-local" />
-</div>
-</div>
-
-<div class="form-group">
-<label for="newActivityMembersInput">Operatori previsti</label>
-<input id="newActivityMembersInput" type="number" min="0" step="1" placeholder="0" inputmode="numeric" />
-</div>
-
 <div class="form-group">
 <label for="newActivityNotesInput">Note</label>
 <textarea id="newActivityNotesInput" placeholder="Dettagli o istruzioni..." rows="3"></textarea>
@@ -992,6 +1010,40 @@ e poi Aggiungi alla Home
 </div>
 </div>
 
+<!-- QR Timbratura Modal -->
+<div id="qrTimbraturaModal" class="modal">
+<div class="modal-card qr-modal-card">
+<div class="qr-modal-header">
+<div class="qr-modal-title">
+<span class="qr-modal-icon">📱</span>
+<div class="qr-modal-title-text">
+<h2>QR Timbratura</h2>
+<span id="qrDeviceId" class="qr-device-id"></span>
+</div>
+</div>
+<div class="qr-modal-actions">
+<a href="{{ url_for('qr_timbratura_page') }}" target="_blank" class="qr-fullscreen-btn" title="Apri a schermo intero">⛶</a>
+<button type="button" class="modal-close-btn" id="qrTimbraturaCloseBtn" aria-label="Chiudi">&times;</button>
+</div>
+</div>
+<div class="qr-modal-body">
+<div id="qrTimbraturaContainer" class="qr-container">
+<div id="qrTimbraturaLoading" class="qr-loading">
+<div class="qr-spinner"></div>
+<span>Generazione QR...</span>
+</div>
+<img id="qrTimbraturaImage" class="qr-image" alt="QR Code Timbratura" />
+</div>
+<div id="qrTimbraturaTime" class="qr-time"></div>
+<div class="qr-refresh-bar">
+<div id="qrRefreshProgress" class="qr-refresh-progress"></div>
+</div>
+<div class="qr-info">
+<span>🔄 Aggiornamento automatico ogni <strong id="qrRefreshSeconds">10</strong> secondi</span>
+</div>
+</div>
+</div>
+</div>
 
 <div id="attachmentsModal" class="modal">
 <div class="modal-card attachments-modal-card">

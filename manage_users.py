@@ -25,7 +25,8 @@ CONFIG_FILE = Path(__file__).with_name("config.json")
 ROLE_USER = "user"
 ROLE_SUPERVISOR = "supervisor"
 ROLE_ADMIN = "admin"
-VALID_ROLES = {ROLE_USER, ROLE_SUPERVISOR, ROLE_ADMIN}
+ROLE_MAGAZZINO = "magazzino"
+VALID_ROLES = {ROLE_USER, ROLE_SUPERVISOR, ROLE_ADMIN, ROLE_MAGAZZINO}
 
 
 def hash_password(password: str) -> str:
