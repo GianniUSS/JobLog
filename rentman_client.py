@@ -642,3 +642,87 @@ class RentmanClient:
                 )
             )
         return records
+
+    def get_crew_plannings_by_date(self, target_date: str) -> List[Dict[str, Any]]:
+        """
+        Recupera le pianificazioni crew per una data specifica.
+        Restituisce i record di projectcrew che hanno pianificazione attiva in quella data.
+        """
+        from datetime import datetime, timedelta
+
+        date_iso = (target_date or "").strip()
+        if not date_iso:
+            raise ValueError("date richiesto")
+
+        try:
+            dt = datetime.fromisoformat(date_iso)
+        except ValueError:
+            raise ValueError(f"Formato data non valido: {date_iso}")
+
+        day_start = dt.replace(hour=0, minute=0, second=0).isoformat()
+        day_end = dt.replace(hour=23, minute=59, second=59).isoformat()
+
+        logger.info("Rentman: recupero pianificazioni crew per data %s", date_iso)
+
+        # Recupera projectcrew con planperiod che include la data
+        try:
+            all_crew = self._get_all(
+                "/projectcrew",
+                {
+                    "planperiod_start[lte]": day_end,
+                    "planperiod_end[gte]": day_start,
+                }
+            )
+            logger.info("Rentman: trovate %s pianificazioni crew", len(all_crew))
+            return all_crew
+        except RentmanNotFound:
+            logger.info("Rentman: nessuna pianificazione trovata per %s", date_iso)
+            return []
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s recuperando pianificazioni", exc)
+            return []
+
+    def get_crew_member(self, crew_id: int) -> Optional[Dict[str, Any]]:
+        """Recupera i dettagli di un singolo crew member."""
+        logger.info("Rentman: recupero dettaglio crew %s", crew_id)
+        try:
+            payload = self._request("GET", f"/crew/{crew_id}")
+        except RentmanNotFound:
+            logger.info("Rentman: crew %s non trovato", crew_id)
+            return None
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo crew %s", exc, crew_id)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        return data
+
+    def get_project_function(self, function_id: int) -> Optional[Dict[str, Any]]:
+        """Recupera i dettagli di una funzione progetto."""
+        logger.info("Rentman: recupero dettaglio projectfunction %s", function_id)
+        try:
+            payload = self._request("GET", f"/projectfunctions/{function_id}")
+        except RentmanNotFound:
+            logger.info("Rentman: projectfunction %s non trovata", function_id)
+            return None
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo projectfunction %s", exc, function_id)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        return data
+
+    def get_project(self, project_id: int) -> Optional[Dict[str, Any]]:
+        """Recupera i dettagli di un progetto."""
+        logger.info("Rentman: recupero dettaglio project %s", project_id)
+        try:
+            payload = self._request("GET", f"/projects/{project_id}")
+        except RentmanNotFound:
+            logger.info("Rentman: project %s non trovato", project_id)
+            return None
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo project %s", exc, project_id)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        return data

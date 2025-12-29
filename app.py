@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover - fallback when MySQL client not install
     pymysql_err = None
     DictCursor = None
 
-from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
+from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from flask_session import Session
 from flask.typing import ResponseReturnValue
 from openpyxl import Workbook
@@ -7843,6 +7843,733 @@ atexit.register(stop_notification_worker)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  CREW MEMBERS - DATABASE (Operatori Rentman)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CREW_MEMBERS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS crew_members (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    rentman_id INT NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    external_id VARCHAR(255) DEFAULT NULL,
+    email VARCHAR(255) DEFAULT NULL,
+    phone VARCHAR(50) DEFAULT NULL,
+    is_active TINYINT(1) DEFAULT 1,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    INDEX idx_crew_external (external_id),
+    INDEX idx_crew_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+CREW_MEMBERS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS crew_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rentman_id INTEGER NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    external_id TEXT DEFAULT NULL,
+    email TEXT DEFAULT NULL,
+    phone TEXT DEFAULT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_crew_external ON crew_members(external_id);
+CREATE INDEX IF NOT EXISTS idx_crew_active ON crew_members(is_active);
+"""
+
+
+def ensure_crew_members_table(db: DatabaseLike) -> None:
+    """Crea la tabella crew_members se non esiste."""
+    statement = (
+        CREW_MEMBERS_TABLE_MYSQL if DB_VENDOR == "mysql" else CREW_MEMBERS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        try:
+            cursor = db.execute(sql)
+            try:
+                cursor.close()
+            except AttributeError:
+                pass
+        except Exception:
+            pass  # Tabella/indice già esistente
+
+
+def sync_crew_member_from_rentman(db: DatabaseLike, rentman_id: int, name: str) -> None:
+    """Sincronizza un operatore da Rentman nel database locale (insert or update name)."""
+    now = now_ms()
+    if DB_VENDOR == "mysql":
+        existing = db.execute(
+            "SELECT id FROM crew_members WHERE rentman_id = %s", (rentman_id,)
+        ).fetchone()
+        if existing:
+            db.execute(
+                "UPDATE crew_members SET name = %s, updated_ts = %s WHERE rentman_id = %s",
+                (name, now, rentman_id)
+            )
+        else:
+            db.execute(
+                "INSERT INTO crew_members (rentman_id, name, created_ts, updated_ts) VALUES (%s, %s, %s, %s)",
+                (rentman_id, name, now, now)
+            )
+    else:
+        existing = db.execute(
+            "SELECT id FROM crew_members WHERE rentman_id = ?", (rentman_id,)
+        ).fetchone()
+        if existing:
+            db.execute(
+                "UPDATE crew_members SET name = ?, updated_ts = ? WHERE rentman_id = ?",
+                (name, now, rentman_id)
+            )
+        else:
+            db.execute(
+                "INSERT INTO crew_members (rentman_id, name, created_ts, updated_ts) VALUES (?, ?, ?, ?)",
+                (rentman_id, name, now, now)
+            )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PIANIFICAZIONI RENTMAN - DATABASE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+RENTMAN_PLANNINGS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS rentman_plannings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    rentman_id INT NOT NULL,
+    planning_date DATE NOT NULL,
+    crew_id INT,
+    crew_name VARCHAR(255),
+    function_id INT,
+    function_name VARCHAR(255),
+    project_id INT,
+    project_name VARCHAR(500),
+    project_code VARCHAR(128),
+    plan_start DATETIME,
+    plan_end DATETIME,
+    hours_planned DECIMAL(10,2),
+    hours_registered DECIMAL(10,2),
+    remark TEXT,
+    is_leader TINYINT(1) DEFAULT 0,
+    transport VARCHAR(50),
+    sent_to_webservice TINYINT(1) DEFAULT 0,
+    sent_ts BIGINT DEFAULT NULL,
+    webservice_response TEXT,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    UNIQUE KEY uniq_rentman_planning (rentman_id, planning_date),
+    INDEX idx_planning_date (planning_date),
+    INDEX idx_planning_crew (crew_id),
+    INDEX idx_planning_project (project_code),
+    INDEX idx_planning_sent (sent_to_webservice)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+RENTMAN_PLANNINGS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS rentman_plannings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rentman_id INTEGER NOT NULL,
+    planning_date TEXT NOT NULL,
+    crew_id INTEGER,
+    crew_name TEXT,
+    function_id INTEGER,
+    function_name TEXT,
+    project_id INTEGER,
+    project_name TEXT,
+    project_code TEXT,
+    plan_start TEXT,
+    plan_end TEXT,
+    hours_planned REAL,
+    hours_registered REAL,
+    remark TEXT,
+    is_leader INTEGER DEFAULT 0,
+    transport TEXT,
+    sent_to_webservice INTEGER DEFAULT 0,
+    sent_ts INTEGER DEFAULT NULL,
+    webservice_response TEXT,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL,
+    UNIQUE(rentman_id, planning_date)
+);
+CREATE INDEX IF NOT EXISTS idx_planning_date ON rentman_plannings(planning_date);
+CREATE INDEX IF NOT EXISTS idx_planning_crew ON rentman_plannings(crew_id);
+CREATE INDEX IF NOT EXISTS idx_planning_project ON rentman_plannings(project_code);
+CREATE INDEX IF NOT EXISTS idx_planning_sent ON rentman_plannings(sent_to_webservice);
+"""
+
+
+def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
+    """Crea la tabella rentman_plannings se non esiste."""
+    statement = (
+        RENTMAN_PLANNINGS_TABLE_MYSQL if DB_VENDOR == "mysql" else RENTMAN_PLANNINGS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PIANIFICAZIONI RENTMAN - ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def get_joblog_hours_for_date(db: DatabaseLike, target_date: str) -> Dict[str, float]:
+    """
+    Calcola le ore registrate in JobLog per ogni operatore in una data specifica.
+    
+    Returns:
+        Dict con member_name.lower() come chiave e ore totali come valore.
+    """
+    try:
+        from datetime import datetime as dt_parse
+        # Parse target date
+        target_dt = dt_parse.strptime(target_date, "%Y-%m-%d").date()
+    except ValueError:
+        app.logger.warning(f"Data non valida per JobLog hours: {target_date}")
+        return {}
+    
+    # Calcola timestamp inizio e fine giornata
+    start_of_day = dt_parse.combine(target_dt, dt_parse.min.time())
+    end_of_day = dt_parse.combine(target_dt, dt_parse.max.time())
+    start_ts = int(start_of_day.timestamp() * 1000)
+    end_ts = int(end_of_day.timestamp() * 1000)
+    
+    # Query per eventi finish_activity con duration_ms
+    query = """
+        SELECT el.ts, el.member_key, el.details, ms.member_name
+        FROM event_log el
+        LEFT JOIN member_state ms ON el.member_key = ms.member_key
+        WHERE el.kind = 'finish_activity'
+        AND el.ts >= ? AND el.ts <= ?
+    """
+    
+    try:
+        rows = db.execute(query, (start_ts, end_ts)).fetchall()
+    except Exception as exc:
+        app.logger.error(f"Errore query JobLog hours: {exc}")
+        return {}
+    
+    # Accumula ore per operatore
+    hours_by_member: Dict[str, float] = {}
+    
+    for row in rows:
+        try:
+            details = json.loads(row["details"]) if row["details"] else {}
+        except json.JSONDecodeError:
+            continue
+        
+        duration_ms = details.get("duration_ms", 0)
+        if not duration_ms:
+            continue
+        
+        # Usa member_name dalla tabella member_state o dai dettagli evento
+        member_name = row["member_name"] or details.get("member_name") or row["member_key"]
+        if not member_name:
+            continue
+        
+        # Normalizza il nome (lowercase) per il matching
+        member_name_lower = member_name.strip().lower()
+        
+        # Converti ms in ore
+        hours = duration_ms / (1000 * 60 * 60)
+        
+        if member_name_lower in hours_by_member:
+            hours_by_member[member_name_lower] += hours
+        else:
+            hours_by_member[member_name_lower] = hours
+    
+    return hours_by_member
+
+
+def match_crew_name_to_joblog(crew_name: str, joblog_hours: Dict[str, float]) -> Optional[float]:
+    """
+    Cerca di matchare un nome operatore Rentman con i dati JobLog.
+    Usa matching esatto e fuzzy sul nome.
+    """
+    if not crew_name:
+        return None
+    
+    crew_lower = crew_name.strip().lower()
+    
+    # 1. Match esatto
+    if crew_lower in joblog_hours:
+        return joblog_hours[crew_lower]
+    
+    # 2. Prova a confrontare parti del nome
+    crew_parts = set(crew_lower.split())
+    
+    for member_name, hours in joblog_hours.items():
+        member_parts = set(member_name.split())
+        
+        # Se almeno 2 parole coincidono, o se una parola è contenuta nell'altra
+        common = crew_parts & member_parts
+        if len(common) >= 2:
+            return hours
+        
+        # Se il nome completo è contenuto
+        if crew_lower in member_name or member_name in crew_lower:
+            return hours
+        
+        # Match su cognome (tipicamente la seconda parola)
+        crew_words = crew_lower.split()
+        member_words = member_name.split()
+        
+        # Se hanno almeno 2 parole e la seconda (cognome) coincide
+        if len(crew_words) >= 2 and len(member_words) >= 2:
+            if crew_words[1] == member_words[1]:
+                return hours
+    
+    return None
+
+
+@app.get("/admin/rentman-planning")
+@login_required
+def admin_rentman_planning_page() -> ResponseReturnValue:
+    """Pagina pianificazioni Rentman."""
+    if not session.get("is_admin"):
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    return render_template(
+        "admin_rentman_planning.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+    )
+
+
+@app.get("/api/admin/rentman-planning")
+@login_required
+def api_admin_rentman_planning() -> ResponseReturnValue:
+    """API per recuperare pianificazioni Rentman per una data."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    target_date = request.args.get("date")
+    if not target_date:
+        target_date = datetime.now().date().isoformat()
+
+    try:
+        from rentman_client import RentmanClient, RentmanError
+        client = RentmanClient()
+    except Exception as exc:
+        app.logger.warning("Rentman client non disponibile: %s", exc)
+        return jsonify({"error": "Rentman non configurato", "details": str(exc)}), 500
+
+    try:
+        plannings = client.get_crew_plannings_by_date(target_date)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RentmanError as exc:
+        return jsonify({"error": "Errore Rentman", "details": str(exc)}), 500
+
+    # Calcola ore JobLog per questa data
+    db = get_db()
+    joblog_hours = get_joblog_hours_for_date(db, target_date)
+
+    # Arricchisci i dati con info su crew e progetto
+    # Cache per evitare chiamate duplicate
+    crew_cache: Dict[int, Dict[str, Any]] = {}
+    function_cache: Dict[int, Dict[str, Any]] = {}
+    project_cache: Dict[int, Dict[str, Any]] = {}
+
+    results = []
+    for planning in plannings:
+        # Estrai ID dal riferimento (es. "/crew/123" -> 123)
+        crew_ref = planning.get("crewmember", "")
+        crew_id = None
+        if crew_ref and "/" in crew_ref:
+            try:
+                crew_id = int(crew_ref.split("/")[-1])
+            except (ValueError, IndexError):
+                pass
+
+        function_ref = planning.get("function", "")
+        function_id = None
+        if function_ref and "/" in function_ref:
+            try:
+                function_id = int(function_ref.split("/")[-1])
+            except (ValueError, IndexError):
+                pass
+
+        # Recupera dettagli crew
+        crew_name = planning.get("displayname", "")
+        if crew_id and crew_id not in crew_cache:
+            crew_data = client.get_crew_member(crew_id)
+            if crew_data:
+                crew_cache[crew_id] = crew_data
+        if crew_id and crew_id in crew_cache:
+            cd = crew_cache[crew_id]
+            crew_name = cd.get("displayname") or f"{cd.get('firstname', '')} {cd.get('lastname', '')}".strip() or crew_name
+
+        # Recupera dettagli funzione e progetto
+        project_name = ""
+        project_code = ""
+        function_name = ""
+        if function_id and function_id not in function_cache:
+            func_data = client.get_project_function(function_id)
+            if func_data:
+                function_cache[function_id] = func_data
+        if function_id and function_id in function_cache:
+            fd = function_cache[function_id]
+            function_name = fd.get("name") or fd.get("displayname") or ""
+            # Estrai progetto dalla funzione
+            project_ref = fd.get("project", "")
+            if project_ref and "/" in project_ref:
+                try:
+                    project_id = int(project_ref.split("/")[-1])
+                    if project_id not in project_cache:
+                        proj_data = client.get_project(project_id)
+                        if proj_data:
+                            project_cache[project_id] = proj_data
+                    if project_id in project_cache:
+                        pd = project_cache[project_id]
+                        project_name = pd.get("name") or pd.get("displayname") or ""
+                        project_code = pd.get("number") or pd.get("reference") or ""
+                except (ValueError, IndexError):
+                    pass
+
+        # Calcola ore JobLog per questo operatore
+        joblog_registered = match_crew_name_to_joblog(crew_name, joblog_hours)
+        
+        results.append({
+            "id": planning.get("id"),
+            "crew_id": crew_id,
+            "crew_name": crew_name,
+            "function_name": function_name,
+            "project_name": project_name,
+            "project_code": project_code,
+            "start": planning.get("planperiod_start"),
+            "end": planning.get("planperiod_end"),
+            "hours_planned": planning.get("hours_planned"),
+            "hours_registered": round(joblog_registered, 2) if joblog_registered is not None else 0,
+            "hours_rentman": planning.get("hours_registered"),  # Mantieni valore originale Rentman per riferimento
+            "remark": planning.get("remark", ""),
+            "is_leader": planning.get("project_leader", False),
+            "transport": planning.get("transport", ""),
+        })
+
+    # Ordina per orario di inizio e poi per nome crew
+    results.sort(key=lambda x: (x.get("start") or "", x.get("crew_name") or ""))
+
+    return jsonify({
+        "ok": True,
+        "date": target_date,
+        "count": len(results),
+        "plannings": results,
+    })
+
+
+@app.post("/api/admin/rentman-planning/save")
+@login_required
+def api_admin_rentman_planning_save() -> ResponseReturnValue:
+    """Salva le pianificazioni Rentman nel database locale."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json() or {}
+    target_date = data.get("date")
+    plannings = data.get("plannings", [])
+
+    if not target_date:
+        return jsonify({"error": "Data richiesta"}), 400
+
+    if not plannings:
+        return jsonify({"error": "Nessuna pianificazione da salvare"}), 400
+
+    db = get_db()
+    ensure_rentman_plannings_table(db)
+    ensure_crew_members_table(db)  # Assicura che la tabella operatori esista
+
+    now_ms = int(time.time() * 1000)
+    saved = 0
+    updated = 0
+    synced_crews = set()  # Track già sincronizzati per evitare duplicati
+
+    def parse_iso_datetime(dt_str: str | None) -> str | None:
+        """Converte datetime ISO in formato MySQL compatibile."""
+        if not dt_str:
+            return None
+        try:
+            # Prova a parsare datetime ISO con timezone
+            from datetime import datetime as dt_parse
+            # Rimuovi timezone se presente e converti
+            if '+' in dt_str:
+                dt_str = dt_str.split('+')[0]
+            elif dt_str.endswith('Z'):
+                dt_str = dt_str[:-1]
+            # Converti in formato MySQL
+            parsed = dt_parse.fromisoformat(dt_str)
+            return parsed.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            return dt_str
+
+    for p in plannings:
+        rentman_id = p.get("id")
+        if not rentman_id:
+            continue
+
+        # Sincronizza operatore nel database locale (una volta sola per crew_id)
+        crew_id = p.get("crew_id")
+        crew_name = p.get("crew_name")
+        if crew_id and crew_id not in synced_crews:
+            sync_crew_member_from_rentman(db, crew_id, crew_name or f"Crew {crew_id}")
+            synced_crews.add(crew_id)
+            continue
+
+        # Converti hours da secondi a ore se necessario
+        hours_planned = p.get("hours_planned")
+        if hours_planned and float(hours_planned) > 100:
+            hours_planned = float(hours_planned) / 3600
+
+        hours_registered = p.get("hours_registered")
+        if hours_registered and float(hours_registered) > 100:
+            hours_registered = float(hours_registered) / 3600
+
+        # Converti datetime in formato MySQL compatibile
+        plan_start = parse_iso_datetime(p.get("start"))
+        plan_end = parse_iso_datetime(p.get("end"))
+
+        # Estrai project_id dalla funzione (se disponibile)
+        project_id = p.get("project_id")
+        function_id = p.get("function_id")
+
+        # Check if exists
+        if DB_VENDOR == "mysql":
+            existing = db.execute(
+                "SELECT id, sent_to_webservice FROM rentman_plannings WHERE rentman_id = %s AND planning_date = %s",
+                (rentman_id, target_date)
+            ).fetchone()
+        else:
+            existing = db.execute(
+                "SELECT id, sent_to_webservice FROM rentman_plannings WHERE rentman_id = ? AND planning_date = ?",
+                (rentman_id, target_date)
+            ).fetchone()
+
+        if existing:
+            # Update existing record (but preserve sent status)
+            if DB_VENDOR == "mysql":
+                db.execute("""
+                    UPDATE rentman_plannings SET
+                        crew_id = %s, crew_name = %s, function_id = %s, function_name = %s,
+                        project_id = %s, project_name = %s, project_code = %s,
+                        plan_start = %s, plan_end = %s, hours_planned = %s, hours_registered = %s,
+                        remark = %s, is_leader = %s, transport = %s, updated_ts = %s
+                    WHERE rentman_id = %s AND planning_date = %s
+                """, (
+                    p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
+                    project_id, p.get("project_name"), p.get("project_code"),
+                    plan_start, plan_end, hours_planned, hours_registered,
+                    p.get("remark"), 1 if p.get("is_leader") else 0, p.get("transport"), now_ms,
+                    rentman_id, target_date
+                ))
+            else:
+                db.execute("""
+                    UPDATE rentman_plannings SET
+                        crew_id = ?, crew_name = ?, function_id = ?, function_name = ?,
+                        project_id = ?, project_name = ?, project_code = ?,
+                        plan_start = ?, plan_end = ?, hours_planned = ?, hours_registered = ?,
+                        remark = ?, is_leader = ?, transport = ?, updated_ts = ?
+                    WHERE rentman_id = ? AND planning_date = ?
+                """, (
+                    p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
+                    project_id, p.get("project_name"), p.get("project_code"),
+                    plan_start, plan_end, hours_planned, hours_registered,
+                    p.get("remark"), 1 if p.get("is_leader") else 0, p.get("transport"), now_ms,
+                    rentman_id, target_date
+                ))
+            updated += 1
+        else:
+            # Insert new record
+            if DB_VENDOR == "mysql":
+                db.execute("""
+                    INSERT INTO rentman_plannings (
+                        rentman_id, planning_date, crew_id, crew_name, function_id, function_name,
+                        project_id, project_name, project_code, plan_start, plan_end,
+                        hours_planned, hours_registered, remark, is_leader, transport,
+                        sent_to_webservice, created_ts, updated_ts
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
+                """, (
+                    rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
+                    function_id, p.get("function_name"), project_id, p.get("project_name"),
+                    p.get("project_code"), plan_start, plan_end,
+                    hours_planned, hours_registered, p.get("remark"),
+                    1 if p.get("is_leader") else 0, p.get("transport"), now_ms, now_ms
+                ))
+            else:
+                db.execute("""
+                    INSERT INTO rentman_plannings (
+                        rentman_id, planning_date, crew_id, crew_name, function_id, function_name,
+                        project_id, project_name, project_code, plan_start, plan_end,
+                        hours_planned, hours_registered, remark, is_leader, transport,
+                        sent_to_webservice, created_ts, updated_ts
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                """, (
+                    rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
+                    function_id, p.get("function_name"), project_id, p.get("project_name"),
+                    p.get("project_code"), plan_start, plan_end,
+                    hours_planned, hours_registered, p.get("remark"),
+                    1 if p.get("is_leader") else 0, p.get("transport"), now_ms, now_ms
+                ))
+            saved += 1
+
+    db.commit()
+
+    return jsonify({
+        "ok": True,
+        "saved": saved,
+        "updated": updated,
+        "total": saved + updated,
+    })
+
+
+@app.get("/api/admin/rentman-planning/saved")
+@login_required
+def api_admin_rentman_planning_saved() -> ResponseReturnValue:
+    """Recupera le pianificazioni salvate dal database locale."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    target_date = request.args.get("date")
+    if not target_date:
+        target_date = datetime.now().date().isoformat()
+
+    db = get_db()
+    ensure_rentman_plannings_table(db)
+
+    if DB_VENDOR == "mysql":
+        rows = db.execute(
+            "SELECT * FROM rentman_plannings WHERE planning_date = %s ORDER BY plan_start, crew_name",
+            (target_date,)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM rentman_plannings WHERE planning_date = ? ORDER BY plan_start, crew_name",
+            (target_date,)
+        ).fetchall()
+
+    plannings = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            plannings.append(dict(row))
+        else:
+            # SQLite row to dict
+            cols = ["id", "rentman_id", "planning_date", "crew_id", "crew_name", "function_id",
+                    "function_name", "project_id", "project_name", "project_code", "plan_start",
+                    "plan_end", "hours_planned", "hours_registered", "remark", "is_leader",
+                    "transport", "sent_to_webservice", "sent_ts", "webservice_response",
+                    "created_ts", "updated_ts"]
+            plannings.append(dict(zip(cols, row)))
+
+    return jsonify({
+        "ok": True,
+        "date": target_date,
+        "count": len(plannings),
+        "plannings": plannings,
+    })
+
+
+@app.post("/api/admin/rentman-planning/send")
+@login_required
+def api_admin_rentman_planning_send() -> ResponseReturnValue:
+    """Invia le pianificazioni al webservice esterno."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json() or {}
+    planning_ids = data.get("ids", [])  # Lista di ID locali da inviare
+    plannings = data.get("plannings", [])  # O lista di pianificazioni con rentman_id
+
+    db = get_db()
+    ensure_rentman_plannings_table(db)
+
+    rows = []
+    
+    if planning_ids:
+        # Recupera le pianificazioni per ID locale
+        placeholders = ",".join(["%s" if DB_VENDOR == "mysql" else "?"] * len(planning_ids))
+        query = f"SELECT * FROM rentman_plannings WHERE id IN ({placeholders})"
+        rows = db.execute(query, planning_ids).fetchall()
+    elif plannings:
+        # Recupera per rentman_id (se esistono nel DB)
+        rentman_ids = [p.get("rentman_id") or p.get("id") for p in plannings if p.get("rentman_id") or p.get("id")]
+        if rentman_ids:
+            placeholders = ",".join(["%s" if DB_VENDOR == "mysql" else "?"] * len(rentman_ids))
+            query = f"SELECT * FROM rentman_plannings WHERE rentman_id IN ({placeholders})"
+            rows = db.execute(query, rentman_ids).fetchall()
+
+    if not rows and not plannings:
+        return jsonify({"error": "Nessuna pianificazione selezionata"}), 400
+
+    # TODO: Implementare l'invio al webservice
+    # Per ora segna come inviate
+    now_ms = int(time.time() * 1000)
+    sent_count = 0
+    errors = []
+
+    # Se abbiamo righe dal DB, processa quelle
+    if rows:
+        for row in rows:
+            local_id = row["id"] if isinstance(row, Mapping) else row[0]
+            
+            try:
+                # TODO: Chiamata al webservice qui
+                # response = requests.post(webservice_url, json=payload)
+                # webservice_response = response.text
+                
+                webservice_response = "OK - Placeholder (webservice non configurato)"
+                
+                # Aggiorna il record come inviato
+                if DB_VENDOR == "mysql":
+                    db.execute("""
+                        UPDATE rentman_plannings 
+                        SET sent_to_webservice = 1, sent_ts = %s, webservice_response = %s, updated_ts = %s
+                        WHERE id = %s
+                    """, (now_ms, webservice_response, now_ms, local_id))
+                else:
+                    db.execute("""
+                        UPDATE rentman_plannings 
+                        SET sent_to_webservice = 1, sent_ts = ?, webservice_response = ?, updated_ts = ?
+                        WHERE id = ?
+                    """, (now_ms, webservice_response, now_ms, local_id))
+                
+                sent_count += 1
+                
+            except Exception as exc:
+                app.logger.error("Errore invio pianificazione %s: %s", local_id, exc)
+                errors.append({"id": local_id, "error": str(exc)})
+    else:
+        # Se non abbiamo righe dal DB ma abbiamo pianificazioni raw, segna come "inviate" ma non salvate
+        # Questo è un caso limite: l'utente vuole inviare senza salvare nel DB locale
+        for p in plannings:
+            try:
+                # TODO: Chiamata al webservice qui
+                webservice_response = "OK - Placeholder (webservice non configurato, non salvato nel DB)"
+                sent_count += 1
+            except Exception as exc:
+                errors.append({"id": p.get("id"), "error": str(exc)})
+
+    db.commit()
+
+    return jsonify({
+        "ok": True,
+        "sent": sent_count,
+        "errors": errors,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  QR CODE TIMBRATURA - GiQR LEVEL 4 LITE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7918,6 +8645,404 @@ def qr_timbratura_page():
         refresh_seconds=QR_REFRESH_SECONDS,
         device_id=QR_DEVICE_ID
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GESTIONE UTENTI - ADMIN UI
+# ═══════════════════════════════════════════════════════════════════════════════
+
+VALID_USER_ROLES = {"user", "supervisor", "admin", "magazzino"}
+
+
+@app.get("/admin/users")
+@login_required
+def admin_users_page() -> ResponseReturnValue:
+    """Pagina gestione utenti (solo admin)."""
+    if not session.get("is_admin"):
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    return render_template(
+        "admin_users.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+    )
+
+
+@app.get("/api/admin/users")
+@login_required
+def api_admin_users_list() -> ResponseReturnValue:
+    """Lista tutti gli utenti."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    if DB_VENDOR == "mysql":
+        rows = db.execute("""
+            SELECT username, display_name, full_name, role, is_active, created_ts, updated_ts
+            FROM app_users
+            ORDER BY username ASC
+        """).fetchall()
+    else:
+        rows = db.execute("""
+            SELECT username, display_name, full_name, role, is_active, created_ts, updated_ts
+            FROM app_users
+            ORDER BY username ASC
+        """).fetchall()
+
+    users = []
+    for row in rows:
+        users.append({
+            "username": row["username"],
+            "display_name": row["display_name"],
+            "full_name": row["full_name"],
+            "role": row["role"],
+            "is_active": bool(row["is_active"]),
+            "created_ts": row["created_ts"],
+            "updated_ts": row["updated_ts"],
+        })
+
+    return jsonify({"users": users})
+
+
+@app.post("/api/admin/users")
+@login_required
+def api_admin_users_create() -> ResponseReturnValue:
+    """Crea un nuovo utente."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati non validi"}), 400
+
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password", "")
+    display_name = (data.get("display_name") or "").strip()
+    full_name = (data.get("full_name") or "").strip() or None
+    role = (data.get("role") or "user").strip().lower()
+    is_active = data.get("is_active", True)
+
+    if not username:
+        return jsonify({"error": "Username richiesto"}), 400
+    if not password:
+        return jsonify({"error": "Password richiesta"}), 400
+    if not display_name:
+        display_name = username
+    if role not in VALID_USER_ROLES:
+        return jsonify({"error": f"Ruolo non valido. Valori ammessi: {', '.join(sorted(VALID_USER_ROLES))}"}), 400
+
+    db = get_db()
+
+    # Verifica se esiste già
+    if DB_VENDOR == "mysql":
+        existing = db.execute("SELECT username FROM app_users WHERE username = %s", (username,)).fetchone()
+    else:
+        existing = db.execute("SELECT username FROM app_users WHERE username = ?", (username,)).fetchone()
+
+    if existing:
+        return jsonify({"error": f"L'utente '{username}' esiste già"}), 409
+
+    now = now_ms()
+    password_hashed = hash_password(password)
+
+    if DB_VENDOR == "mysql":
+        db.execute("""
+            INSERT INTO app_users (username, password_hash, display_name, full_name, role, is_active, created_ts, updated_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (username, password_hashed, display_name, full_name, role, 1 if is_active else 0, now, now))
+    else:
+        db.execute("""
+            INSERT INTO app_users (username, password_hash, display_name, full_name, role, is_active, created_ts, updated_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (username, password_hashed, display_name, full_name, role, 1 if is_active else 0, now, now))
+    db.commit()
+
+    app.logger.info("Admin %s ha creato utente %s con ruolo %s", session.get("user"), username, role)
+    return jsonify({"ok": True, "username": username}), 201
+
+
+@app.put("/api/admin/users/<username>")
+@login_required
+def api_admin_users_update(username: str) -> ResponseReturnValue:
+    """Modifica un utente esistente."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    username = username.strip().lower()
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati non validi"}), 400
+
+    db = get_db()
+
+    # Verifica che l'utente esista
+    if DB_VENDOR == "mysql":
+        existing = db.execute("SELECT username FROM app_users WHERE username = %s", (username,)).fetchone()
+    else:
+        existing = db.execute("SELECT username FROM app_users WHERE username = ?", (username,)).fetchone()
+
+    if not existing:
+        return jsonify({"error": f"Utente '{username}' non trovato"}), 404
+
+    # Prepara i campi da aggiornare
+    updates = []
+    params = []
+
+    if "display_name" in data:
+        display_name = (data["display_name"] or "").strip()
+        if display_name:
+            updates.append("display_name = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+            params.append(display_name)
+
+    if "full_name" in data:
+        full_name = (data["full_name"] or "").strip() or None
+        updates.append("full_name = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(full_name)
+
+    if "role" in data:
+        role = (data["role"] or "").strip().lower()
+        if role not in VALID_USER_ROLES:
+            return jsonify({"error": f"Ruolo non valido. Valori ammessi: {', '.join(sorted(VALID_USER_ROLES))}"}), 400
+        # Impedisci di rimuovere il ruolo admin a se stessi
+        current_user = session.get("user", "").lower()
+        if username == current_user and role != "admin":
+            return jsonify({"error": "Non puoi rimuovere il ruolo admin a te stesso"}), 400
+        updates.append("role = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(role)
+
+    if "is_active" in data:
+        is_active = data["is_active"]
+        # Impedisci di disattivare se stessi
+        current_user = session.get("user", "").lower()
+        if username == current_user and not is_active:
+            return jsonify({"error": "Non puoi disattivare il tuo account"}), 400
+        updates.append("is_active = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(1 if is_active else 0)
+
+    if "password" in data and data["password"]:
+        password_hashed = hash_password(data["password"])
+        updates.append("password_hash = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(password_hashed)
+
+    if not updates:
+        return jsonify({"error": "Nessun campo da aggiornare"}), 400
+
+    updates.append("updated_ts = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+    params.append(now_ms())
+    params.append(username)
+
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    sql = f"UPDATE app_users SET {', '.join(updates)} WHERE username = {placeholder}"
+    db.execute(sql, tuple(params))
+    db.commit()
+
+    app.logger.info("Admin %s ha modificato utente %s", session.get("user"), username)
+    return jsonify({"ok": True, "username": username})
+
+
+@app.delete("/api/admin/users/<username>")
+@login_required
+def api_admin_users_delete(username: str) -> ResponseReturnValue:
+    """Elimina un utente."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    username = username.strip().lower()
+
+    # Impedisci di eliminare se stessi
+    current_user = session.get("user", "").lower()
+    if username == current_user:
+        return jsonify({"error": "Non puoi eliminare il tuo account"}), 400
+
+    db = get_db()
+
+    # Verifica che l'utente esista
+    if DB_VENDOR == "mysql":
+        existing = db.execute("SELECT username FROM app_users WHERE username = %s", (username,)).fetchone()
+    else:
+        existing = db.execute("SELECT username FROM app_users WHERE username = ?", (username,)).fetchone()
+
+    if not existing:
+        return jsonify({"error": f"Utente '{username}' non trovato"}), 404
+
+    if DB_VENDOR == "mysql":
+        db.execute("DELETE FROM app_users WHERE username = %s", (username,))
+    else:
+        db.execute("DELETE FROM app_users WHERE username = ?", (username,))
+    db.commit()
+
+    app.logger.info("Admin %s ha eliminato utente %s", session.get("user"), username)
+    return jsonify({"ok": True, "deleted": username})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GESTIONE OPERATORI (Admin) - API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/admin/operators")
+@login_required
+def admin_operators() -> ResponseReturnValue:
+    """Pagina gestione operatori."""
+    if not session.get("is_admin"):
+        flash("Accesso non autorizzato", "danger")
+        return redirect(url_for("index"))
+    return render_template("admin_operators.html")
+
+
+@app.get("/api/admin/operators")
+@login_required
+def api_admin_operators_list() -> ResponseReturnValue:
+    """Lista tutti gli operatori dal database."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    ensure_crew_members_table(db)
+
+    if DB_VENDOR == "mysql":
+        cursor = db.execute(
+            "SELECT id, rentman_id, name, external_id, email, phone, is_active, created_ts, updated_ts "
+            "FROM crew_members ORDER BY name"
+        )
+    else:
+        cursor = db.execute(
+            "SELECT id, rentman_id, name, external_id, email, phone, is_active, created_ts, updated_ts "
+            "FROM crew_members ORDER BY name"
+        )
+    rows = cursor.fetchall()
+
+    operators = []
+    for row in rows:
+        operators.append({
+            "id": row[0],
+            "rentman_id": row[1],
+            "name": row[2],
+            "external_id": row[3],
+            "email": row[4],
+            "phone": row[5],
+            "is_active": bool(row[6]),
+            "created_ts": row[7],
+            "updated_ts": row[8]
+        })
+
+    return jsonify({"ok": True, "operators": operators})
+
+
+@app.put("/api/admin/operators/<int:operator_id>")
+@login_required
+def api_admin_operators_update(operator_id: int) -> ResponseReturnValue:
+    """Aggiorna un operatore (principalmente external_id)."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+
+    db = get_db()
+    ensure_crew_members_table(db)
+
+    # Verifica che l'operatore esista
+    if DB_VENDOR == "mysql":
+        existing = db.execute("SELECT id, name FROM crew_members WHERE id = %s", (operator_id,)).fetchone()
+    else:
+        existing = db.execute("SELECT id, name FROM crew_members WHERE id = ?", (operator_id,)).fetchone()
+
+    if not existing:
+        return jsonify({"error": "Operatore non trovato"}), 404
+
+    # Prepara i campi da aggiornare
+    external_id = data.get("external_id")
+    if external_id is not None:
+        external_id = external_id.strip() if external_id else None
+
+    email = data.get("email")
+    if email is not None:
+        email = email.strip() if email else None
+
+    phone = data.get("phone")
+    if phone is not None:
+        phone = phone.strip() if phone else None
+
+    is_active = data.get("is_active")
+    if is_active is not None:
+        is_active = 1 if is_active else 0
+
+    now = now_ms()
+
+    # Costruisci query di aggiornamento dinamica
+    updates = []
+    params = []
+
+    if "external_id" in data:
+        updates.append("external_id = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(external_id)
+    if "email" in data:
+        updates.append("email = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(email)
+    if "phone" in data:
+        updates.append("phone = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(phone)
+    if "is_active" in data:
+        updates.append("is_active = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(is_active)
+
+    if not updates:
+        return jsonify({"error": "Nessun campo da aggiornare"}), 400
+
+    updates.append("updated_ts = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+    params.append(now)
+    params.append(operator_id)
+
+    sql = f"UPDATE crew_members SET {', '.join(updates)} WHERE id = " + ("%s" if DB_VENDOR == "mysql" else "?")
+
+    db.execute(sql, tuple(params))
+    db.commit()
+
+    app.logger.info("Admin %s ha modificato operatore %s (id=%d)", session.get("user"), existing[1], operator_id)
+    return jsonify({"ok": True, "id": operator_id})
+
+
+@app.post("/api/admin/operators/sync")
+@login_required
+def api_admin_operators_sync() -> ResponseReturnValue:
+    """Forza la sincronizzazione degli operatori da Rentman."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    try:
+        from rentman_client import rentman_request
+    except ImportError:
+        return jsonify({"error": "Client Rentman non disponibile"}), 500
+
+    # Recupera tutti i crew members da Rentman
+    try:
+        response = rentman_request("GET", "/crew")
+        if not response:
+            return jsonify({"error": "Nessuna risposta da Rentman"}), 502
+    except Exception as e:
+        app.logger.error("Errore sync operatori Rentman: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+    db = get_db()
+    ensure_crew_members_table(db)
+
+    synced = 0
+    crew_data = response.get("data", [])
+    for crew in crew_data:
+        rentman_id = crew.get("id")
+        name = crew.get("displayname") or crew.get("name") or f"Crew {rentman_id}"
+        if rentman_id:
+            sync_crew_member_from_rentman(db, rentman_id, name)
+            synced += 1
+
+    db.commit()
+
+    app.logger.info("Admin %s ha sincronizzato %d operatori da Rentman", session.get("user"), synced)
+    return jsonify({"ok": True, "synced": synced})
 
 
 if __name__ == "__main__":

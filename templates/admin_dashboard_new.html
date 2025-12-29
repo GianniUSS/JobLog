@@ -421,6 +421,18 @@
                         <span class="menu-item-icon">🔬</span>
                         <span>Analisi Attività</span>
                     </a>
+                    <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📅</span>
+                        <span>Pianificazioni Rentman</span>
+                    </a>
+                    <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+                        <span class="menu-item-icon">👥</span>
+                        <span>Gestione Utenti</span>
+                    </a>
+                    <a href="{{ url_for('admin_operators') }}" class="menu-item">
+                        <span class="menu-item-icon">🧑‍🔧</span>
+                        <span>Gestione Operatori</span>
+                    </a>
                     <div class="menu-divider"></div>
                     <a href="{{ url_for('api_admin_day_sessions_export_xlsx') }}?date_start=" id="menuExport" class="menu-item">
                         <span class="menu-item-icon">📥</span>

@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gestione Operatori · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --purple: #a855f7;
+            --pink: #ec4899;
+            --cyan: #06b6d4;
+            --orange: #f97316;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --purple: #9333ea;
+            --pink: #db2777;
+            --cyan: #0891b2;
+            --orange: #ea580c;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .hidden { display: none !important; }
+
+        /* Header */
+        header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(249,115,22,0.7));
+            color: #f8fafc;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            text-decoration: none;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* ─── Hamburger Menu ─── */
+        .menu-container { position: relative; }
+        .menu-toggle {
+            background: rgba(255,255,255,0.12);
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            width: 40px; height: 40px;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            color: white;
+            transition: background 0.2s ease;
+        }
+        .menu-toggle:hover { background: rgba(255,255,255,0.2); }
+        .hamburger-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            min-width: 220px;
+            padding: 8px 0;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+        }
+        .hamburger-menu.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 500;
+            transition: background 0.15s ease;
+        }
+        .menu-item:hover { background: rgba(249,115,22,0.15); }
+        .menu-item.active {
+            background: rgba(249,115,22,0.15);
+            color: var(--orange);
+        }
+        .menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 8px 0;
+        }
+
+        /* Main Content */
+        main {
+            flex: 1;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Page Header */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .page-title {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--orange), var(--pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0;
+        }
+        .page-subtitle { font-size: 14px; color: var(--muted); font-weight: 600; margin-top: 4px; }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 24px;
+            min-width: 140px;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--orange);
+        }
+        .stat-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Buttons */
+        .btn {
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn:hover { background: var(--bg-panel); }
+        .btn:active { transform: scale(0.97); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn.primary { background: var(--orange); color: white; border-color: transparent; }
+        .btn.primary:hover { background: var(--warning); }
+        .btn.secondary { background: transparent; }
+
+        /* Search/Filter Bar */
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .search-input {
+            flex: 1;
+            min-width: 200px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .search-input:focus { outline: none; border-color: var(--orange); }
+        .search-input::placeholder { color: var(--muted); }
+        
+        .filter-select {
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .filter-select:focus { outline: none; border-color: var(--orange); }
+
+        /* Operators Table */
+        .operators-table-wrapper {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+        .operators-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .operators-table th,
+        .operators-table td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .operators-table th {
+            background: var(--bg-soft);
+            font-weight: 700;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+        }
+        .operators-table tbody tr:hover { background: var(--bg-soft); }
+        .operators-table tbody tr:last-child td { border-bottom: none; }
+
+        .operator-info { display: flex; align-items: center; gap: 12px; }
+        .operator-avatar {
+            width: 40px; height: 40px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--orange), var(--pink));
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800;
+            font-size: 14px;
+            color: white;
+        }
+        .operator-details { display: flex; flex-direction: column; gap: 2px; }
+        .operator-name { font-weight: 700; font-size: 14px; }
+        .operator-id { font-size: 12px; color: var(--muted); }
+
+        .external-id-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .external-id-input {
+            width: 140px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .external-id-input:focus {
+            outline: none;
+            border-color: var(--orange);
+        }
+        .external-id-input.modified {
+            border-color: var(--warning);
+            background: rgba(249, 115, 22, 0.1);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .status-badge.active { background: rgba(34,197,94,0.15); color: var(--success); }
+        .status-badge.inactive { background: rgba(239,68,68,0.15); color: var(--danger); }
+        .status-badge::before {
+            content: '';
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .save-btn {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: none;
+            background: var(--orange);
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.15s ease;
+        }
+        .save-btn.visible { opacity: 1; }
+        .save-btn:hover { background: var(--warning); }
+
+        .action-btn {
+            width: 36px; height: 36px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            transition: all 0.15s ease;
+        }
+        .action-btn:hover { background: var(--bg-soft); }
+        .action-btn.edit:hover { border-color: var(--brand); color: var(--brand); }
+
+        /* Empty State */
+        .empty-state {
+            padding: 60px 20px;
+            text-align: center;
+            color: var(--muted);
+        }
+        .empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state-text { font-size: 16px; font-weight: 600; }
+        .empty-state-hint { font-size: 14px; color: var(--muted); margin-top: 8px; }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(11,18,36,0.85);
+            backdrop-filter: blur(4px);
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+        }
+        .modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            box-shadow: var(--shadow);
+            width: 100%;
+            max-width: 480px;
+            transform: translateY(20px);
+            transition: transform 0.2s ease;
+        }
+        .modal-overlay.open .modal { transform: translateY(0); }
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-title { font-size: 18px; font-weight: 800; margin: 0; }
+        .modal-close {
+            width: 36px; height: 36px;
+            border: none;
+            background: var(--bg-soft);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close:hover { background: var(--border); }
+        .modal-body { padding: 24px; }
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        /* Form */
+        .form-group { margin-bottom: 16px; }
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: var(--orange);
+        }
+        .form-input:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .form-hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+        .form-checkbox input { width: 18px; height: 18px; cursor: pointer; }
+        .form-checkbox span { font-weight: 600; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 24px;
+            box-shadow: var(--shadow);
+            z-index: 400;
+            font-weight: 600;
+            transition: transform 0.3s ease;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast.success { border-color: var(--success); color: var(--success); }
+        .toast.error { border-color: var(--danger); color: var(--danger); }
+
+        /* Loading */
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--orange);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .operators-table th:nth-child(4),
+            .operators-table td:nth-child(4) {
+                display: none;
+            }
+            .stats-bar { flex-direction: column; }
+            .stat-card { width: 100%; }
+            .page-header { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <div class="menu-container">
+                <button id="menuToggle" class="menu-toggle" type="button" aria-label="Menu">☰</button>
+                <nav id="hamburgerMenu" class="hamburger-menu">
+                    <a href="/admin/dashboard" class="menu-item">📊 Dashboard</a>
+                    <a href="/admin/sessions" class="menu-item">📋 Gestione Sessioni</a>
+                    <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+                    <a href="/admin/rentman-planning" class="menu-item">📅 Pianificazioni Rentman</a>
+                    <a href="/admin/users" class="menu-item">👥 Gestione Utenti</a>
+                    <a href="/admin/operators" class="menu-item active">🧑‍🔧 Gestione Operatori</a>
+                    <div class="menu-divider"></div>
+                    <a href="/logout" class="menu-item">🚪 Logout</a>
+                </nav>
+            </div>
+            <span class="logo-title">🧑‍🔧 Gestione Operatori</span>
+        </div>
+        <div class="header-actions">
+            <button class="header-icon-btn" id="syncBtn" title="Sincronizza da Rentman">🔄</button>
+            <button class="header-icon-btn" id="refreshBtn" title="Aggiorna">↻</button>
+            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+        </div>
+    </header>
+
+    <main>
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Gestione Operatori</h1>
+                <p class="page-subtitle">Visualizza e configura gli ID esterni per gli operatori Rentman</p>
+            </div>
+        </div>
+
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value" id="statTotal">-</div>
+                <div class="stat-label">Totale Operatori</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statWithExternal">-</div>
+                <div class="stat-label">Con ID Esterno</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statActive">-</div>
+                <div class="stat-label">Attivi</div>
+            </div>
+        </div>
+
+        <div class="filter-bar">
+            <input type="search" class="search-input" id="searchInput" placeholder="Cerca per nome o ID..." />
+            <select class="filter-select" id="filterExternal">
+                <option value="all">Tutti</option>
+                <option value="with">Con ID Esterno</option>
+                <option value="without">Senza ID Esterno</option>
+            </select>
+            <select class="filter-select" id="filterStatus">
+                <option value="all">Tutti gli stati</option>
+                <option value="active">Solo Attivi</option>
+                <option value="inactive">Solo Inattivi</option>
+            </select>
+        </div>
+
+        <div class="operators-table-wrapper">
+            <table class="operators-table">
+                <thead>
+                    <tr>
+                        <th>Operatore</th>
+                        <th>ID Rentman</th>
+                        <th>ID Esterno</th>
+                        <th>Stato</th>
+                        <th style="width: 80px;">Azioni</th>
+                    </tr>
+                </thead>
+                <tbody id="operatorsTableBody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+            <div class="empty-state hidden" id="emptyState">
+                <div class="empty-state-icon">🧑‍🔧</div>
+                <div class="empty-state-text">Nessun operatore trovato</div>
+                <div class="empty-state-hint">Clicca "Sincronizza da Rentman" per importare gli operatori</div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Modifica Operatore -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">Modifica Operatore</h2>
+                <button class="modal-close" id="modalClose">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="editForm">
+                    <input type="hidden" id="formOperatorId" />
+                    
+                    <div class="form-group">
+                        <label class="form-label">Nome Operatore</label>
+                        <input type="text" class="form-input" id="formName" disabled />
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">ID Rentman</label>
+                        <input type="text" class="form-input" id="formRentmanId" disabled />
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="formExternalId">ID Esterno</label>
+                        <input type="text" class="form-input" id="formExternalId" placeholder="es. EMP001, ABC123..." />
+                        <p class="form-hint">Identificatore usato per sistemi esterni (es. software paghe, ERP)</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="formEmail">Email</label>
+                        <input type="email" class="form-input" id="formEmail" placeholder="operatore@azienda.it" />
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="formPhone">Telefono</label>
+                        <input type="tel" class="form-input" id="formPhone" placeholder="+39 123 456 7890" />
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-checkbox">
+                            <input type="checkbox" id="formIsActive" checked />
+                            <span>Operatore Attivo</span>
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn secondary" id="btnCancelModal">Annulla</button>
+                <button type="button" class="btn primary" id="btnSaveOperator">Salva</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+    (function() {
+        'use strict';
+
+        // State
+        let operators = [];
+        let pendingChanges = {}; // { id: { external_id: value } }
+
+        // DOM Elements
+        const menuToggle = document.getElementById('menuToggle');
+        const hamburgerMenu = document.getElementById('hamburgerMenu');
+        const themeToggle = document.getElementById('themeToggle');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const syncBtn = document.getElementById('syncBtn');
+        const searchInput = document.getElementById('searchInput');
+        const filterExternal = document.getElementById('filterExternal');
+        const filterStatus = document.getElementById('filterStatus');
+        const operatorsTableBody = document.getElementById('operatorsTableBody');
+        const emptyState = document.getElementById('emptyState');
+        
+        const statTotal = document.getElementById('statTotal');
+        const statWithExternal = document.getElementById('statWithExternal');
+        const statActive = document.getElementById('statActive');
+
+        // Modal elements
+        const editModal = document.getElementById('editModal');
+        const modalClose = document.getElementById('modalClose');
+        const btnCancelModal = document.getElementById('btnCancelModal');
+        const btnSaveOperator = document.getElementById('btnSaveOperator');
+        const formOperatorId = document.getElementById('formOperatorId');
+        const formName = document.getElementById('formName');
+        const formRentmanId = document.getElementById('formRentmanId');
+        const formExternalId = document.getElementById('formExternalId');
+        const formEmail = document.getElementById('formEmail');
+        const formPhone = document.getElementById('formPhone');
+        const formIsActive = document.getElementById('formIsActive');
+
+        const toast = document.getElementById('toast');
+
+        // ─── Utility Functions ───
+        function showToast(message, type = 'success') {
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => { toast.classList.remove('show'); }, 3000);
+        }
+
+        function computeInitials(name) {
+            if (!name) return '?';
+            const parts = name.replace(/-/g, ' ').split(' ').filter(Boolean);
+            if (parts.length === 0) return name.slice(0, 2).toUpperCase();
+            return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase();
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ─── API Functions ───
+        async function loadOperators() {
+            try {
+                const response = await fetch('/api/admin/operators');
+                if (!response.ok) throw new Error('Errore nel caricamento operatori');
+                const data = await response.json();
+                operators = data.operators || [];
+                pendingChanges = {};
+                updateStats();
+                renderOperators();
+            } catch (error) {
+                console.error('Errore:', error);
+                showToast('Errore nel caricamento operatori', 'error');
+            }
+        }
+
+        async function syncFromRentman() {
+            syncBtn.disabled = true;
+            syncBtn.innerHTML = '<span class="loading-spinner"></span>';
+            
+            try {
+                const response = await fetch('/api/admin/operators/sync', { method: 'POST' });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Errore nella sincronizzazione');
+                }
+
+                showToast(`Sincronizzati ${data.synced} operatori da Rentman`, 'success');
+                loadOperators();
+            } catch (error) {
+                console.error('Errore:', error);
+                showToast(error.message, 'error');
+            } finally {
+                syncBtn.disabled = false;
+                syncBtn.textContent = '🔄';
+            }
+        }
+
+        async function saveOperator() {
+            const operatorId = parseInt(formOperatorId.value);
+            if (!operatorId) return;
+
+            const payload = {
+                external_id: formExternalId.value.trim() || null,
+                email: formEmail.value.trim() || null,
+                phone: formPhone.value.trim() || null,
+                is_active: formIsActive.checked
+            };
+
+            try {
+                const response = await fetch(`/api/admin/operators/${operatorId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Errore nel salvataggio');
+                }
+
+                showToast('Operatore aggiornato con successo', 'success');
+                closeEditModal();
+                loadOperators();
+            } catch (error) {
+                console.error('Errore:', error);
+                showToast(error.message, 'error');
+            }
+        }
+
+        async function saveInlineExternalId(operatorId, newValue) {
+            try {
+                const response = await fetch(`/api/admin/operators/${operatorId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ external_id: newValue || null })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Errore nel salvataggio');
+                }
+
+                // Update local state
+                const op = operators.find(o => o.id === operatorId);
+                if (op) op.external_id = newValue || null;
+                
+                delete pendingChanges[operatorId];
+                updateStats();
+                
+                showToast('ID esterno salvato', 'success');
+                
+                // Re-render to update button visibility
+                renderOperators();
+            } catch (error) {
+                console.error('Errore:', error);
+                showToast(error.message, 'error');
+            }
+        }
+
+        // ─── Stats Functions ───
+        function updateStats() {
+            statTotal.textContent = operators.length;
+            statWithExternal.textContent = operators.filter(o => o.external_id).length;
+            statActive.textContent = operators.filter(o => o.is_active).length;
+        }
+
+        // ─── Render Functions ───
+        function renderOperators() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            const externalFilter = filterExternal.value;
+            const statusFilter = filterStatus.value;
+
+            const filtered = operators.filter(op => {
+                // Search filter
+                if (searchTerm) {
+                    const matchName = op.name.toLowerCase().includes(searchTerm);
+                    const matchRentman = String(op.rentman_id).includes(searchTerm);
+                    const matchExternal = (op.external_id || '').toLowerCase().includes(searchTerm);
+                    if (!matchName && !matchRentman && !matchExternal) return false;
+                }
+
+                // External ID filter
+                if (externalFilter === 'with' && !op.external_id) return false;
+                if (externalFilter === 'without' && op.external_id) return false;
+
+                // Status filter
+                if (statusFilter === 'active' && !op.is_active) return false;
+                if (statusFilter === 'inactive' && op.is_active) return false;
+
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                operatorsTableBody.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            operatorsTableBody.innerHTML = filtered.map(op => {
+                const currentValue = pendingChanges[op.id]?.external_id ?? op.external_id ?? '';
+                const hasChange = pendingChanges[op.id] !== undefined;
+                
+                return `
+                <tr data-id="${op.id}">
+                    <td>
+                        <div class="operator-info">
+                            <div class="operator-avatar">${computeInitials(op.name)}</div>
+                            <div class="operator-details">
+                                <span class="operator-name">${escapeHtml(op.name)}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td><span class="operator-id">#${op.rentman_id}</span></td>
+                    <td>
+                        <div class="external-id-cell">
+                            <input 
+                                type="text" 
+                                class="external-id-input ${hasChange ? 'modified' : ''}" 
+                                value="${escapeHtml(currentValue)}"
+                                data-id="${op.id}"
+                                data-original="${escapeHtml(op.external_id || '')}"
+                                placeholder="Non impostato"
+                            />
+                            <button 
+                                class="save-btn ${hasChange ? 'visible' : ''}" 
+                                data-id="${op.id}"
+                                title="Salva ID Esterno"
+                            >💾</button>
+                        </div>
+                    </td>
+                    <td><span class="status-badge ${op.is_active ? 'active' : 'inactive'}">${op.is_active ? 'Attivo' : 'Inattivo'}</span></td>
+                    <td>
+                        <button class="action-btn edit" title="Modifica dettagli" data-action="edit" data-id="${op.id}">✏️</button>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        // ─── Modal Functions ───
+        function openEditModal(operatorId) {
+            const op = operators.find(o => o.id === operatorId);
+            if (!op) return;
+
+            formOperatorId.value = op.id;
+            formName.value = op.name;
+            formRentmanId.value = op.rentman_id;
+            formExternalId.value = op.external_id || '';
+            formEmail.value = op.email || '';
+            formPhone.value = op.phone || '';
+            formIsActive.checked = op.is_active;
+
+            editModal.classList.add('open');
+        }
+
+        function closeEditModal() {
+            editModal.classList.remove('open');
+        }
+
+        // ─── Event Listeners ───
+        menuToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hamburgerMenu.classList.toggle('open');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!hamburgerMenu.contains(e.target) && e.target !== menuToggle) {
+                hamburgerMenu.classList.remove('open');
+            }
+        });
+
+        themeToggle.addEventListener('click', () => {
+            const html = document.documentElement;
+            const current = html.dataset.theme || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+        });
+
+        refreshBtn.addEventListener('click', loadOperators);
+        syncBtn.addEventListener('click', syncFromRentman);
+
+        searchInput.addEventListener('input', renderOperators);
+        filterExternal.addEventListener('change', renderOperators);
+        filterStatus.addEventListener('change', renderOperators);
+
+        // Inline external_id editing
+        operatorsTableBody.addEventListener('input', (e) => {
+            if (!e.target.classList.contains('external-id-input')) return;
+            
+            const input = e.target;
+            const id = parseInt(input.dataset.id);
+            const original = input.dataset.original;
+            const newValue = input.value.trim();
+            
+            if (newValue !== original) {
+                pendingChanges[id] = { external_id: newValue };
+                input.classList.add('modified');
+                input.parentElement.querySelector('.save-btn').classList.add('visible');
+            } else {
+                delete pendingChanges[id];
+                input.classList.remove('modified');
+                input.parentElement.querySelector('.save-btn').classList.remove('visible');
+            }
+        });
+
+        // Save inline external_id
+        operatorsTableBody.addEventListener('click', (e) => {
+            const saveBtn = e.target.closest('.save-btn');
+            if (saveBtn) {
+                const id = parseInt(saveBtn.dataset.id);
+                const input = operatorsTableBody.querySelector(`input[data-id="${id}"]`);
+                if (input && pendingChanges[id]) {
+                    saveInlineExternalId(id, pendingChanges[id].external_id);
+                }
+                return;
+            }
+
+            const actionBtn = e.target.closest('[data-action]');
+            if (actionBtn) {
+                const action = actionBtn.dataset.action;
+                const id = parseInt(actionBtn.dataset.id);
+                if (action === 'edit') {
+                    openEditModal(id);
+                }
+            }
+        });
+
+        // Enter key to save inline
+        operatorsTableBody.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.target.classList.contains('external-id-input')) {
+                e.preventDefault();
+                const id = parseInt(e.target.dataset.id);
+                if (pendingChanges[id]) {
+                    saveInlineExternalId(id, pendingChanges[id].external_id);
+                }
+            }
+        });
+
+        // Modal events
+        modalClose.addEventListener('click', closeEditModal);
+        btnCancelModal.addEventListener('click', closeEditModal);
+        btnSaveOperator.addEventListener('click', saveOperator);
+        editModal.addEventListener('click', (e) => {
+            if (e.target === editModal) closeEditModal();
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && editModal.classList.contains('open')) {
+                closeEditModal();
+            }
+        });
+
+        // ─── Init ───
+        loadOperators();
+
+    })();
+    </script>
+</body>
+</html>

@@ -453,11 +453,81 @@
                             flex-direction: column;
                         }
                     }
+
+                    /* ─── Hamburger Menu ─── */
+                    .menu-container {
+                        position: relative;
+                    }
+                    .menu-toggle {
+                        background: transparent;
+                        border: none;
+                        font-size: 24px;
+                        cursor: pointer;
+                        padding: 8px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    .hamburger-menu {
+                        position: absolute;
+                        top: 100%;
+                        left: 0;
+                        background: var(--bg-card);
+                        border: 1px solid var(--border);
+                        border-radius: 16px;
+                        box-shadow: var(--shadow);
+                        min-width: 220px;
+                        padding: 8px 0;
+                        z-index: 100;
+                        opacity: 0;
+                        visibility: hidden;
+                        transform: translateY(-10px);
+                        transition: all 0.2s ease;
+                    }
+                    .hamburger-menu.open {
+                        opacity: 1;
+                        visibility: visible;
+                        transform: translateY(0);
+                    }
+                    .menu-item {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        padding: 12px 16px;
+                        color: var(--text);
+                        text-decoration: none;
+                        font-weight: 500;
+                        transition: background 0.15s ease;
+                    }
+                    .menu-item:hover {
+                        background: var(--brand-soft);
+                    }
+                    .menu-item.active {
+                        background: var(--brand-soft);
+                        color: var(--brand);
+                    }
+                    .menu-divider {
+                        height: 1px;
+                        background: var(--border);
+                        margin: 8px 0;
+                    }
                 </style>
             </head>
             <body>
             <header class="toolbar">
-                <button id="backHome" class="btn" type="button">⬅ Dashboard</button>
+                <div class="menu-container">
+                    <button id="menuToggle" class="menu-toggle" type="button" aria-label="Menu">☰</button>
+                    <nav id="hamburgerMenu" class="hamburger-menu">
+                        <a href="/admin/dashboard" class="menu-item">📊 Dashboard</a>
+                        <a href="/admin/sessions" class="menu-item active">📋 Gestione Sessioni</a>
+                        <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+                        <a href="/admin/rentman-planning" class="menu-item">📅 Pianificazioni Rentman</a>
+                        <a href="/admin/users" class="menu-item">👥 Gestione Utenti</a>
+                        <a href="/admin/operators" class="menu-item">🧑‍🔧 Gestione Operatori</a>
+                        <div class="menu-divider"></div>
+                        <a href="/logout" class="menu-item">🚪 Logout</a>
+                    </nav>
+                </div>
                 <div class="toolbar-title">
                     <strong>Sessioni operatori</strong>
                     <small>Accesso Admin • Mobile</small>
@@ -610,6 +680,23 @@
                     deleteUrlTemplate: "{{ url_for('api_admin_sessions_delete', override_id=0) }}".replace(/0$/, ''),
                     homeUrl: "{{ url_for('home') }}"
                 };
+                
+                // Hamburger menu toggle
+                document.addEventListener('DOMContentLoaded', () => {
+                    const menuToggle = document.getElementById('menuToggle');
+                    const hamburgerMenu = document.getElementById('hamburgerMenu');
+                    
+                    menuToggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        hamburgerMenu.classList.toggle('open');
+                    });
+                    
+                    document.addEventListener('click', (e) => {
+                        if (!hamburgerMenu.contains(e.target) && e.target !== menuToggle) {
+                            hamburgerMenu.classList.remove('open');
+                        }
+                    });
+                });
             </script>
             <script type="module" src="{{ static_version('js/admin_sessions.js') }}"></script>
             </body>

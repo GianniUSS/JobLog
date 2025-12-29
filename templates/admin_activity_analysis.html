@@ -400,6 +400,69 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* ─── Hamburger Menu ─── */
+        .menu-container {
+            position: relative;
+        }
+        .menu-toggle {
+            background: rgba(255,255,255,0.12);
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            transition: background 0.2s ease;
+        }
+        .menu-toggle:hover { background: rgba(255,255,255,0.2); }
+        .hamburger-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            min-width: 220px;
+            padding: 8px 0;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+        }
+        .hamburger-menu.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 500;
+            transition: background 0.15s ease;
+        }
+        .menu-item:hover {
+            background: rgba(168, 85, 247, 0.15);
+        }
+        .menu-item.active {
+            background: rgba(168, 85, 247, 0.15);
+            color: var(--purple);
+        }
+        .menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 8px 0;
+        }
+
         /* Responsive */
         @media (max-width: 1200px) {
             .summary-row { grid-template-columns: repeat(2, 1fr); }
@@ -418,7 +481,19 @@
 
     <header>
         <div class="header-left">
-            <a href="{{ url_for('admin_dashboard_page') }}" class="header-icon-btn" title="Torna alla Dashboard">←</a>
+            <div class="menu-container">
+                <button id="menuToggle" class="menu-toggle" type="button" aria-label="Menu">☰</button>
+                <nav id="hamburgerMenu" class="hamburger-menu">
+                    <a href="/admin/dashboard" class="menu-item">📊 Dashboard</a>
+                    <a href="/admin/sessions" class="menu-item">📋 Gestione Sessioni</a>
+                    <a href="/admin/activity-analysis" class="menu-item active">📈 Analisi Attività</a>
+                    <a href="/admin/rentman-planning" class="menu-item">📅 Pianificazioni Rentman</a>
+                    <a href="/admin/users" class="menu-item">👥 Gestione Utenti</a>
+                    <a href="/admin/operators" class="menu-item">🧑‍🔧 Gestione Operatori</a>
+                    <div class="menu-divider"></div>
+                    <a href="/logout" class="menu-item">🚪 Logout</a>
+                </nav>
+            </div>
             <span class="logo-title">🔬 Analisi Attività</span>
         </div>
         <div class="header-actions">
@@ -552,6 +627,23 @@
             dashboardUrl: "{{ url_for('admin_dashboard_page') }}",
             exportUrl: "{{ url_for('api_admin_activity_analysis_export') }}"
         };
+        
+        // Hamburger menu toggle
+        document.addEventListener('DOMContentLoaded', () => {
+            const menuToggle = document.getElementById('menuToggle');
+            const hamburgerMenu = document.getElementById('hamburgerMenu');
+            
+            menuToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                hamburgerMenu.classList.toggle('open');
+            });
+            
+            document.addEventListener('click', (e) => {
+                if (!hamburgerMenu.contains(e.target) && e.target !== menuToggle) {
+                    hamburgerMenu.classList.remove('open');
+                }
+            });
+        });
     </script>
     <script src="{{ static_version('js/admin_activity_analysis.js') }}" defer></script>
 </body>
