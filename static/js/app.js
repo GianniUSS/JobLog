@@ -57,6 +57,95 @@ let pushNotificationsLoading = false;
 let pushNotificationsModalOpen = false;
 let lastKnownState = null;
 let teamCollapsed = true;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  PWA INSTALL PROMPT
+// ═══════════════════════════════════════════════════════════════════════════════
+let deferredInstallPrompt = null;
+let pwaInstallDismissed = false;
+
+// Cattura l'evento beforeinstallprompt per mostrare il banner personalizzato
+window.addEventListener('beforeinstallprompt', (e) => {
+    console.log('[PWA] beforeinstallprompt event fired');
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    
+    // Mostra il banner solo se non è stato già dismesso in questa sessione
+    if (!pwaInstallDismissed && !localStorage.getItem('pwa-install-dismissed')) {
+        showPwaInstallBanner();
+    }
+});
+
+// Rileva quando l'app viene installata
+window.addEventListener('appinstalled', () => {
+    console.log('[PWA] App installed successfully');
+    deferredInstallPrompt = null;
+    hidePwaInstallBanner();
+});
+
+function showPwaInstallBanner() {
+    // Rimuovi banner esistente se presente
+    hidePwaInstallBanner();
+    
+    const banner = document.createElement('div');
+    banner.id = 'pwa-install-banner';
+    banner.innerHTML = `
+        <div style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); 
+                    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); 
+                    color: white; padding: 16px 20px; border-radius: 12px; 
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000;
+                    display: flex; align-items: center; gap: 12px; max-width: 90vw;
+                    font-family: system-ui, -apple-system, sans-serif;">
+            <div style="font-size: 28px;">📱</div>
+            <div style="flex: 1;">
+                <div style="font-weight: 600; margin-bottom: 2px;">Installa JobLog</div>
+                <div style="font-size: 13px; opacity: 0.9;">Aggiungi alla schermata Home per un accesso rapido</div>
+            </div>
+            <button id="pwa-install-btn" style="background: white; color: #0284c7; border: none; 
+                    padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer;
+                    white-space: nowrap;">
+                Installa
+            </button>
+            <button id="pwa-dismiss-btn" style="background: transparent; border: none; 
+                    color: white; opacity: 0.7; cursor: pointer; padding: 4px; font-size: 18px;">
+                ✕
+            </button>
+        </div>
+    `;
+    document.body.appendChild(banner);
+    
+    document.getElementById('pwa-install-btn').addEventListener('click', installPwa);
+    document.getElementById('pwa-dismiss-btn').addEventListener('click', dismissPwaInstall);
+}
+
+function hidePwaInstallBanner() {
+    const banner = document.getElementById('pwa-install-banner');
+    if (banner) {
+        banner.remove();
+    }
+}
+
+async function installPwa() {
+    if (!deferredInstallPrompt) {
+        console.log('[PWA] No deferred prompt available');
+        return;
+    }
+    
+    hidePwaInstallBanner();
+    deferredInstallPrompt.prompt();
+    
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    console.log('[PWA] User choice:', outcome);
+    
+    deferredInstallPrompt = null;
+}
+
+function dismissPwaInstall() {
+    pwaInstallDismissed = true;
+    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+    hidePwaInstallBanner();
+}
+
 const initialAttachmentsPayload = (typeof window !== "undefined" && window.__INITIAL_ATTACHMENTS__) || {};
 const STORAGE_AVAILABLE = (() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
