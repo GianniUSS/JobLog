@@ -1927,22 +1927,143 @@ function hidePwaInstallBanner() {
     if (banner) banner.remove();
 }
 
+// Rileva iOS
+function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+// Rileva se è già installata come PWA
+function isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || 
+           window.navigator.standalone === true;
+}
+
+function showIOSInstallInstructions() {
+    const modal = document.createElement('div');
+    modal.id = 'ios-install-modal';
+    modal.innerHTML = `
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 10001; 
+                    display: flex; align-items: center; justify-content: center; padding: 20px;">
+            <div style="background: white; border-radius: 20px; max-width: 340px; width: 100%; 
+                        overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <!-- Header -->
+                <div style="background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%); 
+                            padding: 24px 20px; text-align: center; color: white;">
+                    <div style="font-size: 48px; margin-bottom: 12px;">📲</div>
+                    <div style="font-size: 20px; font-weight: 700;">Installa JobLog</div>
+                    <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">su iPhone/iPad</div>
+                </div>
+                
+                <!-- Steps -->
+                <div style="padding: 24px 20px;">
+                    <div style="display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px;">
+                        <div style="width: 32px; height: 32px; background: #007AFF; color: white; 
+                                    border-radius: 50%; display: flex; align-items: center; 
+                                    justify-content: center; font-weight: 700; flex-shrink: 0;">1</div>
+                        <div>
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
+                                Tocca il pulsante Condividi
+                            </div>
+                            <div style="font-size: 36px;">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#007AFF" stroke-width="2">
+                                    <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/>
+                                    <polyline points="16,6 12,2 8,6"/>
+                                    <line x1="12" y1="2" x2="12" y2="15"/>
+                                </svg>
+                            </div>
+                            <div style="font-size: 13px; color: #64748b;">
+                                In basso nella barra di Safari
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px;">
+                        <div style="width: 32px; height: 32px; background: #007AFF; color: white; 
+                                    border-radius: 50%; display: flex; align-items: center; 
+                                    justify-content: center; font-weight: 700; flex-shrink: 0;">2</div>
+                        <div>
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
+                                Scorri e tocca
+                            </div>
+                            <div style="display: inline-flex; align-items: center; gap: 8px; 
+                                        background: #f1f5f9; padding: 8px 14px; border-radius: 10px;
+                                        font-size: 15px; color: #1e293b;">
+                                <span style="font-size: 20px;">➕</span>
+                                <span style="font-weight: 600;">Aggiungi a Home</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: flex-start; gap: 16px;">
+                        <div style="width: 32px; height: 32px; background: #22c55e; color: white; 
+                                    border-radius: 50%; display: flex; align-items: center; 
+                                    justify-content: center; font-weight: 700; flex-shrink: 0;">✓</div>
+                        <div>
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
+                                Conferma con "Aggiungi"
+                            </div>
+                            <div style="font-size: 13px; color: #64748b;">
+                                L'icona apparirà nella Home
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div style="padding: 16px 20px; border-top: 1px solid #e2e8f0;">
+                    <button onclick="document.getElementById('ios-install-modal').remove()" 
+                            style="width: 100%; padding: 14px; background: #007AFF; color: white; 
+                                   border: none; border-radius: 12px; font-size: 16px; 
+                                   font-weight: 600; cursor: pointer;">
+                        Ho capito
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
 async function installPwa() {
-    if (!deferredInstallPrompt) {
-        alert('Per installare l\'app:\\n\\n📱 Android: Menu (⋮) → "Installa app"\\n🍎 iOS: Pulsante condividi → "Aggiungi a Home"');
+    // Se siamo già in standalone mode, l'app è già installata
+    if (isStandalone()) {
+        alert('✅ JobLog è già installata!');
         return;
     }
-    hidePwaInstallBanner();
-    deferredInstallPrompt.prompt();
-    const { outcome } = await deferredInstallPrompt.userChoice;
-    console.log('[PWA] User choice:', outcome);
-    deferredInstallPrompt = null;
+    
+    // Se abbiamo il prompt nativo (Android/Desktop Chrome)
+    if (deferredInstallPrompt) {
+        hidePwaInstallBanner();
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        console.log('[PWA] User choice:', outcome);
+        deferredInstallPrompt = null;
+        return;
+    }
+    
+    // Se siamo su iOS, mostra istruzioni specifiche
+    if (isIOS()) {
+        showIOSInstallInstructions();
+        return;
+    }
+    
+    // Fallback per altri browser
+    alert('Per installare l\'app:\n\n📱 Android: Menu (⋮) → "Installa app"\n💻 Desktop: Icona + nella barra indirizzi');
 }
 
 function dismissPwaInstall() {
     localStorage.setItem('pwa-install-dismissed', Date.now().toString());
     hidePwaInstallBanner();
 }
+
+// Mostra pulsante installazione per iOS (che non ha beforeinstallprompt)
+document.addEventListener('DOMContentLoaded', () => {
+    const menuBtn = document.getElementById('pwa-install-menu-item');
+    if (menuBtn && isIOS() && !isStandalone()) {
+        menuBtn.style.display = 'flex';
+    }
+});
 </script>
 </body>
 </html>
