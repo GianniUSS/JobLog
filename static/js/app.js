@@ -91,21 +91,34 @@ window.addEventListener('appinstalled', () => {
 function updatePwaInstallButton() {
     const menuItem = document.getElementById('pwa-install-menu-item');
     if (menuItem) {
-        // Mostra se c'è il prompt o se siamo su iOS (e non già installata)
-        const shouldShow = deferredInstallPrompt || (isIOS() && !isStandalone());
+        // Mostra se c'è il prompt, o su iOS, o su Android (e non già installata)
+        const shouldShow = deferredInstallPrompt || ((isIOS() || isAndroid()) && !isStandalone());
         menuItem.style.display = shouldShow ? 'block' : 'none';
     }
 }
 
-// Inizializza pulsante PWA per iOS al caricamento
+// Rileva Android
+function isAndroid() {
+    return /Android/i.test(navigator.userAgent);
+}
+
+// Inizializza pulsante PWA al caricamento
 document.addEventListener('DOMContentLoaded', () => {
-    if (isIOS() && !isStandalone()) {
+    // Se non è già installata come standalone
+    if (!isStandalone()) {
         updatePwaInstallButton();
         
-        // Mostra automaticamente la guida al primo accesso su iOS
+        // Se non ha già chiuso il prompt
         if (!localStorage.getItem('pwa-install-dismissed')) {
             setTimeout(() => {
-                showIOSInstallInstructions();
+                if (isIOS()) {
+                    // iOS: mostra guida visiva
+                    showIOSInstallInstructions();
+                } else if (isAndroid() && !deferredInstallPrompt) {
+                    // Android senza prompt nativo: mostra guida Android
+                    showAndroidInstallInstructions();
+                }
+                // Se c'è deferredInstallPrompt, il banner viene già mostrato dall'evento beforeinstallprompt
             }, 1500);
         }
     }
@@ -115,6 +128,92 @@ function dismissIOSInstallModal() {
     localStorage.setItem('pwa-install-dismissed', Date.now().toString());
     const modal = document.getElementById('ios-install-modal');
     if (modal) modal.remove();
+}
+
+function dismissAndroidInstallModal() {
+    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+    const modal = document.getElementById('android-install-modal');
+    if (modal) modal.remove();
+}
+
+function showAndroidInstallInstructions() {
+    const modal = document.createElement('div');
+    modal.id = 'android-install-modal';
+    modal.innerHTML = `
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 10001; 
+                    display: flex; align-items: center; justify-content: center; padding: 20px;">
+            <div style="background: white; border-radius: 20px; max-width: 340px; width: 100%; 
+                        overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <!-- Header -->
+                <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); 
+                            padding: 24px 20px; text-align: center; color: white;">
+                    <div style="font-size: 48px; margin-bottom: 12px;">📲</div>
+                    <div style="font-size: 20px; font-weight: 700;">Installa JobLog</div>
+                    <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">su Android</div>
+                </div>
+                
+                <!-- Steps -->
+                <div style="padding: 24px 20px;">
+                    <div style="display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px;">
+                        <div style="width: 32px; height: 32px; background: #22c55e; color: white; 
+                                    border-radius: 50%; display: flex; align-items: center; 
+                                    justify-content: center; font-weight: 700; flex-shrink: 0;">1</div>
+                        <div>
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
+                                Tocca il menu di Chrome
+                            </div>
+                            <div style="font-size: 36px; color: #333;">⋮</div>
+                            <div style="font-size: 13px; color: #64748b;">
+                                I tre puntini in alto a destra
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px;">
+                        <div style="width: 32px; height: 32px; background: #22c55e; color: white; 
+                                    border-radius: 50%; display: flex; align-items: center; 
+                                    justify-content: center; font-weight: 700; flex-shrink: 0;">2</div>
+                        <div>
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
+                                Tocca "Installa app" o
+                            </div>
+                            <div style="display: inline-flex; align-items: center; gap: 8px; 
+                                        background: #f1f5f9; padding: 8px 14px; border-radius: 10px;
+                                        font-size: 15px; color: #1e293b;">
+                                <span style="font-size: 20px;">📥</span>
+                                <span style="font-weight: 600;">Aggiungi a schermata Home</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: flex-start; gap: 16px;">
+                        <div style="width: 32px; height: 32px; background: #16a34a; color: white; 
+                                    border-radius: 50%; display: flex; align-items: center; 
+                                    justify-content: center; font-weight: 700; flex-shrink: 0;">✓</div>
+                        <div>
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
+                                Conferma l'installazione
+                            </div>
+                            <div style="font-size: 13px; color: #64748b;">
+                                L'icona apparirà nella Home
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div style="padding: 16px 20px; border-top: 1px solid #e2e8f0;">
+                    <button onclick="dismissAndroidInstallModal()" 
+                            style="width: 100%; padding: 14px; background: #22c55e; color: white; 
+                                   border: none; border-radius: 12px; font-size: 16px; 
+                                   font-weight: 600; cursor: pointer;">
+                        Ho capito
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
 }
 
 function showPwaInstallBanner() {
@@ -281,8 +380,14 @@ async function installPwa() {
         return;
     }
     
-    // Fallback per altri browser
-    alert('Per installare l\'app:\n\n📱 Android: Menu (⋮) → "Installa app"\n💻 Desktop: Icona + nella barra indirizzi');
+    // Se siamo su Android senza prompt nativo
+    if (isAndroid()) {
+        showAndroidInstallInstructions();
+        return;
+    }
+    
+    // Fallback per desktop
+    alert('Per installare l\'app:\n\n💻 Desktop Chrome: Icona + nella barra indirizzi');
 }
 
 function dismissPwaInstall() {
