@@ -70,6 +70,9 @@ window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
     
+    // Mostra il pulsante nel menu
+    updatePwaInstallButton();
+    
     // Mostra il banner solo se non è stato già dismesso in questa sessione
     if (!pwaInstallDismissed && !localStorage.getItem('pwa-install-dismissed')) {
         showPwaInstallBanner();
@@ -81,7 +84,16 @@ window.addEventListener('appinstalled', () => {
     console.log('[PWA] App installed successfully');
     deferredInstallPrompt = null;
     hidePwaInstallBanner();
+    updatePwaInstallButton();
 });
+
+// Aggiorna visibilità del pulsante installa nel menu
+function updatePwaInstallButton() {
+    const menuItem = document.getElementById('pwa-install-menu-item');
+    if (menuItem) {
+        menuItem.style.display = deferredInstallPrompt ? 'block' : 'none';
+    }
+}
 
 function showPwaInstallBanner() {
     // Rimuovi banner esistente se presente
@@ -128,6 +140,8 @@ function hidePwaInstallBanner() {
 async function installPwa() {
     if (!deferredInstallPrompt) {
         console.log('[PWA] No deferred prompt available');
+        // Mostra istruzioni manuali per Android/iOS
+        alert('Per installare l\'app:\n\n📱 Android: Menu (⋮) → "Installa app" o "Aggiungi a schermata Home"\n\n🍎 iOS: Pulsante condividi (↑) → "Aggiungi a Home"');
         return;
     }
     
@@ -138,6 +152,7 @@ async function installPwa() {
     console.log('[PWA] User choice:', outcome);
     
     deferredInstallPrompt = null;
+    updatePwaInstallButton();
 }
 
 function dismissPwaInstall() {
