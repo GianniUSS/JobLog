@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#f0f4f0" />
+<title>I Miei Turni - JOBLog</title>
+<style>
+:root {
+  --bg: #f0f4f0;
+  --bg-card: #ffffff;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --green: #22c55e;
+  --green-dark: #16a34a;
+  --blue: #3b82f6;
+  --blue-dark: #1d4ed8;
+  --red: #ef4444;
+  --orange: #f97316;
+  --border: #e2e8f0;
+  --shadow: rgba(0,0,0,0.1);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+[data-theme="dark"] {
+  --bg: #0f172a;
+  --bg-card: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --border: #334155;
+  --shadow: rgba(0,0,0,0.3);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Header */
+.header {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  padding: 16px 20px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.back-btn {
+  width: 40px;
+  height: 40px;
+  background: rgba(255,255,255,0.2);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.header-title {
+  flex: 1;
+  font-size: 18px;
+  font-weight: 700;
+}
+.header-icon {
+  font-size: 24px;
+}
+
+/* Container */
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 16px;
+  padding-bottom: calc(24px + var(--safe-bottom));
+}
+
+/* Filter Tabs */
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+.filter-tab {
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  color: var(--text-secondary);
+}
+.filter-tab:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.filter-tab.active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: white;
+}
+
+/* Turno Card */
+.turni-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.turno-card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px var(--shadow);
+}
+.turno-card.today {
+  border: 2px solid var(--green);
+}
+.turno-card.past {
+  opacity: 0.7;
+}
+.turno-date-header {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  padding: 12px 16px;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.turno-card.past .turno-date-header {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+}
+.turno-card.today .turno-date-header {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+}
+.turno-date {
+  font-size: 16px;
+  font-weight: 700;
+}
+.turno-day {
+  font-size: 13px;
+  opacity: 0.9;
+}
+.turno-badge {
+  background: rgba(255,255,255,0.2);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.turno-badge.leader {
+  background: #fbbf24;
+  color: #92400e;
+}
+.turno-content {
+  padding: 16px;
+}
+.turno-project {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.turno-project .code {
+  font-size: 12px;
+  background: var(--bg);
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.turno-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.turno-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.turno-detail .icon {
+  font-size: 16px;
+}
+.turno-detail .value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.turno-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-left: 3px solid var(--orange);
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-secondary);
+}
+.empty-state .icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+.empty-state .title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+.empty-state .message {
+  font-size: 14px;
+}
+
+/* Loading */
+.loading {
+  text-align: center;
+  padding: 48px;
+  color: var(--text-secondary);
+}
+.loading .spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Stats summary */
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stat-box {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--blue);
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+.stat-box.today .stat-value {
+  color: var(--green);
+}
+.stat-box.hours .stat-value {
+  color: var(--orange);
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  top: calc(20px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: var(--bg-card);
+  padding: 14px 24px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px var(--shadow);
+  font-weight: 600;
+  z-index: 1001;
+  transition: transform 0.3s ease;
+  max-width: calc(100vw - 40px);
+  text-align: center;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.success { border-left: 4px solid var(--green); }
+.toast.error { border-left: 4px solid var(--red); }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <a href="{{ url_for('home') }}" class="back-btn">←</a>
+  <h1 class="header-title">I Miei Turni</h1>
+  <span class="header-icon">📅</span>
+</header>
+
+<div class="container">
+  <!-- Stats Summary -->
+  <div class="stats-summary">
+    <div class="stat-box today">
+      <div class="stat-value" id="statToday">-</div>
+      <div class="stat-label">Oggi</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value" id="statUpcoming">-</div>
+      <div class="stat-label">Prossimi</div>
+    </div>
+    <div class="stat-box hours">
+      <div class="stat-value" id="statHours">-</div>
+      <div class="stat-label">Ore Tot.</div>
+    </div>
+  </div>
+
+  <!-- Filter Tabs -->
+  <div class="filter-tabs">
+    <button class="filter-tab active" data-filter="all">Tutti</button>
+    <button class="filter-tab" data-filter="upcoming">Prossimi</button>
+    <button class="filter-tab" data-filter="past">Passati</button>
+    <button class="filter-tab" data-filter="today">Oggi</button>
+  </div>
+
+  <!-- Turni List -->
+  <div id="turniContainer">
+    <div class="loading">
+      <div class="spinner"></div>
+      <div>Caricamento turni...</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function() {
+  'use strict';
+  
+  // Applica tema salvato
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+  
+  let allTurni = [];
+  let currentFilter = 'all';
+  
+  const container = document.getElementById('turniContainer');
+  const filterTabs = document.querySelectorAll('.filter-tab');
+  const statToday = document.getElementById('statToday');
+  const statUpcoming = document.getElementById('statUpcoming');
+  const statHours = document.getElementById('statHours');
+  
+  // Giorni della settimana
+  const GIORNI = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+  const MESI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 
+                'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+  
+  function formatDate(dateStr) {
+    const d = new Date(dateStr);
+    const day = GIORNI[d.getDay()];
+    return `${day} ${d.getDate()} ${MESI[d.getMonth()]}`;
+  }
+  
+  function formatDateShort(dateStr) {
+    const d = new Date(dateStr);
+    return `${d.getDate()}/${d.getMonth() + 1}`;
+  }
+  
+  function isToday(dateStr) {
+    const today = new Date().toISOString().split('T')[0];
+    return dateStr === today;
+  }
+  
+  function isPast(dateStr) {
+    const today = new Date().toISOString().split('T')[0];
+    return dateStr < today;
+  }
+  
+  function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast ${type} show`;
+    setTimeout(() => toast.classList.remove('show'), 3000);
+  }
+  
+  async function loadTurni() {
+    try {
+      const response = await fetch('/api/user/turni');
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Errore nel caricamento');
+      }
+      
+      allTurni = data.turni || [];
+      updateStats();
+      renderTurni();
+      
+    } catch (error) {
+      console.error('Errore:', error);
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">⚠️</div>
+          <div class="title">Errore</div>
+          <div class="message">${error.message}</div>
+        </div>
+      `;
+    }
+  }
+  
+  function updateStats() {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const turniOggi = allTurni.filter(t => t.date === today).length;
+    const turniProssimi = allTurni.filter(t => t.date > today).length;
+    const oreTotali = allTurni.reduce((sum, t) => sum + (t.hours || 0), 0);
+    
+    statToday.textContent = turniOggi;
+    statUpcoming.textContent = turniProssimi;
+    statHours.textContent = oreTotali.toFixed(1) + 'h';
+  }
+  
+  function filterTurni() {
+    const today = new Date().toISOString().split('T')[0];
+    
+    switch (currentFilter) {
+      case 'upcoming':
+        return allTurni.filter(t => t.date >= today);
+      case 'past':
+        return allTurni.filter(t => t.date < today);
+      case 'today':
+        return allTurni.filter(t => t.date === today);
+      default:
+        return allTurni;
+    }
+  }
+  
+  function renderTurni() {
+    const filtered = filterTurni();
+    
+    if (filtered.length === 0) {
+      let message = 'Nessun turno disponibile';
+      if (currentFilter === 'upcoming') message = 'Nessun turno previsto';
+      else if (currentFilter === 'past') message = 'Nessun turno passato';
+      else if (currentFilter === 'today') message = 'Nessun turno per oggi';
+      
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">📅</div>
+          <div class="title">${message}</div>
+          <div class="message">I turni pubblicati appariranno qui</div>
+        </div>
+      `;
+      return;
+    }
+    
+    const html = filtered.map(turno => {
+      const todayClass = isToday(turno.date) ? 'today' : (isPast(turno.date) ? 'past' : '');
+      const dateLabel = isToday(turno.date) ? 'OGGI' : formatDate(turno.date);
+      
+      return `
+        <div class="turno-card ${todayClass}">
+          <div class="turno-date-header">
+            <div>
+              <div class="turno-date">${dateLabel}</div>
+              ${!isToday(turno.date) ? `<div class="turno-day">${formatDateShort(turno.date)}</div>` : ''}
+            </div>
+            ${turno.is_leader ? '<span class="turno-badge leader">👑 Leader</span>' : ''}
+          </div>
+          <div class="turno-content">
+            <div class="turno-project">
+              <span>${turno.project_name || 'Progetto'}</span>
+              ${turno.project_code ? `<span class="code">#${turno.project_code}</span>` : ''}
+            </div>
+            <div class="turno-details">
+              ${turno.start || turno.end ? `
+                <div class="turno-detail">
+                  <span class="icon">🕐</span>
+                  <span class="value">${turno.start || '?'} - ${turno.end || '?'}</span>
+                </div>
+              ` : ''}
+              ${turno.hours ? `
+                <div class="turno-detail">
+                  <span class="icon">⏱️</span>
+                  <span class="value">${turno.hours.toFixed(1)}h</span>
+                </div>
+              ` : ''}
+              ${turno.function ? `
+                <div class="turno-detail">
+                  <span class="icon">👷</span>
+                  <span class="value">${turno.function}</span>
+                </div>
+              ` : ''}
+              ${turno.transport ? `
+                <div class="turno-detail">
+                  <span class="icon">🚗</span>
+                  <span class="value">${turno.transport}</span>
+                </div>
+              ` : ''}
+            </div>
+            ${turno.note ? `<div class="turno-note">📝 ${turno.note}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    container.innerHTML = `<div class="turni-list">${html}</div>`;
+  }
+  
+  // Event listeners
+  filterTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      filterTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentFilter = tab.dataset.filter;
+      renderTurni();
+    });
+  });
+  
+  // Init
+  loadTurni();
+  
+  // Registra service worker per ricevere notifiche
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('Service Worker registrato'))
+      .catch(err => console.warn('Service Worker fallito:', err));
+  }
+})();
+</script>
+</body>
+</html>

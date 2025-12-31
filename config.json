@@ -6,11 +6,17 @@
     "port": 3306,
     "user": "tim_root",
     "password": "gianni225524",
-    "name": "2025-"
+    "name": "joblog"
   },
   "webpush": {
     "vapid_public": "BIrn69C16abPXMHCQ0sCjGWnl_uwBBLNOfcgTD_SJR7JrdvbeL-ZmYL3SgSk6IHTka-Xs7ug6fiVKmxEhrmzz5A",
     "vapid_private": "BN5FlLBPKYigl6RXwMuVOVSPqe7vAFy8NLEVnpa6y9Y",
     "subject": "mailto:ops@example.com"
+  },
+  "cedolino_web": {
+    "enabled": true,
+    "endpoint": "http://www.cedolinoweb.net/WebServices/crea_timbrata_elaborata",
+    "retry_interval_minutes": 5,
+    "max_retry_attempts": 10
   }
 }

@@ -476,6 +476,7 @@
                     <a href="/admin/rentman-planning" class="menu-item">📅 Pianificazioni Rentman</a>
                     <a href="/admin/users" class="menu-item active">👥 Gestione Utenti</a>
                     <a href="/admin/operators" class="menu-item">🧑‍🔧 Gestione Operatori</a>
+                    <a href="/admin/timbratura-rules" class="menu-item">⚙️ Regole Timbrature</a>
                     <div class="menu-divider"></div>
                     <a href="/logout" class="menu-item">🚪 Logout</a>
                 </nav>
@@ -511,6 +512,7 @@
                         <th>Utente</th>
                         <th>Ruolo</th>
                         <th>Nome Completo</th>
+                        <th>Operatore Rentman</th>
                         <th>Stato</th>
                         <th>Azioni</th>
                     </tr>
@@ -578,6 +580,14 @@
                             <span>Account Attivo</span>
                         </label>
                     </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="formCrewId">Operatore Rentman (per turni)</label>
+                        <select class="form-select" id="formCrewId">
+                            <option value="">-- Nessun operatore associato --</option>
+                        </select>
+                        <p class="form-hint">Collega l'utente a un operatore per mostrare il turno nella pagina timbratura</p>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -641,6 +651,7 @@
         const formRole = document.getElementById('formRole');
         const formPassword = document.getElementById('formPassword');
         const formIsActive = document.getElementById('formIsActive');
+        const formCrewId = document.getElementById('formCrewId');
         const passwordHint = document.getElementById('passwordHint');
 
         // Delete Modal elements
@@ -671,6 +682,32 @@
         }
 
         // ─── API Functions ───
+        let operators = [];
+        let operatorsLoaded = false;
+
+        async function loadOperators() {
+            try {
+                const response = await fetch('/api/admin/operators');
+                if (!response.ok) return;
+                const data = await response.json();
+                operators = data.operators || [];
+                
+                // Popola la select
+                formCrewId.innerHTML = '<option value="">-- Nessun operatore associato --</option>' +
+                    operators.map(op => `<option value="${op.rentman_id}">${escapeHtml(op.name)}</option>`).join('');
+                operatorsLoaded = true;
+                console.log('Operatori caricati:', operators.length);
+            } catch (error) {
+                console.error('Errore caricamento operatori:', error);
+            }
+        }
+        
+        async function ensureOperatorsLoaded() {
+            if (!operatorsLoaded) {
+                await loadOperators();
+            }
+        }
+        
         async function loadUsers() {
             try {
                 const response = await fetch('/api/admin/users');
@@ -704,8 +741,11 @@
                 display_name: formDisplayName.value.trim() || username,
                 full_name: formFullName.value.trim() || null,
                 role: formRole.value,
-                is_active: formIsActive.checked
+                is_active: formIsActive.checked,
+                rentman_crew_id: formCrewId.value ? parseInt(formCrewId.value) : null
             };
+
+            console.log('Saving user payload:', payload);
 
             if (password) {
                 payload.password = password;
@@ -714,6 +754,7 @@
             try {
                 const url = isCreate ? '/api/admin/users' : `/api/admin/users/${formOriginalUsername.value}`;
                 const method = isCreate ? 'POST' : 'PUT';
+                console.log('Fetch URL:', url, 'Method:', method);
 
                 const response = await fetch(url, {
                     method: method,
@@ -721,7 +762,9 @@
                     body: JSON.stringify(payload)
                 });
 
+                console.log('Response status:', response.status);
                 const data = await response.json();
+                console.log('Response data:', data);
 
                 if (!response.ok) {
                     throw new Error(data.error || 'Errore nel salvataggio');
@@ -789,6 +832,7 @@
                     </td>
                     <td><span class="${getRoleBadgeClass(user.role)}">${user.role}</span></td>
                     <td>${escapeHtml(user.full_name || '-')}</td>
+                    <td>${user.crew_name ? `<span style="color: var(--brand);">👤 ${escapeHtml(user.crew_name)}</span>` : '<span style="color: var(--muted);">-</span>'}</td>
                     <td><span class="status-badge ${user.is_active ? 'active' : 'inactive'}">${user.is_active ? 'Attivo' : 'Inattivo'}</span></td>
                     <td>
                         <div class="actions-cell">
@@ -808,7 +852,9 @@
         }
 
         // ─── Modal Functions ───
-        function openCreateModal() {
+        async function openCreateModal() {
+            await ensureOperatorsLoaded();
+            
             formEditMode.value = 'create';
             formOriginalUsername.value = '';
             formUsername.value = '';
@@ -819,12 +865,15 @@
             formPassword.value = '';
             formPassword.required = true;
             formIsActive.checked = true;
+            formCrewId.value = '';
             passwordHint.textContent = 'Richiesta per nuovi utenti';
             modalTitle.textContent = 'Nuovo Utente';
             userModal.classList.add('open');
         }
 
-        function openEditModal(username) {
+        async function openEditModal(username) {
+            await ensureOperatorsLoaded();
+            
             const user = users.find(u => u.username === username);
             if (!user) return;
 
@@ -838,6 +887,8 @@
             formPassword.value = '';
             formPassword.required = false;
             formIsActive.checked = user.is_active;
+            formCrewId.value = user.rentman_crew_id || '';
+            console.log('Setting rentman_crew_id to:', user.rentman_crew_id, '- formCrewId.value:', formCrewId.value);
             passwordHint.textContent = 'Lascia vuoto per mantenere la password attuale';
             modalTitle.textContent = 'Modifica Utente';
             userModal.classList.add('open');
@@ -926,6 +977,7 @@
         });
 
         // ─── Init ───
+        loadOperators();
         loadUsers();
 
     })();

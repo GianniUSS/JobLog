@@ -549,6 +549,7 @@
                     <a href="/admin/rentman-planning" class="menu-item">📅 Pianificazioni Rentman</a>
                     <a href="/admin/users" class="menu-item">👥 Gestione Utenti</a>
                     <a href="/admin/operators" class="menu-item active">🧑‍🔧 Gestione Operatori</a>
+                    <a href="/admin/timbratura-rules" class="menu-item">⚙️ Regole Timbrature</a>
                     <div class="menu-divider"></div>
                     <a href="/logout" class="menu-item">🚪 Logout</a>
                 </nav>
@@ -606,6 +607,7 @@
                         <th>Operatore</th>
                         <th>ID Rentman</th>
                         <th>ID Esterno</th>
+                        <th>Gruppo ID</th>
                         <th>Stato</th>
                         <th style="width: 80px;">Azioni</th>
                     </tr>
@@ -647,6 +649,12 @@
                         <label class="form-label" for="formExternalId">ID Esterno</label>
                         <input type="text" class="form-input" id="formExternalId" placeholder="es. EMP001, ABC123..." />
                         <p class="form-hint">Identificatore usato per sistemi esterni (es. software paghe, ERP)</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="formExternalGroupId">Gruppo ID Esterno</label>
+                        <input type="text" class="form-input" id="formExternalGroupId" placeholder="es. GRP001, DIPA..." />
+                        <p class="form-hint">Identificatore del gruppo per CedolinoWeb</p>
                     </div>
 
                     <div class="form-group">
@@ -710,6 +718,7 @@
         const formName = document.getElementById('formName');
         const formRentmanId = document.getElementById('formRentmanId');
         const formExternalId = document.getElementById('formExternalId');
+        const formExternalGroupId = document.getElementById('formExternalGroupId');
         const formEmail = document.getElementById('formEmail');
         const formPhone = document.getElementById('formPhone');
         const formIsActive = document.getElementById('formIsActive');
@@ -782,6 +791,7 @@
 
             const payload = {
                 external_id: formExternalId.value.trim() || null,
+                external_group_id: formExternalGroupId.value.trim() || null,
                 email: formEmail.value.trim() || null,
                 phone: formPhone.value.trim() || null,
                 is_active: formIsActive.checked
@@ -912,6 +922,7 @@
                             >💾</button>
                         </div>
                     </td>
+                    <td><span class="group-id-badge">${escapeHtml(op.external_group_id || '-')}</span></td>
                     <td><span class="status-badge ${op.is_active ? 'active' : 'inactive'}">${op.is_active ? 'Attivo' : 'Inattivo'}</span></td>
                     <td>
                         <button class="action-btn edit" title="Modifica dettagli" data-action="edit" data-id="${op.id}">✏️</button>
@@ -929,6 +940,7 @@
             formName.value = op.name;
             formRentmanId.value = op.rentman_id;
             formExternalId.value = op.external_id || '';
+            formExternalGroupId.value = op.external_group_id || '';
             formEmail.value = op.email || '';
             formPhone.value = op.phone || '';
             formIsActive.checked = op.is_active;

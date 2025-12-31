@@ -1,4 +1,4 @@
-const CACHE_NAME = 'joblog-v2025.12.01t';
+const CACHE_NAME = 'joblog-v2025.12.01u';
 const STATIC_CACHE = 'joblog-static-v24';
 const DYNAMIC_CACHE = 'joblog-dynamic-v24';
 const API_CACHE = 'joblog-api-v22';
@@ -431,15 +431,37 @@ async function broadcastPushToClients(payload, meta) {
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    const targetUrl = '/';
+    
+    // Determina l'URL di destinazione in base ai dati della notifica
+    let targetUrl = '/';
+    const notificationData = event.notification.data || {};
+    
+    if (notificationData.url) {
+        targetUrl = notificationData.url;
+    } else if (notificationData.type === 'turni_published') {
+        targetUrl = '/turni';
+    }
+    
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            // Cerca una finestra esistente con lo stesso URL
             for (const client of windowClients) {
-                if ('focus' in client) {
-                    client.postMessage({ type: 'push-notification-click', data: event.notification.data });
+                const clientUrl = new URL(client.url);
+                if (clientUrl.pathname === targetUrl && 'focus' in client) {
+                    client.postMessage({ type: 'push-notification-click', data: notificationData });
                     return client.focus();
                 }
             }
+            // Se non trovata, cerca qualsiasi finestra aperta
+            for (const client of windowClients) {
+                if ('focus' in client) {
+                    client.postMessage({ type: 'push-notification-click', data: notificationData });
+                    // Naviga alla URL corretta
+                    client.navigate(targetUrl);
+                    return client.focus();
+                }
+            }
+            // Se nessuna finestra aperta, aprine una nuova
             if (clients.openWindow) {
                 return clients.openWindow(targetUrl);
             }

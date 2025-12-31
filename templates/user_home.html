@@ -1,0 +1,1866 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#f0f4f0" />
+<title>Timbratura - JOBLog</title>
+<style>
+:root {
+  --bg: #f0f4f0;
+  --bg-card: #ffffff;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --green: #22c55e;
+  --green-dark: #16a34a;
+  --red: #ef4444;
+  --red-dark: #dc2626;
+  --orange: #f97316;
+  --orange-light: #fed7aa;
+  --border: #e2e8f0;
+  --shadow: rgba(0,0,0,0.1);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+[data-theme="dark"] {
+  --bg: #0f172a;
+  --bg-card: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --border: #334155;
+  --shadow: rgba(0,0,0,0.3);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  min-height: 100vh;
+  min-height: 100dvh;
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: touch;
+}
+.container {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 16px;
+  padding-bottom: calc(80px + var(--safe-bottom));
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 16px;
+}
+.header-info {
+  flex: 1;
+  text-align: center;
+}
+.header-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+.header-date {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.clock-section {
+  text-align: center;
+  padding: 24px 0 32px;
+}
+.clock {
+  font-size: 64px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -2px;
+}
+
+/* Scanner Modal */
+.scanner-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.95);
+  z-index: 1000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  padding-top: env(safe-area-inset-top, 20px);
+  padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+.scanner-modal.active {
+  display: flex;
+}
+.scanner-container {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 350px;
+  width: 100%;
+  text-align: center;
+}
+.scanner-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.scanner-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+#qr-reader {
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  min-height: 280px;
+}
+#qr-reader video {
+  border-radius: 12px;
+  width: 100% !important;
+  height: auto !important;
+}
+#qr-reader__scan_region {
+  min-height: 250px;
+}
+.scanner-close {
+  padding: 14px 32px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 48px;
+  touch-action: manipulation;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 24px;
+  border: none;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: white;
+  min-height: 60px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.action-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.action-btn.start {
+  background: var(--green);
+}
+.action-btn.start:hover:not(:disabled),
+.action-btn.start:active:not(:disabled) {
+  background: var(--green-dark);
+}
+.action-btn.end {
+  background: var(--red);
+}
+.action-btn.end:hover:not(:disabled),
+.action-btn.end:active:not(:disabled) {
+  background: var(--red-dark);
+}
+.action-btn .icon {
+  font-size: 20px;
+}
+.action-btn .check {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(255,255,255,0.5);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.action-btn .check.done {
+  background: white;
+  border-color: white;
+  color: var(--green);
+}
+.pause-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.pause-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 2px solid var(--orange);
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 52px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.2s ease;
+  background: var(--orange-light);
+  color: #9a3412;
+}
+.pause-btn:hover:not(:disabled) {
+  background: var(--orange);
+  color: white;
+}
+.pause-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pause-btn .icon {
+  font-size: 18px;
+}
+.history-section {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 16px var(--shadow);
+}
+.history-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.history-list {
+  list-style: none;
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.history-item:last-child {
+  border-bottom: none;
+}
+.history-item .time {
+  font-weight: 600;
+  min-width: 50px;
+}
+.history-item .time .ora-originale {
+  opacity: 0.6;
+  font-weight: 400;
+}
+.history-item .time .ora-mod {
+  color: var(--green);
+  font-weight: 700;
+}
+.history-item .pausa-durata {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+.history-item .pausa-durata .ora-mod {
+  color: var(--green);
+  font-weight: 600;
+}
+.history-item .type {
+  color: var(--text-secondary);
+}
+.history-item .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.history-item .dot.start { background: var(--green); }
+.history-item .dot.end { background: var(--red); }
+.history-item .dot.pause { background: var(--orange); }
+.empty-history {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 20px;
+  font-size: 14px;
+}
+.user-badge {
+  position: fixed;
+  bottom: calc(16px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  padding: 10px 20px;
+  border-radius: 24px;
+  box-shadow: 0 4px 20px var(--shadow);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 100;
+}
+.user-badge .avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--green);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.logout-link {
+  color: var(--red);
+  text-decoration: none;
+  margin-left: 4px;
+  font-size: 18px;
+  padding: 4px;
+  touch-action: manipulation;
+}
+.toast {
+  position: fixed;
+  top: calc(20px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: var(--bg-card);
+  padding: 14px 24px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px var(--shadow);
+  font-weight: 600;
+  z-index: 1001;
+  transition: transform 0.3s ease;
+  max-width: calc(100vw - 40px);
+  text-align: center;
+}
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+}
+.toast.success { border-left: 4px solid var(--green); }
+.toast.error { border-left: 4px solid var(--red); }
+
+/* Box Turno */
+.turno-box {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  color: white;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+}
+.turno-box.no-turno {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  box-shadow: 0 4px 16px rgba(100, 116, 139, 0.3);
+}
+.turno-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.9;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.turno-project {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+.turno-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 14px;
+  opacity: 0.95;
+}
+.turno-detail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.turno-detail .icon {
+  font-size: 14px;
+}
+.turno-badge {
+  display: inline-block;
+  background: rgba(255,255,255,0.2);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+.turno-badge.leader {
+  background: #fbbf24;
+  color: #92400e;
+}
+.turno-loading {
+  text-align: center;
+  padding: 12px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* Dev Mode Toggle */
+.dev-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fef3c7;
+  border: 2px dashed #f59e0b;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: #92400e;
+}
+.dev-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.dev-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #f59e0b;
+}
+.dev-badge {
+  background: #f59e0b;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Menu Hamburger */
+.hamburger-btn {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: 44px;
+  height: 44px;
+  background: var(--bg-card);
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px var(--shadow);
+  cursor: pointer;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  touch-action: manipulation;
+}
+.hamburger-btn span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--text-primary);
+  border-radius: 1px;
+  transition: all 0.3s ease;
+}
+.hamburger-btn.active span:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 5px);
+}
+.hamburger-btn.active span:nth-child(2) {
+  opacity: 0;
+}
+.hamburger-btn.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(5px, -5px);
+}
+
+/* Side Menu */
+.side-menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 600;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+}
+.side-menu-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+.side-menu {
+  position: fixed;
+  top: 0;
+  left: -320px;
+  width: 300px;
+  max-width: 85vw;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg-card);
+  z-index: 700;
+  transition: left 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 4px 0 20px var(--shadow);
+}
+.side-menu.active {
+  left: 0;
+}
+.side-menu-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.side-menu-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--green);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+.side-menu-user-info {
+  flex: 1;
+}
+.side-menu-user-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+.side-menu-user-role {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.side-menu-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.menu-section {
+  margin-bottom: 24px;
+}
+.menu-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  padding: 0 8px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 14px;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.menu-item:hover {
+  background: var(--bg);
+}
+.menu-item .icon {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+}
+.menu-item.danger {
+  color: var(--red);
+}
+.notification-toggle {
+  display: flex;
+  align-items: center;
+}
+.notification-toggle .toggle-switch {
+  margin-left: auto;
+}
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 28px;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #ccc;
+  transition: 0.3s;
+  border-radius: 28px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background-color: var(--green);
+}
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(22px);
+}
+.toggle-switch input:disabled + .toggle-slider {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.user-info-grid {
+  display: grid;
+  gap: 8px;
+}
+.user-info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.user-info-row .label {
+  color: var(--text-secondary);
+}
+.user-info-row .value {
+  font-weight: 600;
+}
+
+/* Profilo Utente Page */
+.profile-page {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 800;
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.profile-page.active {
+  display: flex;
+}
+.profile-header {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  padding: 24px 20px;
+  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.profile-back {
+  width: 40px;
+  height: 40px;
+  background: rgba(255,255,255,0.2);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.profile-header-info {
+  flex: 1;
+}
+.profile-header-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+.profile-header-subtitle {
+  font-size: 13px;
+  opacity: 0.9;
+}
+.profile-avatar-large {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+}
+.profile-content {
+  flex: 1;
+  padding: 20px;
+  max-width: 500px;
+  margin: 0 auto;
+  width: 100%;
+}
+.profile-section {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.profile-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.profile-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.profile-field:last-child {
+  border-bottom: none;
+}
+.profile-field-label {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.profile-field-value {
+  font-size: 14px;
+  font-weight: 600;
+}
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.profile-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.profile-input-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.profile-input-group input {
+  padding: 14px 16px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  font-size: 15px;
+  background: var(--bg);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+.profile-input-group input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+.profile-btn {
+  padding: 14px 24px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.profile-btn.primary {
+  background: var(--green);
+  color: white;
+}
+.profile-btn.primary:hover {
+  background: var(--green-dark);
+}
+.profile-btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.profile-message {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  display: none;
+}
+.profile-message.success {
+  background: #dcfce7;
+  color: #166534;
+  display: block;
+}
+.profile-message.error {
+  background: #fee2e2;
+  color: #991b1b;
+  display: block;
+}
+
+/* Reset Password Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 800;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-overlay.active {
+  display: flex;
+}
+.modal-content {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 8px 32px var(--shadow);
+}
+.modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.form-group input {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text-primary);
+}
+.form-group input:focus {
+  outline: none;
+  border-color: var(--green);
+}
+.modal-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.modal-btn {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.modal-btn.cancel {
+  background: var(--bg);
+  color: var(--text-primary);
+}
+.modal-btn.confirm {
+  background: var(--green);
+  color: white;
+}
+.modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style>
+</head>
+<body>
+
+<!-- Hamburger Button -->
+<button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMenu()">
+  <span></span>
+  <span></span>
+  <span></span>
+</button>
+
+<!-- Side Menu Overlay -->
+<div class="side-menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+<!-- Side Menu -->
+<div class="side-menu" id="sideMenu">
+  <div class="side-menu-header">
+    <div class="side-menu-avatar">{{ user_initials }}</div>
+    <div class="side-menu-user-info">
+      <div class="side-menu-user-name">{{ user_display }}</div>
+      <div class="side-menu-user-role">{{ user_role|default('Utente', true) }}</div>
+    </div>
+  </div>
+  
+  <div class="side-menu-content">
+    <div class="menu-section">
+      <div class="menu-section-title">📋 Menu</div>
+      <a href="{{ url_for('user_turni_page') }}" class="menu-item">
+        <span class="icon">📅</span>
+        <span>I Miei Turni</span>
+      </a>
+      <div class="menu-item" onclick="openProfilePage()">
+        <span class="icon">👤</span>
+        <span>Profilo Utente</span>
+      </div>
+      <div class="menu-item" onclick="toggleTheme()">
+        <span class="icon">🌙</span>
+        <span>Tema Scuro</span>
+      </div>
+      <div class="menu-item notification-toggle" id="notificationMenuItem">
+        <span class="icon" id="notificationIcon">🔕</span>
+        <span id="notificationLabel">Attiva Notifiche</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="pushToggle" onchange="togglePushNotifications()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    
+    <div class="menu-section">
+      <a href="{{ url_for('logout') }}" class="menu-item danger">
+        <span class="icon">🚪</span>
+        <span>Logout</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Profilo Utente Page -->
+<div class="profile-page" id="profilePage">
+  <div class="profile-header">
+    <button class="profile-back" onclick="closeProfilePage()">←</button>
+    <div class="profile-header-info">
+      <div class="profile-header-title">Profilo Utente</div>
+      <div class="profile-header-subtitle">Gestisci le tue informazioni</div>
+    </div>
+    <div class="profile-avatar-large">{{ user_initials }}</div>
+  </div>
+  
+  <div class="profile-content">
+    <!-- Info Utente -->
+    <div class="profile-section">
+      <div class="profile-section-title">👤 Informazioni Account</div>
+      <div class="profile-field">
+        <span class="profile-field-label">Username</span>
+        <span class="profile-field-value">{{ username }}</span>
+      </div>
+      <div class="profile-field">
+        <span class="profile-field-label">Nome Visualizzato</span>
+        <span class="profile-field-value">{{ user_display }}</span>
+      </div>
+      <div class="profile-field">
+        <span class="profile-field-label">Ruolo</span>
+        <span class="profile-field-value">{{ user_role|default('Utente', true) }}</span>
+      </div>
+    </div>
+    
+    <!-- Cambio Password -->
+    <div class="profile-section">
+      <div class="profile-section-title">🔑 Cambia Password</div>
+      <div id="passwordMessage" class="profile-message"></div>
+      <form class="profile-form" id="profilePasswordForm" onsubmit="submitProfilePasswordChange(event)">
+        <div class="profile-input-group">
+          <label>Password Attuale</label>
+          <input type="password" id="profileCurrentPassword" required autocomplete="current-password" placeholder="Inserisci password attuale">
+        </div>
+        <div class="profile-input-group">
+          <label>Nuova Password</label>
+          <input type="password" id="profileNewPassword" required minlength="4" autocomplete="new-password" placeholder="Minimo 4 caratteri">
+        </div>
+        <div class="profile-input-group">
+          <label>Conferma Nuova Password</label>
+          <input type="password" id="profileConfirmPassword" required minlength="4" autocomplete="new-password" placeholder="Ripeti nuova password">
+        </div>
+        <button type="submit" class="profile-btn primary" id="btnProfileSavePassword">Aggiorna Password</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <header>
+    <div class="header-info">
+      <h1 class="header-title">⏰ Timbratura Giornaliera</h1>
+      <p class="header-date" id="currentDate">Caricamento...</p>
+    </div>
+  </header>
+
+  <div class="clock-section">
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+
+  <!-- Dev Mode Toggle -->
+  <div class="dev-toggle" id="devToggle">
+    <span class="dev-badge">DEV</span>
+    <label>
+      <input type="checkbox" id="qrBypassToggle" onchange="toggleQrBypass()">
+      Salta verifica QR Code
+    </label>
+  </div>
+
+  <!-- Box Turno Oggi -->
+  <div class="turno-box" id="turnoBox" style="display:none;">
+    <div class="turno-header">
+      <span>📅</span> Il tuo turno oggi
+    </div>
+    <div class="turno-project" id="turnoProject">-</div>
+    <div class="turno-details">
+      <div class="turno-detail" id="turnoOrario">
+        <span class="icon">🕐</span>
+        <span id="turnoOrarioText">-</span>
+      </div>
+      <div class="turno-detail" id="turnoFunzione">
+        <span class="icon">👤</span>
+        <span id="turnoFunzioneText">-</span>
+      </div>
+    </div>
+    <span class="turno-badge" id="turnoBadge" style="display:none;"></span>
+  </div>
+
+  <div class="actions">
+    <button class="action-btn start" id="btnStartDay" onclick="startTimbratura('inizio_giornata')">
+      <span class="icon">→</span>
+      <span>Inizio Giornata</span>
+      <span class="check" id="checkStart"></span>
+    </button>
+    
+    <button class="action-btn end" id="btnEndDay" onclick="startTimbratura('fine_giornata')">
+      <span class="icon">←</span>
+      <span>Fine Giornata</span>
+      <span class="check" id="checkEnd"></span>
+    </button>
+    
+    <div class="pause-row">
+      <button class="pause-btn" id="btnStartPause" onclick="startTimbratura('inizio_pausa')">
+        <span class="icon">☕</span>
+        <span>Inizio Pausa</span>
+      </button>
+      <button class="pause-btn" id="btnEndPause" onclick="startTimbratura('fine_pausa')">
+        <span class="icon">✓</span>
+        <span>Fine Pausa</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="history-section">
+    <h2 class="history-title">📋 Storico Timbrature Oggi:</h2>
+    <ul class="history-list" id="historyList">
+      <li class="empty-history">Nessuna timbratura registrata</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Scanner Modal -->
+<div class="scanner-modal" id="scannerModal">
+  <div class="scanner-container">
+    <h2 class="scanner-title" id="scannerTitle">📷 Inquadra il QR Code</h2>
+    <p class="scanner-subtitle" id="scannerSubtitle">Scansiona per confermare</p>
+    <div id="qr-reader"></div>
+    <button class="scanner-close" onclick="closeScanner()">Annulla</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- QR Scanner Library -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<script>
+const TIMBRATURA_TYPES = {
+  'inizio_giornata': { label: 'Inizio Giornata', dotClass: 'start' },
+  'fine_giornata': { label: 'Fine Giornata', dotClass: 'end' },
+  'inizio_pausa': { label: 'Inizio Pausa', dotClass: 'pause' },
+  'fine_pausa': { label: 'Fine Pausa', dotClass: 'pause' }
+};
+
+let todayTimbrature = [];
+let html5QrcodeScanner = null;
+let pendingTimbraturaType = null;  // Tipo di timbratura in attesa di conferma QR
+let qrBypassEnabled = localStorage.getItem('qrBypassEnabled') === 'true';
+
+// Aggiorna orologio
+function updateClock() {
+  const now = new Date();
+  const time = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  document.getElementById('clock').textContent = time;
+}
+
+// Aggiorna data
+function updateDate() {
+  const now = new Date();
+  const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+  let dateStr = now.toLocaleDateString('it-IT', options);
+  dateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+  document.getElementById('currentDate').textContent = 'Oggi: ' + dateStr;
+}
+
+// Toast notification
+function showToast(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast ' + type + ' show';
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// Inizia processo timbratura: apre scanner o bypass
+function startTimbratura(tipo) {
+  pendingTimbraturaType = tipo;
+  const label = TIMBRATURA_TYPES[tipo]?.label || tipo;
+  
+  // Se bypass attivo, registra direttamente
+  if (qrBypassEnabled) {
+    registerTimbraturaDirectly(tipo);
+    return;
+  }
+  
+  // Aggiorna titolo scanner con il tipo di timbratura
+  document.getElementById('scannerTitle').textContent = '📷 ' + label;
+  document.getElementById('scannerSubtitle').textContent = 'Scansiona il QR per confermare';
+  
+  openScanner();
+}
+
+// Registra timbratura direttamente (senza QR - solo dev mode)
+async function registerTimbraturaDirectly(tipo) {
+  try {
+    const res = await fetch('/api/timbratura', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo, bypass_qr: true })
+    });
+    
+    const data = await res.json();
+    
+    if (res.ok && data.success) {
+      showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
+      loadTimbrature();
+    } else {
+      showToast(data.error || 'Errore registrazione', 'error');
+    }
+  } catch (err) {
+    console.error('Errore:', err);
+    showToast('Errore di connessione', 'error');
+  }
+  pendingTimbraturaType = null;
+}
+
+// Apri scanner
+function openScanner() {
+  const modal = document.getElementById('scannerModal');
+  modal.classList.add('active');
+  
+  html5QrcodeScanner = new Html5Qrcode("qr-reader");
+  
+  html5QrcodeScanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 250, height: 250 } },
+    onScanSuccess,
+    onScanFailure
+  ).catch((err) => {
+    console.error('Errore avvio scanner:', err);
+    
+    // Messaggio specifico per problemi HTTPS/permessi
+    let errorMsg = 'Errore accesso alla camera';
+    const errStr = String(err).toLowerCase();
+    
+    if (errStr.includes('notallowed') || errStr.includes('permission')) {
+      errorMsg = '⚠️ Permesso camera negato. Controlla le impostazioni del browser.';
+    } else if (errStr.includes('notfound') || errStr.includes('no camera')) {
+      errorMsg = '⚠️ Nessuna camera trovata sul dispositivo.';
+    } else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+      errorMsg = '⚠️ HTTPS richiesto! La camera funziona solo su connessioni sicure (HTTPS) o localhost.';
+    }
+    
+    showToast(errorMsg, 'error');
+    closeScanner();
+  });
+}
+
+// Chiudi scanner
+function closeScanner() {
+  const modal = document.getElementById('scannerModal');
+  modal.classList.remove('active');
+  pendingTimbraturaType = null;
+  
+  if (html5QrcodeScanner) {
+    html5QrcodeScanner.stop().then(() => {
+      html5QrcodeScanner.clear();
+      html5QrcodeScanner = null;
+    }).catch((err) => {
+      console.error('Errore stop scanner:', err);
+    });
+  }
+}
+
+// Callback scan riuscito - valida QR e registra timbratura
+async function onScanSuccess(decodedText, decodedResult) {
+  // Salva il tipo PRIMA di chiudere lo scanner (che resetta pendingTimbraturaType)
+  const tipo = pendingTimbraturaType;
+  
+  closeScanner();
+  
+  if (!tipo) {
+    showToast('Errore: nessuna timbratura selezionata', 'error');
+    return;
+  }
+  
+  try {
+    // Prima valida il QR
+    const validateRes = await fetch('/api/timbratura/validate-qr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qr_data: decodedText })
+    });
+    
+    const validateData = await validateRes.json();
+    
+    if (!validateRes.ok || !validateData.valid) {
+      showToast(validateData.error || 'QR non valido', 'error');
+      return;
+    }
+    
+    // QR valido, ora registra la timbratura
+    const token = validateData.token;
+    
+    const res = await fetch('/api/timbratura', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo, token })
+    });
+    
+    const data = await res.json();
+    
+    if (res.ok && data.success) {
+      showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
+      loadTimbrature();
+      
+      // DEBUG: Mostra popup con URL CedolinoWeb se presente
+      if (data.cedolino_url) {
+        showCedolinoDebugPopup(data.cedolino_url);
+      }
+    } else {
+      showToast(data.error || 'Errore registrazione', 'error');
+    }
+  } catch (err) {
+    console.error('Errore:', err);
+    showToast('Errore di connessione', 'error');
+  }
+}
+
+// DEBUG: Mostra popup con URL CedolinoWeb
+function showCedolinoDebugPopup(url) {
+  // Crea overlay
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  `;
+  
+  // Crea popup
+  const popup = document.createElement('div');
+  popup.style.cssText = `
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 100%;
+    max-height: 80vh;
+    overflow: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  `;
+  
+  popup.innerHTML = `
+    <h3 style="margin-bottom: 12px; color: var(--text-primary);">🔗 CedolinoWeb Request URL</h3>
+    <div style="
+      background: #1e293b;
+      color: #22c55e;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 11px;
+      word-break: break-all;
+      white-space: pre-wrap;
+      max-height: 50vh;
+      overflow: auto;
+    ">${url}</div>
+    <div style="margin-top: 16px; display: flex; gap: 10px;">
+      <button onclick="navigator.clipboard.writeText('${url.replace(/'/g, "\\'")}'); this.textContent='Copiato!'" 
+        style="flex:1; padding: 10px; border: none; border-radius: 8px; background: #3b82f6; color: white; cursor: pointer;">
+        📋 Copia URL
+      </button>
+      <button onclick="this.closest('div').closest('div').closest('div').remove()" 
+        style="flex:1; padding: 10px; border: none; border-radius: 8px; background: #64748b; color: white; cursor: pointer;">
+        Chiudi
+      </button>
+    </div>
+  `;
+  
+  overlay.appendChild(popup);
+  document.body.appendChild(overlay);
+  
+  // Chiudi cliccando fuori dal popup
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+}
+
+// Callback scan fallito (ignora errori continui)
+function onScanFailure(error) {
+  // Ignora - è normale durante la scansione
+}
+
+// Aggiorna UI in base alle timbrature
+function updateUI() {
+  const hasStarted = todayTimbrature.some(t => t.tipo === 'inizio_giornata');
+  const hasEnded = todayTimbrature.some(t => t.tipo === 'fine_giornata');
+  const lastPause = [...todayTimbrature].reverse().find(t => t.tipo === 'inizio_pausa' || t.tipo === 'fine_pausa');
+  const inPause = lastPause?.tipo === 'inizio_pausa';
+
+  // Pulsanti - abilitati in base allo stato (la validazione QR avviene al click)
+  document.getElementById('btnStartDay').disabled = hasStarted;
+  document.getElementById('btnEndDay').disabled = !hasStarted || hasEnded;
+  
+  // Check marks
+  document.getElementById('checkStart').className = 'check' + (hasStarted ? ' done' : '');
+  document.getElementById('checkStart').innerHTML = hasStarted ? '✓' : '';
+  document.getElementById('checkEnd').className = 'check' + (hasEnded ? ' done' : '');
+  document.getElementById('checkEnd').innerHTML = hasEnded ? '✓' : '';
+  
+  // Pulsanti pausa
+  document.getElementById('btnStartPause').disabled = !hasStarted || hasEnded || inPause;
+  document.getElementById('btnEndPause').disabled = !inPause;
+
+  // Storico
+  const historyList = document.getElementById('historyList');
+  if (todayTimbrature.length === 0) {
+    historyList.innerHTML = '<li class="empty-history">Nessuna timbratura registrata</li>';
+  } else {
+    historyList.innerHTML = todayTimbrature.map((t, idx) => {
+      const info = TIMBRATURA_TYPES[t.tipo] || { label: t.tipo, dotClass: 'start' };
+      // Mostra ora originale e ora modificata se diversa
+      let oraDisplay = t.ora;
+      let extraInfo = '';
+      
+      if (t.tipo === 'fine_pausa') {
+        // Per fine_pausa, trova l'inizio_pausa corrispondente e mostra durata
+        const inizioPausa = [...todayTimbrature].slice(0, idx).reverse().find(x => x.tipo === 'inizio_pausa');
+        if (inizioPausa) {
+          const inizioMin = parseInt(inizioPausa.ora.split(':')[0]) * 60 + parseInt(inizioPausa.ora.split(':')[1]);
+          const fineMin = parseInt(t.ora.split(':')[0]) * 60 + parseInt(t.ora.split(':')[1]);
+          const durataEffettiva = fineMin - inizioMin;
+          
+          // Calcola anche la durata conteggiata (usando ora_mod)
+          const inizioModMin = parseInt((inizioPausa.ora_mod || inizioPausa.ora).split(':')[0]) * 60 + parseInt((inizioPausa.ora_mod || inizioPausa.ora).split(':')[1]);
+          const fineModMin = parseInt((t.ora_mod || t.ora).split(':')[0]) * 60 + parseInt((t.ora_mod || t.ora).split(':')[1]);
+          const durataConteggiata = fineModMin - inizioModMin;
+          
+          if (durataConteggiata !== durataEffettiva) {
+            extraInfo = ` <span class="pausa-durata">(${durataEffettiva} min → <span class="ora-mod">${durataConteggiata} min</span>)</span>`;
+          } else {
+            extraInfo = ` <span class="pausa-durata">(${durataEffettiva} min)</span>`;
+          }
+        }
+      } else if (t.ora_mod && t.ora_mod !== t.ora) {
+        oraDisplay = `<span class="ora-originale">${t.ora}</span> → <span class="ora-mod">${t.ora_mod}</span>`;
+      }
+      
+      return `
+        <li class="history-item">
+          <span class="dot ${info.dotClass}"></span>
+          <span class="time">${oraDisplay}</span>
+          <span class="type">- ${info.label}${extraInfo}</span>
+        </li>
+      `;
+    }).join('');
+  }
+}
+
+// Carica timbrature di oggi
+async function loadTimbrature() {
+  try {
+    const res = await fetch('/api/timbratura/oggi');
+    if (res.ok) {
+      const data = await res.json();
+      todayTimbrature = data.timbrature || [];
+      updateUI();
+    }
+  } catch (err) {
+    console.error('Errore caricamento timbrature:', err);
+  }
+}
+
+// Carica turno di oggi (da Rentman)
+async function loadTurno() {
+  const turnoBox = document.getElementById('turnoBox');
+  
+  try {
+    const res = await fetch('/api/user/turno-oggi');
+    if (!res.ok) {
+      turnoBox.style.display = 'none';
+      return;
+    }
+    
+    const data = await res.json();
+    
+    // Se non c'è turno, mostra messaggio
+    if (!data.turno && (!data.turni || data.turni.length === 0)) {
+      turnoBox.classList.add('no-turno');
+      turnoBox.style.display = 'block';
+      document.getElementById('turnoProject').textContent = 'Nessun turno previsto';
+      document.getElementById('turnoOrario').style.display = 'none';
+      document.getElementById('turnoFunzione').style.display = 'none';
+      document.getElementById('turnoBadge').style.display = 'none';
+      return;
+    }
+    
+    // Prende il primo turno o l'unico
+    const turno = data.turno || data.turni[0];
+    
+    turnoBox.classList.remove('no-turno');
+    turnoBox.style.display = 'block';
+    
+    // Progetto
+    const projectText = turno.project_name || turno.project_code || 'Progetto';
+    document.getElementById('turnoProject').textContent = projectText;
+    
+    // Orario
+    if (turno.start || turno.end) {
+      document.getElementById('turnoOrario').style.display = 'flex';
+      let orarioText = '';
+      if (turno.start && turno.end) {
+        orarioText = `${turno.start} - ${turno.end}`;
+      } else if (turno.start) {
+        orarioText = `Dalle ${turno.start}`;
+      } else if (turno.hours) {
+        orarioText = `${turno.hours}h previste`;
+      }
+      document.getElementById('turnoOrarioText').textContent = orarioText;
+    } else {
+      document.getElementById('turnoOrario').style.display = 'none';
+    }
+    
+    // Funzione/Ruolo
+    if (turno.function) {
+      document.getElementById('turnoFunzione').style.display = 'flex';
+      document.getElementById('turnoFunzioneText').textContent = turno.function;
+    } else {
+      document.getElementById('turnoFunzione').style.display = 'none';
+    }
+    
+    // Badge (Leader / Trasporto)
+    const badge = document.getElementById('turnoBadge');
+    if (turno.is_leader) {
+      badge.textContent = '⭐ Caposquadra';
+      badge.classList.add('leader');
+      badge.style.display = 'inline-block';
+    } else if (turno.transport) {
+      badge.textContent = `🚗 ${turno.transport}`;
+      badge.classList.remove('leader');
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+    
+    // Se ci sono più turni, mostra un indicatore
+    if (data.turni && data.turni.length > 1) {
+      const projectEl = document.getElementById('turnoProject');
+      projectEl.textContent += ` (+${data.turni.length - 1} altri)`;
+    }
+    
+  } catch (err) {
+    console.error('Errore caricamento turno:', err);
+    turnoBox.style.display = 'none';
+  }
+}
+
+// Menu functions
+function toggleMenu() {
+  const btn = document.getElementById('hamburgerBtn');
+  const menu = document.getElementById('sideMenu');
+  const overlay = document.getElementById('menuOverlay');
+  
+  btn.classList.toggle('active');
+  menu.classList.toggle('active');
+  overlay.classList.toggle('active');
+}
+
+function closeMenu() {
+  document.getElementById('hamburgerBtn').classList.remove('active');
+  document.getElementById('sideMenu').classList.remove('active');
+  document.getElementById('menuOverlay').classList.remove('active');
+}
+
+// Profilo Utente Page
+function openProfilePage() {
+  closeMenu();
+  document.getElementById('profilePage').classList.add('active');
+  // Reset form
+  document.getElementById('profileCurrentPassword').value = '';
+  document.getElementById('profileNewPassword').value = '';
+  document.getElementById('profileConfirmPassword').value = '';
+  document.getElementById('passwordMessage').className = 'profile-message';
+  document.getElementById('passwordMessage').textContent = '';
+}
+
+function closeProfilePage() {
+  document.getElementById('profilePage').classList.remove('active');
+}
+
+async function submitProfilePasswordChange(e) {
+  e.preventDefault();
+  
+  const currentPwd = document.getElementById('profileCurrentPassword').value;
+  const newPwd = document.getElementById('profileNewPassword').value;
+  const confirmPwd = document.getElementById('profileConfirmPassword').value;
+  const msgEl = document.getElementById('passwordMessage');
+  
+  // Reset message
+  msgEl.className = 'profile-message';
+  msgEl.textContent = '';
+  
+  if (newPwd !== confirmPwd) {
+    msgEl.className = 'profile-message error';
+    msgEl.textContent = 'Le password non coincidono';
+    return;
+  }
+  
+  if (newPwd.length < 4) {
+    msgEl.className = 'profile-message error';
+    msgEl.textContent = 'La password deve essere di almeno 4 caratteri';
+    return;
+  }
+  
+  const btn = document.getElementById('btnProfileSavePassword');
+  btn.disabled = true;
+  btn.textContent = 'Salvataggio...';
+  
+  try {
+    const res = await fetch('/api/user/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        current_password: currentPwd,
+        new_password: newPwd
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (res.ok && data.success) {
+      msgEl.className = 'profile-message success';
+      msgEl.textContent = 'Password aggiornata con successo! ✓';
+      // Reset form
+      document.getElementById('profileCurrentPassword').value = '';
+      document.getElementById('profileNewPassword').value = '';
+      document.getElementById('profileConfirmPassword').value = '';
+    } else {
+      msgEl.className = 'profile-message error';
+      msgEl.textContent = data.error || 'Errore nel cambio password';
+    }
+  } catch (err) {
+    console.error('Errore:', err);
+    msgEl.className = 'profile-message error';
+    msgEl.textContent = 'Errore di connessione';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Aggiorna Password';
+  }
+}
+
+// Theme toggle
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.removeItem('theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem('theme', 'dark');
+  }
+}
+
+// QR Bypass toggle
+function toggleQrBypass() {
+  qrBypassEnabled = document.getElementById('qrBypassToggle').checked;
+  localStorage.setItem('qrBypassEnabled', qrBypassEnabled);
+  showToast(qrBypassEnabled ? '⚠️ QR bypass attivo' : 'QR verifica riattivata', qrBypassEnabled ? 'error' : 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PUSH NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════════
+
+const pushState = {
+  supported: 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
+  subscribed: false,
+  publicKey: null,
+  permission: typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+};
+
+// Carica stato push dal server
+async function loadPushState() {
+  if (!pushState.supported) {
+    updatePushUI();
+    return;
+  }
+  
+  try {
+    const res = await fetch('/api/push/status');
+    const data = await res.json();
+    
+    if (data.enabled) {
+      pushState.publicKey = data.publicKey;
+      pushState.subscribed = data.subscribed || false;
+    }
+    
+    // Verifica anche lo stato locale della subscription
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      pushState.subscribed = Boolean(subscription);
+    }
+  } catch (err) {
+    console.warn('Errore caricamento stato push:', err);
+  }
+  
+  updatePushUI();
+}
+
+// Aggiorna UI in base allo stato
+function updatePushUI() {
+  const toggle = document.getElementById('pushToggle');
+  const icon = document.getElementById('notificationIcon');
+  const label = document.getElementById('notificationLabel');
+  const menuItem = document.getElementById('notificationMenuItem');
+  
+  if (!pushState.supported) {
+    menuItem.style.display = 'none';
+    return;
+  }
+  
+  toggle.checked = pushState.subscribed;
+  
+  if (pushState.subscribed) {
+    icon.textContent = '🔔';
+    label.textContent = 'Notifiche attive';
+  } else {
+    icon.textContent = '🔕';
+    label.textContent = 'Attiva Notifiche';
+  }
+  
+  // Disabilita se permesso negato
+  if (pushState.permission === 'denied') {
+    toggle.disabled = true;
+    label.textContent = 'Notifiche bloccate';
+  }
+}
+
+// Toggle notifiche push
+async function togglePushNotifications() {
+  const toggle = document.getElementById('pushToggle');
+  
+  if (toggle.checked) {
+    await subscribeToPush();
+  } else {
+    await unsubscribeFromPush();
+  }
+  
+  updatePushUI();
+}
+
+// Converti VAPID key
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+// Sottoscrivi alle notifiche push
+async function subscribeToPush() {
+  if (!pushState.supported) {
+    showToast('⚠️ Notifiche non supportate', 'error');
+    return false;
+  }
+  
+  if (!pushState.publicKey) {
+    showToast('⚠️ Server non configurato', 'error');
+    return false;
+  }
+  
+  // Richiedi permesso se non già concesso
+  if (Notification.permission === 'denied') {
+    showToast('⚠️ Notifiche bloccate dal browser', 'error');
+    pushState.permission = 'denied';
+    return false;
+  }
+  
+  if (Notification.permission !== 'granted') {
+    const permission = await Notification.requestPermission();
+    pushState.permission = permission;
+    
+    if (permission !== 'granted') {
+      showToast('⚠️ Permesso notifiche negato', 'error');
+      return false;
+    }
+  }
+  
+  try {
+    // Registra service worker se non già fatto
+    let registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) {
+      registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+    }
+    
+    const applicationServerKey = urlBase64ToUint8Array(pushState.publicKey);
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey
+    });
+    
+    // Invia al server
+    const payload = subscription.toJSON();
+    payload.userAgent = navigator.userAgent || null;
+    payload.contentEncoding = 'aes128gcm';
+    
+    const res = await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (res.ok) {
+      pushState.subscribed = true;
+      showToast('🔔 Notifiche attivate!', 'success');
+      return true;
+    } else {
+      throw new Error('Errore registrazione server');
+    }
+  } catch (err) {
+    console.error('Errore subscribe push:', err);
+    showToast('⚠️ Errore attivazione notifiche', 'error');
+    return false;
+  }
+}
+
+// Disiscriviti dalle notifiche push
+async function unsubscribeFromPush() {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    
+    if (subscription) {
+      const payload = subscription.toJSON();
+      
+      // Notifica il server
+      try {
+        await fetch('/api/push/unsubscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: payload.endpoint })
+        });
+      } catch (e) {
+        console.warn('Errore unsubscribe server:', e);
+      }
+      
+      await subscription.unsubscribe();
+    }
+    
+    pushState.subscribed = false;
+    showToast('🔕 Notifiche disattivate', 'success');
+  } catch (err) {
+    console.error('Errore unsubscribe push:', err);
+    showToast('⚠️ Errore disattivazione', 'error');
+  }
+}
+
+// Init
+updateClock();
+updateDate();
+setInterval(updateClock, 1000);
+loadTimbrature();
+loadTurno();
+loadPushState(); // Carica stato notifiche
+
+// Init dev toggle
+document.getElementById('qrBypassToggle').checked = qrBypassEnabled;
+
+// Tema
+if (localStorage.getItem('theme') === 'dark') {
+  document.documentElement.setAttribute('data-theme', 'dark');
+}
+
+// Registra service worker per PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(reg => console.log('Service Worker registrato'))
+    .catch(err => console.warn('Service Worker fallito:', err));
+}
+</script>
+</body>
+</html>

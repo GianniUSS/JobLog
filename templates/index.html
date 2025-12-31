@@ -680,6 +680,7 @@ header { background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,
 <button id="menuCloseBtn" class="side-menu-close" aria-label="Chiudi menu">✕</button>
 </div>
 <div class="side-menu-body">
+{% if user_role != 'user' %}
 <div class="side-menu-section">
 <span class="side-menu-section-title">Navigazione</span>
 <ul class="side-menu-list">
@@ -780,6 +781,7 @@ header { background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,
 </span>
 </button>
 </li>
+{% endif %}
 <li>
 <a href="{{ url_for('logout') }}" class="side-menu-item side-menu-link" data-menu-action>
 <span class="side-menu-item-icon">🚪</span>
@@ -789,8 +791,10 @@ header { background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,
 </span>
 </a>
 </li>
+{% if user_role != 'user' %}
 </ul>
 </div>
+{% endif %}
 </div>
 </nav>
 

@@ -508,6 +508,7 @@
                         <span class="menu-item-icon">📅</span>
                         <span>Pianificazioni Rentman</span>
                     </a>
+                    {% if is_admin %}
                     <a href="{{ url_for('admin_users_page') }}" class="menu-item">
                         <span class="menu-item-icon">👥</span>
                         <span>Gestione Utenti</span>
@@ -516,6 +517,11 @@
                         <span class="menu-item-icon">🧑‍🔧</span>
                         <span>Gestione Operatori</span>
                     </a>
+                    <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
+                        <span class="menu-item-icon">⚙️</span>
+                        <span>Regole Timbrature</span>
+                    </a>
+                    {% endif %}
                     <div class="menu-divider"></div>
                     <a href="{{ url_for('logout') }}" class="menu-item danger">
                         <span class="menu-item-icon">🚪</span>
@@ -658,12 +664,9 @@
 
         async function initPage() {
             console.log('initPage chiamata, data:', dateInput.value);
-            const hasSaved = await loadSavedPlanningsIfExists();
-            // Se non ci sono dati salvati, carica automaticamente da Rentman
-            if (!hasSaved) {
-                console.log('Nessun dato salvato, carico da Rentman...');
-                await loadPlannings();
-            }
+            // Carica SEMPRE da Rentman per avere dati aggiornati
+            // Il database serve solo per tracciare lo stato "inviato"
+            await loadPlannings();
         }
 
         function updateLoadButtonText() {
@@ -684,10 +687,22 @@
 
         function formatTimeRange(start, end) {
             if (!start && !end) return '—';
-            const opts = { hour: '2-digit', minute: '2-digit' };
-            const startStr = start ? new Date(start).toLocaleTimeString('it-IT', opts) : '?';
-            const endStr = end ? new Date(end).toLocaleTimeString('it-IT', opts) : '?';
-            return `${startStr} - ${endStr}`;
+            
+            // Estrai l'ora direttamente dalla stringa ISO per evitare conversioni timezone
+            // Formato: "2025-12-30T07:30:00+01:00" o "2025-12-30 07:30:00"
+            function extractTime(isoStr) {
+                if (!isoStr) return '?';
+                // Cerca pattern HH:MM nella stringa
+                const match = isoStr.match(/(\d{2}):(\d{2})/);
+                if (match) {
+                    return `${match[1]}:${match[2]}`;
+                }
+                // Fallback: usa Date parsing
+                const d = new Date(isoStr);
+                return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            }
+            
+            return `${extractTime(start)} - ${extractTime(end)}`;
         }
 
         function formatHours(value) {

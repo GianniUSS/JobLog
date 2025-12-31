@@ -326,8 +326,11 @@ _CONFIG_CACHE_MTIME: Optional[float] = None
 _WEBPUSH_SETTINGS: Optional[Dict[str, Optional[str]]] = None
 _NOTIFICATION_THREAD: Optional[Thread] = None
 _NOTIFICATION_STOP: Optional[Event] = None
+_CEDOLINO_RETRY_THREAD: Optional[Thread] = None
+_CEDOLINO_RETRY_STOP: Optional[Event] = None
 
 NOTIFICATION_INTERVAL_SECONDS = int(os.environ.get("JOBLOG_NOTIFICATION_INTERVAL", "60"))
+CEDOLINO_RETRY_INTERVAL_SECONDS = int(os.environ.get("JOBLOG_CEDOLINO_RETRY_INTERVAL", "300"))  # 5 minuti
 ACTIVITY_OVERDUE_GRACE_MS = 10 * 60 * 1000  # 10 minuti di ritardo tollerato
 PUSH_NOTIFIED_STATE_KEY = "push_notified_activities"
 LONG_RUNNING_STATE_KEY = "long_running_member_notifications"
@@ -344,6 +347,17 @@ ROLE_SUPERVISOR = "supervisor"
 ROLE_ADMIN = "admin"
 ROLE_MAGAZZINO = "magazzino"
 VALID_USER_ROLES = {ROLE_USER, ROLE_SUPERVISOR, ROLE_ADMIN, ROLE_MAGAZZINO}
+
+
+# Permission check helpers
+def is_admin_or_supervisor() -> bool:
+    """Check if current user is admin or supervisor (responsabile squadra)."""
+    return bool(session.get("is_admin") or session.get("is_supervisor"))
+
+
+def is_admin_only() -> bool:
+    """Check if current user is admin only."""
+    return bool(session.get("is_admin"))
 
 
 # Authentication helpers
@@ -1379,6 +1393,72 @@ CREATE TABLE IF NOT EXISTS project_materials_cache (
     updated_ts INTEGER NOT NULL
 );
 """
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CEDOLINO TIMBRATURE - Integrazione CedolinoWeb
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CEDOLINO_TIMBRATURE_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS cedolino_timbrature (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    member_key VARCHAR(255) DEFAULT NULL,
+    member_name VARCHAR(255) NOT NULL,
+    username VARCHAR(190) DEFAULT NULL,
+    external_id VARCHAR(255) NOT NULL,
+    timeframe_id INT NOT NULL COMMENT '1=inizio giornata, 4=inizio pausa, 5=fine pausa, 8=fine giornata',
+    timestamp_ms BIGINT NOT NULL,
+    data_riferimento DATE NOT NULL,
+    ora_originale TIME NOT NULL,
+    ora_modificata TIME NOT NULL,
+    project_code VARCHAR(128) DEFAULT NULL,
+    activity_id VARCHAR(255) DEFAULT NULL,
+    synced_ts BIGINT DEFAULT NULL,
+    sync_error TEXT DEFAULT NULL,
+    sync_attempts INT NOT NULL DEFAULT 0,
+    created_ts BIGINT NOT NULL,
+    INDEX idx_cedolino_member (member_key),
+    INDEX idx_cedolino_username (username),
+    INDEX idx_cedolino_external (external_id),
+    INDEX idx_cedolino_synced (synced_ts),
+    INDEX idx_cedolino_data (data_riferimento)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+CEDOLINO_TIMBRATURE_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS cedolino_timbrature (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_key TEXT,
+    member_name TEXT NOT NULL,
+    username TEXT,
+    external_id TEXT NOT NULL,
+    timeframe_id INTEGER NOT NULL,
+    timestamp_ms INTEGER NOT NULL,
+    data_riferimento TEXT NOT NULL,
+    ora_originale TEXT NOT NULL,
+    ora_modificata TEXT NOT NULL,
+    project_code TEXT,
+    activity_id TEXT,
+    synced_ts INTEGER,
+    sync_error TEXT,
+    sync_attempts INTEGER NOT NULL DEFAULT 0,
+    created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cedolino_member ON cedolino_timbrature(member_key);
+CREATE INDEX IF NOT EXISTS idx_cedolino_username ON cedolino_timbrature(username);
+CREATE INDEX IF NOT EXISTS idx_cedolino_external ON cedolino_timbrature(external_id);
+CREATE INDEX IF NOT EXISTS idx_cedolino_synced ON cedolino_timbrature(synced_ts);
+CREATE INDEX IF NOT EXISTS idx_cedolino_data ON cedolino_timbrature(data_riferimento);
+"""
+
+# Costanti timeframe CedolinoWeb
+TIMEFRAME_INIZIO_GIORNATA = 1
+TIMEFRAME_INIZIO_PAUSA = 4
+TIMEFRAME_FINE_PAUSA = 5
+TIMEFRAME_FINE_GIORNATA = 8
+
+CEDOLINO_WEB_ENDPOINT = "http://www.cedolinoweb.net/WebServices/crea_timbrata_elaborata"
+CEDOLINO_CODICE_TERMINALE = "musa_mobile"
 
 
 MYSQL_SCHEMA_STATEMENTS: List[str] = [
@@ -4299,6 +4379,22 @@ def home() -> ResponseReturnValue:
         return redirect(url_for('admin_dashboard_page'))
     if session.get('user_role') == ROLE_MAGAZZINO:
         return redirect(url_for('magazzino_home'))
+    # Utenti "user" senza ruolo specifico - mostrano pagina minima con solo logout
+    if session.get('user_role') == ROLE_USER:
+        display_name = session.get('user_display') or session.get('user_name') or session.get('user')
+        primary_name = session.get('user_name') or display_name or session.get('user')
+        initials = session.get('user_initials') or compute_initials(primary_name or "")
+        user_role = session.get('user_role', 'user')
+        username = session.get('user')
+        return render_template(
+            "user_home.html",
+            user_name=primary_name,
+            user_display=display_name,
+            user_initials=initials,
+            user_role=user_role,
+            username=username,
+        )
+    # Supervisor e altri ruoli - mostrano dashboard operativa completa
     db = get_db()
     display_name = session.get('user_display') or session.get('user_name') or session.get('user')
     primary_name = session.get('user_name') or display_name or session.get('user')
@@ -4341,11 +4437,563 @@ def home() -> ResponseReturnValue:
         user_display=display_name,
         user_initials=initials,
         is_admin=is_admin,
+        user_role=session.get('user_role', 'user'),
         initial_attachments=initial_attachments,
         initial_materials=initial_materials,
         initial_project=initial_project,
         header_clock=header_clock,
     )
+
+
+# ============================================================
+# API TIMBRATURA
+# ============================================================
+
+@app.get("/api/timbratura/oggi")
+@login_required
+def api_timbratura_oggi():
+    """Restituisce le timbrature dell'utente per oggi."""
+    username = session.get('user')
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    db = get_db()
+    ensure_timbrature_table(db)
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    rows = db.execute(
+        f"""
+        SELECT tipo, ora, ora_mod FROM timbrature
+        WHERE username = {placeholder} AND data = {placeholder}
+        ORDER BY created_ts ASC
+        """,
+        (username, today)
+    ).fetchall()
+    
+    timbrature = []
+    for row in rows:
+        ora_val = row['ora'] if isinstance(row, dict) else row[1]
+        ora_mod_val = row['ora_mod'] if isinstance(row, dict) else row[2]
+        # Gestisce sia TIME che stringa
+        if hasattr(ora_val, 'strftime'):
+            ora_str = ora_val.strftime("%H:%M")
+        else:
+            ora_str = str(ora_val)[:5] if ora_val else ""
+        
+        # Formatta ora_mod
+        ora_mod_str = None
+        if ora_mod_val:
+            if hasattr(ora_mod_val, 'strftime'):
+                ora_mod_str = ora_mod_val.strftime("%H:%M")
+            else:
+                ora_mod_str = str(ora_mod_val)[:5]
+        
+        timbrature.append({
+            "tipo": row['tipo'] if isinstance(row, dict) else row[0],
+            "ora": ora_str,
+            "ora_mod": ora_mod_str
+        })
+    
+    return jsonify({"timbrature": timbrature})
+
+
+@app.post("/api/timbratura")
+@login_required
+def api_timbratura_registra():
+    """Registra una nuova timbratura."""
+    username = session.get('user')
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati mancanti"}), 400
+    
+    tipo = data.get('tipo')
+    if tipo not in ('inizio_giornata', 'fine_giornata', 'inizio_pausa', 'fine_pausa'):
+        return jsonify({"error": "Tipo timbratura non valido"}), 400
+    
+    # Verifica bypass QR (solo per sviluppo)
+    bypass_qr = data.get('bypass_qr', False)
+    
+    if not bypass_qr:
+        # Verifica token di validazione QR
+        token = data.get('token')
+        session_token = session.get('timbratura_token')
+        token_expires = session.get('timbratura_token_expires', 0)
+        
+        if not token or token != session_token:
+            return jsonify({"error": "Devi prima scansionare il QR code", "need_qr": True}), 403
+        
+        if now_ms() > token_expires:
+            # Pulisce token scaduto
+            session.pop('timbratura_token', None)
+            session.pop('timbratura_token_expires', None)
+            return jsonify({"error": "Token scaduto, scansiona nuovamente il QR", "need_qr": True}), 403
+    
+    db = get_db()
+    ensure_timbrature_table(db)
+    
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    ora = now.strftime("%H:%M:%S")
+    created_ts = now_ms()
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Verifica regole business
+    existing = db.execute(
+        f"SELECT tipo FROM timbrature WHERE username = {placeholder} AND data = {placeholder} ORDER BY created_ts ASC",
+        (username, today)
+    ).fetchall()
+    existing_types = [r['tipo'] if isinstance(r, dict) else r[0] for r in existing]
+    
+    if tipo == 'inizio_giornata' and 'inizio_giornata' in existing_types:
+        return jsonify({"error": "Hai già registrato l'inizio giornata oggi"}), 400
+    
+    if tipo == 'fine_giornata':
+        if 'inizio_giornata' not in existing_types:
+            return jsonify({"error": "Devi prima registrare l'inizio giornata"}), 400
+        if 'fine_giornata' in existing_types:
+            return jsonify({"error": "Hai già registrato la fine giornata oggi"}), 400
+    
+    if tipo == 'inizio_pausa':
+        if 'inizio_giornata' not in existing_types:
+            return jsonify({"error": "Devi prima registrare l'inizio giornata"}), 400
+        if 'fine_giornata' in existing_types:
+            return jsonify({"error": "Non puoi iniziare una pausa dopo la fine giornata"}), 400
+        # Controlla se c'è già una pausa aperta
+        pause_count = existing_types.count('inizio_pausa') - existing_types.count('fine_pausa')
+        if pause_count > 0:
+            return jsonify({"error": "Hai già una pausa in corso"}), 400
+    
+    if tipo == 'fine_pausa':
+        pause_count = existing_types.count('inizio_pausa') - existing_types.count('fine_pausa')
+        if pause_count <= 0:
+            return jsonify({"error": "Non hai nessuna pausa in corso"}), 400
+    
+    # Calcola ora_mod in base alle regole
+    ora_mod = None
+    try:
+        rules = get_timbratura_rules(db)
+        
+        # Ottieni turno per normalizzazione (solo per inizio_giornata)
+        turno_start = None
+        if tipo == 'inizio_giornata':
+            # Trova il rentman_crew_id dell'utente
+            user_row = db.execute(
+                f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+                (username,)
+            ).fetchone()
+            
+            if user_row:
+                crew_id = user_row['rentman_crew_id'] if isinstance(user_row, dict) else user_row[0]
+                if crew_id:
+                    # Cerca turno di oggi per l'utente dalla tabella rentman_plannings
+                    turno_row = db.execute(
+                        f"SELECT plan_start FROM rentman_plannings WHERE crew_id = {placeholder} AND planning_date = {placeholder} ORDER BY plan_start ASC LIMIT 1",
+                        (crew_id, today)
+                    ).fetchone()
+                    if turno_row:
+                        plan_start = turno_row['plan_start'] if isinstance(turno_row, dict) else turno_row[0]
+                        if plan_start:
+                            if hasattr(plan_start, 'strftime'):
+                                turno_start = plan_start.strftime("%H:%M")
+                            else:
+                                # Formato datetime string: "2025-01-01 08:00:00"
+                                plan_str = str(plan_start)
+                                if len(plan_str) > 11:
+                                    turno_start = plan_str[11:16]
+                                else:
+                                    turno_start = plan_str[:5]
+        
+        # Per fine_pausa, applica le regole sulla durata della pausa
+        if tipo == 'fine_pausa':
+            # Recupera l'ora di inizio pausa (l'ultima non chiusa)
+            inizio_pausa_rows = db.execute(
+                f"""SELECT ora, ora_mod FROM timbrature 
+                   WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'inizio_pausa'
+                   ORDER BY created_ts DESC LIMIT 1""",
+                (username, today)
+            ).fetchone()
+            
+            if inizio_pausa_rows:
+                inizio_ora_mod = inizio_pausa_rows['ora_mod'] if isinstance(inizio_pausa_rows, dict) else inizio_pausa_rows[1]
+                if not inizio_ora_mod:
+                    inizio_ora_mod = inizio_pausa_rows['ora'] if isinstance(inizio_pausa_rows, dict) else inizio_pausa_rows[0]
+                
+                # Formatta l'ora di inizio pausa
+                if hasattr(inizio_ora_mod, 'strftime'):
+                    inizio_str = inizio_ora_mod.strftime("%H:%M")
+                else:
+                    inizio_str = str(inizio_ora_mod)[:5]
+                
+                # Calcola durata modificata usando le regole pause
+                durata_mod = calcola_pausa_mod(inizio_str, ora[:5], rules)
+                
+                # Calcola ora_mod di fine_pausa = inizio_pausa_mod + durata_mod
+                inizio_parts = inizio_str.split(':')
+                inizio_min = int(inizio_parts[0]) * 60 + int(inizio_parts[1])
+                fine_mod_min = inizio_min + durata_mod
+                
+                h = fine_mod_min // 60
+                m = fine_mod_min % 60
+                ora_mod = f"{h:02d}:{m:02d}:00"
+                
+                app.logger.info(f"Pausa: {inizio_str} -> {ora[:5]} (durata effettiva {int(ora[:2])*60+int(ora[3:5]) - inizio_min} min, durata mod {durata_mod} min, fine mod {ora_mod})")
+            else:
+                ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
+        else:
+            ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
+        
+        app.logger.info(f"Ora mod calcolata: {ora} -> {ora_mod} (turno: {turno_start}, tipo: {tipo})")
+    except Exception as e:
+        app.logger.error(f"Errore calcolo ora_mod: {e}")
+        ora_mod = ora  # Fallback: usa ora originale
+    
+    # Inserisce la timbratura
+    db.execute(
+        f"""
+        INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        """,
+        (username, tipo, today, ora, ora_mod, created_ts)
+    )
+    
+    # CedolinoWeb: invia timbrata con ora originale e modificata
+    # Mappa tipo timbratura -> timeframe CedolinoWeb
+    TIPO_TO_TIMEFRAME = {
+        'inizio_giornata': TIMEFRAME_INIZIO_GIORNATA,  # 1
+        'inizio_pausa': TIMEFRAME_INIZIO_PAUSA,        # 4
+        'fine_pausa': TIMEFRAME_FINE_PAUSA,            # 5
+        'fine_giornata': TIMEFRAME_FINE_GIORNATA,      # 8
+    }
+    
+    timeframe_id = TIPO_TO_TIMEFRAME.get(tipo)
+    cedolino_url = None
+    
+    if timeframe_id:
+        # Recupera il nome dell'utente per il log
+        user_row = db.execute(
+            f"SELECT display_name FROM app_users WHERE username = {placeholder}",
+            (username,)
+        ).fetchone()
+        display_name = username
+        if user_row:
+            display_name = (user_row['display_name'] if isinstance(user_row, dict) else user_row[0]) or username
+        
+        # Genera sempre l'URL di debug (anche se CedolinoWeb è disabilitato)
+        from urllib.parse import urlencode
+        external_id_debug = get_external_id_for_username(db, username) or "N/A"
+        external_group_id_debug = get_external_group_id_for_username(db, username) or "NULL"
+        debug_params = {
+            "data_riferimento": today,
+            "data_originale": f"{today} {ora}",
+            "data_modificata": f"{today} {ora_mod or ora}",
+            "codice_utente": external_id_debug,
+            "codice_terminale": CEDOLINO_CODICE_TERMINALE,
+            "timeframe_id": str(timeframe_id),
+            "assunzione_id": external_id_debug,
+            "terminale_id": "NULL",
+            "gruppo_id": external_group_id_debug,
+            "turno_id": "NULL",
+            "note": "",
+            "validata": "true",
+        }
+        cedolino_url = f"{CEDOLINO_WEB_ENDPOINT}?{urlencode(debug_params)}"
+        
+        timbrata_ok, external_id, timbrata_error, _ = send_timbrata_utente(
+            db,
+            username=username,
+            member_name=display_name,
+            timeframe_id=timeframe_id,
+            data_riferimento=today,
+            ora_originale=ora,
+            ora_modificata=ora_mod or ora,
+        )
+        
+        if not timbrata_ok and external_id is None:
+            # Utente senza ID esterno - blocca l'operazione (rollback implicito)
+            return jsonify({
+                "error": "Utente senza ID esterno CedolinoWeb. Contattare l'amministratore.",
+                "missing_external_id": True,
+                "cedolino_url": cedolino_url  # Mostra comunque l'URL per debug
+            }), 400
+    
+    db.commit()
+    
+    # Invalida il token dopo l'uso (ogni timbratura richiede nuova scansione)
+    session.pop('timbratura_token', None)
+    session.pop('timbratura_token_expires', None)
+    
+    app.logger.info(f"Timbratura registrata: {username} - {tipo} alle {ora}")
+    
+    # Restituisci anche l'URL CedolinoWeb per debug
+    response_data = {"success": True, "tipo": tipo, "ora": ora[:5]}
+    if cedolino_url:
+        response_data["cedolino_url"] = cedolino_url
+    
+    return jsonify(response_data)
+
+
+@app.post("/api/user/change-password")
+@login_required
+def api_user_change_password():
+    """Permette all'utente di cambiare la propria password."""
+    username = session.get('user')
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati mancanti"}), 400
+    
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+    
+    if not current_password or not new_password:
+        return jsonify({"error": "Password attuale e nuova password richieste"}), 400
+    
+    if len(new_password) < 4:
+        return jsonify({"error": "La nuova password deve essere di almeno 4 caratteri"}), 400
+    
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Verifica password attuale
+    user = db.execute(
+        f"SELECT password_hash FROM app_users WHERE username = {placeholder}",
+        (username,)
+    ).fetchone()
+    
+    if not user:
+        return jsonify({"error": "Utente non trovato"}), 404
+    
+    stored_hash = user['password_hash'] if isinstance(user, dict) else user[0]
+    
+    # Verifica la password attuale
+    if not check_password_hash(stored_hash, current_password):
+        return jsonify({"error": "Password attuale non corretta"}), 400
+    
+    # Genera hash per la nuova password
+    new_hash = generate_password_hash(new_password)
+    
+    # Aggiorna nel database
+    db.execute(
+        f"UPDATE app_users SET password_hash = {placeholder}, updated_ts = {placeholder} WHERE username = {placeholder}",
+        (new_hash, now_ms(), username)
+    )
+    db.commit()
+    
+    app.logger.info(f"Utente {username} ha cambiato la propria password")
+    
+    return jsonify({"success": True, "message": "Password aggiornata con successo"})
+
+
+@app.get("/api/user/turno-oggi")
+@login_required
+def api_user_turno_oggi():
+    """Restituisce il turno dell'utente per oggi (da Rentman)."""
+    username = session.get('user')
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Trova il rentman_crew_id dell'utente
+    user_row = db.execute(
+        f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+        (username,)
+    ).fetchone()
+    
+    if not user_row:
+        return jsonify({"turno": None, "message": "Utente non trovato"})
+    
+    crew_id = user_row['rentman_crew_id'] if isinstance(user_row, dict) else user_row[0]
+    
+    if not crew_id:
+        return jsonify({"turno": None, "message": "Nessun operatore Rentman associato"})
+    
+    # Recupera il turno di oggi dalla tabella rentman_plannings
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    ensure_rentman_plannings_table(db)
+    
+    planning = db.execute(
+        f"""
+        SELECT project_code, project_name, function_name, plan_start, plan_end,
+               hours_planned, remark, is_leader, transport
+        FROM rentman_plannings
+        WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+        ORDER BY plan_start ASC
+        """,
+        (crew_id, today)
+    ).fetchall()
+    
+    if not planning:
+        return jsonify({"turno": None, "message": "Nessun turno previsto per oggi"})
+    
+    turni = []
+    for row in planning:
+        if isinstance(row, dict):
+            plan_start = row['plan_start']
+            plan_end = row['plan_end']
+        else:
+            plan_start = row[3]
+            plan_end = row[4]
+        
+        # Formatta orari
+        start_str = ""
+        end_str = ""
+        if plan_start:
+            if hasattr(plan_start, 'strftime'):
+                start_str = plan_start.strftime("%H:%M")
+            else:
+                start_str = str(plan_start)[11:16] if len(str(plan_start)) > 11 else str(plan_start)[:5]
+        if plan_end:
+            if hasattr(plan_end, 'strftime'):
+                end_str = plan_end.strftime("%H:%M")
+            else:
+                end_str = str(plan_end)[11:16] if len(str(plan_end)) > 11 else str(plan_end)[:5]
+        
+        turni.append({
+            "project_code": row['project_code'] if isinstance(row, dict) else row[0],
+            "project_name": row['project_name'] if isinstance(row, dict) else row[1],
+            "function": row['function_name'] if isinstance(row, dict) else row[2],
+            "start": start_str,
+            "end": end_str,
+            "hours": float(row['hours_planned'] if isinstance(row, dict) else row[5] or 0),
+            "note": row['remark'] if isinstance(row, dict) else row[6],
+            "is_leader": bool(row['is_leader'] if isinstance(row, dict) else row[7]),
+            "transport": row['transport'] if isinstance(row, dict) else row[8],
+        })
+    
+    return jsonify({"turno": turni[0] if len(turni) == 1 else None, "turni": turni})
+
+
+# ============================================================
+# I MIEI TURNI - Pagina Utente
+# ============================================================
+
+@app.get("/turni")
+@login_required
+def user_turni_page() -> ResponseReturnValue:
+    """Pagina per visualizzare i turni dell'utente."""
+    return render_template(
+        "user_turni.html",
+        username=session.get("user"),
+        user_display=session.get("user_display", session.get("user")),
+        user_initials=session.get("user_initials", "U"),
+        user_role=session.get("user_role", "Utente"),
+    )
+
+
+@app.get("/api/user/turni")
+@login_required
+def api_user_turni() -> ResponseReturnValue:
+    """API per recuperare i turni dell'utente (solo quelli pubblicati/inviati)."""
+    username = session.get("user")
+    
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera il rentman_crew_id dell'utente
+    user_row = db.execute(
+        f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+        (username,)
+    ).fetchone()
+    
+    if not user_row:
+        return jsonify({"turni": [], "message": "Utente non trovato"})
+    
+    crew_id = user_row['rentman_crew_id'] if isinstance(user_row, dict) else user_row[0]
+    
+    if not crew_id:
+        return jsonify({"turni": [], "message": "Nessun operatore Rentman associato"})
+    
+    ensure_rentman_plannings_table(db)
+    
+    # Recupera tutti i turni pubblicati (sent_to_webservice = 1) degli ultimi 30 giorni e prossimi 60 giorni
+    thirty_days_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    sixty_days_future = (datetime.now() + timedelta(days=60)).strftime("%Y-%m-%d")
+    
+    if DB_VENDOR == "mysql":
+        planning = db.execute(
+            """
+            SELECT planning_date, project_code, project_name, function_name, plan_start, plan_end,
+                   hours_planned, remark, is_leader, transport, sent_ts
+            FROM rentman_plannings
+            WHERE crew_id = %s 
+              AND sent_to_webservice = 1
+              AND planning_date >= %s 
+              AND planning_date <= %s
+            ORDER BY planning_date ASC, plan_start ASC
+            """,
+            (crew_id, thirty_days_ago, sixty_days_future)
+        ).fetchall()
+    else:
+        planning = db.execute(
+            """
+            SELECT planning_date, project_code, project_name, function_name, plan_start, plan_end,
+                   hours_planned, remark, is_leader, transport, sent_ts
+            FROM rentman_plannings
+            WHERE crew_id = ? 
+              AND sent_to_webservice = 1
+              AND planning_date >= ? 
+              AND planning_date <= ?
+            ORDER BY planning_date ASC, plan_start ASC
+            """,
+            (crew_id, thirty_days_ago, sixty_days_future)
+        ).fetchall()
+    
+    turni = []
+    for row in planning:
+        if isinstance(row, dict):
+            planning_date = row['planning_date']
+            plan_start = row['plan_start']
+            plan_end = row['plan_end']
+        else:
+            planning_date = row[0]
+            plan_start = row[4]
+            plan_end = row[5]
+        
+        # Normalizza la data
+        if hasattr(planning_date, 'isoformat'):
+            date_str = planning_date.isoformat()
+        else:
+            date_str = str(planning_date)[:10]
+        
+        # Formatta orari
+        start_str = ""
+        end_str = ""
+        if plan_start:
+            if hasattr(plan_start, 'strftime'):
+                start_str = plan_start.strftime("%H:%M")
+            else:
+                start_str = str(plan_start)[11:16] if len(str(plan_start)) > 11 else str(plan_start)[:5]
+        if plan_end:
+            if hasattr(plan_end, 'strftime'):
+                end_str = plan_end.strftime("%H:%M")
+            else:
+                end_str = str(plan_end)[11:16] if len(str(plan_end)) > 11 else str(plan_end)[:5]
+        
+        turni.append({
+            "date": date_str,
+            "project_code": row['project_code'] if isinstance(row, dict) else row[1],
+            "project_name": row['project_name'] if isinstance(row, dict) else row[2],
+            "function": row['function_name'] if isinstance(row, dict) else row[3],
+            "start": start_str,
+            "end": end_str,
+            "hours": float(row['hours_planned'] if isinstance(row, dict) else row[6] or 0),
+            "note": row['remark'] if isinstance(row, dict) else row[7],
+            "is_leader": bool(row['is_leader'] if isinstance(row, dict) else row[8]),
+            "transport": row['transport'] if isinstance(row, dict) else row[9],
+        })
+    
+    return jsonify({"turni": turni})
 
 
 @app.get("/magazzino")
@@ -4455,6 +5103,50 @@ CREATE TABLE IF NOT EXISTS warehouse_manual_projects (
 );
 CREATE INDEX IF NOT EXISTS idx_wh_manual_user ON warehouse_manual_projects(username);
 """
+
+
+# ============================================================
+# TABELLE TIMBRATURA
+# ============================================================
+
+TIMBRATURE_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS timbrature (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(190) NOT NULL,
+    tipo VARCHAR(50) NOT NULL,
+    data DATE NOT NULL,
+    ora TIME NOT NULL,
+    created_ts BIGINT NOT NULL,
+    INDEX idx_timbrature_user_date (username, data),
+    INDEX idx_timbrature_date (data)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+TIMBRATURE_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS timbrature (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    tipo TEXT NOT NULL,
+    data TEXT NOT NULL,
+    ora TEXT NOT NULL,
+    created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_timbrature_user_date ON timbrature(username, data);
+CREATE INDEX IF NOT EXISTS idx_timbrature_date ON timbrature(data);
+"""
+
+
+def ensure_timbrature_table(db: DatabaseLike) -> None:
+    statement = TIMBRATURE_TABLE_MYSQL if DB_VENDOR == "mysql" else TIMBRATURE_TABLE_SQLITE
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
 
 
 def ensure_warehouse_activities_table(db: DatabaseLike) -> None:
@@ -6151,7 +6843,7 @@ def api_start_member():
 
     # Verifica che il membro esista e abbia un'attività assegnata
     member = db.execute(
-        "SELECT member_key, activity_id, running FROM member_state WHERE member_key=?",
+        "SELECT member_key, member_name, activity_id, running FROM member_state WHERE member_key=?",
         (member_key,),
     ).fetchone()
     
@@ -6163,6 +6855,28 @@ def api_start_member():
     
     if member["running"] == RUN_STATE_RUNNING:
         return jsonify({"ok": False, "error": "already_running"}), 400
+
+    # Recupera il codice progetto corrente
+    project_code = get_app_state(db, "project_code")
+    
+    # CedolinoWeb: invia timbrata INIZIO GIORNATA
+    timbrata_ok, external_id, timbrata_error = send_timbrata(
+        db,
+        member_key=member_key,
+        member_name=member["member_name"],
+        timeframe_id=TIMEFRAME_INIZIO_GIORNATA,
+        timestamp_ms=now,
+        project_code=project_code,
+        activity_id=member["activity_id"],
+    )
+    
+    if not timbrata_ok and external_id is None:
+        # Operatore senza ID esterno - blocca l'operazione
+        return jsonify({
+            "ok": False,
+            "error": "missing_external_id",
+            "message": "Operatore senza ID esterno CedolinoWeb. Configurare l'ID esterno in Gestione Operatori."
+        }), 400
 
     # Avvia il timer
     db.execute(
@@ -6370,6 +7084,28 @@ def api_member_pause():
     now = now_ms()
     elapsed = compute_elapsed(member, now)
 
+    # Recupera il codice progetto corrente
+    project_code = get_app_state(db, "project_code")
+
+    # CedolinoWeb: invia timbrata INIZIO PAUSA
+    timbrata_ok, external_id, timbrata_error = send_timbrata(
+        db,
+        member_key=member_key,
+        member_name=member["member_name"],
+        timeframe_id=TIMEFRAME_INIZIO_PAUSA,
+        timestamp_ms=now,
+        project_code=project_code,
+        activity_id=member["activity_id"],
+    )
+    
+    if not timbrata_ok and external_id is None:
+        # Operatore senza ID esterno - blocca l'operazione
+        return jsonify({
+            "ok": False,
+            "error": "missing_external_id",
+            "message": "Operatore senza ID esterno CedolinoWeb. Configurare l'ID esterno in Gestione Operatori."
+        }), 400
+
     db.execute(
         """
         UPDATE member_state
@@ -6423,6 +7159,28 @@ def api_member_resume():
 
     now = now_ms()
 
+    # Recupera il codice progetto corrente
+    project_code = get_app_state(db, "project_code")
+
+    # CedolinoWeb: invia timbrata FINE PAUSA
+    timbrata_ok, external_id, timbrata_error = send_timbrata(
+        db,
+        member_key=member_key,
+        member_name=member["member_name"],
+        timeframe_id=TIMEFRAME_FINE_PAUSA,
+        timestamp_ms=now,
+        project_code=project_code,
+        activity_id=member["activity_id"],
+    )
+    
+    if not timbrata_ok and external_id is None:
+        # Operatore senza ID esterno - blocca l'operazione
+        return jsonify({
+            "ok": False,
+            "error": "missing_external_id",
+            "message": "Operatore senza ID esterno CedolinoWeb. Configurare l'ID esterno in Gestione Operatori."
+        }), 400
+
     db.execute(
         "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
         (RUN_STATE_RUNNING, now, member_key),
@@ -6464,6 +7222,29 @@ def api_member_finish():
         return jsonify({"ok": False, "error": "member_not_assigned"}), 400
 
     now = now_ms()
+    
+    # Recupera il codice progetto corrente
+    project_code = get_app_state(db, "project_code")
+
+    # CedolinoWeb: invia timbrata FINE GIORNATA
+    timbrata_ok, external_id, timbrata_error = send_timbrata(
+        db,
+        member_key=member_key,
+        member_name=member["member_name"],
+        timeframe_id=TIMEFRAME_FINE_GIORNATA,
+        timestamp_ms=now,
+        project_code=project_code,
+        activity_id=member["activity_id"],
+    )
+    
+    if not timbrata_ok and external_id is None:
+        # Operatore senza ID esterno - blocca l'operazione
+        return jsonify({
+            "ok": False,
+            "error": "missing_external_id",
+            "message": "Operatore senza ID esterno CedolinoWeb. Configurare l'ID esterno in Gestione Operatori."
+        }), 400
+
     elapsed = compute_elapsed(member, now)
     activity_meta = load_activity_meta(db)
     meta_changed = False
@@ -6763,7 +7544,7 @@ def generate_csv_export(data: List[Dict[str, Any]], project_code: str, project_n
 @app.get("/admin/dashboard")
 @login_required
 def admin_dashboard_page() -> ResponseReturnValue:
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         abort(403)
 
     display_name = session.get("user_display") or session.get("user_name") or session.get("user")
@@ -6775,13 +7556,14 @@ def admin_dashboard_page() -> ResponseReturnValue:
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+        is_admin=bool(session.get("is_admin")),
     )
 
 
 @app.get("/admin/sessions")
 @login_required
 def admin_sessions_page() -> ResponseReturnValue:
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         abort(403)
 
     display_name = session.get('user_display') or session.get('user_name') or session.get('user')
@@ -6793,6 +7575,7 @@ def admin_sessions_page() -> ResponseReturnValue:
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+        is_admin=bool(session.get("is_admin")),
     )
 
 
@@ -6800,7 +7583,7 @@ def admin_sessions_page() -> ResponseReturnValue:
 @login_required
 def api_admin_magazzino_summary() -> ResponseReturnValue:
     """Riepilogo ore magazzino per progetto (range date)."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     # Supporto range date: date_start/date_end oppure date singola (retrocompatibilità)
@@ -6871,7 +7654,7 @@ def api_admin_magazzino_summary() -> ResponseReturnValue:
 @login_required
 def api_admin_day_sessions() -> ResponseReturnValue:
     """Restituisce sessioni di squadra e magazzino per il range di date indicato."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     # Supporto range date: date_start/date_end oppure date singola (retrocompatibilità)
@@ -6936,7 +7719,7 @@ def api_admin_day_sessions() -> ResponseReturnValue:
 @login_required
 def api_admin_day_sessions_export_xlsx() -> ResponseReturnValue:
     """Esporta in Excel le sessioni (Squadra + Magazzino) per il range di date indicato."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     # Supporto range date: date_start/date_end oppure date singola (retrocompatibilità)
@@ -7108,7 +7891,7 @@ def api_admin_day_sessions_export_xlsx() -> ResponseReturnValue:
 @app.get("/api/admin/sessions")
 @login_required
 def api_admin_sessions():
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     db = get_db()
@@ -7257,7 +8040,15 @@ def api_admin_sessions():
     )
 
 
+def _admin_or_supervisor() -> Optional[ResponseReturnValue]:
+    """Guard per endpoint accessibili a admin e supervisor."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "forbidden"}), 403
+    return None
+
+
 def _admin_only() -> Optional[ResponseReturnValue]:
+    """Guard per endpoint accessibili solo ad admin."""
     if not session.get("is_admin"):
         return jsonify({"error": "forbidden"}), 403
     return None
@@ -7274,7 +8065,7 @@ def _normalize_text(value: Any) -> str:
 @app.post("/api/admin/sessions/save")
 @login_required
 def api_admin_sessions_save() -> ResponseReturnValue:
-    guard = _admin_only()
+    guard = _admin_or_supervisor()
     if guard is not None:
         return guard
 
@@ -7478,7 +8269,7 @@ def api_reset():
 @login_required
 def admin_activity_analysis_page() -> ResponseReturnValue:
     """Pagina analisi attività cross-progetto."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         abort(403)
 
     display_name = session.get("user_display") or session.get("user_name") or session.get("user")
@@ -7490,6 +8281,7 @@ def admin_activity_analysis_page() -> ResponseReturnValue:
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+        is_admin=bool(session.get("is_admin")),
     )
 
 
@@ -7497,7 +8289,7 @@ def admin_activity_analysis_page() -> ResponseReturnValue:
 @login_required
 def api_admin_activity_analysis() -> ResponseReturnValue:
     """API per analisi cross-progetto delle attività."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     mode = request.args.get("mode", "list")  # 'list' o 'analysis'
@@ -7674,7 +8466,7 @@ def api_admin_activity_analysis() -> ResponseReturnValue:
 @login_required
 def api_admin_activity_analysis_export() -> ResponseReturnValue:
     """Esporta analisi attività in Excel."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     date_start = parse_iso_date(request.args.get("date_start")) or (datetime.now().date() - timedelta(days=30))
@@ -7842,6 +8634,13 @@ def _ensure_notification_worker() -> None:
 atexit.register(stop_notification_worker)
 
 
+# Registrazione lazy del worker CedolinoWeb per retry timbrate
+@app.before_request
+def _ensure_cedolino_retry_worker() -> None:
+    if _CEDOLINO_RETRY_THREAD is None or not _CEDOLINO_RETRY_THREAD.is_alive():
+        start_cedolino_retry_worker()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  CREW MEMBERS - DATABASE (Operatori Rentman)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -7852,12 +8651,14 @@ CREATE TABLE IF NOT EXISTS crew_members (
     rentman_id INT NOT NULL UNIQUE,
     name VARCHAR(255) NOT NULL,
     external_id VARCHAR(255) DEFAULT NULL,
+    external_group_id VARCHAR(255) DEFAULT NULL,
     email VARCHAR(255) DEFAULT NULL,
     phone VARCHAR(50) DEFAULT NULL,
     is_active TINYINT(1) DEFAULT 1,
     created_ts BIGINT NOT NULL,
     updated_ts BIGINT NOT NULL,
     INDEX idx_crew_external (external_id),
+    INDEX idx_crew_external_group (external_group_id),
     INDEX idx_crew_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
@@ -7868,6 +8669,7 @@ CREATE TABLE IF NOT EXISTS crew_members (
     rentman_id INTEGER NOT NULL UNIQUE,
     name TEXT NOT NULL,
     external_id TEXT DEFAULT NULL,
+    external_group_id TEXT DEFAULT NULL,
     email TEXT DEFAULT NULL,
     phone TEXT DEFAULT NULL,
     is_active INTEGER DEFAULT 1,
@@ -7875,6 +8677,7 @@ CREATE TABLE IF NOT EXISTS crew_members (
     updated_ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_crew_external ON crew_members(external_id);
+CREATE INDEX IF NOT EXISTS idx_crew_external_group ON crew_members(external_group_id);
 CREATE INDEX IF NOT EXISTS idx_crew_active ON crew_members(is_active);
 """
 
@@ -7896,6 +8699,29 @@ def ensure_crew_members_table(db: DatabaseLike) -> None:
                 pass
         except Exception:
             pass  # Tabella/indice già esistente
+    
+    # Migrazione: aggiunge colonna external_group_id se non esiste
+    try:
+        if DB_VENDOR == "mysql":
+            # Verifica se la colonna esiste già
+            check = db.execute(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='crew_members' AND column_name='external_group_id'"
+            ).fetchone()
+            col_exists = (check[0] if check else 0) > 0
+            if not col_exists:
+                db.execute("ALTER TABLE crew_members ADD COLUMN external_group_id VARCHAR(255) DEFAULT NULL AFTER external_id")
+                db.commit()
+                app.logger.info("Colonna external_group_id aggiunta a crew_members")
+        else:
+            # SQLite: verifica tramite PRAGMA
+            cols = db.execute("PRAGMA table_info(crew_members)").fetchall()
+            col_names = [c[1] for c in cols]
+            if "external_group_id" not in col_names:
+                db.execute("ALTER TABLE crew_members ADD COLUMN external_group_id TEXT DEFAULT NULL")
+                db.commit()
+                app.logger.info("Colonna external_group_id aggiunta a crew_members")
+    except Exception as e:
+        app.logger.warning("Migrazione external_group_id: %s", e)
 
 
 def sync_crew_member_from_rentman(db: DatabaseLike, rentman_id: int, name: str) -> None:
@@ -7929,6 +8755,663 @@ def sync_crew_member_from_rentman(db: DatabaseLike, rentman_id: int, name: str) 
                 "INSERT INTO crew_members (rentman_id, name, created_ts, updated_ts) VALUES (?, ?, ?, ?)",
                 (rentman_id, name, now, now)
             )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CEDOLINO WEB - Funzioni di integrazione
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def ensure_cedolino_timbrature_table(db: DatabaseLike) -> None:
+    """Crea la tabella cedolino_timbrature se non esiste."""
+    statement = (
+        CEDOLINO_TIMBRATURE_TABLE_MYSQL if DB_VENDOR == "mysql" else CEDOLINO_TIMBRATURE_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        try:
+            cursor = db.execute(sql)
+            try:
+                cursor.close()
+            except AttributeError:
+                pass
+        except Exception:
+            pass
+
+
+def get_cedolino_settings() -> Optional[Dict[str, Any]]:
+    """Restituisce le impostazioni CedolinoWeb dal config.json."""
+    config = load_config()
+    section = config.get("cedolino_web")
+    if not section or not isinstance(section, dict):
+        return None
+    if not section.get("enabled"):
+        return None
+    return section
+
+
+def get_external_id_for_member(db: DatabaseLike, member_key: str) -> Optional[str]:
+    """
+    Recupera l'external_id (ID CedolinoWeb) per un operatore dato il member_key.
+    Il member_key ha formato 'rentman-crew-{rentman_id}'.
+    """
+    if not member_key:
+        return None
+    
+    # Estrai rentman_id dal member_key
+    if not member_key.startswith("rentman-crew-"):
+        app.logger.warning("CedolinoWeb: member_key non valido (formato atteso: rentman-crew-ID): %s", member_key)
+        return None
+    
+    try:
+        rentman_id = int(member_key.replace("rentman-crew-", ""))
+    except ValueError:
+        app.logger.warning("CedolinoWeb: impossibile estrarre rentman_id da %s", member_key)
+        return None
+    
+    # Cerca l'external_id nella tabella crew_members
+    if DB_VENDOR == "mysql":
+        row = db.execute(
+            "SELECT external_id FROM crew_members WHERE rentman_id = %s",
+            (rentman_id,)
+        ).fetchone()
+    else:
+        row = db.execute(
+            "SELECT external_id FROM crew_members WHERE rentman_id = ?",
+            (rentman_id,)
+        ).fetchone()
+    
+    if not row:
+        app.logger.debug("CedolinoWeb: nessun operatore trovato per rentman_id %s", rentman_id)
+        return None
+    
+    external_id = row["external_id"] if isinstance(row, dict) else row[0]
+    return external_id if external_id else None
+
+
+def get_external_id_for_username(db: DatabaseLike, username: str) -> Optional[str]:
+    """
+    Recupera l'external_id (ID CedolinoWeb) per un utente dato il suo username.
+    L'utente deve avere un rentman_crew_id associato in app_users,
+    che viene poi cercato in crew_members per ottenere l'external_id.
+    """
+    if not username:
+        return None
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera il rentman_crew_id dall'utente
+    user_row = db.execute(
+        f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+        (username,)
+    ).fetchone()
+    
+    if not user_row:
+        app.logger.debug("CedolinoWeb: utente %s non trovato", username)
+        return None
+    
+    crew_id = user_row['rentman_crew_id'] if isinstance(user_row, dict) else user_row[0]
+    if not crew_id:
+        app.logger.debug("CedolinoWeb: utente %s non ha rentman_crew_id", username)
+        return None
+    
+    # Cerca l'external_id nella tabella crew_members
+    if DB_VENDOR == "mysql":
+        row = db.execute(
+            "SELECT external_id FROM crew_members WHERE rentman_id = %s",
+            (crew_id,)
+        ).fetchone()
+    else:
+        row = db.execute(
+            "SELECT external_id FROM crew_members WHERE rentman_id = ?",
+            (crew_id,)
+        ).fetchone()
+    
+    if not row:
+        app.logger.debug("CedolinoWeb: nessun crew_member trovato per rentman_id %s", crew_id)
+        return None
+    
+    external_id = row["external_id"] if isinstance(row, dict) else row[0]
+    return external_id if external_id else None
+
+
+def get_external_group_id_for_username(db: DatabaseLike, username: str) -> Optional[str]:
+    """
+    Recupera l'external_group_id (Gruppo ID CedolinoWeb) per un utente dato il suo username.
+    L'utente deve avere un rentman_crew_id associato in app_users,
+    che viene poi cercato in crew_members per ottenere l'external_group_id.
+    """
+    if not username:
+        return None
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera il rentman_crew_id dall'utente
+    user_row = db.execute(
+        f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+        (username,)
+    ).fetchone()
+    
+    if not user_row:
+        return None
+    
+    crew_id = user_row['rentman_crew_id'] if isinstance(user_row, dict) else user_row[0]
+    if not crew_id:
+        return None
+    
+    # Cerca l'external_group_id nella tabella crew_members
+    if DB_VENDOR == "mysql":
+        row = db.execute(
+            "SELECT external_group_id FROM crew_members WHERE rentman_id = %s",
+            (crew_id,)
+        ).fetchone()
+    else:
+        row = db.execute(
+            "SELECT external_group_id FROM crew_members WHERE rentman_id = ?",
+            (crew_id,)
+        ).fetchone()
+    
+    if not row:
+        return None
+    
+    external_group_id = row["external_group_id"] if isinstance(row, dict) else row[0]
+    return external_group_id if external_group_id else None
+
+
+def call_cedolino_webservice(
+    external_id: str,
+    timeframe_id: int,
+    data_riferimento: str,
+    data_originale: str,
+    data_modificata: str,
+    endpoint: Optional[str] = None,
+    gruppo_id: Optional[str] = None
+) -> Tuple[bool, Optional[str], str]:
+    """
+    Chiama il webservice CedolinoWeb per registrare una timbrata.
+    
+    Args:
+        external_id: ID esterno dell'operatore (codice_utente e assunzione_id)
+        timeframe_id: tipo di timbrata (1=inizio, 3=pausa, 4=fine pausa, 8=fine)
+        data_riferimento: data di riferimento (formato YYYY-MM-DD)
+        data_originale: data/ora originale (formato YYYY-MM-DD HH:MM:SS)
+        data_modificata: data/ora modificata (formato YYYY-MM-DD HH:MM:SS)
+        endpoint: URL del webservice (default: CEDOLINO_WEB_ENDPOINT)
+        gruppo_id: ID del gruppo esterno (default: NULL)
+    
+    Returns:
+        Tuple (success: bool, error_message: Optional[str], request_url: str)
+    """
+    import requests
+    
+    if not endpoint:
+        endpoint = CEDOLINO_WEB_ENDPOINT
+    
+    params = {
+        "data_riferimento": data_riferimento,
+        "data_originale": data_originale,
+        "data_modificata": data_modificata,
+        "codice_utente": external_id,
+        "codice_terminale": CEDOLINO_CODICE_TERMINALE,
+        "timeframe_id": str(timeframe_id),
+        "assunzione_id": external_id,
+        "terminale_id": "NULL",
+        "gruppo_id": gruppo_id if gruppo_id else "NULL",
+        "turno_id": "NULL",
+        "note": "",
+        "validata": "true",
+    }
+    
+    # Costruisci URL completo per debug
+    from urllib.parse import urlencode
+    full_url = f"{endpoint}?{urlencode(params)}"
+    app.logger.info("=" * 80)
+    app.logger.info("CedolinoWeb REQUEST URL:")
+    app.logger.info(full_url)
+    app.logger.info("=" * 80)
+    
+    try:
+        app.logger.info(
+            "CedolinoWeb: invio timbrata per %s, timeframe=%s, originale=%s, modificata=%s",
+            external_id, timeframe_id, data_originale, data_modificata
+        )
+        response = requests.get(endpoint, params=params, timeout=30)
+        
+        # Log della risposta
+        app.logger.info("CedolinoWeb RESPONSE: status=%s, body=%s", response.status_code, response.text[:500] if response.text else "(vuoto)")
+        
+        if response.status_code == 200:
+            app.logger.info("CedolinoWeb: timbrata registrata con successo per %s", external_id)
+            return True, None, full_url
+        else:
+            error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+            app.logger.warning("CedolinoWeb: errore HTTP - %s", error_msg)
+            return False, error_msg, full_url
+            
+    except requests.Timeout:
+        error_msg = "Timeout durante la connessione"
+        app.logger.warning("CedolinoWeb: %s", error_msg)
+        return False, error_msg, full_url
+    except requests.RequestException as e:
+        error_msg = f"Errore di rete: {str(e)}"
+        app.logger.warning("CedolinoWeb: %s", error_msg)
+        return False, error_msg, full_url
+    except Exception as e:
+        error_msg = f"Errore imprevisto: {str(e)}"
+        app.logger.exception("CedolinoWeb: errore imprevisto")
+        return False, error_msg, full_url
+
+
+def send_timbrata(
+    db: DatabaseLike,
+    member_key: str,
+    member_name: str,
+    timeframe_id: int,
+    timestamp_ms: Optional[int] = None,
+    project_code: Optional[str] = None,
+    activity_id: Optional[str] = None,
+) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Registra una timbrata operatore e tenta l'invio a CedolinoWeb.
+    Per le timbrature operatori usa lo stesso orario per originale e modificato.
+    
+    Args:
+        db: connessione database
+        member_key: chiave operatore (es. rentman-crew-1656)
+        member_name: nome operatore
+        timeframe_id: tipo timbrata (1, 3, 4, 8)
+        timestamp_ms: timestamp (default: now)
+        project_code: codice progetto corrente
+        activity_id: ID attività corrente
+    
+    Returns:
+        Tuple (success: bool, external_id: Optional[str], error: Optional[str])
+        - success=True se timbrata inviata o CedolinoWeb disabilitato
+        - external_id=None se operatore non ha ID esterno
+        - error=messaggio se fallito
+    """
+    settings = get_cedolino_settings()
+    
+    # Se CedolinoWeb non è configurato/abilitato, ritorna OK silenziosamente
+    if not settings:
+        return True, None, None
+    
+    if timestamp_ms is None:
+        timestamp_ms = now_ms()
+    
+    # Recupera external_id
+    external_id = get_external_id_for_member(db, member_key)
+    if not external_id:
+        # Operatore senza ID esterno - blocca l'operazione
+        return False, None, "Operatore senza ID esterno CedolinoWeb"
+    
+    # Calcola data_riferimento e ora
+    dt = datetime.fromtimestamp(timestamp_ms / 1000.0)
+    data_riferimento = dt.strftime("%Y-%m-%d")
+    ora = dt.strftime("%H:%M:%S")
+    data_ora_completa = f"{data_riferimento} {ora}"
+    
+    # Assicurati che la tabella esista
+    ensure_cedolino_timbrature_table(db)
+    
+    now = now_ms()
+    
+    # Salva la timbrata nel database
+    if DB_VENDOR == "mysql":
+        db.execute(
+            """
+            INSERT INTO cedolino_timbrature 
+            (member_key, member_name, username, external_id, timeframe_id, timestamp_ms, 
+             data_riferimento, ora_originale, ora_modificata, project_code, activity_id, created_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (member_key, member_name, None, external_id, timeframe_id, timestamp_ms,
+             data_riferimento, ora, ora, project_code, activity_id, now)
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO cedolino_timbrature 
+            (member_key, member_name, username, external_id, timeframe_id, timestamp_ms, 
+             data_riferimento, ora_originale, ora_modificata, project_code, activity_id, created_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (member_key, member_name, None, external_id, timeframe_id, timestamp_ms,
+             data_riferimento, ora, ora, project_code, activity_id, now)
+        )
+    
+    # Recupera l'ID appena inserito
+    timbrata_id = _last_insert_id(db)
+    
+    # Tenta l'invio al webservice
+    endpoint = settings.get("endpoint") or CEDOLINO_WEB_ENDPOINT
+    success, error, _url = call_cedolino_webservice(
+        external_id, timeframe_id, data_riferimento, data_ora_completa, data_ora_completa, endpoint
+    )
+    
+    # Aggiorna lo stato di sincronizzazione
+    if success:
+        if DB_VENDOR == "mysql":
+            db.execute(
+                "UPDATE cedolino_timbrature SET synced_ts = %s WHERE id = %s",
+                (now_ms(), timbrata_id)
+            )
+        else:
+            db.execute(
+                "UPDATE cedolino_timbrature SET synced_ts = ? WHERE id = ?",
+                (now_ms(), timbrata_id)
+            )
+    else:
+        if DB_VENDOR == "mysql":
+            db.execute(
+                "UPDATE cedolino_timbrature SET sync_error = %s, sync_attempts = 1 WHERE id = %s",
+                (error, timbrata_id)
+            )
+        else:
+            db.execute(
+                "UPDATE cedolino_timbrature SET sync_error = ?, sync_attempts = 1 WHERE id = ?",
+                (error, timbrata_id)
+            )
+    
+    return success, external_id, error
+
+
+def send_timbrata_utente(
+    db: DatabaseLike,
+    username: str,
+    member_name: str,
+    timeframe_id: int,
+    data_riferimento: str,
+    ora_originale: str,
+    ora_modificata: str,
+) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
+    """
+    Registra una timbrata utente e tenta l'invio a CedolinoWeb.
+    Usa ora_originale e ora_modificata dalla tabella timbrature.
+    
+    Args:
+        db: connessione database
+        username: username dell'utente
+        member_name: nome operatore/utente
+        timeframe_id: tipo timbrata (1, 3, 4, 8)
+        data_riferimento: data della timbrata (YYYY-MM-DD)
+        ora_originale: orario reale della timbrata (HH:MM:SS)
+        ora_modificata: orario modificato/arrotondato (HH:MM:SS)
+    
+    Returns:
+        Tuple (success: bool, external_id: Optional[str], error: Optional[str], request_url: Optional[str])
+        - success=True se timbrata inviata o CedolinoWeb disabilitato
+        - external_id=None se operatore non ha ID esterno
+        - error=messaggio se fallito
+        - request_url=URL completo della chiamata (per debug)
+    """
+    settings = get_cedolino_settings()
+    
+    # Se CedolinoWeb non è configurato/abilitato, ritorna OK silenziosamente
+    if not settings:
+        return True, None, None, None
+    
+    # Recupera external_id dall'username
+    external_id = get_external_id_for_username(db, username)
+    if not external_id:
+        # Utente senza ID esterno - blocca l'operazione
+        return False, None, "Utente senza ID esterno CedolinoWeb", None
+    
+    # Recupera external_group_id dall'username
+    external_group_id = get_external_group_id_for_username(db, username)
+    
+    # Assicurati che ora_modificata abbia valore (fallback a ora_originale)
+    if not ora_modificata:
+        ora_modificata = ora_originale
+    
+    # Componi data_originale e data_modificata
+    data_originale = f"{data_riferimento} {ora_originale}"
+    data_modificata = f"{data_riferimento} {ora_modificata}"
+    
+    # Timestamp in millisecondi
+    try:
+        dt = datetime.strptime(f"{data_riferimento} {ora_originale}", "%Y-%m-%d %H:%M:%S")
+        timestamp_ms = int(dt.timestamp() * 1000)
+    except ValueError:
+        # Prova con formato senza secondi
+        try:
+            dt = datetime.strptime(f"{data_riferimento} {ora_originale}", "%Y-%m-%d %H:%M")
+            timestamp_ms = int(dt.timestamp() * 1000)
+        except ValueError:
+            timestamp_ms = now_ms()
+    
+    # Assicurati che la tabella esista
+    ensure_cedolino_timbrature_table(db)
+    
+    now = now_ms()
+    
+    # Salva la timbrata nel database
+    if DB_VENDOR == "mysql":
+        db.execute(
+            """
+            INSERT INTO cedolino_timbrature 
+            (member_key, member_name, username, external_id, timeframe_id, timestamp_ms, 
+             data_riferimento, ora_originale, ora_modificata, project_code, activity_id, created_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (None, member_name, username, external_id, timeframe_id, timestamp_ms,
+             data_riferimento, ora_originale, ora_modificata, None, None, now)
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO cedolino_timbrature 
+            (member_key, member_name, username, external_id, timeframe_id, timestamp_ms, 
+             data_riferimento, ora_originale, ora_modificata, project_code, activity_id, created_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (None, member_name, username, external_id, timeframe_id, timestamp_ms,
+             data_riferimento, ora_originale, ora_modificata, None, None, now)
+        )
+    
+    # Recupera l'ID appena inserito
+    timbrata_id = _last_insert_id(db)
+    
+    # Tenta l'invio al webservice
+    endpoint = settings.get("endpoint") or CEDOLINO_WEB_ENDPOINT
+    success, error, request_url = call_cedolino_webservice(
+        external_id, timeframe_id, data_riferimento, data_originale, data_modificata, endpoint, external_group_id
+    )
+    
+    # Aggiorna lo stato di sincronizzazione
+    if success:
+        if DB_VENDOR == "mysql":
+            db.execute(
+                "UPDATE cedolino_timbrature SET synced_ts = %s WHERE id = %s",
+                (now_ms(), timbrata_id)
+            )
+        else:
+            db.execute(
+                "UPDATE cedolino_timbrature SET synced_ts = ? WHERE id = ?",
+                (now_ms(), timbrata_id)
+            )
+    else:
+        if DB_VENDOR == "mysql":
+            db.execute(
+                "UPDATE cedolino_timbrature SET sync_error = %s, sync_attempts = 1 WHERE id = %s",
+                (error, timbrata_id)
+            )
+        else:
+            db.execute(
+                "UPDATE cedolino_timbrature SET sync_error = ?, sync_attempts = 1 WHERE id = ?",
+                (error, timbrata_id)
+            )
+    
+    return success, external_id, error, request_url
+
+
+def retry_pending_timbrature(db: DatabaseLike, max_attempts: int = 5) -> int:
+    """
+    Ritenta l'invio delle timbrate non sincronizzate.
+    
+    Args:
+        db: connessione database
+        max_attempts: numero massimo di tentativi
+    
+    Returns:
+        Numero di timbrate sincronizzate con successo
+    """
+    settings = get_cedolino_settings()
+    if not settings:
+        return 0
+    
+    endpoint = settings.get("endpoint") or CEDOLINO_WEB_ENDPOINT
+    
+    # Recupera timbrate non sincronizzate con tentativi < max
+    if DB_VENDOR == "mysql":
+        rows = db.execute(
+            """
+            SELECT id, external_id, timeframe_id, data_riferimento, ora_originale, ora_modificata, sync_attempts
+            FROM cedolino_timbrature
+            WHERE synced_ts IS NULL AND sync_attempts < %s
+            ORDER BY created_ts ASC
+            LIMIT 50
+            """,
+            (max_attempts,)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT id, external_id, timeframe_id, data_riferimento, ora_originale, ora_modificata, sync_attempts
+            FROM cedolino_timbrature
+            WHERE synced_ts IS NULL AND sync_attempts < ?
+            ORDER BY created_ts ASC
+            LIMIT 50
+            """,
+            (max_attempts,)
+        ).fetchall()
+    
+    synced_count = 0
+    for row in rows:
+        timbrata_id = row["id"] if isinstance(row, dict) else row[0]
+        external_id = row["external_id"] if isinstance(row, dict) else row[1]
+        timeframe_id = row["timeframe_id"] if isinstance(row, dict) else row[2]
+        data_rif = row["data_riferimento"] if isinstance(row, dict) else row[3]
+        ora_orig = row["ora_originale"] if isinstance(row, dict) else row[4]
+        ora_mod = row["ora_modificata"] if isinstance(row, dict) else row[5]
+        attempts = row["sync_attempts"] if isinstance(row, dict) else row[6]
+        
+        # Formatta data_riferimento come stringa se necessario
+        if hasattr(data_rif, 'strftime'):
+            data_riferimento = data_rif.strftime("%Y-%m-%d")
+        else:
+            data_riferimento = str(data_rif)
+        
+        # Formatta ora come stringa se necessario
+        if hasattr(ora_orig, 'strftime'):
+            ora_originale = ora_orig.strftime("%H:%M:%S")
+        else:
+            ora_originale = str(ora_orig)
+        
+        if hasattr(ora_mod, 'strftime'):
+            ora_modificata = ora_mod.strftime("%H:%M:%S")
+        else:
+            ora_modificata = str(ora_mod) if ora_mod else ora_originale
+        
+        # Componi data_originale e data_modificata
+        data_originale = f"{data_riferimento} {ora_originale}"
+        data_modificata = f"{data_riferimento} {ora_modificata}"
+        
+        success, error, _url = call_cedolino_webservice(
+            external_id, timeframe_id, data_riferimento, data_originale, data_modificata, endpoint
+        )
+        
+        if success:
+            if DB_VENDOR == "mysql":
+                db.execute(
+                    "UPDATE cedolino_timbrature SET synced_ts = %s, sync_error = NULL WHERE id = %s",
+                    (now_ms(), timbrata_id)
+                )
+            else:
+                db.execute(
+                    "UPDATE cedolino_timbrature SET synced_ts = ?, sync_error = NULL WHERE id = ?",
+                    (now_ms(), timbrata_id)
+                )
+            synced_count += 1
+        else:
+            if DB_VENDOR == "mysql":
+                db.execute(
+                    "UPDATE cedolino_timbrature SET sync_error = %s, sync_attempts = %s WHERE id = %s",
+                    (error, attempts + 1, timbrata_id)
+                )
+            else:
+                db.execute(
+                    "UPDATE cedolino_timbrature SET sync_error = ?, sync_attempts = ? WHERE id = ?",
+                    (error, attempts + 1, timbrata_id)
+                )
+    
+    if rows:
+        db.commit()
+    
+    return synced_count
+
+
+def _cedolino_retry_worker(stop_event: Event) -> None:
+    """Worker thread per ritentare l'invio delle timbrate CedolinoWeb non sincronizzate."""
+    app.logger.info(
+        "CedolinoWeb retry worker: avviato (intervallo %ss)", CEDOLINO_RETRY_INTERVAL_SECONDS
+    )
+    
+    while not stop_event.is_set():
+        try:
+            with app.app_context():
+                settings = get_cedolino_settings()
+                if not settings:
+                    app.logger.debug("CedolinoWeb retry worker: integrazione disabilitata")
+                else:
+                    max_attempts = settings.get("max_retry_attempts", 10)
+                    db = get_db()
+                    synced = retry_pending_timbrature(db, max_attempts)
+                    if synced > 0:
+                        app.logger.info("CedolinoWeb retry worker: sincronizzate %s timbrate", synced)
+        except Exception as exc:
+            app.logger.exception("CedolinoWeb retry worker: errore", exc_info=exc)
+        finally:
+            stop_event.wait(CEDOLINO_RETRY_INTERVAL_SECONDS)
+
+
+def start_cedolino_retry_worker() -> None:
+    """Avvia il worker per i retry CedolinoWeb."""
+    global _CEDOLINO_RETRY_THREAD, _CEDOLINO_RETRY_STOP
+    
+    if _CEDOLINO_RETRY_THREAD and _CEDOLINO_RETRY_THREAD.is_alive():
+        return
+    
+    _CEDOLINO_RETRY_STOP = Event()
+    _CEDOLINO_RETRY_THREAD = Thread(
+        target=_cedolino_retry_worker,
+        args=(_CEDOLINO_RETRY_STOP,),
+        name="joblog-cedolino-retry",
+        daemon=True
+    )
+    _CEDOLINO_RETRY_THREAD.start()
+    app.logger.info("CedolinoWeb retry worker: thread avviato")
+
+
+def stop_cedolino_retry_worker() -> None:
+    """Ferma il worker per i retry CedolinoWeb."""
+    global _CEDOLINO_RETRY_THREAD, _CEDOLINO_RETRY_STOP
+    
+    stop_event = _CEDOLINO_RETRY_STOP
+    thread = _CEDOLINO_RETRY_THREAD
+    
+    if stop_event is not None:
+        stop_event.set()
+    
+    if thread and thread.is_alive():
+        thread.join(timeout=5)
+    
+    _CEDOLINO_RETRY_THREAD = None
+    _CEDOLINO_RETRY_STOP = None
+
+
+atexit.register(stop_cedolino_retry_worker)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -8134,7 +9617,7 @@ def match_crew_name_to_joblog(crew_name: str, joblog_hours: Dict[str, float]) ->
 @login_required
 def admin_rentman_planning_page() -> ResponseReturnValue:
     """Pagina pianificazioni Rentman."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         abort(403)
 
     display_name = session.get("user_display") or session.get("user_name") or session.get("user")
@@ -8146,6 +9629,7 @@ def admin_rentman_planning_page() -> ResponseReturnValue:
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+        is_admin=bool(session.get("is_admin")),
     )
 
 
@@ -8153,7 +9637,7 @@ def admin_rentman_planning_page() -> ResponseReturnValue:
 @login_required
 def api_admin_rentman_planning() -> ResponseReturnValue:
     """API per recuperare pianificazioni Rentman per una data."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     target_date = request.args.get("date")
@@ -8275,7 +9759,7 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
 @login_required
 def api_admin_rentman_planning_save() -> ResponseReturnValue:
     """Salva le pianificazioni Rentman nel database locale."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     data = request.get_json() or {}
@@ -8326,7 +9810,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
         if crew_id and crew_id not in synced_crews:
             sync_crew_member_from_rentman(db, crew_id, crew_name or f"Crew {crew_id}")
             synced_crews.add(crew_id)
-            continue
+            # NON fare continue qui! Devo comunque salvare la pianificazione
 
         # Converti hours da secondi a ore se necessario
         hours_planned = p.get("hours_planned")
@@ -8438,7 +9922,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
 @login_required
 def api_admin_rentman_planning_saved() -> ResponseReturnValue:
     """Recupera le pianificazioni salvate dal database locale."""
-    if not session.get("is_admin"):
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     target_date = request.args.get("date")
@@ -8483,8 +9967,8 @@ def api_admin_rentman_planning_saved() -> ResponseReturnValue:
 @app.post("/api/admin/rentman-planning/send")
 @login_required
 def api_admin_rentman_planning_send() -> ResponseReturnValue:
-    """Invia le pianificazioni al webservice esterno."""
-    if not session.get("is_admin"):
+    """Invia le pianificazioni al webservice esterno e notifica gli utenti."""
+    if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     data = request.get_json() or {}
@@ -8514,14 +9998,23 @@ def api_admin_rentman_planning_send() -> ResponseReturnValue:
 
     # TODO: Implementare l'invio al webservice
     # Per ora segna come inviate
-    now_ms = int(time.time() * 1000)
+    now_ms_val = int(time.time() * 1000)
     sent_count = 0
     errors = []
+    
+    # Raccogli info per notifiche push
+    users_to_notify: Dict[int, List[Dict[str, Any]]] = {}  # crew_id -> list of turni
 
     # Se abbiamo righe dal DB, processa quelle
     if rows:
         for row in rows:
             local_id = row["id"] if isinstance(row, Mapping) else row[0]
+            crew_id = row["crew_id"] if isinstance(row, Mapping) else row[3]
+            planning_date = row["planning_date"] if isinstance(row, Mapping) else row[2]
+            project_name = row["project_name"] if isinstance(row, Mapping) else row[8]
+            
+            # Controlla se era già stato inviato
+            was_sent = row["sent_to_webservice"] if isinstance(row, Mapping) else row[17]
             
             try:
                 # TODO: Chiamata al webservice qui
@@ -8536,15 +10029,24 @@ def api_admin_rentman_planning_send() -> ResponseReturnValue:
                         UPDATE rentman_plannings 
                         SET sent_to_webservice = 1, sent_ts = %s, webservice_response = %s, updated_ts = %s
                         WHERE id = %s
-                    """, (now_ms, webservice_response, now_ms, local_id))
+                    """, (now_ms_val, webservice_response, now_ms_val, local_id))
                 else:
                     db.execute("""
                         UPDATE rentman_plannings 
                         SET sent_to_webservice = 1, sent_ts = ?, webservice_response = ?, updated_ts = ?
                         WHERE id = ?
-                    """, (now_ms, webservice_response, now_ms, local_id))
+                    """, (now_ms_val, webservice_response, now_ms_val, local_id))
                 
                 sent_count += 1
+                
+                # Aggiungi alla lista per notifica (solo se non era già inviato)
+                if not was_sent and crew_id:
+                    if crew_id not in users_to_notify:
+                        users_to_notify[crew_id] = []
+                    users_to_notify[crew_id].append({
+                        "date": str(planning_date)[:10] if planning_date else "",
+                        "project": project_name or "Progetto"
+                    })
                 
             except Exception as exc:
                 app.logger.error("Errore invio pianificazione %s: %s", local_id, exc)
@@ -8561,12 +10063,113 @@ def api_admin_rentman_planning_send() -> ResponseReturnValue:
                 errors.append({"id": p.get("id"), "error": str(exc)})
 
     db.commit()
+    
+    # Invia notifiche push agli utenti
+    notifications_sent = 0
+    if users_to_notify:
+        notifications_sent = _send_turni_notifications(db, users_to_notify)
 
     return jsonify({
         "ok": True,
         "sent": sent_count,
+        "notifications_sent": notifications_sent,
         "errors": errors,
     })
+
+
+def _send_turni_notifications(db: DatabaseLike, users_to_notify: Dict[int, List[Dict[str, Any]]]) -> int:
+    """Invia notifiche push agli utenti per i nuovi turni pubblicati."""
+    app.logger.info("_send_turni_notifications chiamata con %d crew_id", len(users_to_notify))
+    
+    settings = get_webpush_settings()
+    if not settings:
+        app.logger.info("Notifiche push non configurate, skip invio turni")
+        return 0
+    
+    notifications_sent = 0
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    for crew_id, turni in users_to_notify.items():
+        app.logger.info("Cerco utente per crew_id=%s", crew_id)
+        
+        # Trova l'utente associato a questo crew_id
+        user_row = db.execute(
+            f"SELECT username FROM app_users WHERE rentman_crew_id = {placeholder}",
+            (crew_id,)
+        ).fetchone()
+        
+        if not user_row:
+            app.logger.warning("Nessun utente trovato per crew_id=%s", crew_id)
+            continue
+        
+        username = user_row['username'] if isinstance(user_row, dict) else user_row[0]
+        app.logger.info("Trovato utente %s per crew_id=%s", username, crew_id)
+        
+        # Recupera le subscription push dell'utente
+        subscriptions = db.execute(
+            f"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE username = {placeholder}",
+            (username,)
+        ).fetchall()
+        
+        if not subscriptions:
+            app.logger.warning("Nessuna subscription push per utente %s", username)
+            continue
+        
+        app.logger.info("Trovate %d subscription per %s", len(subscriptions), username)
+        
+        # Prepara il messaggio
+        if len(turni) == 1:
+            title = "📅 Nuovo turno pubblicato"
+            body = f"{turni[0]['date']} - {turni[0]['project']}"
+        else:
+            title = f"📅 {len(turni)} nuovi turni pubblicati"
+            body = f"Hai {len(turni)} nuovi turni. Apri l'app per i dettagli."
+        
+        payload = {
+            "title": title,
+            "body": body,
+            "icon": "/static/icons/icon-192.png",
+            "badge": "/static/icons/badge-72.png",
+            "tag": "turni-update",
+            "data": {
+                "url": "/turni",
+                "type": "turni_published"
+            }
+        }
+        
+        # Invia a tutte le subscription dell'utente
+        for sub in subscriptions:
+            endpoint = sub['endpoint'] if isinstance(sub, dict) else sub[0]
+            p256dh = sub['p256dh'] if isinstance(sub, dict) else sub[1]
+            auth = sub['auth'] if isinstance(sub, dict) else sub[2]
+            
+            subscription_info = {
+                "endpoint": endpoint,
+                "keys": {
+                    "p256dh": p256dh,
+                    "auth": auth
+                }
+            }
+            
+            try:
+                webpush(
+                    subscription_info=subscription_info,
+                    data=json.dumps(payload),
+                    vapid_private_key=settings["vapid_private"],
+                    vapid_claims={"sub": settings["subject"]},
+                    ttl=86400,  # 24 ore
+                )
+                notifications_sent += 1
+                app.logger.info("Notifica turno inviata a %s", username)
+            except WebPushException as e:
+                app.logger.warning("Errore invio notifica turno a %s: %s", username, e)
+                # Rimuovi subscription se non valida
+                if e.response and e.response.status_code in {404, 410}:
+                    remove_push_subscription(db, endpoint)
+            except Exception as e:
+                app.logger.error("Errore generico invio notifica turno: %s", e)
+    
+    return notifications_sent
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -8647,6 +10250,91 @@ def qr_timbratura_page():
     )
 
 
+def _validate_giqr_payload(payload: dict) -> Tuple[bool, str]:
+    """
+    Valida un payload GiQR.
+    Ritorna (is_valid, error_message).
+    """
+    if not payload:
+        return False, "Payload vuoto"
+    
+    required_fields = ["v", "dt", "dev", "n", "sig"]
+    for field in required_fields:
+        if field not in payload:
+            return False, f"Campo mancante: {field}"
+    
+    # Verifica versione
+    if payload.get("v") != 1:
+        return False, "Versione QR non supportata"
+    
+    # Verifica timestamp (non più vecchio di 60 secondi)
+    dt_str = payload.get("dt", "")
+    try:
+        qr_time = datetime.strptime(dt_str, "%Y%m%d%H%M%S")
+        now = datetime.now()
+        age_seconds = abs((now - qr_time).total_seconds())
+        if age_seconds > 60:
+            return False, f"QR scaduto ({int(age_seconds)} secondi)"
+    except ValueError:
+        return False, "Timestamp non valido"
+    
+    # Verifica firma
+    dev = payload.get("dev", "")
+    sig_expected = (
+        qr_time.hour * 97 +
+        qr_time.minute * 59 +
+        qr_time.second * 31 +
+        qr_time.year +
+        qr_time.month +
+        qr_time.day +
+        sum(dev.encode())
+    ) % 100000
+    
+    if payload.get("sig") != sig_expected:
+        return False, "Firma QR non valida"
+    
+    return True, ""
+
+
+@app.post("/api/timbratura/validate-qr")
+@login_required
+def api_timbratura_validate_qr():
+    """Valida un QR code scansionato per la timbratura."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"valid": False, "error": "Dati mancanti"}), 400
+    
+    qr_data = data.get("qr_data", "")
+    
+    # Decodifica Base64 → JSON
+    try:
+        decoded = base64.b64decode(qr_data).decode("utf-8")
+        payload = json.loads(decoded)
+    except Exception:
+        return jsonify({"valid": False, "error": "QR non valido"}), 400
+    
+    # Valida payload
+    is_valid, error = _validate_giqr_payload(payload)
+    
+    if not is_valid:
+        return jsonify({"valid": False, "error": error}), 400
+    
+    # Genera un token temporaneo di validazione (valido 5 minuti)
+    validation_token = secrets.token_urlsafe(32)
+    expires = now_ms() + (5 * 60 * 1000)  # 5 minuti
+    
+    # Salva in sessione
+    session["timbratura_token"] = validation_token
+    session["timbratura_token_expires"] = expires
+    
+    return jsonify({
+        "valid": True,
+        "token": validation_token,
+        "expires_in": 300,
+        "device": payload.get("dev", "")
+    })
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  GESTIONE UTENTI - ADMIN UI
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -8681,29 +10369,26 @@ def api_admin_users_list() -> ResponseReturnValue:
         return jsonify({"error": "forbidden"}), 403
 
     db = get_db()
-    if DB_VENDOR == "mysql":
-        rows = db.execute("""
-            SELECT username, display_name, full_name, role, is_active, created_ts, updated_ts
-            FROM app_users
-            ORDER BY username ASC
-        """).fetchall()
-    else:
-        rows = db.execute("""
-            SELECT username, display_name, full_name, role, is_active, created_ts, updated_ts
-            FROM app_users
-            ORDER BY username ASC
-        """).fetchall()
+    rows = db.execute("""
+        SELECT u.username, u.display_name, u.full_name, u.role, u.is_active, 
+               u.created_ts, u.updated_ts, u.rentman_crew_id, c.name as crew_name
+        FROM app_users u
+        LEFT JOIN crew_members c ON u.rentman_crew_id = c.rentman_id
+        ORDER BY u.username ASC
+    """).fetchall()
 
     users = []
     for row in rows:
         users.append({
-            "username": row["username"],
-            "display_name": row["display_name"],
-            "full_name": row["full_name"],
-            "role": row["role"],
-            "is_active": bool(row["is_active"]),
-            "created_ts": row["created_ts"],
-            "updated_ts": row["updated_ts"],
+            "username": row["username"] if isinstance(row, dict) else row[0],
+            "display_name": row["display_name"] if isinstance(row, dict) else row[1],
+            "full_name": row["full_name"] if isinstance(row, dict) else row[2],
+            "role": row["role"] if isinstance(row, dict) else row[3],
+            "is_active": bool(row["is_active"] if isinstance(row, dict) else row[4]),
+            "created_ts": row["created_ts"] if isinstance(row, dict) else row[5],
+            "updated_ts": row["updated_ts"] if isinstance(row, dict) else row[6],
+            "rentman_crew_id": row["rentman_crew_id"] if isinstance(row, dict) else row[7],
+            "crew_name": row["crew_name"] if isinstance(row, dict) else row[8],
         })
 
     return jsonify({"users": users})
@@ -8726,6 +10411,9 @@ def api_admin_users_create() -> ResponseReturnValue:
     full_name = (data.get("full_name") or "").strip() or None
     role = (data.get("role") or "user").strip().lower()
     is_active = data.get("is_active", True)
+    rentman_crew_id = data.get("rentman_crew_id")
+    if rentman_crew_id is not None:
+        rentman_crew_id = int(rentman_crew_id) if rentman_crew_id else None
 
     if not username:
         return jsonify({"error": "Username richiesto"}), 400
@@ -8752,14 +10440,14 @@ def api_admin_users_create() -> ResponseReturnValue:
 
     if DB_VENDOR == "mysql":
         db.execute("""
-            INSERT INTO app_users (username, password_hash, display_name, full_name, role, is_active, created_ts, updated_ts)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (username, password_hashed, display_name, full_name, role, 1 if is_active else 0, now, now))
+            INSERT INTO app_users (username, password_hash, display_name, full_name, role, is_active, rentman_crew_id, created_ts, updated_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (username, password_hashed, display_name, full_name, role, 1 if is_active else 0, rentman_crew_id, now, now))
     else:
         db.execute("""
-            INSERT INTO app_users (username, password_hash, display_name, full_name, role, is_active, created_ts, updated_ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (username, password_hashed, display_name, full_name, role, 1 if is_active else 0, now, now))
+            INSERT INTO app_users (username, password_hash, display_name, full_name, role, is_active, rentman_crew_id, created_ts, updated_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (username, password_hashed, display_name, full_name, role, 1 if is_active else 0, rentman_crew_id, now, now))
     db.commit()
 
     app.logger.info("Admin %s ha creato utente %s con ruolo %s", session.get("user"), username, role)
@@ -8775,6 +10463,7 @@ def api_admin_users_update(username: str) -> ResponseReturnValue:
 
     username = username.strip().lower()
     data = request.get_json()
+    app.logger.info("PUT /api/admin/users/%s - payload: %s", username, data)
     if not data:
         return jsonify({"error": "Dati non validi"}), 400
 
@@ -8829,6 +10518,16 @@ def api_admin_users_update(username: str) -> ResponseReturnValue:
         updates.append("password_hash = " + ("%s" if DB_VENDOR == "mysql" else "?"))
         params.append(password_hashed)
 
+    if "rentman_crew_id" in data:
+        rentman_crew_id = data.get("rentman_crew_id")
+        # Può essere None per rimuovere l'associazione, o un intero
+        if rentman_crew_id is not None and rentman_crew_id != "":
+            rentman_crew_id = int(rentman_crew_id)
+        else:
+            rentman_crew_id = None
+        updates.append("rentman_crew_id = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(rentman_crew_id)
+
     if not updates:
         return jsonify({"error": "Nessun campo da aggiornare"}), 400
 
@@ -8838,8 +10537,18 @@ def api_admin_users_update(username: str) -> ResponseReturnValue:
 
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     sql = f"UPDATE app_users SET {', '.join(updates)} WHERE username = {placeholder}"
-    db.execute(sql, tuple(params))
+    app.logger.info("SQL UPDATE: %s con params: %s", sql, params)
+    
+    cursor = db.execute(sql, tuple(params))
+    app.logger.info("Rows affected: %s", cursor.rowcount if hasattr(cursor, 'rowcount') else 'N/A')
+    
     db.commit()
+    app.logger.info("COMMIT eseguito per utente %s", username)
+    
+    # Verifica immediata
+    if DB_VENDOR == "mysql":
+        verify = db.execute("SELECT rentman_crew_id FROM app_users WHERE username = %s", (username,)).fetchone()
+        app.logger.info("Verifica dopo commit - rentman_crew_id: %s", verify)
 
     app.logger.info("Admin %s ha modificato utente %s", session.get("user"), username)
     return jsonify({"ok": True, "username": username})
@@ -8906,12 +10615,12 @@ def api_admin_operators_list() -> ResponseReturnValue:
 
     if DB_VENDOR == "mysql":
         cursor = db.execute(
-            "SELECT id, rentman_id, name, external_id, email, phone, is_active, created_ts, updated_ts "
+            "SELECT id, rentman_id, name, external_id, external_group_id, email, phone, is_active, created_ts, updated_ts "
             "FROM crew_members ORDER BY name"
         )
     else:
         cursor = db.execute(
-            "SELECT id, rentman_id, name, external_id, email, phone, is_active, created_ts, updated_ts "
+            "SELECT id, rentman_id, name, external_id, external_group_id, email, phone, is_active, created_ts, updated_ts "
             "FROM crew_members ORDER BY name"
         )
     rows = cursor.fetchall()
@@ -8923,11 +10632,12 @@ def api_admin_operators_list() -> ResponseReturnValue:
             "rentman_id": row[1],
             "name": row[2],
             "external_id": row[3],
-            "email": row[4],
-            "phone": row[5],
-            "is_active": bool(row[6]),
-            "created_ts": row[7],
-            "updated_ts": row[8]
+            "external_group_id": row[4],
+            "email": row[5],
+            "phone": row[6],
+            "is_active": bool(row[7]),
+            "created_ts": row[8],
+            "updated_ts": row[9]
         })
 
     return jsonify({"ok": True, "operators": operators})
@@ -8959,6 +10669,10 @@ def api_admin_operators_update(operator_id: int) -> ResponseReturnValue:
     if external_id is not None:
         external_id = external_id.strip() if external_id else None
 
+    external_group_id = data.get("external_group_id")
+    if external_group_id is not None:
+        external_group_id = external_group_id.strip() if external_group_id else None
+
     email = data.get("email")
     if email is not None:
         email = email.strip() if email else None
@@ -8980,6 +10694,9 @@ def api_admin_operators_update(operator_id: int) -> ResponseReturnValue:
     if "external_id" in data:
         updates.append("external_id = " + ("%s" if DB_VENDOR == "mysql" else "?"))
         params.append(external_id)
+    if "external_group_id" in data:
+        updates.append("external_group_id = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(external_group_id)
     if "email" in data:
         updates.append("email = " + ("%s" if DB_VENDOR == "mysql" else "?"))
         params.append(email)
@@ -9045,6 +10762,273 @@ def api_admin_operators_sync() -> ResponseReturnValue:
     return jsonify({"ok": True, "synced": synced})
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  REGOLE TIMBRATURE - ADMIN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def ensure_timbratura_rules_table(db):
+    """Crea la tabella timbratura_rules se non esiste."""
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    if DB_VENDOR == "mysql":
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS timbratura_rules (
+                id INT PRIMARY KEY DEFAULT 1,
+                anticipo_max_minuti INT DEFAULT 30,
+                tolleranza_ritardo_minuti INT DEFAULT 5,
+                arrotondamento_ingresso_minuti INT DEFAULT 15,
+                arrotondamento_uscita_minuti INT DEFAULT 15,
+                pausa_blocco_minimo_minuti INT DEFAULT 30,
+                pausa_incremento_minuti INT DEFAULT 15,
+                pausa_tolleranza_minuti INT DEFAULT 5,
+                updated_ts BIGINT,
+                updated_by VARCHAR(100)
+            )
+        """)
+    else:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS timbratura_rules (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                anticipo_max_minuti INTEGER DEFAULT 30,
+                tolleranza_ritardo_minuti INTEGER DEFAULT 5,
+                arrotondamento_ingresso_minuti INTEGER DEFAULT 15,
+                arrotondamento_uscita_minuti INTEGER DEFAULT 15,
+                pausa_blocco_minimo_minuti INTEGER DEFAULT 30,
+                pausa_incremento_minuti INTEGER DEFAULT 15,
+                pausa_tolleranza_minuti INTEGER DEFAULT 5,
+                updated_ts INTEGER,
+                updated_by TEXT
+            )
+        """)
+    db.commit()
+
+
+def get_timbratura_rules(db) -> dict:
+    """Ottiene le regole timbrature dal database."""
+    ensure_timbratura_rules_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    row = db.execute("SELECT * FROM timbratura_rules WHERE id = 1").fetchone()
+    
+    if not row:
+        # Inserisce valori di default
+        db.execute("""
+            INSERT INTO timbratura_rules (id, anticipo_max_minuti, tolleranza_ritardo_minuti,
+                arrotondamento_ingresso_minuti, arrotondamento_uscita_minuti,
+                pausa_blocco_minimo_minuti, pausa_incremento_minuti, pausa_tolleranza_minuti)
+            VALUES (1, 30, 5, 15, 15, 30, 15, 5)
+        """)
+        db.commit()
+        row = db.execute("SELECT * FROM timbratura_rules WHERE id = 1").fetchone()
+    
+    if isinstance(row, dict):
+        return row
+    
+    # Converte tuple a dict
+    columns = ['id', 'anticipo_max_minuti', 'tolleranza_ritardo_minuti',
+               'arrotondamento_ingresso_minuti', 'arrotondamento_uscita_minuti',
+               'pausa_blocco_minimo_minuti', 'pausa_incremento_minuti', 
+               'pausa_tolleranza_minuti', 'updated_ts', 'updated_by']
+    return dict(zip(columns, row))
+
+
+@app.get("/admin/timbratura-rules")
+@login_required
+def admin_timbratura_rules_page() -> ResponseReturnValue:
+    """Pagina configurazione regole timbrature (solo admin)."""
+    if not session.get("is_admin"):
+        abort(403)
+    return render_template("admin_timbratura_rules.html")
+
+
+@app.get("/api/admin/timbratura-rules")
+@login_required
+def api_get_timbratura_rules():
+    """Restituisce le regole timbrature correnti."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    db = get_db()
+    rules = get_timbratura_rules(db)
+    return jsonify(rules)
+
+
+@app.post("/api/admin/timbratura-rules")
+@login_required
+def api_save_timbratura_rules():
+    """Salva le regole timbrature."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati mancanti"}), 400
+    
+    db = get_db()
+    ensure_timbratura_rules_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Valida i dati
+    fields = {
+        'anticipo_max_minuti': (0, 120),
+        'tolleranza_ritardo_minuti': (0, 60),
+        'arrotondamento_ingresso_minuti': (1, 60),
+        'arrotondamento_uscita_minuti': (1, 60),
+        'pausa_blocco_minimo_minuti': (5, 120),
+        'pausa_incremento_minuti': (5, 60),
+        'pausa_tolleranza_minuti': (0, 30)
+    }
+    
+    values = {}
+    for field, (min_val, max_val) in fields.items():
+        val = data.get(field)
+        if val is not None:
+            val = int(val)
+            if val < min_val or val > max_val:
+                return jsonify({"error": f"{field} deve essere tra {min_val} e {max_val}"}), 400
+            values[field] = val
+    
+    if not values:
+        return jsonify({"error": "Nessun campo da aggiornare"}), 400
+    
+    # Costruisce query di update
+    set_clause = ", ".join([f"{k} = {placeholder}" for k in values.keys()])
+    params = list(values.values()) + [now_ms(), session.get('user')]
+    
+    db.execute(
+        f"UPDATE timbratura_rules SET {set_clause}, updated_ts = {placeholder}, updated_by = {placeholder} WHERE id = 1",
+        params
+    )
+    db.commit()
+    
+    app.logger.info("Admin %s ha aggiornato le regole timbrature: %s", session.get('user'), values)
+    return jsonify({"success": True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CALCOLO ORA MODIFICATA (ora_mod)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def calcola_ora_mod(ora_originale: str, tipo: str, turno_start: str = None, rules: dict = None) -> str:
+    """
+    Calcola l'ora modificata in base alle regole.
+    
+    Args:
+        ora_originale: orario originale (HH:MM:SS o HH:MM)
+        tipo: tipo timbratura (inizio_giornata, fine_giornata, inizio_pausa, fine_pausa)
+        turno_start: orario inizio turno se presente (HH:MM)
+        rules: dizionario con le regole (se None, usa default)
+    
+    Returns:
+        ora modificata (HH:MM:SS)
+    """
+    if rules is None:
+        rules = {
+            'anticipo_max_minuti': 30,
+            'tolleranza_ritardo_minuti': 5,
+            'arrotondamento_ingresso_minuti': 15,
+            'arrotondamento_uscita_minuti': 15
+        }
+    
+    # Converte ora originale in minuti
+    parts = ora_originale.split(':')
+    ora_min = int(parts[0]) * 60 + int(parts[1])
+    
+    # Se c'è un turno e siamo in ingresso, prova normalizzazione
+    if turno_start and tipo == 'inizio_giornata':
+        turno_parts = turno_start.split(':')
+        turno_min = int(turno_parts[0]) * 60 + int(turno_parts[1])
+        
+        anticipo = rules.get('anticipo_max_minuti', 30)
+        tolleranza = rules.get('tolleranza_ritardo_minuti', 5)
+        
+        # Finestra di normalizzazione: [turno - anticipo, turno + tolleranza]
+        min_window = turno_min - anticipo
+        max_window = turno_min + tolleranza
+        
+        if min_window <= ora_min <= max_window:
+            # Normalizza all'orario del turno
+            h = turno_min // 60
+            m = turno_min % 60
+            return f"{h:02d}:{m:02d}:00"
+    
+    # Arrotondamento
+    if tipo == 'inizio_giornata':
+        # Arrotonda in eccesso (sfavorevole al dipendente per ingresso)
+        blocco = rules.get('arrotondamento_ingresso_minuti', 15)
+        ora_mod_min = ((ora_min + blocco - 1) // blocco) * blocco
+    elif tipo == 'fine_giornata':
+        # Arrotonda in difetto (sfavorevole al dipendente per uscita)
+        blocco = rules.get('arrotondamento_uscita_minuti', 15)
+        ora_mod_min = (ora_min // blocco) * blocco
+    else:
+        # Per inizio_pausa e fine_pausa, nessun arrotondamento sull'ora singola
+        # Le pause vengono gestite sulla durata totale
+        return ora_originale if ':' in ora_originale and ora_originale.count(':') == 2 else f"{ora_originale}:00"
+    
+    h = ora_mod_min // 60
+    m = ora_mod_min % 60
+    return f"{h:02d}:{m:02d}:00"
+
+
+def calcola_pausa_mod(inizio_pausa: str, fine_pausa: str, rules: dict = None) -> int:
+    """
+    Calcola la durata della pausa modificata in minuti.
+    
+    Args:
+        inizio_pausa: orario inizio pausa (HH:MM:SS o HH:MM)
+        fine_pausa: orario fine pausa (HH:MM:SS o HH:MM)
+        rules: dizionario con le regole (se None, usa default)
+    
+    Returns:
+        durata pausa in minuti (arrotondata secondo le regole)
+    """
+    if rules is None:
+        rules = {
+            'pausa_blocco_minimo_minuti': 30,
+            'pausa_incremento_minuti': 15,
+            'pausa_tolleranza_minuti': 5
+        }
+    
+    # Converte in minuti
+    ip = inizio_pausa.split(':')
+    fp = fine_pausa.split(':')
+    inizio_min = int(ip[0]) * 60 + int(ip[1])
+    fine_min = int(fp[0]) * 60 + int(fp[1])
+    
+    durata_effettiva = fine_min - inizio_min
+    
+    blocco_min = rules.get('pausa_blocco_minimo_minuti', 30)
+    incremento = rules.get('pausa_incremento_minuti', 15)
+    tolleranza = rules.get('pausa_tolleranza_minuti', 5)
+    
+    # Se durata < blocco minimo, usa blocco minimo
+    if durata_effettiva <= blocco_min:
+        return blocco_min
+    
+    # Calcola eccesso rispetto al blocco minimo
+    eccesso = durata_effettiva - blocco_min
+    
+    # Quanti blocchi di incremento sono necessari?
+    blocchi_extra = eccesso // incremento
+    resto = eccesso % incremento
+    
+    # Se il resto è > tolleranza, aggiungi un blocco
+    if resto > tolleranza:
+        blocchi_extra += 1
+    
+    return blocco_min + (blocchi_extra * incremento)
+
+
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    
+    # HTTPS per permettere accesso camera da mobile in rete locale
+    # Usa: python app.py --https
+    import sys
+    if "--https" in sys.argv:
+        print("🔐 Avvio in modalità HTTPS (per accesso camera da mobile)")
+        print("⚠️  Il browser mostrerà un avviso di sicurezza - clicca 'Avanzate' → 'Procedi'")
+        app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False, ssl_context='adhoc')
+    else:
+        app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
