@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestione Richieste - Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background: #f5f5f5; }
+        .navbar { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
+        .card { border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+        .card-header { background: #fff; border-bottom: 1px solid #eee; font-weight: 600; }
+        .status-badge { font-size: 0.85rem; }
+        .status-pending { background: #ffc107; color: #000; }
+        .status-approved { background: #28a745; color: #fff; }
+        .status-rejected { background: #dc3545; color: #fff; }
+        .request-card { transition: all 0.2s; }
+        .request-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .filter-btn.active { background: #0d6efd; color: #fff; }
+        .action-btn { min-width: 100px; }
+        .notes-textarea { resize: vertical; min-height: 60px; }
+        .user-info { font-size: 0.9rem; color: #666; }
+        .date-info { font-size: 0.85rem; }
+        .value-display { font-weight: 600; font-size: 1.1rem; color: #333; }
+        .dropdown-menu { min-width: 220px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark px-3 mb-4">
+        <div class="d-flex align-items-center">
+            <a href="{{ url_for('admin_dashboard_page') }}" class="text-white text-decoration-none me-3">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <span class="navbar-brand mb-0 h5">
+                <i class="bi bi-inbox-fill me-2"></i>Gestione Richieste
+            </span>
+        </div>
+        <div class="dropdown">
+            <button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-grid-3x3-gap-fill me-1"></i> Menu
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="{{ url_for('admin_dashboard_page') }}"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin_activity_analysis_page') }}"><i class="bi bi-graph-up me-2"></i>Analisi Attività</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin_sessions_page') }}"><i class="bi bi-clock-history me-2"></i>Sessioni</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin_operators') }}"><i class="bi bi-people me-2"></i>Operatori</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin_users_page') }}"><i class="bi bi-person-gear me-2"></i>Utenti</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin_timbratura_rules_page') }}"><i class="bi bi-clock me-2"></i>Regole Timbratura</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('admin_request_types_page') }}"><i class="bi bi-tags me-2"></i>Tipologie Richieste</a></li>
+                <li><a class="dropdown-item active" href="{{ url_for('admin_user_requests_page') }}"><i class="bi bi-inbox me-2"></i>Gestione Richieste</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="{{ url_for('home') }}"><i class="bi bi-house me-2"></i>Home Utente</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <!-- Filtri -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6 mb-2 mb-md-0">
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-secondary filter-btn active" data-filter="all">
+                                Tutte <span class="badge bg-secondary ms-1" id="count-all">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-warning filter-btn" data-filter="pending">
+                                In attesa <span class="badge bg-warning text-dark ms-1" id="count-pending">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-success filter-btn" data-filter="approved">
+                                Approvate <span class="badge bg-success ms-1" id="count-approved">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger filter-btn" data-filter="rejected">
+                                Respinte <span class="badge bg-danger ms-1" id="count-rejected">0</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="filterType">
+                            <option value="">Tutte le tipologie</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="searchUser" placeholder="Cerca utente...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lista Richieste -->
+        <div id="requestsList">
+            <div class="text-center py-5 text-muted">
+                <div class="spinner-border" role="status"></div>
+                <p class="mt-2">Caricamento richieste...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Revisione -->
+    <div class="modal fade" id="reviewModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-pencil-square me-2"></i>Revisiona Richiesta
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="reviewRequestSummary" class="mb-3 p-3 bg-light rounded"></div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Note di revisione</label>
+                        <textarea class="form-control notes-textarea" id="reviewNotes" 
+                                  placeholder="Aggiungi note opzionali per l'utente..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+                    <button type="button" class="btn btn-danger action-btn" id="btnReject">
+                        <i class="bi bi-x-circle me-1"></i>Respingi
+                    </button>
+                    <button type="button" class="btn btn-success action-btn" id="btnApprove">
+                        <i class="bi bi-check-circle me-1"></i>Approva
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let allRequests = [];
+        let currentFilter = 'all';
+        let currentRequestId = null;
+        let reviewModal = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            reviewModal = new bootstrap.Modal(document.getElementById('reviewModal'));
+            loadRequests();
+            loadRequestTypes();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Filtri status
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentFilter = btn.dataset.filter;
+                    renderRequests();
+                });
+            });
+
+            // Filtro tipo
+            document.getElementById('filterType').addEventListener('change', renderRequests);
+            
+            // Ricerca utente
+            document.getElementById('searchUser').addEventListener('input', renderRequests);
+
+            // Bottoni modal
+            document.getElementById('btnApprove').addEventListener('click', () => submitReview('approved'));
+            document.getElementById('btnReject').addEventListener('click', () => submitReview('rejected'));
+        }
+
+        async function loadRequests() {
+            try {
+                const res = await fetch('/api/admin/user-requests');
+                if (!res.ok) throw new Error('Errore caricamento');
+                const data = await res.json();
+                allRequests = data.requests || [];
+                updateCounts();
+                renderRequests();
+            } catch (err) {
+                document.getElementById('requestsList').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>Errore nel caricamento delle richieste
+                    </div>`;
+            }
+        }
+
+        async function loadRequestTypes() {
+            try {
+                const res = await fetch('/api/admin/request-types');
+                if (!res.ok) return;
+                const data = await res.json();
+                const select = document.getElementById('filterType');
+                (data.types || []).forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = t.name;
+                    select.appendChild(opt);
+                });
+            } catch (err) {
+                console.error('Errore caricamento tipi:', err);
+            }
+        }
+
+        function updateCounts() {
+            const counts = { all: 0, pending: 0, approved: 0, rejected: 0 };
+            allRequests.forEach(r => {
+                counts.all++;
+                counts[r.status]++;
+            });
+            document.getElementById('count-all').textContent = counts.all;
+            document.getElementById('count-pending').textContent = counts.pending;
+            document.getElementById('count-approved').textContent = counts.approved;
+            document.getElementById('count-rejected').textContent = counts.rejected;
+        }
+
+        function renderRequests() {
+            const filterType = document.getElementById('filterType').value;
+            const searchUser = document.getElementById('searchUser').value.toLowerCase();
+
+            let filtered = allRequests.filter(r => {
+                if (currentFilter !== 'all' && r.status !== currentFilter) return false;
+                if (filterType && r.request_type_id != filterType) return false;
+                if (searchUser && !r.username.toLowerCase().includes(searchUser)) return false;
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                document.getElementById('requestsList').innerHTML = `
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                        <p class="mt-2">Nessuna richiesta trovata</p>
+                    </div>`;
+                return;
+            }
+
+            const html = filtered.map(r => renderRequestCard(r)).join('');
+            document.getElementById('requestsList').innerHTML = html;
+        }
+
+        function renderRequestCard(r) {
+            const statusLabels = {
+                pending: '<span class="badge status-badge status-pending"><i class="bi bi-clock me-1"></i>In attesa</span>',
+                approved: '<span class="badge status-badge status-approved"><i class="bi bi-check me-1"></i>Approvata</span>',
+                rejected: '<span class="badge status-badge status-rejected"><i class="bi bi-x me-1"></i>Respinta</span>'
+            };
+
+            const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km' };
+            const valueUnit = valueUnits[r.value_type] || '';
+            
+            const dateFrom = formatDate(r.date_from);
+            const dateTo = r.date_to ? ` - ${formatDate(r.date_to)}` : '';
+            const createdDate = r.created_ts ? formatDateTime(r.created_ts) : '';
+
+            const reviewInfo = r.status !== 'pending' && r.reviewed_by ? `
+                <div class="mt-2 pt-2 border-top">
+                    <small class="text-muted">
+                        <i class="bi bi-person-check me-1"></i>Revisionata da <strong>${r.reviewed_by}</strong>
+                        ${r.reviewed_ts ? ' il ' + formatDateTime(r.reviewed_ts) : ''}
+                    </small>
+                    ${r.review_notes ? `<div class="mt-1 fst-italic">"${r.review_notes}"</div>` : ''}
+                </div>` : '';
+
+            const actionBtn = r.status === 'pending' ? `
+                <button class="btn btn-primary btn-sm" onclick="openReviewModal(${r.id})">
+                    <i class="bi bi-pencil-square me-1"></i>Revisiona
+                </button>` : '';
+
+            return `
+                <div class="card request-card" data-id="${r.id}">
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-3">
+                                <div class="fw-bold">${r.username}</div>
+                                <small class="text-muted">${r.type_name}</small>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="date-info">
+                                    <i class="bi bi-calendar3 me-1"></i>${dateFrom}${dateTo}
+                                </div>
+                                ${r.value ? `<div class="value-display">${r.value} ${valueUnit}</div>` : ''}
+                            </div>
+                            <div class="col-md-2">
+                                ${statusLabels[r.status] || ''}
+                            </div>
+                            <div class="col-md-2">
+                                <small class="text-muted">
+                                    <i class="bi bi-clock me-1"></i>${createdDate}
+                                </small>
+                            </div>
+                            <div class="col-md-2 text-end">
+                                ${actionBtn}
+                            </div>
+                        </div>
+                        ${r.notes ? `<div class="mt-2 text-muted small"><i class="bi bi-chat-left-text me-1"></i>${r.notes}</div>` : ''}
+                        ${reviewInfo}
+                    </div>
+                </div>`;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+
+        function formatDateTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            return d.toLocaleDateString('it-IT', { 
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function openReviewModal(id) {
+            const r = allRequests.find(req => req.id === id);
+            if (!r) return;
+
+            currentRequestId = id;
+            document.getElementById('reviewNotes').value = '';
+
+            const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km' };
+            const valueUnit = valueUnits[r.value_type] || '';
+            const dateFrom = formatDate(r.date_from);
+            const dateTo = r.date_to ? ` - ${formatDate(r.date_to)}` : '';
+
+            document.getElementById('reviewRequestSummary').innerHTML = `
+                <div><strong>Utente:</strong> ${r.username}</div>
+                <div><strong>Tipo:</strong> ${r.type_name}</div>
+                <div><strong>Data:</strong> ${dateFrom}${dateTo}</div>
+                ${r.value ? `<div><strong>Valore:</strong> ${r.value} ${valueUnit}</div>` : ''}
+                ${r.notes ? `<div><strong>Note utente:</strong> ${r.notes}</div>` : ''}
+            `;
+
+            reviewModal.show();
+        }
+
+        async function submitReview(status) {
+            if (!currentRequestId) return;
+
+            const notes = document.getElementById('reviewNotes').value.trim();
+            
+            try {
+                const res = await fetch(`/api/admin/user-requests/${currentRequestId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status, review_notes: notes })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Errore nella revisione');
+                }
+
+                reviewModal.hide();
+                loadRequests();
+                
+                const statusLabel = status === 'approved' ? 'approvata' : 'respinta';
+                showToast(`Richiesta ${statusLabel} con successo`, 'success');
+            } catch (err) {
+                showToast(err.message, 'danger');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const toastHtml = `
+                <div class="toast-container position-fixed bottom-0 end-0 p-3">
+                    <div class="toast show bg-${type} text-white">
+                        <div class="toast-body">
+                            <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>
+                            ${message}
+                        </div>
+                    </div>
+                </div>`;
+            const container = document.createElement('div');
+            container.innerHTML = toastHtml;
+            document.body.appendChild(container);
+            setTimeout(() => container.remove(), 3000);
+        }
+    </script>
+</body>
+</html>

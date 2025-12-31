@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tipologie Richieste · JobLog Admin</title>
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/icon-192x192.png') }}" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --sidebar-width: 240px;
+        }
+        [data-theme="light"] {
+            --bg: #f1f5f9;
+            --bg-panel: #ffffff;
+            --bg-soft: #e2e8f0;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --brand: #0ea5e9;
+            --brand-strong: #0284c7;
+            --border: rgba(15, 23, 42, 0.12);
+            --shadow: 0 10px 40px rgba(15, 23, 42, 0.1);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Manrope', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        /* Menu dropdown */
+        .menu-container {
+            position: relative;
+        }
+        .menu-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            border: none;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .menu-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
+        .menu-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 8px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            min-width: 280px;
+            box-shadow: var(--shadow);
+            z-index: 1000;
+            overflow: hidden;
+        }
+        .menu-dropdown.active {
+            display: block;
+        }
+        .menu-section {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .menu-section:last-child {
+            border-bottom: none;
+        }
+        .menu-section-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 8px 16px 4px;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.15s ease;
+        }
+        .menu-item:hover {
+            background: rgba(56,189,248,0.1);
+            color: var(--brand);
+        }
+        .menu-item.active {
+            background: rgba(56,189,248,0.15);
+            color: var(--brand);
+        }
+        .menu-item.danger {
+            color: var(--danger);
+        }
+        .menu-item.danger:hover {
+            background: rgba(239,68,68,0.1);
+        }
+        .menu-item-icon {
+            font-size: 16px;
+        }
+        /* Main content */
+        .main-content {
+            flex: 1;
+            min-height: 100vh;
+        }
+        header {
+            background: linear-gradient(135deg, #0c4a6e 0%, #075985 100%);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .page-title-header {
+            font-size: 20px;
+            font-weight: 800;
+            color: white;
+        }
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .theme-toggle {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            border: none;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.25);
+        }
+        main {
+            padding: 24px;
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .page-title {
+            font-size: 28px;
+            font-weight: 800;
+        }
+        .page-subtitle {
+            color: var(--muted);
+            font-size: 14px;
+            margin-top: 4px;
+        }
+        .btn {
+            border: none;
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+        .btn.primary {
+            background: var(--brand);
+            color: white;
+        }
+        .btn.primary:hover {
+            background: var(--brand-strong);
+        }
+        .btn.secondary {
+            background: rgba(148,163,184,0.2);
+            color: var(--text);
+        }
+        .btn.danger {
+            background: var(--danger);
+            color: white;
+        }
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 700;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .types-grid {
+            display: grid;
+            gap: 12px;
+            padding: 20px;
+        }
+        .type-card {
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 20px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: center;
+        }
+        .type-info h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .type-info .meta {
+            font-size: 13px;
+            color: var(--muted);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .type-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .type-badge.hours { background: rgba(59,130,246,0.2); color: #3b82f6; }
+        .type-badge.days { background: rgba(34,197,94,0.2); color: #22c55e; }
+        .type-badge.amount { background: rgba(245,158,11,0.2); color: #f59e0b; }
+        .type-badge.km { background: rgba(168,85,247,0.2); color: #a855f7; }
+        .type-badge.inactive { background: rgba(239,68,68,0.2); color: #ef4444; }
+        .type-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .type-actions button {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-panel);
+            color: var(--muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all 0.15s ease;
+        }
+        .type-actions button:hover {
+            background: var(--brand);
+            color: white;
+            border-color: var(--brand);
+        }
+        .type-actions button.delete:hover {
+            background: var(--danger);
+            border-color: var(--danger);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+        }
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .empty-state-text {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal {
+            background: var(--bg-panel);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-title {
+            font-size: 20px;
+            font-weight: 800;
+        }
+        .modal-close {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(148,163,184,0.2);
+            color: var(--muted);
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .modal-close:hover {
+            background: var(--danger);
+            color: white;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 15px;
+            font-family: inherit;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .form-check {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .form-check input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .form-check label {
+            margin-bottom: 0;
+            cursor: pointer;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 14px 20px;
+            border-radius: 12px;
+            background: var(--success);
+            color: white;
+            font-weight: 600;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
+        }
+        .toast.error {
+            background: var(--danger);
+        }
+        @keyframes slideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Content -->
+    <div class="main-content">
+        <header>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="menu-container">
+                    <button class="menu-btn" id="menuBtn" onclick="toggleMenu()">☰</button>
+                    <div class="menu-dropdown" id="menuDropdown">
+                        <div class="menu-section">
+                            <div class="menu-section-title">Navigazione</div>
+                            <a href="{{ url_for('home') }}" class="menu-item">
+                                <span class="menu-item-icon">🏠</span>
+                                <span>Home</span>
+                            </a>
+                            <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
+                                <span class="menu-item-icon">📊</span>
+                                <span>Dashboard</span>
+                            </a>
+                            <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+                                <span class="menu-item-icon">📋</span>
+                                <span>Gestione Sessioni</span>
+                            </a>
+                            <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+                                <span class="menu-item-icon">📈</span>
+                                <span>Analisi Attività</span>
+                            </a>
+                            <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+                                <span class="menu-item-icon">📅</span>
+                                <span>Pianificazioni Rentman</span>
+                            </a>
+                        </div>
+                        <div class="menu-section">
+                            <div class="menu-section-title">Configurazione</div>
+                            <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+                                <span class="menu-item-icon">👥</span>
+                                <span>Gestione Utenti</span>
+                            </a>
+                            <a href="{{ url_for('admin_operators') }}" class="menu-item">
+                                <span class="menu-item-icon">🧑‍🔧</span>
+                                <span>Gestione Operatori</span>
+                            </a>
+                            <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
+                                <span class="menu-item-icon">⚙️</span>
+                                <span>Regole Timbrature</span>
+                            </a>
+                            <a href="{{ url_for('admin_request_types_page') }}" class="menu-item active">
+                                <span class="menu-item-icon">📝</span>
+                                <span>Tipologie Richieste</span>
+                            </a>
+                            <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
+                                <span class="menu-item-icon">📥</span>
+                                <span>Gestione Richieste</span>
+                            </a>
+                        </div>
+                        <div class="menu-section">
+                            <a href="{{ url_for('logout') }}" class="menu-item danger">
+                                <span class="menu-item-icon">🚪</span>
+                                <span>Logout</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <span class="page-title-header">📝 Tipologie Richieste</span>
+            </div>
+            <div class="header-actions">
+                <button class="theme-toggle" id="themeToggle" title="Cambia tema">🌓</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Gestione Tipologie</h1>
+                    <p class="page-subtitle">Definisci le tipologie di richieste disponibili (ferie, permessi, rimborsi, ecc.)</p>
+                </div>
+                <button class="btn primary" onclick="openModal()">
+                    ➕ Nuova Tipologia
+                </button>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    📋 Tipologie Configurate
+                </div>
+                <div class="types-grid" id="typesGrid">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⏳</div>
+                        <div class="empty-state-text">Caricamento...</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Nuova/Modifica Tipologia -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Nuova Tipologia</h2>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <form id="typeForm" onsubmit="saveType(event)">
+                <input type="hidden" id="typeId" />
+                
+                <div class="form-group">
+                    <label for="typeName">Nome Tipologia *</label>
+                    <input type="text" id="typeName" placeholder="Es: Ferie, Permesso, Rimborso Spese..." required />
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="valueType">Tipo Valore *</label>
+                        <select id="valueType" required>
+                            <option value="hours">⏱️ Ore (permessi orari)</option>
+                            <option value="days">📅 Giorni (ferie)</option>
+                            <option value="amount">💶 Importo € (rimborsi)</option>
+                            <option value="km">🚗 Chilometri (trasferte)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="externalId">ID Esterno</label>
+                        <input type="text" id="externalId" placeholder="Codice per integrazione" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="typeDescription">Descrizione</label>
+                    <textarea id="typeDescription" placeholder="Descrizione opzionale della tipologia..."></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sortOrder">Ordine</label>
+                        <input type="number" id="sortOrder" value="0" min="0" />
+                    </div>
+                    <div class="form-group">
+                        <label>&nbsp;</label>
+                        <div class="form-check">
+                            <input type="checkbox" id="typeActive" checked />
+                            <label for="typeActive">Attiva</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary" onclick="closeModal()">Annulla</button>
+                    <button type="submit" class="btn primary">💾 Salva</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Tema
+        (function() {
+            const stored = localStorage.getItem('joblog-theme');
+            if (stored) document.documentElement.dataset.theme = stored;
+        })();
+
+        document.getElementById('themeToggle').addEventListener('click', () => {
+            const html = document.documentElement;
+            const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+            html.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+        });
+
+        // Sidebar toggle per mobile
+        function toggleMenu() {
+            document.getElementById('menuDropdown').classList.toggle('active');
+        }
+
+        // Chiudi menu cliccando fuori
+        document.addEventListener('click', (e) => {
+            const menuContainer = document.querySelector('.menu-container');
+            if (!menuContainer.contains(e.target)) {
+                document.getElementById('menuDropdown').classList.remove('active');
+            }
+        });
+
+        let currentTypes = [];
+        let valueTypeLabels = {};
+
+        // Carica tipologie
+        async function loadTypes() {
+            try {
+                const res = await fetch('/api/admin/request-types');
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                currentTypes = data.types || [];
+                valueTypeLabels = data.value_types || {};
+                renderTypes();
+            } catch (err) {
+                showToast('Errore: ' + err.message, 'error');
+            }
+        }
+
+        function renderTypes() {
+            const grid = document.getElementById('typesGrid');
+            
+            if (currentTypes.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📝</div>
+                        <div class="empty-state-text">Nessuna tipologia configurata</div>
+                        <p style="color: var(--muted); margin-top: 8px;">Clicca "Nuova Tipologia" per iniziare</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = currentTypes.map(t => `
+                <div class="type-card">
+                    <div class="type-info">
+                        <h3>
+                            ${escapeHtml(t.name)}
+                            <span class="type-badge ${t.value_type}">${getValueTypeIcon(t.value_type)} ${t.value_type_label}</span>
+                            ${!t.active ? '<span class="type-badge inactive">⏸️ Inattiva</span>' : ''}
+                        </h3>
+                        <div class="meta">
+                            ${t.external_id ? `<span>🔗 ID: ${escapeHtml(t.external_id)}</span>` : ''}
+                            ${t.description ? `<span>📄 ${escapeHtml(t.description)}</span>` : ''}
+                            <span>📊 Ordine: ${t.sort_order}</span>
+                        </div>
+                    </div>
+                    <div class="type-actions">
+                        <button onclick="editType(${t.id})" title="Modifica">✏️</button>
+                        <button class="delete" onclick="deleteType(${t.id}, '${escapeHtml(t.name)}')" title="Elimina">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getValueTypeIcon(type) {
+            const icons = { hours: '⏱️', days: '📅', amount: '💶', km: '🚗' };
+            return icons[type] || '📋';
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Modal
+        function openModal(typeData = null) {
+            const overlay = document.getElementById('modalOverlay');
+            const title = document.getElementById('modalTitle');
+            const form = document.getElementById('typeForm');
+            
+            form.reset();
+            document.getElementById('typeId').value = '';
+            document.getElementById('typeActive').checked = true;
+            document.getElementById('sortOrder').value = '0';
+            
+            if (typeData) {
+                title.textContent = 'Modifica Tipologia';
+                document.getElementById('typeId').value = typeData.id;
+                document.getElementById('typeName').value = typeData.name;
+                document.getElementById('valueType').value = typeData.value_type;
+                document.getElementById('externalId').value = typeData.external_id || '';
+                document.getElementById('typeDescription').value = typeData.description || '';
+                document.getElementById('sortOrder').value = typeData.sort_order || 0;
+                document.getElementById('typeActive').checked = typeData.active;
+            } else {
+                title.textContent = 'Nuova Tipologia';
+            }
+            
+            overlay.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('active');
+        }
+
+        function editType(id) {
+            const typeData = currentTypes.find(t => t.id === id);
+            if (typeData) openModal(typeData);
+        }
+
+        async function saveType(e) {
+            e.preventDefault();
+            
+            const id = document.getElementById('typeId').value;
+            const data = {
+                name: document.getElementById('typeName').value.trim(),
+                value_type: document.getElementById('valueType').value,
+                external_id: document.getElementById('externalId').value.trim(),
+                description: document.getElementById('typeDescription').value.trim(),
+                sort_order: parseInt(document.getElementById('sortOrder').value) || 0,
+                active: document.getElementById('typeActive').checked
+            };
+
+            try {
+                const url = id ? `/api/admin/request-types/${id}` : '/api/admin/request-types';
+                const method = id ? 'PUT' : 'POST';
+                
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await res.json();
+                if (!res.ok || result.error) throw new Error(result.error || 'Errore salvataggio');
+                
+                showToast(result.message || 'Salvato!');
+                closeModal();
+                loadTypes();
+            } catch (err) {
+                showToast('Errore: ' + err.message, 'error');
+            }
+        }
+
+        async function deleteType(id, name) {
+            if (!confirm(`Sei sicuro di voler eliminare la tipologia "${name}"?`)) return;
+            
+            try {
+                const res = await fetch(`/api/admin/request-types/${id}`, { method: 'DELETE' });
+                const result = await res.json();
+                
+                if (!res.ok || result.error) throw new Error(result.error || 'Errore eliminazione');
+                
+                showToast(result.message || 'Eliminato!');
+                loadTypes();
+            } catch (err) {
+                showToast('Errore: ' + err.message, 'error');
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Click fuori modal per chiudere
+        document.getElementById('modalOverlay').addEventListener('click', (e) => {
+            if (e.target.id === 'modalOverlay') closeModal();
+        });
+
+        // Escape per chiudere modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Init
+        loadTypes();
+    </script>
+</body>
+</html>

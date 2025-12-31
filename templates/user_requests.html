@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Richieste · JobLog</title>
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/icon-192x192.png') }}" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --ferie: #1e40af;
+            --permessi: #059669;
+        }
+        [data-theme="light"] {
+            --bg: #f1f5f9;
+            --bg-panel: #ffffff;
+            --bg-soft: #e2e8f0;
+            --text: #0f172a;
+            --muted: #64748b;
+            --brand: #0ea5e9;
+            --brand-strong: #0284c7;
+            --border: rgba(15, 23, 42, 0.12);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Manrope', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        header {
+            background: linear-gradient(135deg, #0c4a6e 0%, #075985 100%);
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .back-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            border: none;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .back-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
+        .page-title-header {
+            font-size: 18px;
+            font-weight: 800;
+            color: white;
+        }
+        .theme-toggle {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            border: none;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        main {
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        /* Contatori residui */
+        .counters {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .counter-card {
+            flex: 1;
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .counter-card.ferie {
+            background: rgba(30, 64, 175, 0.2);
+            border: 1px solid rgba(30, 64, 175, 0.4);
+        }
+        .counter-card.permessi {
+            background: rgba(5, 150, 105, 0.2);
+            border: 1px solid rgba(5, 150, 105, 0.4);
+        }
+        .counter-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+        .counter-value {
+            font-size: 28px;
+            font-weight: 800;
+        }
+        .counter-card.ferie .counter-value { color: #60a5fa; }
+        .counter-card.permessi .counter-value { color: #34d399; }
+        /* Form */
+        .form-section {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+        .form-group label {
+            display: block;
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .form-group label .required {
+            color: var(--danger);
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 15px;
+            font-family: inherit;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        .form-group select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 16px center;
+            padding-right: 40px;
+        }
+        /* Value input con unità */
+        .value-input-group {
+            display: none;
+            margin-top: 16px;
+        }
+        .value-input-group.active {
+            display: block;
+        }
+        .value-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .value-input-wrapper input {
+            flex: 1;
+        }
+        .value-unit {
+            font-weight: 700;
+            color: var(--muted);
+            min-width: 80px;
+        }
+        /* Date row */
+        .date-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        @media (max-width: 500px) {
+            .date-row {
+                grid-template-columns: 1fr;
+            }
+        }
+        .btn-submit {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            background: var(--brand);
+            color: white;
+            font-size: 16px;
+            font-weight: 800;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s ease;
+        }
+        .btn-submit:hover {
+            background: var(--brand-strong);
+        }
+        .btn-submit:disabled {
+            background: var(--muted);
+            cursor: not-allowed;
+        }
+        /* Storico richieste */
+        .history-section {
+            margin-top: 32px;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .request-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .request-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+        .request-type {
+            font-weight: 700;
+            font-size: 15px;
+        }
+        .request-status {
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .request-status.pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+        .request-status.approved {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+        .request-status.rejected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+        .request-details {
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .request-details span {
+            display: inline-block;
+            margin-right: 16px;
+        }
+        .request-notes {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--text);
+            font-style: italic;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--muted);
+        }
+        .empty-state-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            left: 24px;
+            padding: 14px 20px;
+            border-radius: 12px;
+            background: var(--success);
+            color: white;
+            font-weight: 600;
+            z-index: 2000;
+            text-align: center;
+            animation: slideIn 0.3s ease;
+        }
+        .toast.error {
+            background: var(--danger);
+        }
+        @keyframes slideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <a href="{{ url_for('home') }}" class="back-btn">←</a>
+            <span class="page-title-header">📝 Richieste</span>
+        </div>
+        <button class="theme-toggle" id="themeToggle" title="Cambia tema">🌓</button>
+    </header>
+
+    <main>
+        <!-- Contatori residui -->
+        <div class="counters">
+            <div class="counter-card ferie">
+                <div class="counter-label">Ore Ferie residue:</div>
+                <div class="counter-value" id="ferieResidue">0</div>
+            </div>
+            <div class="counter-card permessi">
+                <div class="counter-label">Ore permessi residui:</div>
+                <div class="counter-value" id="permessiResidui">0</div>
+            </div>
+        </div>
+
+        <!-- Form nuova richiesta -->
+        <form id="requestForm" class="form-section">
+            <div class="form-group">
+                <label>Tipo richiesta <span class="required">*</span></label>
+                <select id="requestType" required>
+                    <option value="">Seleziona...</option>
+                </select>
+            </div>
+
+            <div class="value-input-group" id="valueGroup">
+                <div class="form-group">
+                    <label id="valueLabel">Valore <span class="required">*</span></label>
+                    <div class="value-input-wrapper">
+                        <input type="number" id="requestValue" step="0.5" min="0" placeholder="0" />
+                        <span class="value-unit" id="valueUnit">ore</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="date-row">
+                <div class="form-group">
+                    <label>Data inizio <span class="required">*</span></label>
+                    <input type="date" id="dateStart" required />
+                </div>
+                <div class="form-group">
+                    <label>Data fine <span class="required">*</span></label>
+                    <input type="date" id="dateEnd" required />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Note (opzionale)</label>
+                <textarea id="requestNotes" placeholder="Aggiungi una nota..."></textarea>
+            </div>
+
+            <button type="submit" class="btn-submit">Invia Richiesta</button>
+        </form>
+
+        <!-- Storico richieste -->
+        <div class="history-section">
+            <h2 class="section-title">📋 Le mie richieste</h2>
+            <div id="requestsList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">⏳</div>
+                    <div>Caricamento...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Tema
+        (function() {
+            const stored = localStorage.getItem('joblog-theme');
+            if (stored) document.documentElement.dataset.theme = stored;
+        })();
+
+        document.getElementById('themeToggle').addEventListener('click', () => {
+            const html = document.documentElement;
+            const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+            html.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+        });
+
+        let requestTypes = [];
+        const valueTypeUnits = {
+            hours: 'ore',
+            days: 'giorni',
+            amount: '€',
+            km: 'km'
+        };
+        const valueTypeLabels = {
+            hours: 'Ore',
+            days: 'Giorni',
+            amount: 'Importo',
+            km: 'Chilometri'
+        };
+
+        // Carica tipologie richieste
+        async function loadRequestTypes() {
+            try {
+                const res = await fetch('/api/user/request-types');
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                requestTypes = data.types || [];
+                const select = document.getElementById('requestType');
+                select.innerHTML = '<option value="">Seleziona...</option>';
+                
+                requestTypes.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.dataset.valueType = t.value_type;
+                    opt.textContent = t.name;
+                    select.appendChild(opt);
+                });
+            } catch (err) {
+                showToast('Errore caricamento tipologie: ' + err.message, 'error');
+            }
+        }
+
+        // Gestione cambio tipo richiesta
+        document.getElementById('requestType').addEventListener('change', function() {
+            const valueGroup = document.getElementById('valueGroup');
+            const selected = this.options[this.selectedIndex];
+            
+            if (this.value && selected.dataset.valueType) {
+                const vt = selected.dataset.valueType;
+                document.getElementById('valueLabel').innerHTML = valueTypeLabels[vt] + ' <span class="required">*</span>';
+                document.getElementById('valueUnit').textContent = valueTypeUnits[vt];
+                document.getElementById('requestValue').required = true;
+                valueGroup.classList.add('active');
+            } else {
+                valueGroup.classList.remove('active');
+                document.getElementById('requestValue').required = false;
+            }
+        });
+
+        // Carica residui utente
+        async function loadResiduals() {
+            try {
+                const res = await fetch('/api/user/residuals');
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                document.getElementById('ferieResidue').textContent = data.ferie_hours || 0;
+                document.getElementById('permessiResidui').textContent = data.permessi_hours || 0;
+            } catch (err) {
+                console.error('Errore caricamento residui:', err);
+            }
+        }
+
+        // Carica storico richieste
+        async function loadMyRequests() {
+            try {
+                const res = await fetch('/api/user/requests');
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                renderRequests(data.requests || []);
+            } catch (err) {
+                showToast('Errore: ' + err.message, 'error');
+            }
+        }
+
+        function renderRequests(requests) {
+            const container = document.getElementById('requestsList');
+            
+            if (requests.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>Nessuna richiesta inviata</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const statusLabels = {
+                pending: 'In attesa',
+                approved: 'Approvata',
+                rejected: 'Rifiutata'
+            };
+
+            container.innerHTML = requests.map(r => `
+                <div class="request-card">
+                    <div class="request-header">
+                        <span class="request-type">${escapeHtml(r.type_name)}</span>
+                        <span class="request-status ${r.status}">${statusLabels[r.status] || r.status}</span>
+                    </div>
+                    <div class="request-details">
+                        <span>📅 ${formatDate(r.date_start)} - ${formatDate(r.date_end)}</span>
+                        <span>📊 ${r.value} ${r.value_unit}</span>
+                    </div>
+                    ${r.notes ? `<div class="request-notes">"${escapeHtml(r.notes)}"</div>` : ''}
+                    ${r.admin_notes ? `<div class="request-notes" style="color: var(--warning);">Risposta: ${escapeHtml(r.admin_notes)}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('it-IT');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Invia richiesta
+        document.getElementById('requestForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const typeId = document.getElementById('requestType').value;
+            const dateStart = document.getElementById('dateStart').value;
+            const dateEnd = document.getElementById('dateEnd').value;
+            const value = document.getElementById('requestValue').value;
+            const notes = document.getElementById('requestNotes').value.trim();
+
+            if (!typeId || !dateStart || !dateEnd) {
+                showToast('Compila tutti i campi obbligatori', 'error');
+                return;
+            }
+
+            // Verifica che data fine >= data inizio
+            if (new Date(dateEnd) < new Date(dateStart)) {
+                showToast('La data di fine deve essere >= data inizio', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/user/requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        request_type_id: parseInt(typeId),
+                        date_start: dateStart,
+                        date_end: dateEnd,
+                        value: value ? parseFloat(value) : null,
+                        notes: notes
+                    })
+                });
+
+                const result = await res.json();
+                if (!res.ok || result.error) throw new Error(result.error || 'Errore invio');
+
+                showToast('Richiesta inviata con successo!');
+                document.getElementById('requestForm').reset();
+                document.getElementById('valueGroup').classList.remove('active');
+                loadMyRequests();
+            } catch (err) {
+                showToast('Errore: ' + err.message, 'error');
+            }
+        });
+
+        function showToast(message, type = 'success') {
+            const existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+            
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Init
+        loadRequestTypes();
+        loadResiduals();
+        loadMyRequests();
+
+        // Imposta data minima = oggi
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('dateStart').min = today;
+        document.getElementById('dateEnd').min = today;
+
+        // Sincronizza date
+        document.getElementById('dateStart').addEventListener('change', function() {
+            document.getElementById('dateEnd').min = this.value;
+            if (document.getElementById('dateEnd').value < this.value) {
+                document.getElementById('dateEnd').value = this.value;
+            }
+        });
+    </script>
+</body>
+</html>

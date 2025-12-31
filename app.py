@@ -9509,6 +9509,126 @@ CREATE INDEX IF NOT EXISTS idx_planning_sent ON rentman_plannings(sent_to_webser
 """
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  REQUEST TYPES - TIPOLOGIE RICHIESTE (ferie, permessi, rimborsi, ecc.)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+REQUEST_TYPES_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS request_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    value_type ENUM('hours', 'days', 'amount', 'km') NOT NULL,
+    external_id VARCHAR(100),
+    description TEXT,
+    active TINYINT(1) DEFAULT 1,
+    sort_order INT DEFAULT 0,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    INDEX idx_request_type_active (active),
+    INDEX idx_request_type_value (value_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+REQUEST_TYPES_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS request_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    value_type TEXT NOT NULL CHECK(value_type IN ('hours', 'days', 'amount', 'km')),
+    external_id TEXT,
+    description TEXT,
+    active INTEGER DEFAULT 1,
+    sort_order INTEGER DEFAULT 0,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_request_type_active ON request_types(active);
+CREATE INDEX IF NOT EXISTS idx_request_type_value ON request_types(value_type);
+"""
+
+# Tabella per le richieste degli utenti
+USER_REQUESTS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS user_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    username VARCHAR(100) NOT NULL,
+    request_type_id INT NOT NULL,
+    date_from DATE NOT NULL,
+    date_to DATE,
+    value_amount DECIMAL(10,2) NOT NULL,
+    notes TEXT,
+    status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+    reviewed_by VARCHAR(100),
+    reviewed_ts BIGINT,
+    review_notes TEXT,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    INDEX idx_request_user (user_id),
+    INDEX idx_request_username (username),
+    INDEX idx_request_status (status),
+    INDEX idx_request_date (date_from),
+    INDEX idx_request_type (request_type_id),
+    FOREIGN KEY (request_type_id) REFERENCES request_types(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+USER_REQUESTS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS user_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    request_type_id INTEGER NOT NULL,
+    date_from TEXT NOT NULL,
+    date_to TEXT,
+    value_amount REAL NOT NULL,
+    notes TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    reviewed_by TEXT,
+    reviewed_ts INTEGER,
+    review_notes TEXT,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL,
+    FOREIGN KEY (request_type_id) REFERENCES request_types(id)
+);
+CREATE INDEX IF NOT EXISTS idx_request_user ON user_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_request_username ON user_requests(username);
+CREATE INDEX IF NOT EXISTS idx_request_status ON user_requests(status);
+CREATE INDEX IF NOT EXISTS idx_request_date ON user_requests(date_from);
+CREATE INDEX IF NOT EXISTS idx_request_type ON user_requests(request_type_id);
+"""
+
+
+def ensure_request_types_table(db: DatabaseLike) -> None:
+    """Crea la tabella request_types se non esiste."""
+    statement = (
+        REQUEST_TYPES_TABLE_MYSQL if DB_VENDOR == "mysql" else REQUEST_TYPES_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def ensure_user_requests_table(db: DatabaseLike) -> None:
+    """Crea la tabella user_requests se non esiste."""
+    statement = (
+        USER_REQUESTS_TABLE_MYSQL if DB_VENDOR == "mysql" else USER_REQUESTS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
 def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
     """Crea la tabella rentman_plannings se non esiste."""
     statement = (
@@ -9779,16 +9899,16 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
     
     if DB_VENDOR == "mysql":
         saved_rows = db.execute(
-            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name FROM rentman_plannings WHERE planning_date = %s",
+            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name, sent_ts FROM rentman_plannings WHERE planning_date = %s",
             (target_date,)
         ).fetchall()
     else:
         saved_rows = db.execute(
-            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name FROM rentman_plannings WHERE planning_date = ?",
+            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name, sent_ts FROM rentman_plannings WHERE planning_date = ?",
             (target_date,)
         ).fetchall()
     
-    # Crea mappa rentman_id -> {sent, old_start, old_end, old_project}
+    # Crea mappa rentman_id -> {sent, old_start, old_end, old_project, sent_ts}
     saved_map = {}
     for row in saved_rows:
         if isinstance(row, Mapping):
@@ -9796,14 +9916,16 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                 "sent": bool(row["sent_to_webservice"]),
                 "old_start": row["plan_start"],
                 "old_end": row["plan_end"],
-                "old_project": row["project_name"]
+                "old_project": row["project_name"],
+                "sent_ts": row["sent_ts"]
             }
         else:
             saved_map[row[0]] = {
                 "sent": bool(row[1]),
                 "old_start": row[2],
                 "old_end": row[3],
-                "old_project": row[4]
+                "old_project": row[4],
+                "sent_ts": row[5]
             }
     
     # Arricchisci i risultati con info invio e modifiche
@@ -9813,13 +9935,41 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
             saved = saved_map[rentman_id]
             r["sent_to_webservice"] = saved["sent"]
             
+            # Aggiungi timestamp invio formattato
+            if saved["sent_ts"]:
+                try:
+                    ts_val = saved["sent_ts"]
+                    if isinstance(ts_val, (int, float)):
+                        # sent_ts è in millisecondi (es: 1735634845125)
+                        ts_sec = ts_val / 1000 if ts_val > 1e12 else ts_val
+                        r["sent_ts"] = datetime.fromtimestamp(ts_sec).strftime("%d/%m/%Y %H:%M:%S")
+                    elif isinstance(ts_val, str):
+                        # Potrebbe essere ISO string (es: 2025-12-31T08:47:25.125Z)
+                        ts_clean = ts_val.replace("Z", "+00:00")
+                        dt = datetime.fromisoformat(ts_clean)
+                        r["sent_ts"] = dt.strftime("%d/%m/%Y %H:%M:%S")
+                    elif hasattr(ts_val, 'strftime'):
+                        # È già un datetime
+                        r["sent_ts"] = ts_val.strftime("%d/%m/%Y %H:%M:%S")
+                    else:
+                        r["sent_ts"] = str(ts_val)  # Fallback: converti a stringa
+                except Exception:
+                    r["sent_ts"] = None
+            else:
+                r["sent_ts"] = None
+            
             # Rileva se è stato modificato rispetto all'ultimo invio
             if saved["sent"]:
                 # Confronta orari e progetto
-                new_start = r.get("start", "")[:16] if r.get("start") else ""
-                old_start = saved["old_start"][:16] if saved["old_start"] else ""
-                new_end = r.get("end", "")[:16] if r.get("end") else ""
-                old_end = saved["old_end"][:16] if saved["old_end"] else ""
+                # Gestisci sia stringhe che datetime objects
+                new_start_raw = r.get("start", "")
+                new_start = str(new_start_raw)[:16] if new_start_raw else ""
+                old_start_raw = saved["old_start"]
+                old_start = str(old_start_raw)[:16] if old_start_raw else ""
+                new_end_raw = r.get("end", "")
+                new_end = str(new_end_raw)[:16] if new_end_raw else ""
+                old_end_raw = saved["old_end"]
+                old_end = str(old_end_raw)[:16] if old_end_raw else ""
                 
                 is_modified = (
                     new_start != old_start or 
@@ -9832,6 +9982,7 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
         else:
             r["sent_to_webservice"] = False
             r["is_modified"] = False
+            r["sent_ts"] = None
 
     return jsonify({
         "ok": True,
@@ -11109,6 +11260,621 @@ def calcola_pausa_mod(inizio_pausa: str, fine_pausa: str, rules: dict = None) ->
         blocchi_extra += 1
     
     return blocco_min + (blocchi_extra * incremento)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GESTIONE TIPOLOGIE RICHIESTE - ADMIN UI
+# ═══════════════════════════════════════════════════════════════════════════════
+
+VALUE_TYPE_LABELS = {
+    "hours": "Ore",
+    "days": "Giorni",
+    "amount": "Importo €",
+    "km": "Chilometri"
+}
+
+
+@app.get("/admin/request-types")
+@login_required
+def admin_request_types_page() -> ResponseReturnValue:
+    """Pagina gestione tipologie richieste (solo admin)."""
+    if not session.get("is_admin"):
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    return render_template(
+        "admin_request_types.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+    )
+
+
+@app.get("/api/admin/request-types")
+@login_required
+def api_admin_request_types_list() -> ResponseReturnValue:
+    """Lista tutte le tipologie di richiesta."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    ensure_request_types_table(db)
+    
+    rows = db.execute("""
+        SELECT id, name, value_type, external_id, description, active, sort_order, created_ts, updated_ts
+        FROM request_types
+        ORDER BY sort_order ASC, name ASC
+    """).fetchall()
+
+    types = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            types.append({
+                "id": row["id"],
+                "name": row["name"],
+                "value_type": row["value_type"],
+                "value_type_label": VALUE_TYPE_LABELS.get(row["value_type"], row["value_type"]),
+                "external_id": row["external_id"],
+                "description": row["description"],
+                "active": bool(row["active"]),
+                "sort_order": row["sort_order"],
+                "created_ts": row["created_ts"],
+                "updated_ts": row["updated_ts"],
+            })
+        else:
+            types.append({
+                "id": row[0],
+                "name": row[1],
+                "value_type": row[2],
+                "value_type_label": VALUE_TYPE_LABELS.get(row[2], row[2]),
+                "external_id": row[3],
+                "description": row[4],
+                "active": bool(row[5]),
+                "sort_order": row[6],
+                "created_ts": row[7],
+                "updated_ts": row[8],
+            })
+
+    return jsonify({"types": types, "value_types": VALUE_TYPE_LABELS})
+
+
+@app.post("/api/admin/request-types")
+@login_required
+def api_admin_request_types_create() -> ResponseReturnValue:
+    """Crea una nuova tipologia di richiesta."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati non validi"}), 400
+
+    name = (data.get("name") or "").strip()
+    value_type = data.get("value_type", "hours")
+    external_id = (data.get("external_id") or "").strip() or None
+    description = (data.get("description") or "").strip() or None
+    active = data.get("active", True)
+    sort_order = data.get("sort_order", 0)
+
+    if not name:
+        return jsonify({"error": "Il nome è obbligatorio"}), 400
+
+    if value_type not in VALUE_TYPE_LABELS:
+        return jsonify({"error": f"Tipo valore non valido. Valori ammessi: {list(VALUE_TYPE_LABELS.keys())}"}), 400
+
+    db = get_db()
+    ensure_request_types_table(db)
+    now_ms = int(time.time() * 1000)
+
+    if DB_VENDOR == "mysql":
+        db.execute("""
+            INSERT INTO request_types (name, value_type, external_id, description, active, sort_order, created_ts, updated_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (name, value_type, external_id, description, 1 if active else 0, sort_order, now_ms, now_ms))
+    else:
+        db.execute("""
+            INSERT INTO request_types (name, value_type, external_id, description, active, sort_order, created_ts, updated_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (name, value_type, external_id, description, 1 if active else 0, sort_order, now_ms, now_ms))
+    
+    db.commit()
+
+    return jsonify({"ok": True, "message": f"Tipologia '{name}' creata con successo"})
+
+
+@app.put("/api/admin/request-types/<int:type_id>")
+@login_required
+def api_admin_request_types_update(type_id: int) -> ResponseReturnValue:
+    """Aggiorna una tipologia di richiesta."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati non validi"}), 400
+
+    name = (data.get("name") or "").strip()
+    value_type = data.get("value_type", "hours")
+    external_id = (data.get("external_id") or "").strip() or None
+    description = (data.get("description") or "").strip() or None
+    active = data.get("active", True)
+    sort_order = data.get("sort_order", 0)
+
+    if not name:
+        return jsonify({"error": "Il nome è obbligatorio"}), 400
+
+    if value_type not in VALUE_TYPE_LABELS:
+        return jsonify({"error": f"Tipo valore non valido"}), 400
+
+    db = get_db()
+    ensure_request_types_table(db)
+    now_ms = int(time.time() * 1000)
+
+    if DB_VENDOR == "mysql":
+        db.execute("""
+            UPDATE request_types
+            SET name = %s, value_type = %s, external_id = %s, description = %s, 
+                active = %s, sort_order = %s, updated_ts = %s
+            WHERE id = %s
+        """, (name, value_type, external_id, description, 1 if active else 0, sort_order, now_ms, type_id))
+    else:
+        db.execute("""
+            UPDATE request_types
+            SET name = ?, value_type = ?, external_id = ?, description = ?, 
+                active = ?, sort_order = ?, updated_ts = ?
+            WHERE id = ?
+        """, (name, value_type, external_id, description, 1 if active else 0, sort_order, now_ms, type_id))
+    
+    db.commit()
+
+    return jsonify({"ok": True, "message": f"Tipologia '{name}' aggiornata"})
+
+
+@app.delete("/api/admin/request-types/<int:type_id>")
+@login_required
+def api_admin_request_types_delete(type_id: int) -> ResponseReturnValue:
+    """Elimina una tipologia di richiesta."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    ensure_request_types_table(db)
+    ensure_user_requests_table(db)
+
+    # Verifica che non ci siano richieste collegate
+    if DB_VENDOR == "mysql":
+        count = db.execute("SELECT COUNT(*) as cnt FROM user_requests WHERE request_type_id = %s", (type_id,)).fetchone()
+    else:
+        count = db.execute("SELECT COUNT(*) as cnt FROM user_requests WHERE request_type_id = ?", (type_id,)).fetchone()
+    
+    cnt = count["cnt"] if isinstance(count, Mapping) else count[0]
+    if cnt > 0:
+        return jsonify({"error": f"Impossibile eliminare: ci sono {cnt} richieste collegate a questa tipologia"}), 400
+
+    if DB_VENDOR == "mysql":
+        db.execute("DELETE FROM request_types WHERE id = %s", (type_id,))
+    else:
+        db.execute("DELETE FROM request_types WHERE id = ?", (type_id,))
+    
+    db.commit()
+
+    return jsonify({"ok": True, "message": "Tipologia eliminata"})
+
+
+def _send_request_review_notification(db: DatabaseLike, username: str, type_name: str, status: str, review_notes: str) -> None:
+    """Invia notifica push all'utente quando la sua richiesta viene revisionata."""
+    settings = get_webpush_settings()
+    if not settings:
+        app.logger.info("Notifiche push non configurate, skip notifica revisione richiesta")
+        return
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera le subscription push dell'utente
+    subscriptions = db.execute(
+        f"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE username = {placeholder}",
+        (username,)
+    ).fetchall()
+    
+    if not subscriptions:
+        app.logger.info("Nessuna subscription push per utente %s", username)
+        return
+    
+    # Prepara il messaggio
+    if status == "approved":
+        title = "✅ Richiesta approvata"
+        body = f"La tua richiesta di {type_name} è stata approvata"
+    else:
+        title = "❌ Richiesta respinta"
+        body = f"La tua richiesta di {type_name} è stata respinta"
+    
+    if review_notes:
+        body += f"\n📝 Note: {review_notes}"
+    
+    payload = {
+        "title": title,
+        "body": body,
+        "icon": "/static/icons/icon-192x192.png",
+        "badge": "/static/icons/icon-72x72.png",
+        "tag": f"request-review-{status}",
+        "data": {
+            "url": "/user/requests",
+            "type": "request_reviewed"
+        }
+    }
+    
+    # Invia a tutte le subscription dell'utente
+    for sub in subscriptions:
+        endpoint = sub['endpoint'] if isinstance(sub, dict) else sub[0]
+        p256dh = sub['p256dh'] if isinstance(sub, dict) else sub[1]
+        auth = sub['auth'] if isinstance(sub, dict) else sub[2]
+        
+        subscription_info = {
+            "endpoint": endpoint,
+            "keys": {
+                "p256dh": p256dh,
+                "auth": auth
+            }
+        }
+        
+        try:
+            webpush(
+                subscription_info=subscription_info,
+                data=json.dumps(payload),
+                vapid_private_key=settings["vapid_private"],
+                vapid_claims={"sub": settings["subject"]},
+                ttl=86400,  # 24 ore
+            )
+            app.logger.info("Notifica revisione richiesta inviata a %s", username)
+        except WebPushException as e:
+            app.logger.warning("Errore invio notifica revisione a %s: %s", username, e)
+            if e.response and e.response.status_code in {404, 410}:
+                remove_push_subscription(db, endpoint)
+        except Exception as e:
+            app.logger.error("Errore generico invio notifica revisione: %s", e)
+
+
+# =====================================================
+# ADMIN USER REQUESTS - Gestione richieste utenti
+# =====================================================
+
+@app.route("/admin/user-requests")
+@login_required
+def admin_user_requests_page() -> ResponseReturnValue:
+    """Pagina admin per gestire le richieste degli utenti."""
+    if not session.get("is_admin"):
+        return ("Forbidden", 403)
+    return render_template("admin_user_requests.html")
+
+
+@app.get("/api/admin/user-requests")
+@login_required
+def api_admin_user_requests_list() -> ResponseReturnValue:
+    """Restituisce tutte le richieste degli utenti per l'admin."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    db = get_db()
+    ensure_user_requests_table(db)
+    
+    if DB_VENDOR == "mysql":
+        rows = db.execute("""
+            SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
+                   ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
+                   ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts
+            FROM user_requests ur
+            JOIN request_types rt ON ur.request_type_id = rt.id
+            ORDER BY 
+                CASE ur.status WHEN 'pending' THEN 0 ELSE 1 END,
+                ur.created_ts DESC
+        """).fetchall()
+    else:
+        rows = db.execute("""
+            SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
+                   ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
+                   ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts
+            FROM user_requests ur
+            JOIN request_types rt ON ur.request_type_id = rt.id
+            ORDER BY 
+                CASE ur.status WHEN 'pending' THEN 0 ELSE 1 END,
+                ur.created_ts DESC
+        """).fetchall()
+
+    requests = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            requests.append({
+                "id": row["id"],
+                "username": row["username"],
+                "request_type_id": row["request_type_id"],
+                "type_name": row["type_name"],
+                "value_type": row["value_type"],
+                "date_from": row["date_from"],
+                "date_to": row["date_to"],
+                "value": float(row["value_amount"]) if row["value_amount"] else None,
+                "notes": row["notes"],
+                "status": row["status"],
+                "reviewed_by": row["reviewed_by"],
+                "reviewed_ts": row["reviewed_ts"],
+                "review_notes": row["review_notes"],
+                "created_ts": row["created_ts"],
+                "updated_ts": row["updated_ts"],
+            })
+        else:
+            requests.append({
+                "id": row[0],
+                "username": row[1],
+                "request_type_id": row[2],
+                "type_name": row[3],
+                "value_type": row[4],
+                "date_from": row[5],
+                "date_to": row[6],
+                "value": float(row[7]) if row[7] else None,
+                "notes": row[8],
+                "status": row[9],
+                "reviewed_by": row[10],
+                "reviewed_ts": row[11],
+                "review_notes": row[12],
+                "created_ts": row[13],
+                "updated_ts": row[14],
+            })
+
+    return jsonify({"requests": requests})
+
+
+@app.put("/api/admin/user-requests/<int:request_id>")
+@login_required
+def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
+    """Approva o respinge una richiesta utente."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    data = request.get_json() or {}
+    status = data.get("status")
+    review_notes = data.get("review_notes", "").strip()
+    
+    if status not in ("approved", "rejected"):
+        return jsonify({"error": "Stato non valido. Usa 'approved' o 'rejected'"}), 400
+    
+    db = get_db()
+    ensure_user_requests_table(db)
+    
+    # Verifica che la richiesta esista e sia pending
+    if DB_VENDOR == "mysql":
+        existing = db.execute("""
+            SELECT ur.id, ur.status, ur.username, rt.name as type_name
+            FROM user_requests ur
+            JOIN request_types rt ON ur.request_type_id = rt.id
+            WHERE ur.id = %s
+        """, (request_id,)).fetchone()
+    else:
+        existing = db.execute("""
+            SELECT ur.id, ur.status, ur.username, rt.name as type_name
+            FROM user_requests ur
+            JOIN request_types rt ON ur.request_type_id = rt.id
+            WHERE ur.id = ?
+        """, (request_id,)).fetchone()
+    
+    if not existing:
+        return jsonify({"error": "Richiesta non trovata"}), 404
+    
+    if isinstance(existing, Mapping):
+        current_status = existing["status"]
+        target_username = existing["username"]
+        type_name = existing["type_name"]
+    else:
+        current_status = existing[1]
+        target_username = existing[2]
+        type_name = existing[3]
+    
+    if current_status != "pending":
+        return jsonify({"error": "La richiesta è già stata revisionata"}), 400
+    
+    reviewed_by = session.get("user", "")
+    now = int(datetime.now().timestamp() * 1000)
+    
+    if DB_VENDOR == "mysql":
+        db.execute("""
+            UPDATE user_requests 
+            SET status = %s, reviewed_by = %s, reviewed_ts = %s, review_notes = %s, updated_ts = %s
+            WHERE id = %s
+        """, (status, reviewed_by, now, review_notes, now, request_id))
+    else:
+        db.execute("""
+            UPDATE user_requests 
+            SET status = ?, reviewed_by = ?, reviewed_ts = ?, review_notes = ?, updated_ts = ?
+            WHERE id = ?
+        """, (status, reviewed_by, now, review_notes, now, request_id))
+    
+    db.commit()
+    
+    # Invia notifica push all'utente
+    _send_request_review_notification(db, target_username, type_name, status, review_notes)
+    
+    status_label = "approvata" if status == "approved" else "respinta"
+    return jsonify({"ok": True, "message": f"Richiesta {status_label} con successo"})
+
+
+# =====================================================
+# USER REQUESTS - Pagina e API per richieste utente
+# =====================================================
+
+@app.route("/user/requests")
+@login_required
+def user_requests_page() -> ResponseReturnValue:
+    """Pagina utente per inviare richieste (ferie, permessi, rimborsi, ecc.)."""
+    return render_template("user_requests.html")
+
+
+@app.get("/api/user/request-types")
+@login_required
+def api_user_request_types_list() -> ResponseReturnValue:
+    """Restituisce le tipologie di richiesta attive per l'utente."""
+    db = get_db()
+    ensure_request_types_table(db)
+    
+    rows = db.execute("""
+        SELECT id, name, value_type, description
+        FROM request_types
+        WHERE active = 1
+        ORDER BY sort_order ASC, name ASC
+    """).fetchall()
+
+    types = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            types.append({
+                "id": row["id"],
+                "name": row["name"],
+                "value_type": row["value_type"],
+                "description": row["description"],
+            })
+        else:
+            types.append({
+                "id": row[0],
+                "name": row[1],
+                "value_type": row[2],
+                "description": row[3],
+            })
+
+    return jsonify({"types": types})
+
+
+@app.get("/api/user/residuals")
+@login_required
+def api_user_residuals() -> ResponseReturnValue:
+    """Restituisce le ore residue di ferie e permessi per l'utente loggato."""
+    # Per ora ritorna valori placeholder - in futuro si potrà integrare con sistema HR
+    username = session.get("user", "")
+    
+    # TODO: Implementare calcolo reale basato su:
+    # - Ore totali annuali assegnate
+    # - Ore già godute/approvate
+    
+    return jsonify({
+        "ferie_hours": 0,
+        "permessi_hours": 0
+    })
+
+
+@app.get("/api/user/requests")
+@login_required
+def api_user_requests_list() -> ResponseReturnValue:
+    """Restituisce lo storico delle richieste dell'utente loggato."""
+    username = session.get("user", "")
+    
+    db = get_db()
+    ensure_user_requests_table(db)
+    
+    if DB_VENDOR == "mysql":
+        rows = db.execute("""
+            SELECT ur.id, ur.request_type_id, rt.name as type_name, rt.value_type,
+                   ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
+                   ur.review_notes, ur.created_ts, ur.updated_ts
+            FROM user_requests ur
+            JOIN request_types rt ON ur.request_type_id = rt.id
+            WHERE ur.username = %s
+            ORDER BY ur.created_ts DESC
+        """, (username,)).fetchall()
+    else:
+        rows = db.execute("""
+            SELECT ur.id, ur.request_type_id, rt.name as type_name, rt.value_type,
+                   ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
+                   ur.review_notes, ur.created_ts, ur.updated_ts
+            FROM user_requests ur
+            JOIN request_types rt ON ur.request_type_id = rt.id
+            WHERE ur.username = ?
+            ORDER BY ur.created_ts DESC
+        """, (username,)).fetchall()
+
+    value_units = {"hours": "ore", "days": "giorni", "amount": "€", "km": "km"}
+    
+    requests = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            requests.append({
+                "id": row["id"],
+                "request_type_id": row["request_type_id"],
+                "type_name": row["type_name"],
+                "value_type": row["value_type"],
+                "value_unit": value_units.get(row["value_type"], ""),
+                "date_start": row["date_from"],
+                "date_end": row["date_to"],
+                "value": float(row["value_amount"]) if row["value_amount"] else None,
+                "notes": row["notes"],
+                "status": row["status"],
+                "admin_notes": row["review_notes"],
+                "created_ts": row["created_ts"],
+                "updated_ts": row["updated_ts"],
+            })
+        else:
+            requests.append({
+                "id": row[0],
+                "request_type_id": row[1],
+                "type_name": row[2],
+                "value_type": row[3],
+                "value_unit": value_units.get(row[3], ""),
+                "date_start": row[4],
+                "date_end": row[5],
+                "value": float(row[6]) if row[6] else None,
+                "notes": row[7],
+                "status": row[8],
+                "admin_notes": row[9],
+                "created_ts": row[10],
+                "updated_ts": row[11],
+            })
+
+    return jsonify({"requests": requests})
+
+
+@app.post("/api/user/requests")
+@login_required
+def api_user_requests_create() -> ResponseReturnValue:
+    """Crea una nuova richiesta utente."""
+    username = session.get("user", "")
+    data = request.get_json() or {}
+    
+    request_type_id = data.get("request_type_id")
+    date_start = data.get("date_start")
+    date_end = data.get("date_end")
+    value = data.get("value")
+    notes = data.get("notes", "").strip()
+
+    if not request_type_id or not date_start:
+        return jsonify({"error": "Tipo richiesta e data inizio sono obbligatori"}), 400
+
+    db = get_db()
+    ensure_user_requests_table(db)
+    
+    # Verifica che il tipo richiesta esista e sia attivo
+    if DB_VENDOR == "mysql":
+        rt = db.execute("SELECT id, value_type FROM request_types WHERE id = %s AND active = 1", (request_type_id,)).fetchone()
+    else:
+        rt = db.execute("SELECT id, value_type FROM request_types WHERE id = ? AND active = 1", (request_type_id,)).fetchone()
+    
+    if not rt:
+        return jsonify({"error": "Tipologia richiesta non valida o non attiva"}), 400
+
+    now = int(datetime.now().timestamp() * 1000)  # timestamp in millisecondi
+    value_amount = float(value) if value else 0.0
+    
+    if DB_VENDOR == "mysql":
+        db.execute("""
+            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, status, created_ts, updated_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)
+        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, now, now))
+    else:
+        db.execute("""
+            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, status, created_ts, updated_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, now, now))
+    
+    db.commit()
+
+    return jsonify({"ok": True, "message": "Richiesta inviata con successo"})
 
 
 if __name__ == "__main__":

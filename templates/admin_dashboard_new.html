@@ -438,6 +438,14 @@
                         <span class="menu-item-icon">⚙️</span>
                         <span>Regole Timbrature</span>
                     </a>
+                    <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📝</span>
+                        <span>Tipologie Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📥</span>
+                        <span>Gestione Richieste</span>
+                    </a>
                     {% endif %}
                     <div class="menu-divider"></div>
                     <a href="{{ url_for('api_admin_day_sessions_export_xlsx') }}?date_start=" id="menuExport" class="menu-item">
