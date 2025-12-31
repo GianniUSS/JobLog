@@ -2595,6 +2595,32 @@ def ensure_app_users_table(db: DatabaseLike) -> None:
         cursor.close()
     except AttributeError:
         pass
+    
+    # Migrazione: aggiungi colonna full_name se non esiste
+    if DB_VENDOR == "mysql":
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN full_name VARCHAR(255) DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass  # Colonna già esistente
+        # Migrazione: aggiungi colonna rentman_crew_id se non esiste
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN rentman_crew_id INT DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass  # Colonna già esistente
+    else:
+        # SQLite
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN full_name TEXT")
+            db.commit()
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN rentman_crew_id INTEGER")
+            db.commit()
+        except Exception:
+            pass
 
 
 def ensure_session_override_table(db: DatabaseLike) -> None:
