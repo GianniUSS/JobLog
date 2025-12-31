@@ -9773,6 +9773,66 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
     # Ordina per orario di inizio e poi per nome crew
     results.sort(key=lambda x: (x.get("start") or "", x.get("crew_name") or ""))
 
+    # Merge con dati salvati nel DB per preservare sent_to_webservice e rilevare modifiche
+    db = get_db()
+    ensure_rentman_plannings_table(db)
+    
+    if DB_VENDOR == "mysql":
+        saved_rows = db.execute(
+            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name FROM rentman_plannings WHERE planning_date = %s",
+            (target_date,)
+        ).fetchall()
+    else:
+        saved_rows = db.execute(
+            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name FROM rentman_plannings WHERE planning_date = ?",
+            (target_date,)
+        ).fetchall()
+    
+    # Crea mappa rentman_id -> {sent, old_start, old_end, old_project}
+    saved_map = {}
+    for row in saved_rows:
+        if isinstance(row, Mapping):
+            saved_map[row["rentman_id"]] = {
+                "sent": bool(row["sent_to_webservice"]),
+                "old_start": row["plan_start"],
+                "old_end": row["plan_end"],
+                "old_project": row["project_name"]
+            }
+        else:
+            saved_map[row[0]] = {
+                "sent": bool(row[1]),
+                "old_start": row[2],
+                "old_end": row[3],
+                "old_project": row[4]
+            }
+    
+    # Arricchisci i risultati con info invio e modifiche
+    for r in results:
+        rentman_id = r.get("id")
+        if rentman_id in saved_map:
+            saved = saved_map[rentman_id]
+            r["sent_to_webservice"] = saved["sent"]
+            
+            # Rileva se è stato modificato rispetto all'ultimo invio
+            if saved["sent"]:
+                # Confronta orari e progetto
+                new_start = r.get("start", "")[:16] if r.get("start") else ""
+                old_start = saved["old_start"][:16] if saved["old_start"] else ""
+                new_end = r.get("end", "")[:16] if r.get("end") else ""
+                old_end = saved["old_end"][:16] if saved["old_end"] else ""
+                
+                is_modified = (
+                    new_start != old_start or 
+                    new_end != old_end or 
+                    r.get("project_name", "") != (saved["old_project"] or "")
+                )
+                r["is_modified"] = is_modified
+            else:
+                r["is_modified"] = False
+        else:
+            r["sent_to_webservice"] = False
+            r["is_modified"] = False
+
     return jsonify({
         "ok": True,
         "date": target_date,
@@ -10000,6 +10060,7 @@ def api_admin_rentman_planning_send() -> ResponseReturnValue:
     data = request.get_json() or {}
     planning_ids = data.get("ids", [])  # Lista di ID locali da inviare
     plannings = data.get("plannings", [])  # O lista di pianificazioni con rentman_id
+    force_resend = data.get("force_resend", False)  # Se True, invia notifiche anche per già inviati
 
     db = get_db()
     ensure_rentman_plannings_table(db)
@@ -10065,13 +10126,17 @@ def api_admin_rentman_planning_send() -> ResponseReturnValue:
                 
                 sent_count += 1
                 
-                # Aggiungi alla lista per notifica (solo se non era già inviato)
-                if not was_sent and crew_id:
+                # Aggiungi alla lista per notifica:
+                # - Se non era già inviato (primo invio)
+                # - OPPURE se force_resend=True (reinvio manuale o turno modificato)
+                should_notify = not was_sent or force_resend
+                if should_notify and crew_id:
                     if crew_id not in users_to_notify:
                         users_to_notify[crew_id] = []
                     users_to_notify[crew_id].append({
                         "date": str(planning_date)[:10] if planning_date else "",
-                        "project": project_name or "Progetto"
+                        "project": project_name or "Progetto",
+                        "is_update": was_sent  # Per differenziare il messaggio notifica
                     })
                 
             except Exception as exc:
