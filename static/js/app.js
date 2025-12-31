@@ -101,8 +101,21 @@ function updatePwaInstallButton() {
 document.addEventListener('DOMContentLoaded', () => {
     if (isIOS() && !isStandalone()) {
         updatePwaInstallButton();
+        
+        // Mostra automaticamente la guida al primo accesso su iOS
+        if (!localStorage.getItem('pwa-install-dismissed')) {
+            setTimeout(() => {
+                showIOSInstallInstructions();
+            }, 1500);
+        }
     }
 });
+
+function dismissIOSInstallModal() {
+    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+    const modal = document.getElementById('ios-install-modal');
+    if (modal) modal.remove();
+}
 
 function showPwaInstallBanner() {
     // Rimuovi banner esistente se presente
@@ -231,7 +244,7 @@ function showIOSInstallInstructions() {
                 
                 <!-- Footer -->
                 <div style="padding: 16px 20px; border-top: 1px solid #e2e8f0;">
-                    <button onclick="document.getElementById('ios-install-modal').remove()" 
+                    <button onclick="dismissIOSInstallModal()" 
                             style="width: 100%; padding: 14px; background: #007AFF; color: white; 
                                    border: none; border-radius: 12px; font-size: 16px; 
                                    font-weight: 600; cursor: pointer;">

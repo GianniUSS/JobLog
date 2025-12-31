@@ -2012,7 +2012,7 @@ function showIOSInstallInstructions() {
                 
                 <!-- Footer -->
                 <div style="padding: 16px 20px; border-top: 1px solid #e2e8f0;">
-                    <button onclick="document.getElementById('ios-install-modal').remove()" 
+                    <button onclick="dismissIOSInstallModal()" 
                             style="width: 100%; padding: 14px; background: #007AFF; color: white; 
                                    border: none; border-radius: 12px; font-size: 16px; 
                                    font-weight: 600; cursor: pointer;">
@@ -2057,11 +2057,26 @@ function dismissPwaInstall() {
     hidePwaInstallBanner();
 }
 
+function dismissIOSInstallModal() {
+    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+    const modal = document.getElementById('ios-install-modal');
+    if (modal) modal.remove();
+}
+
 // Mostra pulsante installazione per iOS (che non ha beforeinstallprompt)
 document.addEventListener('DOMContentLoaded', () => {
     const menuBtn = document.getElementById('pwa-install-menu-item');
-    if (menuBtn && isIOS() && !isStandalone()) {
-        menuBtn.style.display = 'flex';
+    
+    // Se siamo su iOS e non è già installata
+    if (isIOS() && !isStandalone()) {
+        if (menuBtn) menuBtn.style.display = 'flex';
+        
+        // Mostra automaticamente la guida al primo accesso
+        if (!localStorage.getItem('pwa-install-dismissed')) {
+            setTimeout(() => {
+                showIOSInstallInstructions();
+            }, 1500); // Aspetta 1.5 secondi per non essere troppo invasivo
+        }
     }
 });
 </script>
