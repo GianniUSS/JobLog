@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#f0f4f0" />
+<link rel="manifest" href="/static/manifest.json" />
+<link rel="apple-touch-icon" href="/static/icons/icon-192x192.svg" />
 <title>Timbratura - JOBLog</title>
 <style>
 :root {
@@ -1860,6 +1862,82 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js')
     .then(reg => console.log('Service Worker registrato'))
     .catch(err => console.warn('Service Worker fallito:', err));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  PWA INSTALL PROMPT
+// ═══════════════════════════════════════════════════════════════════════════════
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    console.log('[PWA] beforeinstallprompt event fired');
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    
+    // Mostra il banner
+    if (!localStorage.getItem('pwa-install-dismissed')) {
+        showPwaInstallBanner();
+    }
+    // Mostra pulsante nel menu se esiste
+    const menuBtn = document.getElementById('pwa-install-menu-item');
+    if (menuBtn) menuBtn.style.display = 'block';
+});
+
+window.addEventListener('appinstalled', () => {
+    console.log('[PWA] App installed successfully');
+    deferredInstallPrompt = null;
+    hidePwaInstallBanner();
+});
+
+function showPwaInstallBanner() {
+    hidePwaInstallBanner();
+    const banner = document.createElement('div');
+    banner.id = 'pwa-install-banner';
+    banner.innerHTML = `
+        <div style="position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); 
+                    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); 
+                    color: white; padding: 16px 20px; border-radius: 12px; 
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000;
+                    display: flex; align-items: center; gap: 12px; max-width: 90vw;
+                    font-family: system-ui, -apple-system, sans-serif;">
+            <div style="font-size: 28px;">📱</div>
+            <div style="flex: 1;">
+                <div style="font-weight: 600; margin-bottom: 2px;">Installa JobLog</div>
+                <div style="font-size: 13px; opacity: 0.9;">Accesso rapido dalla Home</div>
+            </div>
+            <button onclick="installPwa()" style="background: white; color: #16a34a; border: none; 
+                    padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer;">
+                Installa
+            </button>
+            <button onclick="dismissPwaInstall()" style="background: transparent; border: none; 
+                    color: white; opacity: 0.7; cursor: pointer; padding: 4px; font-size: 18px;">
+                ✕
+            </button>
+        </div>
+    `;
+    document.body.appendChild(banner);
+}
+
+function hidePwaInstallBanner() {
+    const banner = document.getElementById('pwa-install-banner');
+    if (banner) banner.remove();
+}
+
+async function installPwa() {
+    if (!deferredInstallPrompt) {
+        alert('Per installare l\'app:\\n\\n📱 Android: Menu (⋮) → "Installa app"\\n🍎 iOS: Pulsante condividi → "Aggiungi a Home"');
+        return;
+    }
+    hidePwaInstallBanner();
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    console.log('[PWA] User choice:', outcome);
+    deferredInstallPrompt = null;
+}
+
+function dismissPwaInstall() {
+    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+    hidePwaInstallBanner();
 }
 </script>
 </body>
