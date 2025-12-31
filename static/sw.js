@@ -1,7 +1,7 @@
-const CACHE_NAME = 'joblog-v2025.12.01u';
-const STATIC_CACHE = 'joblog-static-v24';
-const DYNAMIC_CACHE = 'joblog-dynamic-v24';
-const API_CACHE = 'joblog-api-v22';
+const CACHE_NAME = 'joblog-v2025.12.01v';
+const STATIC_CACHE = 'joblog-static-v25';
+const DYNAMIC_CACHE = 'joblog-dynamic-v25';
+const API_CACHE = 'joblog-api-v23';
 const BG_SYNC_TAG = 'joblog-sync-queue';
 const QUEUE_DB = 'joblog-sync-db';
 const QUEUE_STORE = 'requests';
@@ -24,8 +24,8 @@ const STATIC_ASSETS = [
     '/',
     '/static/js/app.js',
     '/static/manifest.json',
-    '/static/icons/icon-192x192.svg',
-    '/static/icons/icon-72x72.svg',
+    '/static/icons/icon-192x192.png',
+    '/static/icons/icon-72x72.png',
 ];
 
 // Install event - cache static assets

@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#f0f4f0" />
 <link rel="manifest" href="/static/manifest.json" />
-<link rel="apple-touch-icon" href="/static/icons/icon-192x192.svg" />
+<link rel="apple-touch-icon" href="/static/icons/icon-192x192.png" />
 <title>Timbratura - JOBLog</title>
 <style>
 :root {
@@ -962,6 +962,10 @@ header {
       <div class="menu-item" onclick="toggleTheme()">
         <span class="icon">🌙</span>
         <span>Tema Scuro</span>
+      </div>
+      <div class="menu-item" id="pwa-install-menu-item" onclick="installPwa()" style="display: none;">
+        <span class="icon">📲</span>
+        <span>Installa App</span>
       </div>
       <div class="menu-item notification-toggle" id="notificationMenuItem">
         <span class="icon" id="notificationIcon">🔕</span>
