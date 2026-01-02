@@ -611,6 +611,146 @@
             font-weight: 500;
         }
         
+        /* Attachment Badge */
+        .attachment-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+            animation: pulse-attachment 2s ease-in-out infinite;
+        }
+        
+        .attachment-badge i {
+            font-size: 0.85rem;
+        }
+        
+        @keyframes pulse-attachment {
+            0%, 100% { box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3); }
+            50% { box-shadow: 0 4px 16px rgba(102, 126, 234, 0.5); }
+        }
+        
+        /* File Viewer Modal */
+        .file-viewer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10000;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .file-viewer-overlay.active {
+            display: flex;
+        }
+        
+        .file-viewer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            padding-top: calc(var(--safe-top) + 16px);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        .file-viewer-title {
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-right: 16px;
+        }
+        
+        .file-viewer-close {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 20px;
+            background: var(--brand);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        .file-viewer-close:active {
+            transform: scale(0.95);
+        }
+        
+        .file-viewer-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+            padding: 20px;
+        }
+        
+        .file-viewer-content iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .file-viewer-content img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+        
+        .file-viewer-footer {
+            display: flex;
+            gap: 12px;
+            padding: 16px 20px;
+            padding-bottom: calc(var(--safe-bottom) + 16px);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        .file-viewer-btn {
+            flex: 1;
+            padding: 14px 20px;
+            border-radius: 12px;
+            border: none;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .file-viewer-btn.download {
+            background: var(--success);
+            color: white;
+        }
+        
+        .file-viewer-btn.external {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+        
         /* Empty State */
         .empty-state {
             text-align: center;
@@ -920,6 +1060,12 @@
                                 <div class="document-category ${doc.category}">${categoryLabel}</div>
                                 <div class="document-title">${escapeHtml(doc.title)}</div>
                                 ${doc.description ? `<div class="document-description">${escapeHtml(doc.description)}</div>` : ''}
+                                ${doc.file_url 
+                                    ? `<div class="attachment-badge" style="margin-top: 8px;">
+                                        <i class="fas fa-paperclip"></i>
+                                        Allegato Disponibile
+                                       </div>`
+                                    : ''}
                             </div>
                         </div>
                         <div class="document-footer">
@@ -932,8 +1078,8 @@
                                     ? '<span class="read-badge"><i class="fas fa-check"></i> Letto</span>'
                                     : '<span class="unread-badge"><i class="fas fa-circle"></i> Nuovo</span>'}
                                 ${doc.file_url 
-                                    ? `<button class="document-btn primary" onclick="event.stopPropagation(); downloadDocument('${doc.file_url}', '${escapeHtml(doc.title)}')">
-                                        <i class="fas fa-download"></i>
+                                    ? `<button class="document-btn primary" onclick="event.stopPropagation(); viewFile('${doc.file_url}', '${escapeHtml(doc.title)}')">
+                                        <i class="fas fa-eye"></i> Apri
                                        </button>`
                                     : ''}
                             </div>
@@ -990,6 +1136,10 @@
             return div.innerHTML;
         }
         
+        // Current file for viewer
+        let currentFileUrl = null;
+        let currentFileTitle = null;
+        
         // Open document
         async function openDocument(docId) {
             // Mark as read
@@ -1004,9 +1154,9 @@
                     renderDocuments();
                 }
                 
-                // If has file, download it
+                // If has file, open in viewer
                 if (doc && doc.file_url) {
-                    window.open(doc.file_url, '_blank');
+                    viewFile(doc.file_url, doc.title);
                 }
                 
             } catch (error) {
@@ -1014,12 +1164,90 @@
             }
         }
         
-        // Download document
+        // View file in modal
+        function viewFile(url, title) {
+            currentFileUrl = url;
+            currentFileTitle = title;
+            
+            const overlay = document.getElementById('fileViewerOverlay');
+            const titleEl = document.getElementById('fileViewerTitle');
+            const content = document.getElementById('fileViewerContent');
+            
+            titleEl.textContent = title;
+            
+            // Determine file type
+            const ext = url.split('.').pop().toLowerCase();
+            const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+            const pdfExts = ['pdf'];
+            
+            if (imageExts.includes(ext)) {
+                // Image - show directly
+                content.innerHTML = `<img src="${url}" alt="${escapeHtml(title)}" onclick="event.stopPropagation()">`;
+            } else if (pdfExts.includes(ext)) {
+                // PDF - try iframe, but may not work on iOS
+                content.innerHTML = `
+                    <div style="text-align: center; color: white; width: 100%;">
+                        <div style="font-size: 4rem; margin-bottom: 20px;">📄</div>
+                        <div style="font-size: 1.2rem; margin-bottom: 12px;">${escapeHtml(title)}</div>
+                        <div style="color: rgba(255,255,255,0.7); margin-bottom: 24px;">File PDF</div>
+                        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                            <button onclick="downloadCurrentFile()" style="padding: 14px 28px; background: var(--success); color: white; border: none; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer;">
+                                <i class="fas fa-download"></i> Scarica PDF
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Other files - show download option
+                content.innerHTML = `
+                    <div style="text-align: center; color: white; width: 100%;">
+                        <div style="font-size: 4rem; margin-bottom: 20px;">📎</div>
+                        <div style="font-size: 1.2rem; margin-bottom: 12px;">${escapeHtml(title)}</div>
+                        <div style="color: rgba(255,255,255,0.7); margin-bottom: 24px;">Premi "Scarica" per aprire il file</div>
+                    </div>
+                `;
+            }
+            
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        // Close file viewer
+        function closeFileViewer(event) {
+            if (event && event.target !== event.currentTarget) return;
+            
+            const overlay = document.getElementById('fileViewerOverlay');
+            overlay.classList.remove('active');
+            document.body.style.overflow = '';
+            currentFileUrl = null;
+            currentFileTitle = null;
+        }
+        
+        // Download current file
+        function downloadCurrentFile() {
+            if (currentFileUrl) {
+                const link = document.createElement('a');
+                link.href = currentFileUrl;
+                link.download = currentFileTitle || 'documento';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showToast('Download avviato');
+            }
+        }
+        
+        // Open file externally
+        function openExternally() {
+            if (currentFileUrl) {
+                window.open(currentFileUrl, '_blank');
+            }
+        }
+        
+        // Download document (legacy)
         function downloadDocument(url, title) {
             const link = document.createElement('a');
             link.href = url;
             link.download = title;
-            link.target = '_blank';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -1118,5 +1346,29 @@
             checkPushStatus();
         });
     </script>
+    
+    <!-- File Viewer Modal -->
+    <div class="file-viewer-overlay" id="fileViewerOverlay" onclick="closeFileViewer(event)">
+        <div class="file-viewer-header" onclick="event.stopPropagation()">
+            <div class="file-viewer-title" id="fileViewerTitle">Documento</div>
+            <button class="file-viewer-close" onclick="closeFileViewer()">
+                <i class="fas fa-times"></i>
+                Chiudi
+            </button>
+        </div>
+        <div class="file-viewer-content" id="fileViewerContent" onclick="event.stopPropagation()">
+            <!-- Content loaded dynamically -->
+        </div>
+        <div class="file-viewer-footer" onclick="event.stopPropagation()">
+            <button class="file-viewer-btn download" id="fileViewerDownload" onclick="downloadCurrentFile()">
+                <i class="fas fa-download"></i>
+                Scarica
+            </button>
+            <button class="file-viewer-btn external" onclick="openExternally()">
+                <i class="fas fa-external-link-alt"></i>
+                Apri Esterno
+            </button>
+        </div>
+    </div>
 </body>
 </html>
