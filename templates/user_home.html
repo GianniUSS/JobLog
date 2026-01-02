@@ -707,10 +707,63 @@ header {
   margin-bottom: 20px;
   color: white;
   box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+  position: relative;
+  overflow: hidden;
 }
 .turno-box.no-turno {
   background: linear-gradient(135deg, #64748b 0%, #475569 100%);
   box-shadow: 0 4px 16px rgba(100, 116, 139, 0.3);
+}
+.turno-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.turno-nav-btn {
+  background: rgba(255,255,255,0.3);
+  border: 2px solid rgba(255,255,255,0.5);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.turno-nav-btn:hover {
+  background: rgba(255,255,255,0.5);
+  transform: scale(1.1);
+}
+.turno-nav-btn:active {
+  transform: scale(0.95);
+}
+.turno-nav-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+.turno-nav-btn:disabled:hover {
+  background: rgba(255,255,255,0.3);
+  transform: none;
+}
+.turno-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.turno-counter {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: rgba(255,255,255,0.25);
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
 }
 .turno-header {
   display: flex;
@@ -724,10 +777,13 @@ header {
   letter-spacing: 0.5px;
 }
 .turno-project {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   margin-bottom: 4px;
   line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .turno-details {
   display: flex;
@@ -1410,21 +1466,28 @@ header {
 
   <!-- Box Turno Oggi -->
   <div class="turno-box" id="turnoBox" style="display:none;">
+    <span class="turno-counter" id="turnoCounter" style="display:none;">1/1</span>
     <div class="turno-header">
       <span>📅</span> Il tuo turno oggi
     </div>
-    <div class="turno-project" id="turnoProject">-</div>
-    <div class="turno-details">
-      <div class="turno-detail" id="turnoOrario">
-        <span class="icon">🕐</span>
-        <span id="turnoOrarioText">-</span>
+    <div class="turno-nav">
+      <button class="turno-nav-btn" id="turnoPrevBtn" onclick="navigateTurno(-1)" style="display:none;">‹</button>
+      <div class="turno-content">
+        <div class="turno-project" id="turnoProject">-</div>
+        <div class="turno-details">
+          <div class="turno-detail" id="turnoOrario">
+            <span class="icon">🕐</span>
+            <span id="turnoOrarioText">-</span>
+          </div>
+          <div class="turno-detail" id="turnoFunzione">
+            <span class="icon">👤</span>
+            <span id="turnoFunzioneText">-</span>
+          </div>
+        </div>
+        <span class="turno-badge" id="turnoBadge" style="display:none;"></span>
       </div>
-      <div class="turno-detail" id="turnoFunzione">
-        <span class="icon">👤</span>
-        <span id="turnoFunzioneText">-</span>
-      </div>
+      <button class="turno-nav-btn" id="turnoNextBtn" onclick="navigateTurno(1)" style="display:none;">›</button>
     </div>
-    <span class="turno-badge" id="turnoBadge" style="display:none;"></span>
   </div>
 
   <div class="actions">
@@ -2285,6 +2348,10 @@ async function loadTimbrature() {
   }
 }
 
+// Turni multipli - stato globale
+let allTurni = [];
+let currentTurnoIndex = 0;
+
 // Carica turno di oggi (da Rentman)
 async function loadTurno() {
   const turnoBox = document.getElementById('turnoBox');
@@ -2306,67 +2373,117 @@ async function loadTurno() {
       document.getElementById('turnoOrario').style.display = 'none';
       document.getElementById('turnoFunzione').style.display = 'none';
       document.getElementById('turnoBadge').style.display = 'none';
+      hideNavigation();
       return;
     }
     
-    // Prende il primo turno o l'unico
-    const turno = data.turno || data.turni[0];
+    // Memorizza tutti i turni
+    allTurni = data.turni || [data.turno];
+    currentTurnoIndex = 0;
     
     turnoBox.classList.remove('no-turno');
     turnoBox.style.display = 'block';
     
-    // Progetto
-    const projectText = turno.project_name || turno.project_code || 'Progetto';
-    document.getElementById('turnoProject').textContent = projectText;
-    
-    // Orario
-    if (turno.start || turno.end) {
-      document.getElementById('turnoOrario').style.display = 'flex';
-      let orarioText = '';
-      if (turno.start && turno.end) {
-        orarioText = `${turno.start} - ${turno.end}`;
-      } else if (turno.start) {
-        orarioText = `Dalle ${turno.start}`;
-      } else if (turno.hours) {
-        orarioText = `${turno.hours}h previste`;
-      }
-      document.getElementById('turnoOrarioText').textContent = orarioText;
+    // Mostra navigazione se ci sono più turni
+    if (allTurni.length > 1) {
+      showNavigation();
     } else {
-      document.getElementById('turnoOrario').style.display = 'none';
+      hideNavigation();
     }
     
-    // Funzione/Ruolo
-    if (turno.function) {
-      document.getElementById('turnoFunzione').style.display = 'flex';
-      document.getElementById('turnoFunzioneText').textContent = turno.function;
-    } else {
-      document.getElementById('turnoFunzione').style.display = 'none';
-    }
-    
-    // Badge (Leader / Trasporto)
-    const badge = document.getElementById('turnoBadge');
-    if (turno.is_leader) {
-      badge.textContent = '⭐ Caposquadra';
-      badge.classList.add('leader');
-      badge.style.display = 'inline-block';
-    } else if (turno.transport) {
-      badge.textContent = `🚗 ${turno.transport}`;
-      badge.classList.remove('leader');
-      badge.style.display = 'inline-block';
-    } else {
-      badge.style.display = 'none';
-    }
-    
-    // Se ci sono più turni, mostra un indicatore
-    if (data.turni && data.turni.length > 1) {
-      const projectEl = document.getElementById('turnoProject');
-      projectEl.textContent += ` (+${data.turni.length - 1} altri)`;
-    }
+    // Visualizza il primo turno
+    displayTurno(currentTurnoIndex);
     
   } catch (err) {
     console.error('Errore caricamento turno:', err);
     turnoBox.style.display = 'none';
   }
+}
+
+// Visualizza un singolo turno
+function displayTurno(index) {
+  if (index < 0 || index >= allTurni.length) return;
+  
+  const turno = allTurni[index];
+  
+  // Progetto
+  const projectText = turno.project_name || turno.project_code || 'Progetto';
+  document.getElementById('turnoProject').textContent = projectText;
+  
+  // Orario
+  if (turno.start || turno.end) {
+    document.getElementById('turnoOrario').style.display = 'flex';
+    let orarioText = '';
+    if (turno.start && turno.end) {
+      orarioText = `${turno.start} - ${turno.end}`;
+    } else if (turno.start) {
+      orarioText = `Dalle ${turno.start}`;
+    } else if (turno.hours) {
+      orarioText = `${turno.hours}h previste`;
+    }
+    document.getElementById('turnoOrarioText').textContent = orarioText;
+  } else {
+    document.getElementById('turnoOrario').style.display = 'none';
+  }
+  
+  // Funzione/Ruolo
+  if (turno.function) {
+    document.getElementById('turnoFunzione').style.display = 'flex';
+    document.getElementById('turnoFunzioneText').textContent = turno.function;
+  } else {
+    document.getElementById('turnoFunzione').style.display = 'none';
+  }
+  
+  // Badge (Leader / Trasporto)
+  const badge = document.getElementById('turnoBadge');
+  if (turno.is_leader) {
+    badge.textContent = '⭐ Caposquadra';
+    badge.classList.add('leader');
+    badge.style.display = 'inline-block';
+  } else if (turno.transport) {
+    badge.textContent = `🚗 ${turno.transport}`;
+    badge.classList.remove('leader');
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+  
+  // Aggiorna counter e stato bottoni
+  updateNavigation();
+}
+
+// Naviga tra i turni
+function navigateTurno(direction) {
+  const newIndex = currentTurnoIndex + direction;
+  if (newIndex >= 0 && newIndex < allTurni.length) {
+    currentTurnoIndex = newIndex;
+    displayTurno(currentTurnoIndex);
+  }
+}
+
+// Mostra i controlli di navigazione
+function showNavigation() {
+  document.getElementById('turnoPrevBtn').style.display = 'flex';
+  document.getElementById('turnoNextBtn').style.display = 'flex';
+  document.getElementById('turnoCounter').style.display = 'block';
+}
+
+// Nasconde i controlli di navigazione
+function hideNavigation() {
+  document.getElementById('turnoPrevBtn').style.display = 'none';
+  document.getElementById('turnoNextBtn').style.display = 'none';
+  document.getElementById('turnoCounter').style.display = 'none';
+}
+
+// Aggiorna stato navigazione
+function updateNavigation() {
+  const prevBtn = document.getElementById('turnoPrevBtn');
+  const nextBtn = document.getElementById('turnoNextBtn');
+  const counter = document.getElementById('turnoCounter');
+  
+  prevBtn.disabled = currentTurnoIndex === 0;
+  nextBtn.disabled = currentTurnoIndex === allTurni.length - 1;
+  counter.textContent = `${currentTurnoIndex + 1}/${allTurni.length}`;
 }
 
 // Menu functions
