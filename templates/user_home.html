@@ -588,6 +588,30 @@ header {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* Location badge */
+.history-item .location-badge {
+  font-size: 10px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+  white-space: nowrap;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
+}
+.history-item .method-badge {
+  font-size: 12px;
+  margin-left: 6px;
+}
+.history-item .method-badge.qr {
+  opacity: 0.7;
+}
+
 .history-item.offline-pending {
   background: rgba(245, 158, 11, 0.08);
   border-radius: 8px;
@@ -2226,11 +2250,20 @@ function updateUI() {
         oraDisplay = `<span class="ora-originale">${t.ora}</span> → <span class="ora-mod">${t.ora_mod}</span>`;
       }
       
+      // Mostra location se presente (GPS)
+      let locationInfo = '';
+      if (t.location_name) {
+        locationInfo = `<span class="location-badge" title="📍 ${t.location_name}">📍 ${t.location_name}</span>`;
+      } else if (t.method === 'qr' || t.method === 'qr_offline') {
+        locationInfo = '<span class="method-badge qr" title="QR Code">📱</span>';
+      }
+      
       return `
         <li class="history-item ${t.offline ? 'offline-pending' : ''}">
           <span class="dot ${info.dotClass}"></span>
           <span class="time">${oraDisplay}</span>
           <span class="type">- ${info.label}${extraInfo}</span>
+          ${locationInfo}
           ${syncIcon}
         </li>
       `;

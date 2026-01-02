@@ -343,6 +343,115 @@
             }
         }
 
+        /* Tratte KM Styles */
+        #tratte-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .tratta-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg);
+            padding: 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+        }
+        
+        .tratta-inputs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            flex-wrap: wrap;
+        }
+        
+        .tratta-da, .tratta-a {
+            flex: 1;
+            min-width: 100px;
+        }
+        
+        .tratta-arrow {
+            color: var(--text-secondary);
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        
+        .tratta-km {
+            width: 80px;
+            flex-shrink: 0;
+            text-align: center;
+        }
+        
+        .tratta-remove-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: var(--red-light);
+            color: var(--red);
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        
+        .tratta-remove-btn:hover {
+            background: var(--red);
+            color: white;
+        }
+        
+        .add-tratta-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--brand-light);
+            border: 2px dashed var(--brand);
+            border-radius: var(--radius-sm);
+            color: var(--brand);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .add-tratta-btn:hover {
+            background: var(--brand);
+            color: white;
+        }
+        
+        .tratte-totale {
+            margin-top: 12px;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, var(--brand-light), rgba(99, 102, 241, 0.1));
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            color: var(--brand);
+            text-align: right;
+        }
+        
+        .tratte-totale span {
+            font-size: 1.2em;
+        }
+        
+        @media (max-width: 500px) {
+            .tratta-inputs {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .tratta-da, .tratta-a {
+                width: 100%;
+            }
+            .tratta-arrow {
+                text-align: center;
+                transform: rotate(90deg);
+            }
+            .tratta-km {
+                width: 100%;
+            }
+        }
+
         /* File Upload Styles */
         .file-upload-container {
             display: flex;
@@ -766,6 +875,42 @@
             color: var(--brand);
             margin-top: 8px;
             font-weight: 500;
+        }
+        
+        .request-cdc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+        
+        .request-tratte {
+            margin-top: 12px;
+            padding: 10px;
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+        }
+        
+        .tratta-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px dashed var(--border);
+        }
+        
+        .tratta-item:last-child {
+            border-bottom: none;
+        }
+        
+        .tratta-percorso {
+            font-size: 13px;
+            color: var(--text);
+        }
+        
+        .tratta-km {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--brand);
         }
 
         /* Empty State */
@@ -1224,6 +1369,29 @@
                         <label class="form-label">Centro di Costo (CDC) *</label>
                         <input type="text" class="form-input" id="request-cdc">
                     </div>
+                    
+                    <!-- Sezione Tratte KM -->
+                    <div class="form-group" id="tratte-group" style="display: none;">
+                        <label class="form-label">Dettaglio Tratte</label>
+                        <div id="tratte-container">
+                            <div class="tratta-row" data-index="0">
+                                <div class="tratta-inputs">
+                                    <input type="text" class="form-input tratta-da" placeholder="Da (es. Milano)" required>
+                                    <span class="tratta-arrow">→</span>
+                                    <input type="text" class="form-input tratta-a" placeholder="A (es. Roma)" required>
+                                    <input type="number" class="form-input tratta-km" placeholder="Km" step="0.1" min="0" required>
+                                </div>
+                                <button type="button" class="tratta-remove-btn" onclick="removeTratta(this)" style="display: none;">✕</button>
+                            </div>
+                        </div>
+                        <button type="button" class="add-tratta-btn" onclick="addTratta()">
+                            ➕ Aggiungi tratta
+                        </button>
+                        <div class="tratte-totale">
+                            Totale: <span id="tratte-totale-km">0</span> km
+                        </div>
+                    </div>
+                    
                     <div class="form-group" id="attachment-group" style="display: none;">
                         <label class="form-label">Allegati (foto ricevute) *</label>
                         <div class="file-upload-container">
@@ -1409,6 +1577,7 @@
             const valueGroup = document.getElementById('value-group');
             const cdcGroup = document.getElementById('cdc-group');
             const attachmentGroup = document.getElementById('attachment-group');
+            const tratteGroup = document.getElementById('tratte-group');
             const valueLabel = document.getElementById('value-label');
             const valueInput = document.getElementById('request-value');
             const cdcInput = document.getElementById('request-cdc');
@@ -1419,6 +1588,7 @@
             valueGroup.style.display = 'none';
             cdcGroup.style.display = 'none';
             attachmentGroup.style.display = 'none';
+            tratteGroup.style.display = 'none';
             ferieCounter.style.display = 'none';
             permessiCounter.style.display = 'none';
             
@@ -1452,11 +1622,94 @@
                     // Validazione allegati fatta manualmente nel submit
                     break;
                 case 'km':
-                    valueGroup.style.display = 'block';
-                    valueLabel.textContent = 'Chilometri (km)';
-                    valueInput.setAttribute('required', 'required');
+                    // Nascondi il campo km manuale, usa le tratte
+                    valueGroup.style.display = 'none';
+                    cdcGroup.style.display = 'block';
+                    cdcInput.setAttribute('required', 'required');
+                    tratteGroup.style.display = 'block';
+                    // Reset tratte
+                    resetTratte();
                     break;
             }
+        }
+        
+        // Gestione Tratte KM
+        let tratteIndex = 0;
+        
+        function resetTratte() {
+            const container = document.getElementById('tratte-container');
+            container.innerHTML = `
+                <div class="tratta-row" data-index="0">
+                    <div class="tratta-inputs">
+                        <input type="text" class="form-input tratta-da" placeholder="Da (es. Milano)" required>
+                        <span class="tratta-arrow">→</span>
+                        <input type="text" class="form-input tratta-a" placeholder="A (es. Roma)" required>
+                        <input type="number" class="form-input tratta-km" placeholder="Km" step="0.1" min="0" required oninput="updateTotaleKm()">
+                    </div>
+                    <button type="button" class="tratta-remove-btn" onclick="removeTratta(this)" style="display: none;">✕</button>
+                </div>
+            `;
+            tratteIndex = 0;
+            updateTotaleKm();
+        }
+        
+        function addTratta() {
+            tratteIndex++;
+            const container = document.getElementById('tratte-container');
+            const row = document.createElement('div');
+            row.className = 'tratta-row';
+            row.dataset.index = tratteIndex;
+            row.innerHTML = `
+                <div class="tratta-inputs">
+                    <input type="text" class="form-input tratta-da" placeholder="Da" required>
+                    <span class="tratta-arrow">→</span>
+                    <input type="text" class="form-input tratta-a" placeholder="A" required>
+                    <input type="number" class="form-input tratta-km" placeholder="Km" step="0.1" min="0" required oninput="updateTotaleKm()">
+                </div>
+                <button type="button" class="tratta-remove-btn" onclick="removeTratta(this)">✕</button>
+            `;
+            container.appendChild(row);
+            
+            // Mostra i pulsanti di rimozione se c'è più di una tratta
+            updateRemoveButtons();
+        }
+        
+        function removeTratta(btn) {
+            const row = btn.closest('.tratta-row');
+            row.remove();
+            updateRemoveButtons();
+            updateTotaleKm();
+        }
+        
+        function updateRemoveButtons() {
+            const rows = document.querySelectorAll('.tratta-row');
+            rows.forEach((row, i) => {
+                const btn = row.querySelector('.tratta-remove-btn');
+                btn.style.display = rows.length > 1 ? 'block' : 'none';
+            });
+        }
+        
+        function updateTotaleKm() {
+            const inputs = document.querySelectorAll('.tratta-km');
+            let totale = 0;
+            inputs.forEach(input => {
+                totale += parseFloat(input.value) || 0;
+            });
+            document.getElementById('tratte-totale-km').textContent = totale.toFixed(1);
+        }
+        
+        function getTratte() {
+            const rows = document.querySelectorAll('.tratta-row');
+            const tratte = [];
+            rows.forEach(row => {
+                const da = row.querySelector('.tratta-da').value.trim();
+                const a = row.querySelector('.tratta-a').value.trim();
+                const km = parseFloat(row.querySelector('.tratta-km').value) || 0;
+                if (da && a && km > 0) {
+                    tratte.push({ da, a, km });
+                }
+            });
+            return tratte;
         }
 
         // Array globale per accumulare i file allegati
@@ -1657,6 +1910,21 @@
                 }[statusClass] || statusClass;
 
                 const typeName = requestTypes.find(t => t.id === req.request_type_id)?.name || req.type_name || 'Richiesta';
+                
+                // Render tratte se presenti
+                let tratteHtml = '';
+                if (req.tratte && req.tratte.length > 0) {
+                    tratteHtml = `
+                        <div class="request-tratte">
+                            ${req.tratte.map(t => `
+                                <div class="tratta-item">
+                                    <span class="tratta-percorso">${t.da} → ${t.a}</span>
+                                    <span class="tratta-km">${t.km} km</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
 
                 return `
                     <div class="request-card ${statusClass}">
@@ -1667,6 +1935,8 @@
                         <div class="request-dates">
                             ${formatDate(req.date_start)}${req.date_end && req.date_end !== req.date_start ? ' → ' + formatDate(req.date_end) : ''}
                         </div>
+                        ${req.cdc ? `<div class="request-cdc">🏢 CDC: ${req.cdc}</div>` : ''}
+                        ${tratteHtml}
                         ${req.value ? `<div class="request-value">${req.value} ${req.value_unit || 'ore'}</div>` : ''}
                         ${req.notes ? `<div class="request-notes">${req.notes}</div>` : ''}
                         ${req.admin_notes ? `<div class="request-admin-notes">📝 ${req.admin_notes}</div>` : ''}
@@ -1720,6 +1990,23 @@
                     return;
                 }
             }
+            
+            // Validazioni specifiche per km
+            let tratte = null;
+            let totaleKm = null;
+            if (valueType === 'km') {
+                if (!cdc) {
+                    showToast('Centro di Costo (CDC) è obbligatorio', 'error');
+                    return;
+                }
+                tratte = getTratte();
+                if (tratte.length === 0) {
+                    showToast('Inserisci almeno una tratta con km validi', 'error');
+                    return;
+                }
+                // Calcola totale km
+                totaleKm = tratte.reduce((sum, t) => sum + t.km, 0);
+            }
 
             setLoading(true);
 
@@ -1745,17 +2032,24 @@
                         body: formData
                     });
                 } else {
+                    const payload = {
+                        request_type_id: parseInt(typeId),
+                        start_date: startDate,
+                        end_date: endDate,
+                        value: totaleKm !== null ? totaleKm : (value ? parseFloat(value) : null),
+                        notes: notes || null,
+                        cdc: cdc || null
+                    };
+                    
+                    // Aggiungi tratte se presenti
+                    if (tratte) {
+                        payload.tratte = tratte;
+                    }
+                    
                     res = await fetch('/api/user/requests', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            request_type_id: parseInt(typeId),
-                            start_date: startDate,
-                            end_date: endDate,
-                            value: value ? parseFloat(value) : null,
-                            notes: notes || null,
-                            cdc: cdc || null
-                        })
+                        body: JSON.stringify(payload)
                     });
                 }
 

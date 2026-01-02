@@ -4600,7 +4600,7 @@ def api_timbratura_oggi():
     
     rows = db.execute(
         f"""
-        SELECT tipo, ora, ora_mod FROM timbrature
+        SELECT tipo, ora, ora_mod, method, gps_lat, gps_lon, location_name FROM timbrature
         WHERE username = {placeholder} AND data = {placeholder}
         ORDER BY created_ts ASC
         """,
@@ -4611,6 +4611,11 @@ def api_timbratura_oggi():
     for row in rows:
         ora_val = row['ora'] if isinstance(row, dict) else row[1]
         ora_mod_val = row['ora_mod'] if isinstance(row, dict) else row[2]
+        method = row['method'] if isinstance(row, dict) else row[3]
+        gps_lat = row['gps_lat'] if isinstance(row, dict) else row[4]
+        gps_lon = row['gps_lon'] if isinstance(row, dict) else row[5]
+        location_name = row['location_name'] if isinstance(row, dict) else row[6]
+        
         # Gestisce sia TIME che stringa
         if hasattr(ora_val, 'strftime'):
             ora_str = ora_val.strftime("%H:%M")
@@ -4625,10 +4630,20 @@ def api_timbratura_oggi():
             else:
                 ora_mod_str = str(ora_mod_val)[:5]
         
+        # Converti Decimal a float per JSON
+        if gps_lat is not None:
+            gps_lat = float(gps_lat)
+        if gps_lon is not None:
+            gps_lon = float(gps_lon)
+        
         timbrature.append({
             "tipo": row['tipo'] if isinstance(row, dict) else row[0],
             "ora": ora_str,
-            "ora_mod": ora_mod_str
+            "ora_mod": ora_mod_str,
+            "method": method,
+            "gps_lat": gps_lat,
+            "gps_lon": gps_lon,
+            "location_name": location_name
         })
     
     return jsonify({"timbrature": timbrature})
@@ -4859,14 +4874,56 @@ def api_timbratura_registra():
         app.logger.error(f"Errore calcolo ora_mod: {e}")
         ora_mod = ora  # Fallback: usa ora originale
     
-    # Inserisce la timbratura
+    # Recupera dati GPS dalla sessione o da offline_gps
+    method = session.get("timbratura_method", "manual")
+    gps_lat = session.get("timbratura_gps_lat")
+    gps_lon = session.get("timbratura_gps_lon")
+    location_name = session.get("timbratura_location")
+    
+    # Se è una timbratura offline GPS, usa quei dati
+    if offline_gps and bypass_qr:
+        method = "gps_offline"
+        gps_lat = offline_gps.get('latitude')
+        gps_lon = offline_gps.get('longitude')
+        # Cerca location name dalle coordinate
+        settings = get_company_settings(db)
+        custom = settings.get('custom_settings', {})
+        timbratura_config = custom.get('timbratura', {})
+        locations = timbratura_config.get('gps_locations', [])
+        for loc in locations:
+            loc_lat = loc.get("latitude")
+            loc_lon = loc.get("longitude")
+            loc_radius = loc.get("radius_meters", 100)
+            if loc_lat and loc_lon:
+                from math import radians, sin, cos, sqrt, atan2
+                R = 6371000
+                lat1, lon1 = radians(float(loc_lat)), radians(float(loc_lon))
+                lat2, lon2 = radians(float(gps_lat)), radians(float(gps_lon))
+                dlat = lat2 - lat1
+                dlon = lon2 - lon1
+                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                c = 2 * atan2(sqrt(a), sqrt(1-a))
+                distance = R * c
+                if distance <= loc_radius:
+                    location_name = loc.get("name", "Sede")
+                    break
+    elif offline_qr and bypass_qr:
+        method = "qr_offline"
+    
+    # Inserisce la timbratura con dati GPS
     db.execute(
         f"""
-        INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts)
-        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method, gps_lat, gps_lon, location_name)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
         """,
-        (username, tipo, today, ora, ora_mod, created_ts)
+        (username, tipo, today, ora, ora_mod, created_ts, method, gps_lat, gps_lon, location_name)
     )
+    
+    # Pulisce dati timbratura dalla sessione
+    session.pop("timbratura_method", None)
+    session.pop("timbratura_gps_lat", None)
+    session.pop("timbratura_gps_lon", None)
+    session.pop("timbratura_location", None)
     
     # CedolinoWeb: invia timbrata con ora originale e modificata
     # Mappa tipo timbratura -> timeframe CedolinoWeb
@@ -5323,6 +5380,10 @@ CREATE TABLE IF NOT EXISTS timbrature (
     data DATE NOT NULL,
     ora TIME NOT NULL,
     created_ts BIGINT NOT NULL,
+    method VARCHAR(20) DEFAULT NULL,
+    gps_lat DECIMAL(10,8) DEFAULT NULL,
+    gps_lon DECIMAL(11,8) DEFAULT NULL,
+    location_name VARCHAR(255) DEFAULT NULL,
     INDEX idx_timbrature_user_date (username, data),
     INDEX idx_timbrature_date (data)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -5335,7 +5396,11 @@ CREATE TABLE IF NOT EXISTS timbrature (
     tipo TEXT NOT NULL,
     data TEXT NOT NULL,
     ora TEXT NOT NULL,
-    created_ts INTEGER NOT NULL
+    created_ts INTEGER NOT NULL,
+    method TEXT DEFAULT NULL,
+    gps_lat REAL DEFAULT NULL,
+    gps_lon REAL DEFAULT NULL,
+    location_name TEXT DEFAULT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_timbrature_user_date ON timbrature(username, data);
 CREATE INDEX IF NOT EXISTS idx_timbrature_date ON timbrature(data);
@@ -5367,6 +5432,20 @@ def ensure_timbrature_table(db: DatabaseLike) -> None:
             db.commit()
         except Exception:
             pass
+    
+    # Migrazione: aggiungi colonne GPS se non esistono
+    new_columns = [
+        ("method", "VARCHAR(20) DEFAULT NULL" if DB_VENDOR == "mysql" else "TEXT DEFAULT NULL"),
+        ("gps_lat", "DECIMAL(10,8) DEFAULT NULL" if DB_VENDOR == "mysql" else "REAL DEFAULT NULL"),
+        ("gps_lon", "DECIMAL(11,8) DEFAULT NULL" if DB_VENDOR == "mysql" else "REAL DEFAULT NULL"),
+        ("location_name", "VARCHAR(255) DEFAULT NULL" if DB_VENDOR == "mysql" else "TEXT DEFAULT NULL"),
+    ]
+    for col_name, col_type in new_columns:
+        try:
+            db.execute(f"ALTER TABLE timbrature ADD COLUMN {col_name} {col_type}")
+            db.commit()
+        except Exception:
+            pass  # Colonna già esistente
 
 
 def ensure_warehouse_activities_table(db: DatabaseLike) -> None:
@@ -10090,6 +10169,16 @@ def ensure_user_requests_table(db: DatabaseLike) -> None:
             db.commit()
     except Exception:
         pass  # Colonna già esiste
+    
+    # Migrazione: aggiungi colonna tratte per rimborsi km
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute("ALTER TABLE user_requests ADD COLUMN tratte JSON DEFAULT NULL")
+        else:
+            db.execute("ALTER TABLE user_requests ADD COLUMN tratte TEXT DEFAULT NULL")
+        db.commit()
+    except Exception:
+        pass  # Colonna già esiste
 
 
 def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
@@ -11048,6 +11137,10 @@ def api_timbratura_validate_qr():
     # Salva in sessione
     session["timbratura_token"] = validation_token
     session["timbratura_token_expires"] = expires
+    session["timbratura_method"] = "qr"
+    session["timbratura_location"] = None  # QR non ha location
+    session["timbratura_gps_lat"] = None
+    session["timbratura_gps_lon"] = None
     
     return jsonify({
         "valid": True,
@@ -11312,6 +11405,8 @@ def api_timbratura_validate_gps():
     session["timbratura_token_expires"] = expires
     session["timbratura_method"] = "gps"
     session["timbratura_location"] = matched_location.get("name", "Sede")
+    session["timbratura_gps_lat"] = latitude
+    session["timbratura_gps_lon"] = longitude
     
     app.logger.info(f"GPS validato per {session.get('user')}: {matched_location.get('name')} (distanza: {int(min_distance)}m, accuracy: {int(accuracy)}m)")
     
@@ -12736,7 +12831,7 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
             SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
                    ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
                    ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts,
-                   ur.cdc, ur.attachment_path
+                   ur.cdc, ur.attachment_path, ur.tratte
             FROM user_requests ur
             JOIN request_types rt ON ur.request_type_id = rt.id
             ORDER BY 
@@ -12748,7 +12843,7 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
             SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
                    ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
                    ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts,
-                   ur.cdc, ur.attachment_path
+                   ur.cdc, ur.attachment_path, ur.tratte
             FROM user_requests ur
             JOIN request_types rt ON ur.request_type_id = rt.id
             ORDER BY 
@@ -12758,6 +12853,22 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
 
     requests = []
     for row in rows:
+        # Parsing tratte JSON
+        tratte_data = None
+        if isinstance(row, Mapping):
+            tratte_raw = row.get("tratte")
+        else:
+            tratte_raw = row[17] if len(row) > 17 else None
+        
+        if tratte_raw:
+            try:
+                if isinstance(tratte_raw, str):
+                    tratte_data = json.loads(tratte_raw)
+                else:
+                    tratte_data = tratte_raw
+            except:
+                tratte_data = None
+        
         if isinstance(row, Mapping):
             requests.append({
                 "id": row["id"],
@@ -12777,6 +12888,7 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
                 "updated_ts": row["updated_ts"],
                 "cdc": row["cdc"],
                 "attachment_path": row["attachment_path"],
+                "tratte": tratte_data,
             })
         else:
             requests.append({
@@ -12797,6 +12909,7 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
                 "updated_ts": row[14],
                 "cdc": row[15] if len(row) > 15 else None,
                 "attachment_path": row[16] if len(row) > 16 else None,
+                "tratte": tratte_data,
             })
 
     return jsonify({"requests": requests})
@@ -12969,7 +13082,7 @@ def api_user_requests_list() -> ResponseReturnValue:
         rows = db.execute("""
             SELECT ur.id, ur.request_type_id, rt.name as type_name, rt.value_type,
                    ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
-                   ur.review_notes, ur.created_ts, ur.updated_ts, ur.cdc, ur.attachment_path
+                   ur.review_notes, ur.created_ts, ur.updated_ts, ur.cdc, ur.attachment_path, ur.tratte
             FROM user_requests ur
             JOIN request_types rt ON ur.request_type_id = rt.id
             WHERE ur.username = %s
@@ -12979,7 +13092,7 @@ def api_user_requests_list() -> ResponseReturnValue:
         rows = db.execute("""
             SELECT ur.id, ur.request_type_id, rt.name as type_name, rt.value_type,
                    ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
-                   ur.review_notes, ur.created_ts, ur.updated_ts, ur.cdc, ur.attachment_path
+                   ur.review_notes, ur.created_ts, ur.updated_ts, ur.cdc, ur.attachment_path, ur.tratte
             FROM user_requests ur
             JOIN request_types rt ON ur.request_type_id = rt.id
             WHERE ur.username = ?
@@ -12991,6 +13104,15 @@ def api_user_requests_list() -> ResponseReturnValue:
     requests = []
     for row in rows:
         if isinstance(row, Mapping):
+            # Parse tratte JSON
+            tratte_raw = row.get("tratte")
+            tratte = None
+            if tratte_raw:
+                try:
+                    tratte = json.loads(tratte_raw) if isinstance(tratte_raw, str) else tratte_raw
+                except:
+                    pass
+            
             requests.append({
                 "id": row["id"],
                 "request_type_id": row["request_type_id"],
@@ -13007,8 +13129,18 @@ def api_user_requests_list() -> ResponseReturnValue:
                 "updated_ts": row["updated_ts"],
                 "cdc": row["cdc"],
                 "attachment_path": row["attachment_path"],
+                "tratte": tratte,
             })
         else:
+            # Parse tratte JSON
+            tratte_raw = row[14] if len(row) > 14 else None
+            tratte = None
+            if tratte_raw:
+                try:
+                    tratte = json.loads(tratte_raw) if isinstance(tratte_raw, str) else tratte_raw
+                except:
+                    pass
+            
             requests.append({
                 "id": row[0],
                 "request_type_id": row[1],
@@ -13025,6 +13157,7 @@ def api_user_requests_list() -> ResponseReturnValue:
                 "updated_ts": row[11],
                 "cdc": row[12] if len(row) > 12 else None,
                 "attachment_path": row[13] if len(row) > 13 else None,
+                "tratte": tratte,
             })
 
     return jsonify({"requests": requests})
@@ -13047,6 +13180,7 @@ def api_user_requests_create() -> ResponseReturnValue:
         value = request.form.get("value")
         notes = (request.form.get("notes") or "").strip()
         cdc = (request.form.get("cdc") or "").strip() or None
+        tratte = None  # Non supportato via form per ora
         # Supporta sia 'attachment' singolo che 'attachments' multipli
         attachment_files = request.files.getlist("attachments") or []
         single_attachment = request.files.get("attachment")
@@ -13061,6 +13195,7 @@ def api_user_requests_create() -> ResponseReturnValue:
         value = data.get("value")
         notes = (data.get("notes") or "").strip()
         cdc = (data.get("cdc") or "").strip() or None
+        tratte = data.get("tratte")  # Array di {da, a, km}
         attachment_files = []
 
     if not request_type_id or not date_start:
@@ -13086,6 +13221,23 @@ def api_user_requests_create() -> ResponseReturnValue:
             return jsonify({"error": "Centro di costo (CDC) è obbligatorio per i rimborsi"}), 400
         if not attachment_files or len(attachment_files) == 0:
             return jsonify({"error": "Almeno un allegato (foto ricevuta) è obbligatorio per i rimborsi"}), 400
+    
+    # Validazioni specifiche per km
+    if value_type == "km":
+        if not cdc:
+            return jsonify({"error": "Centro di costo (CDC) è obbligatorio per i rimborsi km"}), 400
+        if tratte and len(tratte) > 0:
+            # Valida le tratte
+            total_km = 0
+            for t in tratte:
+                if not t.get("da") or not t.get("a"):
+                    return jsonify({"error": "Ogni tratta deve avere origine e destinazione"}), 400
+                km = t.get("km", 0)
+                if km <= 0:
+                    return jsonify({"error": "Ogni tratta deve avere km > 0"}), 400
+                total_km += km
+            # Sovrascrivi value con il totale calcolato dalle tratte
+            value = total_km
 
     # Gestione upload file multipli
     attachment_paths = []
@@ -13118,17 +13270,18 @@ def api_user_requests_create() -> ResponseReturnValue:
 
     now = int(datetime.now().timestamp() * 1000)  # timestamp in millisecondi
     value_amount = float(value) if value else 0.0
+    tratte_json = json.dumps(tratte) if tratte else None
     
     if DB_VENDOR == "mysql":
         db.execute("""
-            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, cdc, attachment_path, status, created_ts, updated_ts)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)
-        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, cdc, attachment_path, now, now))
+            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, cdc, attachment_path, tratte, status, created_ts, updated_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)
+        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, cdc, attachment_path, tratte_json, now, now))
     else:
         db.execute("""
-            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, cdc, attachment_path, status, created_ts, updated_ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, cdc, attachment_path, now, now))
+            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, cdc, attachment_path, tratte, status, created_ts, updated_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, cdc, attachment_path, tratte_json, now, now))
     
     db.commit()
 

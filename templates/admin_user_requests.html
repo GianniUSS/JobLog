@@ -276,6 +276,35 @@
             color: var(--text);
             padding-top: 8px;
         }
+        .request-tratte {
+            grid-column: 1 / -1;
+            font-size: 13px;
+            color: var(--text);
+            padding-top: 8px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 8px;
+        }
+        .request-tratte .tratte-header {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+        .request-tratte .tratta-item {
+            padding: 4px 0;
+            border-bottom: 1px dashed #e0e0e0;
+        }
+        .request-tratte .tratta-item:last-of-type {
+            border-bottom: none;
+        }
+        .request-tratte .tratte-totale {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 2px solid var(--brand);
+            font-size: 14px;
+            color: var(--brand);
+        }
         .request-attachment {
             grid-column: 1 / -1;
             font-size: 13px;
@@ -749,6 +778,21 @@
                 cdcHtml = `<div class="request-cdc">🏢 CDC: <strong>${r.cdc}</strong></div>`;
             }
             
+            // Tratte per rimborsi km
+            let tratteHtml = '';
+            if (r.tratte && r.tratte.length > 0) {
+                const tratteItems = r.tratte.map(t => 
+                    `<div class="tratta-item">🚗 ${t.da} → ${t.a}: <strong>${t.km} km</strong></div>`
+                ).join('');
+                const totaleKm = r.tratte.reduce((sum, t) => sum + (parseFloat(t.km) || 0), 0);
+                tratteHtml = `
+                    <div class="request-tratte">
+                        <div class="tratte-header">📍 Dettaglio tratte:</div>
+                        ${tratteItems}
+                        <div class="tratte-totale">Totale: <strong>${totaleKm} km</strong></div>
+                    </div>`;
+            }
+            
             let attachmentHtml = '';
             if (r.attachment_path) {
                 // Controlla se è un JSON array (più file) o un singolo path
@@ -798,6 +842,7 @@
                     <span class="request-status ${statusClass}">${statusLabels[r.status]}</span>
                     ${actionBtn}
                     ${cdcHtml}
+                    ${tratteHtml}
                     ${attachmentHtml}
                     ${notesHtml}
                     ${reviewInfo}
