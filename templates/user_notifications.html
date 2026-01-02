@@ -421,6 +421,41 @@
             margin-left: auto;
         }
         
+        /* Unread dot */
+        .unread-dot {
+            color: var(--brand);
+            font-size: 0.6rem;
+            margin-left: 4px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Mark all read button */
+        .mark-all-read-btn {
+            padding: 8px 16px;
+            border-radius: 50px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: auto;
+        }
+        
+        .mark-all-read-btn:hover {
+            border-color: var(--brand);
+            color: var(--brand);
+        }
+        
         /* Empty State */
         .empty-state {
             text-align: center;
@@ -735,6 +770,10 @@
                     <span class="icon">📝</span>
                     <span>Richieste</span>
                 </a>
+                <a href="{{ url_for('user_documents_page') }}" class="menu-item">
+                    <span class="icon">📄</span>
+                    <span>Documenti</span>
+                </a>
                 <a href="/user/notifications" class="menu-item active">
                     <span class="icon">🔔</span>
                     <span>Storico Notifiche</span>
@@ -819,6 +858,10 @@
             <button class="filter-pill" data-filter="other">
                 <i class="fas fa-bell"></i>
                 Altro
+            </button>
+            <button class="mark-all-read-btn" onclick="markAllAsRead()" id="markAllReadBtn">
+                <i class="fas fa-check-double"></i>
+                Segna tutte lette
             </button>
         </div>
         
@@ -1175,6 +1218,56 @@
             document.getElementById('stat-total').textContent = allNotifications.length;
             document.getElementById('stat-today').textContent = todayCount;
             document.getElementById('stat-week').textContent = weekCount;
+            
+            // Update unread count
+            const unreadCount = allNotifications.filter(n => !n.read).length;
+            document.getElementById('header-count').textContent = 
+                unreadCount > 0 ? `${unreadCount} da leggere` : 'Tutte lette';
+        }
+
+        // Mark notification as read
+        async function markAsRead(notificationId, cardElement) {
+            try {
+                const res = await fetch(`/api/push/notifications/${notificationId}/read`, {
+                    method: 'POST'
+                });
+                if (res.ok) {
+                    // Update local data
+                    const notification = allNotifications.find(n => n.id === notificationId);
+                    if (notification) {
+                        notification.read = true;
+                        notification.read_at = Date.now();
+                    }
+                    // Update UI
+                    if (cardElement) {
+                        cardElement.classList.remove('unread');
+                    }
+                    updateStats();
+                }
+            } catch (err) {
+                console.error('Error marking notification as read:', err);
+            }
+        }
+        
+        // Mark all as read
+        async function markAllAsRead() {
+            try {
+                const res = await fetch('/api/push/notifications/read-all', {
+                    method: 'POST'
+                });
+                if (res.ok) {
+                    allNotifications.forEach(n => {
+                        n.read = true;
+                        n.read_at = Date.now();
+                    });
+                    renderNotifications();
+                    updateStats();
+                    showToast('Tutte le notifiche marcate come lette');
+                }
+            } catch (err) {
+                console.error('Error marking all as read:', err);
+                showToast('Errore nel marcare come lette');
+            }
         }
 
         // Render Notifications
@@ -1210,9 +1303,12 @@
                 const type = getNotificationType(n.kind);
                 const ts = n.sent_ts || n.created_ts;
                 const icon = getIcon(type);
+                const isUnread = !n.read;
                 
                 return `
-                    <div class="notification-card" style="animation-delay: ${index * 0.05}s">
+                    <div class="notification-card ${isUnread ? 'unread' : ''}" 
+                         style="animation-delay: ${index * 0.05}s"
+                         onclick="markAsRead(${n.id}, this)">
                         <div class="notification-header">
                             <div class="notification-icon ${type}">
                                 <i class="${icon}"></i>
@@ -1222,6 +1318,7 @@
                                 <div class="notification-time">
                                     <i class="far fa-clock"></i>
                                     ${timeAgo(ts)}
+                                    ${isUnread ? '<span class="unread-dot">●</span>' : ''}
                                 </div>
                             </div>
                         </div>

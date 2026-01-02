@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestione Documenti · JobLog</title>
+  <link rel="manifest" href="{{ static_version('manifest.json') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+  <script>
+    (function applyStoredTheme() {
+      const stored = localStorage.getItem('joblog-theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = stored || (prefersDark ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+    :root {
+      color-scheme: light dark;
+      --bg: #0b1224;
+      --bg-panel: #0f172a;
+      --bg-soft: #111a30;
+      --card: #10182f;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --brand: #38bdf8;
+      --brand-strong: #0ea5e9;
+      --border: rgba(148, 163, 184, 0.18);
+      --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --purple: #a855f7;
+      --pink: #ec4899;
+      --cyan: #06b6d4;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+    }
+    [data-theme="light"] {
+      --bg: #f6f8fc;
+      --bg-panel: #ffffff;
+      --bg-soft: #eef2ff;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --brand: #2563eb;
+      --brand-strong: #1d4ed8;
+      --border: rgba(15, 23, 42, 0.1);
+      --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --purple: #9333ea;
+      --pink: #db2777;
+      --cyan: #0891b2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .hidden { display: none !important; }
+
+    /* Header */
+    header {
+      background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+      color: #f8fafc;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 220;
+      box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+      overflow: visible;
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .header-icon-btn {
+      width: 40px; height: 40px;
+      border: none; border-radius: 10px;
+      background: rgba(255,255,255,0.12);
+      color: white; font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+    .header-user {
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,0.08);
+      padding: 6px 14px 6px 6px;
+      border-radius: 30px;
+    }
+    .header-user-avatar {
+      width: 32px; height: 32px;
+      background: var(--brand);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 14px;
+    }
+    .header-user-name { font-size: 14px; font-weight: 600; }
+
+    /* Hamburger Menu */
+    .menu-container { position: relative; z-index: 310; }
+    .hamburger-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 8px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      min-width: 220px;
+      z-index: 300;
+      overflow: hidden;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-10px);
+      transition: all 0.2s ease;
+    }
+    .hamburger-menu.open {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.15s ease;
+    }
+    .menu-item:hover { background: var(--bg-soft); }
+    .menu-item.active { background: var(--brand); color: white; }
+    .menu-item.danger { color: var(--danger); }
+    .menu-item.danger:hover { background: rgba(239,68,68,0.1); }
+    .menu-item-icon { font-size: 18px; }
+    .menu-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
+    }
+
+    /* Main */
+    main {
+      flex: 1;
+      padding: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .container {
+      width: 100%;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 8px;
+    }
+
+    .tab-btn {
+      padding: 10px 20px;
+      background: none;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: var(--brand);
+      color: white;
+    }
+
+    .tab-btn:hover:not(.active) {
+      background: var(--brand-light);
+      color: var(--brand);
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Form Card */
+    .form-card {
+      background: var(--card);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+      border: 1px solid var(--border);
+    }
+
+    .form-card h2 {
+      font-size: 18px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      transition: border-color 0.2s;
+      background: var(--bg-soft);
+      color: var(--text);
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--brand);
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    /* File Upload */
+    .file-upload {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--bg-soft);
+    }
+
+    .file-upload:hover {
+      border-color: var(--brand);
+      background: var(--bg-panel);
+    }
+
+    .file-upload.has-file {
+      border-color: var(--success);
+      background: rgba(34, 197, 94, 0.1);
+    }
+
+    .file-upload-icon {
+      font-size: 40px;
+      margin-bottom: 8px;
+    }
+
+    .file-upload-text {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .file-upload-name {
+      margin-top: 8px;
+      font-weight: 600;
+      color: var(--success);
+    }
+
+    .file-upload input[type="file"] {
+      display: none;
+    }
+
+    /* User Selection */
+    .user-selection {
+      margin-top: 16px;
+    }
+
+    .user-toggle {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .user-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .user-list {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px;
+      background: var(--bg-soft);
+      border-radius: var(--radius-sm);
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    .user-list.show { display: flex; }
+
+    .user-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .user-item:hover {
+      border-color: var(--brand);
+      background: var(--bg-soft);
+    }
+
+    .user-item.selected {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: var(--brand);
+    }
+
+    .user-item input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--brand);
+      cursor: pointer;
+    }
+
+    .user-item-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .user-item-name {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .user-item-username {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .user-chip:hover {
+      border-color: var(--brand);
+    }
+
+    .user-chip.selected {
+      background: var(--brand);
+      color: white;
+      border-color: var(--brand);
+    }
+
+    .user-chip input { display: none; }
+
+    /* Submit Button */
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-strong) 100%);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Section count badges */
+    .pending-count, .sent-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    
+    .pending-count {
+      background: #fef3c7;
+      color: #d97706;
+    }
+    
+    .sent-count {
+      background: #d1fae5;
+      color: #059669;
+    }
+
+    /* Tab badge */
+    .tab-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-left: 6px;
+    }
+    
+    .tab-badge.pending {
+      background: #fef3c7;
+      color: #d97706;
+    }
+    
+    .tab-btn.active .tab-badge.pending {
+      background: #d97706;
+      color: white;
+    }
+
+    /* Documents Table */
+    .docs-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .docs-table th,
+    .docs-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .docs-table th {
+      background: var(--bg-soft);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .docs-table tr:hover {
+      background: var(--bg-soft);
+    }
+
+    .category-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .category-badge.circolare {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .category-badge.comunicazione {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .category-badge.busta_paga {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .action-btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .action-btn.delete {
+      background: #fee2e2;
+      color: var(--danger);
+    }
+
+    .action-btn.delete:hover {
+      background: var(--danger);
+      color: white;
+    }
+
+    .action-btn.notify {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .action-btn.notify:hover {
+      background: #d97706;
+      color: white;
+    }
+
+    .action-btn.notify.primary {
+      background: var(--primary);
+      color: white;
+      padding: 6px 12px;
+    }
+
+    .action-btn.notify.primary:hover {
+      background: #0284c7;
+    }
+
+    .action-btn.view {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .action-btn.view:hover {
+      background: #1d4ed8;
+      color: white;
+    }
+
+    .actions-cell {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .no-file {
+      color: var(--muted);
+      font-size: 12px;
+      font-style: italic;
+    }
+
+    .target-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: #e0f2fe;
+      color: #0369a1;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .target-badge:hover {
+      background: #0369a1;
+      color: white;
+    }
+
+    .target-badge.all {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .target-badge.all:hover {
+      background: #065f46;
+      color: white;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal {
+      background: var(--card);
+      border-radius: var(--radius-lg);
+      width: 90%;
+      max-width: 400px;
+      max-height: 80vh;
+      overflow: hidden;
+      transform: scale(0.9);
+      transition: transform 0.3s;
+    }
+
+    .modal-overlay.active .modal {
+      transform: scale(1);
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 4px;
+    }
+
+    .modal-close:hover {
+      color: var(--text);
+    }
+
+    .modal-body {
+      padding: 16px 20px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .recipient-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .recipient-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--bg-soft);
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+
+    .recipient-item.unread {
+      border-left: 3px solid var(--warning);
+    }
+
+    .recipient-item.read {
+      border-left: 3px solid var(--success);
+      opacity: 0.8;
+    }
+
+    .recipient-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-strong) 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .recipient-avatar.read {
+      background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+    }
+
+    .recipient-avatar.unread {
+      background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
+    }
+
+    .recipient-info {
+      flex: 1;
+    }
+
+    .recipient-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .recipient-username {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .read-status {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+
+    .read-status.read {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+    }
+
+    .read-status.unread {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--warning);
+    }
+
+    /* Stats Cards */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+
+    .stat-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--brand);
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 14px 24px;
+      border-radius: var(--radius-md);
+      color: white;
+      font-weight: 500;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast.success { background: var(--success); }
+    .toast.error { background: var(--danger); }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state-icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 768px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+      
+      .docs-table {
+        font-size: 13px;
+      }
+      
+      .docs-table th:nth-child(3),
+      .docs-table td:nth-child(3) {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="menu-container">
+      <button id="menuToggle" class="header-icon-btn" type="button" aria-label="Menu">☰</button>
+      <nav id="hamburgerMenu" class="hamburger-menu">
+        <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
+          <span class="menu-item-icon">📊</span>
+          <span>Dashboard</span>
+        </a>
+        <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+          <span class="menu-item-icon">🗓️</span>
+          <span>Gestione Sessioni</span>
+        </a>
+        <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+          <span class="menu-item-icon">🔬</span>
+          <span>Analisi Attività</span>
+        </a>
+        <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+          <span class="menu-item-icon">📅</span>
+          <span>Pianificazioni Rentman</span>
+        </a>
+        {% if is_admin %}
+        <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+          <span class="menu-item-icon">👥</span>
+          <span>Gestione Utenti</span>
+        </a>
+        <a href="{{ url_for('admin_operators') }}" class="menu-item">
+          <span class="menu-item-icon">🧑‍🔧</span>
+          <span>Gestione Operatori</span>
+        </a>
+        <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
+          <span class="menu-item-icon">⚙️</span>
+          <span>Regole Timbrature</span>
+        </a>
+        <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
+          <span class="menu-item-icon">📝</span>
+          <span>Tipologie Richieste</span>
+        </a>
+        <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
+          <span class="menu-item-icon">📥</span>
+          <span>Gestione Richieste</span>
+        </a>
+        <a href="{{ url_for('admin_documents_page') }}" class="menu-item active">
+          <span class="menu-item-icon">📄</span>
+          <span>Documenti</span>
+        </a>
+        <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
+          <span class="menu-item-icon">🏢</span>
+          <span>Configurazione Azienda</span>
+        </a>
+        {% endif %}
+        <div class="menu-divider"></div>
+        <a href="{{ url_for('logout') }}" class="menu-item danger">
+          <span class="menu-item-icon">🚪</span>
+          <span>Logout</span>
+        </a>
+      </nav>
+    </div>
+    <span class="logo-title">📄 Gestione Documenti</span>
+  </div>
+  <div class="header-actions">
+    <button class="header-icon-btn" id="refreshBtn" title="Aggiorna" onclick="loadDocuments()">↻</button>
+    <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+    <div class="header-user">
+      <div class="header-user-avatar">{{ session.get('username', 'U')[0]|upper }}</div>
+      <span class="header-user-name">{{ session.get('username', 'Utente') }}</span>
+    </div>
+  </div>
+</header>
+
+<main>
+<div class="container">
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-icon">📢</div>
+      <div class="stat-value" id="statCircolari">0</div>
+      <div class="stat-label">Circolari</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📨</div>
+      <div class="stat-value" id="statComunicazioni">0</div>
+      <div class="stat-label">Comunicazioni</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">💰</div>
+      <div class="stat-value" id="statBustePaga">0</div>
+      <div class="stat-label">Buste Paga</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📁</div>
+      <div class="stat-value" id="statTotale">0</div>
+      <div class="stat-label">Totale Documenti</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('upload')">📤 Carica</button>
+    <button class="tab-btn" onclick="showTab('pending')">
+      🔔 Da Inviare <span class="tab-badge pending" id="tabPendingCount">0</span>
+    </button>
+    <button class="tab-btn" onclick="showTab('sent')">✅ Inviati</button>
+  </div>
+
+  <!-- Tab: Upload -->
+  <div class="tab-content active" id="tab-upload">
+    <div class="form-card">
+      <h2>📤 Carica Nuovo Documento</h2>
+      
+      <form id="uploadForm" enctype="multipart/form-data">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Categoria *</label>
+            <select name="category" id="docCategory" required>
+              <option value="">Seleziona categoria...</option>
+              <option value="circolare">📢 Circolare</option>
+              <option value="comunicazione">📨 Comunicazione</option>
+              <option value="busta_paga">💰 Busta Paga</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Titolo *</label>
+            <input type="text" name="title" id="docTitle" placeholder="Es. Circolare n.1/2026" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Descrizione (opzionale)</label>
+          <textarea name="description" id="docDescription" placeholder="Breve descrizione del documento..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Allegato (PDF, DOC, immagine)</label>
+          <div class="file-upload" id="fileUploadArea" onclick="document.getElementById('docFile').click()">
+            <div class="file-upload-icon">📎</div>
+            <div class="file-upload-text">Clicca per selezionare un file o trascinalo qui</div>
+            <div class="file-upload-name" id="fileName"></div>
+            <input type="file" name="file" id="docFile" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg">
+          </div>
+        </div>
+
+        <div class="user-selection">
+          <label style="font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 8px; display: block;">Destinatari</label>
+          <div class="user-toggle">
+            <label>
+              <input type="radio" name="target" value="all" checked onchange="toggleUserList()">
+              👥 Tutti gli operatori
+            </label>
+            <label>
+              <input type="radio" name="target" value="selected" onchange="toggleUserList()">
+              🎯 Seleziona operatori
+            </label>
+          </div>
+          <div class="user-list" id="userList">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn" id="submitBtn">
+          📤 Carica Documento
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Tab: Pending (Da Inviare) -->
+  <div class="tab-content" id="tab-pending">
+    <div class="form-card">
+      <h2>🔔 Documenti Da Inviare</h2>
+      <div id="pendingTableContainer">
+        <table class="docs-table">
+          <thead>
+            <tr>
+              <th>Categoria</th>
+              <th>Titolo</th>
+              <th>Allegato</th>
+              <th>Destinatari</th>
+              <th>Caricato</th>
+              <th>Azioni</th>
+            </tr>
+          </thead>
+          <tbody id="pendingTableBody">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="pendingEmpty" style="display: none;">
+          <div class="empty-state-icon">✅</div>
+          <div>Tutti i documenti sono stati inviati!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Sent (Inviati) -->
+  <div class="tab-content" id="tab-sent">
+    <div class="form-card">
+      <h2>✅ Documenti Inviati</h2>
+      <div id="sentTableContainer">
+        <table class="docs-table">
+          <thead>
+            <tr>
+              <th>Categoria</th>
+              <th>Titolo</th>
+              <th>Allegato</th>
+              <th>Destinatari</th>
+              <th>Inviato il</th>
+              <th>Azioni</th>
+            </tr>
+          </thead>
+          <tbody id="sentTableBody">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="sentEmpty" style="display: none;">
+          <div class="empty-state-icon">📭</div>
+          <div>Nessun documento inviato</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- Modal Destinatari -->
+<div class="modal-overlay" id="recipientsModal" onclick="closeRecipientsModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>👥 Destinatari</h3>
+      <button class="modal-close" onclick="closeRecipientsModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="recipient-list" id="recipientsList">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let allUsers = [];
+let allDocuments = [];
+
+// Menu toggle
+const menuToggle = document.getElementById('menuToggle');
+const hamburgerMenu = document.getElementById('hamburgerMenu');
+menuToggle.addEventListener('click', () => hamburgerMenu.classList.toggle('open'));
+document.addEventListener('click', (e) => {
+  if (!menuToggle.contains(e.target) && !hamburgerMenu.contains(e.target)) {
+    hamburgerMenu.classList.remove('open');
+  }
+});
+
+// Theme toggle
+const themeToggle = document.getElementById('themeToggle');
+themeToggle.addEventListener('click', () => {
+  const current = document.documentElement.dataset.theme;
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('joblog-theme', next);
+});
+
+// Tab switching
+function showTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+  
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tabName).classList.add('active');
+  
+  // Carica documenti quando si passa ai tab pending o sent
+  if (tabName === 'pending' || tabName === 'sent') loadDocuments();
+}
+
+// Load users
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/admin/users');
+    if (!res.ok) throw new Error('Errore');
+    const data = await res.json();
+    allUsers = data.users || [];
+    renderUserList();
+  } catch (err) {
+    console.error('Errore caricamento utenti:', err);
+  }
+}
+
+// Render user list with full names
+function renderUserList() {
+  const container = document.getElementById('userList');
+  container.innerHTML = allUsers.map(user => {
+    const displayName = user.display_name || user.username;
+    const showUsername = user.display_name ? user.username : '';
+    return `
+      <label class="user-item" data-username="${user.username}">
+        <input type="checkbox" name="users[]" value="${user.username}" onchange="this.parentElement.classList.toggle('selected', this.checked)">
+        <div class="user-item-info">
+          <span class="user-item-name">${displayName}</span>
+          ${showUsername ? `<span class="user-item-username">@${showUsername}</span>` : ''}
+        </div>
+      </label>
+    `;
+  }).join('');
+}
+
+// Toggle user list visibility
+function toggleUserList() {
+  const target = document.querySelector('input[name="target"]:checked').value;
+  document.getElementById('userList').classList.toggle('show', target === 'selected');
+}
+
+// File upload handling
+document.getElementById('docFile').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  const area = document.getElementById('fileUploadArea');
+  const nameEl = document.getElementById('fileName');
+  
+  if (file) {
+    area.classList.add('has-file');
+    nameEl.textContent = '📄 ' + file.name;
+  } else {
+    area.classList.remove('has-file');
+    nameEl.textContent = '';
+  }
+});
+
+// Form submit
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Caricamento...';
+  
+  const formData = new FormData();
+  formData.append('category', document.getElementById('docCategory').value);
+  formData.append('title', document.getElementById('docTitle').value);
+  formData.append('description', document.getElementById('docDescription').value);
+  
+  const file = document.getElementById('docFile').files[0];
+  if (file) {
+    formData.append('file', file);
+  }
+  
+  const target = document.querySelector('input[name="target"]:checked').value;
+  formData.append('target_all', target === 'all' ? '1' : '0');
+  
+  if (target === 'selected') {
+    const selectedUsers = Array.from(document.querySelectorAll('.user-item.selected input'))
+      .map(input => input.value);
+    formData.append('target_users', JSON.stringify(selectedUsers));
+  }
+  
+  try {
+    const res = await fetch('/api/admin/documents', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const data = await res.json();
+    
+    if (res.ok && data.success) {
+      showToast('Documento caricato con successo!', 'success');
+      document.getElementById('uploadForm').reset();
+      document.getElementById('fileUploadArea').classList.remove('has-file');
+      document.getElementById('fileName').textContent = '';
+      document.querySelectorAll('.user-item.selected').forEach(c => {
+        c.classList.remove('selected');
+        c.querySelector('input').checked = false;
+      });
+      toggleUserList();
+      loadStats();
+    } else {
+      showToast(data.error || 'Errore caricamento', 'error');
+    }
+  } catch (err) {
+    console.error('Errore:', err);
+    showToast('Errore di connessione', 'error');
+  }
+  
+  btn.disabled = false;
+  btn.textContent = '📤 Carica Documento';
+});
+
+// Load documents
+async function loadDocuments() {
+  try {
+    const res = await fetch('/api/admin/documents');
+    if (!res.ok) throw new Error('Errore');
+    const data = await res.json();
+    allDocuments = data.documents || [];
+    console.log('Documents from API:', allDocuments);
+    renderDocuments();
+  } catch (err) {
+    console.error('Errore:', err);
+  }
+}
+
+// Render documents tables (split by notified status)
+function renderDocuments() {
+  console.log('allDocuments:', allDocuments);
+  const pendingDocs = allDocuments.filter(d => !d.notified_at);
+  const sentDocs = allDocuments.filter(d => d.notified_at);
+  console.log('pendingDocs:', pendingDocs.length, 'sentDocs:', sentDocs.length);
+  
+  // Update tab badge
+  document.getElementById('tabPendingCount').textContent = pendingDocs.length;
+  
+  // Render pending documents
+  renderDocumentTable(pendingDocs, 'pendingTableBody', 'pendingEmpty', false);
+  
+  // Render sent documents
+  renderDocumentTable(sentDocs, 'sentTableBody', 'sentEmpty', true);
+}
+
+function renderDocumentTable(docs, tbodyId, emptyId, showNotifiedDate) {
+  const tbody = document.getElementById(tbodyId);
+  const emptyState = document.getElementById(emptyId);
+  
+  if (docs.length === 0) {
+    tbody.innerHTML = '';
+    emptyState.style.display = 'block';
+    return;
+  }
+  
+  emptyState.style.display = 'none';
+  
+  tbody.innerHTML = docs.map((doc) => {
+    const index = allDocuments.indexOf(doc);
+    const categoryLabels = {
+      'circolare': '📢 Circolare',
+      'comunicazione': '📨 Comunicazione',
+      'busta_paga': '💰 Busta Paga'
+    };
+    
+    // Data: creazione per pending, notifica per sent
+    let dateCell;
+    if (showNotifiedDate && doc.notified_at) {
+      const notifiedDate = new Date(doc.notified_at).toLocaleDateString('it-IT');
+      const notifiedTime = new Date(doc.notified_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      dateCell = `${notifiedDate} ${notifiedTime}`;
+    } else {
+      dateCell = new Date(doc.created_at).toLocaleDateString('it-IT');
+    }
+    
+    // Colonna destinatari
+    let targetCell;
+    if (doc.target_all) {
+      targetCell = `<span class="target-badge all" onclick="showAllRecipients(${doc.id})">👥 Tutti</span>`;
+    } else {
+      targetCell = `<span class="target-badge" onclick="showRecipients(${index})">🎯 Destinatari</span>`;
+    }
+    
+    // Colonna allegato
+    let fileCell = '<span class="no-file">Nessun file</span>';
+    if (doc.file_url) {
+      const fileName = doc.file_name || doc.file_url.split('/').pop();
+      fileCell = `<button class="action-btn view" onclick="window.open('${doc.file_url}', '_blank')" title="${fileName}">📄 Apri</button>`;
+    }
+    
+    // Pulsante notifica: diverso per pending vs sent
+    const notifyBtn = showNotifiedDate 
+      ? `<button class="action-btn notify" onclick="sendNotification(${doc.id})" title="Reinvia notifica">🔔</button>`
+      : `<button class="action-btn notify primary" onclick="sendNotification(${doc.id})" title="Invia notifica">📤 Invia</button>`;
+    
+    return `
+      <tr>
+        <td><span class="category-badge ${doc.category}">${categoryLabels[doc.category]}</span></td>
+        <td><strong>${escapeHtml(doc.title)}</strong></td>
+        <td>${fileCell}</td>
+        <td>${targetCell}</td>
+        <td>${dateCell}</td>
+        <td>
+          ${notifyBtn}
+          <button class="action-btn delete" onclick="deleteDocument(${doc.id})">🗑️</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Send notification for a document
+async function sendNotification(docId) {
+  if (!confirm('Vuoi inviare la notifica ai destinatari di questo documento?')) return;
+  
+  try {
+    const res = await fetch(`/api/admin/documents/${docId}/notify`, { method: 'POST' });
+    const data = await res.json();
+    
+    if (res.ok && data.success) {
+      showToast(data.message || 'Notifica inviata', 'success');
+      loadDocuments(); // Ricarica per spostare il doc nella sezione "Inviati"
+    } else {
+      showToast(data.error || 'Errore invio notifica', 'error');
+    }
+  } catch (err) {
+    showToast('Errore di connessione', 'error');
+  }
+}
+
+// Delete document
+async function deleteDocument(docId) {
+  if (!confirm('Sei sicuro di voler eliminare questo documento?')) return;
+  
+  try {
+    const res = await fetch(`/api/admin/documents/${docId}`, { method: 'DELETE' });
+    const data = await res.json();
+    
+    if (res.ok && data.success) {
+      showToast('Documento eliminato', 'success');
+      loadDocuments();
+      loadStats();
+    } else {
+      showToast(data.error || 'Errore eliminazione', 'error');
+    }
+  } catch (err) {
+    showToast('Errore di connessione', 'error');
+  }
+}
+
+// Load stats
+async function loadStats() {
+  try {
+    const res = await fetch('/api/admin/documents');
+    if (!res.ok) return;
+    const data = await res.json();
+    const docs = data.documents || [];
+    
+    document.getElementById('statCircolari').textContent = docs.filter(d => d.category === 'circolare').length;
+    document.getElementById('statComunicazioni').textContent = docs.filter(d => d.category === 'comunicazione').length;
+    document.getElementById('statBustePaga').textContent = docs.filter(d => d.category === 'busta_paga').length;
+    document.getElementById('statTotale').textContent = docs.length;
+  } catch (err) {
+    console.error('Errore stats:', err);
+  }
+}
+
+// Toast
+function showToast(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast ' + type + ' show';
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// Escape HTML
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Show recipients modal with read status
+async function showRecipients(docIndex) {
+  const doc = allDocuments[docIndex];
+  const list = document.getElementById('recipientsList');
+  
+  // Show loading
+  list.innerHTML = '<div style="text-align: center; padding: 30px;"><div class="loading-spinner"></div></div>';
+  document.getElementById('recipientsModal').classList.add('active');
+  
+  try {
+    const res = await fetch(`/api/admin/documents/${doc.id}/recipients`);
+    const data = await res.json();
+    
+    if (data.recipients && data.recipients.length > 0) {
+      const header = data.target_all 
+        ? `Visibile a tutti gli operatori (${data.total})`
+        : `Destinatari selezionati (${data.total})`;
+      
+      list.innerHTML = `
+        <div style="text-align: center; padding: 10px 0 15px; border-bottom: 1px solid var(--border); margin-bottom: 10px;">
+          <span style="color: var(--muted);">${header}</span>
+          <div style="margin-top: 8px; display: flex; justify-content: center; gap: 15px;">
+            <span style="color: var(--success); font-size: 0.85rem;">✓ Letti: ${data.read_count}</span>
+            <span style="color: var(--warning); font-size: 0.85rem;">○ Non letti: ${data.unread_count}</span>
+          </div>
+        </div>
+      ` + data.recipients.map(r => {
+        const name = r.display_name || r.username;
+        const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const readClass = r.read ? 'read' : 'unread';
+        const readBadge = r.read 
+          ? `<span class="read-status read">✓ Letto</span>` 
+          : `<span class="read-status unread">○ Non letto</span>`;
+        return `
+          <div class="recipient-item ${readClass}">
+            <div class="recipient-avatar ${readClass}">${initials}</div>
+            <div class="recipient-info">
+              <div class="recipient-name">${escapeHtml(name)}</div>
+              <div class="recipient-username">@${r.username}</div>
+            </div>
+            ${readBadge}
+          </div>
+        `;
+      }).join('');
+    } else {
+      list.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px;">Nessun destinatario</div>';
+    }
+  } catch (err) {
+    console.error('Errore caricamento destinatari:', err);
+    list.innerHTML = '<div style="text-align: center; color: var(--danger); padding: 20px;">Errore nel caricamento</div>';
+  }
+}
+
+// Show popup for "All users" documents - uses same API
+async function showAllRecipients(docId) {
+  const list = document.getElementById('recipientsList');
+  
+  // Show loading
+  list.innerHTML = '<div style="text-align: center; padding: 30px;"><div class="loading-spinner"></div></div>';
+  document.getElementById('recipientsModal').classList.add('active');
+  
+  try {
+    const res = await fetch(`/api/admin/documents/${docId}/recipients`);
+    const data = await res.json();
+    
+    if (data.recipients && data.recipients.length > 0) {
+      list.innerHTML = `
+        <div style="text-align: center; padding: 10px 0 15px; border-bottom: 1px solid var(--border); margin-bottom: 10px;">
+          <span style="color: var(--muted);">Visibile a tutti gli operatori (${data.total})</span>
+          <div style="margin-top: 8px; display: flex; justify-content: center; gap: 15px;">
+            <span style="color: var(--success); font-size: 0.85rem;">✓ Letti: ${data.read_count}</span>
+            <span style="color: var(--warning); font-size: 0.85rem;">○ Non letti: ${data.unread_count}</span>
+          </div>
+        </div>
+      ` + data.recipients.map(r => {
+        const name = r.display_name || r.username;
+        const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const readClass = r.read ? 'read' : 'unread';
+        const readBadge = r.read 
+          ? `<span class="read-status read">✓ Letto</span>` 
+          : `<span class="read-status unread">○ Non letto</span>`;
+        return `
+          <div class="recipient-item ${readClass}">
+            <div class="recipient-avatar ${readClass}">${initials}</div>
+            <div class="recipient-info">
+              <div class="recipient-name">${escapeHtml(name)}</div>
+              <div class="recipient-username">@${r.username}</div>
+            </div>
+            ${readBadge}
+          </div>
+        `;
+      }).join('');
+    } else {
+      list.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px;">Nessun operatore</div>';
+    }
+  } catch (err) {
+    console.error('Errore caricamento destinatari:', err);
+    list.innerHTML = '<div style="text-align: center; color: var(--danger); padding: 20px;">Errore nel caricamento</div>';
+  }
+}
+
+// Close recipients modal
+function closeRecipientsModal(event) {
+  if (!event || event.target === event.currentTarget) {
+    document.getElementById('recipientsModal').classList.remove('active');
+  }
+}
+
+// Init
+document.addEventListener('DOMContentLoaded', () => {
+  loadUsers();
+  loadStats();
+  loadDocuments(); // Carica subito per aggiornare il badge "Da Inviare"
+});
+</script>
+
+</body>
+</html>

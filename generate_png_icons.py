@@ -16,60 +16,78 @@ WHITE = (255, 255, 255)
 SIZES = [72, 96, 128, 144, 152, 192, 384, 512]
 
 def create_icon(size):
-    """Crea un'icona PNG con il logo JobLog."""
+    """Crea un'icona PNG con il logo JobLog - J pulita e centrata."""
     img = Image.new('RGBA', (size, size), BG_COLOR)
     draw = ImageDraw.Draw(img)
     
-    # Calcoliamo le proporzioni per il logo "J"
-    # Margine del 20%
-    margin = int(size * 0.2)
-    inner_size = size - (margin * 2)
+    # Padding del 20% per safe area
+    padding = size * 0.20
     
-    # Disegniamo una "J" stilizzata
-    line_width = max(int(inner_size * 0.15), 3)
+    # Area disponibile per il disegno
+    x0 = padding
+    y0 = padding
+    w = size - (padding * 2)
+    h = size - (padding * 2)
     
-    # Barra orizzontale superiore della J
-    bar_top = margin + int(inner_size * 0.1)
-    bar_left = margin + int(inner_size * 0.2)
-    bar_right = margin + int(inner_size * 0.8)
-    draw.rectangle(
-        [bar_left, bar_top, bar_right, bar_top + line_width],
+    # Spessore linea proporzionale (10% della larghezza disponibile)
+    stroke = max(int(w * 0.10), 2)
+    
+    # === Disegno della J ===
+    
+    # Barra orizzontale superiore
+    bar_y = y0 + h * 0.10
+    bar_x1 = x0 + w * 0.20
+    bar_x2 = x0 + w * 0.80
+    draw.rounded_rectangle(
+        [bar_x1, bar_y, bar_x2, bar_y + stroke],
+        radius=stroke // 2,
         fill=WHITE
     )
     
-    # Barra verticale della J
-    vertical_left = margin + int(inner_size * 0.5)
-    vertical_top = bar_top
-    vertical_bottom = margin + int(inner_size * 0.75)
+    # Gambo verticale (centrato a destra)
+    stem_x = x0 + w * 0.55
+    stem_top = bar_y
+    stem_bottom = y0 + h * 0.65
     draw.rectangle(
-        [vertical_left, vertical_top, vertical_left + line_width, vertical_bottom],
+        [stem_x, stem_top, stem_x + stroke, stem_bottom],
         fill=WHITE
     )
     
-    # Curva inferiore della J (semicerchio)
-    curve_center_x = margin + int(inner_size * 0.35)
-    curve_center_y = vertical_bottom
-    curve_radius = int(inner_size * 0.15) + line_width // 2
+    # Curva inferiore (arco)
+    arc_radius = w * 0.25
+    arc_center_x = stem_x - arc_radius + stroke / 2
+    arc_center_y = stem_bottom
     
-    # Disegniamo un arco per la curva della J
-    arc_left = curve_center_x - curve_radius
-    arc_top = curve_center_y - curve_radius
-    arc_right = curve_center_x + curve_radius
-    arc_bottom = curve_center_y + curve_radius
+    # Bbox per l'arco
+    arc_left = arc_center_x - arc_radius
+    arc_top = arc_center_y - arc_radius
+    arc_right = arc_center_x + arc_radius
+    arc_bottom = arc_center_y + arc_radius
     
-    # Arco inferiore (180 a 270 gradi)
     draw.arc(
-        [arc_left, arc_top, vertical_left + line_width, vertical_bottom + curve_radius],
-        start=90,
-        end=180,
+        [arc_left, arc_top, arc_right, arc_bottom],
+        start=0,
+        end=90,
         fill=WHITE,
-        width=line_width
+        width=stroke
     )
     
-    # Piccola linea per completare la curva
-    draw.rectangle(
-        [margin + int(inner_size * 0.2), vertical_bottom, 
-         margin + int(inner_size * 0.35), vertical_bottom + line_width],
+    # Terminale (pallino alla fine della curva)
+    terminal_x = arc_center_x - arc_radius
+    terminal_y = arc_center_y
+    terminal_r = stroke * 0.6
+    draw.ellipse(
+        [terminal_x - terminal_r, terminal_y - terminal_r,
+         terminal_x + terminal_r, terminal_y + terminal_r],
+        fill=WHITE
+    )
+    
+    # Punto decorativo sopra la J
+    dot_x = x0 + w * 0.30
+    dot_y = y0 + h * 0.15
+    dot_r = stroke * 0.8
+    draw.ellipse(
+        [dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r],
         fill=WHITE
     )
     
@@ -92,8 +110,6 @@ def main():
     
     print()
     print("✅ Tutte le icone PNG sono state generate!")
-    print()
-    print("Aggiorna manifest.json per usare le nuove icone PNG.")
 
 if __name__ == '__main__':
     main()

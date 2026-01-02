@@ -1543,6 +1543,7 @@ MYSQL_SCHEMA_STATEMENTS: List[str] = [
         payload LONGTEXT,
         sent_ts BIGINT NOT NULL,
         created_ts BIGINT NOT NULL,
+        read_at BIGINT DEFAULT NULL,
         INDEX idx_push_log_user (username),
         INDEX idx_push_log_sent (sent_ts)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -2762,6 +2763,22 @@ def ensure_project_materials_cache_table(db: DatabaseLike) -> None:
             pass
 
 
+def ensure_push_notification_read_column(db: DatabaseLike) -> None:
+    """Assicura che la colonna read_at esista in push_notification_log."""
+    if DB_VENDOR == "mysql":
+        try:
+            db.execute("ALTER TABLE push_notification_log ADD COLUMN read_at BIGINT DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass  # Colonna già esistente
+    else:
+        try:
+            db.execute("ALTER TABLE push_notification_log ADD COLUMN read_at INTEGER DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass  # Colonna già esistente
+
+
 def ensure_local_equipment_table(db: DatabaseLike) -> None:
     statement = LOCAL_EQUIPMENT_TABLE_MYSQL if DB_VENDOR == "mysql" else LOCAL_EQUIPMENT_TABLE_SQLITE
     for stmt in statement.strip().split(";"):
@@ -2914,7 +2931,8 @@ def init_db() -> None:
                 body TEXT,
                 payload TEXT,
                 sent_ts INTEGER NOT NULL,
-                created_ts INTEGER NOT NULL
+                created_ts INTEGER NOT NULL,
+                read_at INTEGER DEFAULT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_push_log_user ON push_notification_log(username);
@@ -3524,7 +3542,7 @@ def fetch_recent_push_notifications(
 ) -> List[Dict[str, Any]]:
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     sql = f"""
-        SELECT id, kind, activity_id, username, title, body, payload, sent_ts, created_ts
+        SELECT id, kind, activity_id, username, title, body, payload, sent_ts, created_ts, read_at
         FROM push_notification_log
         WHERE username = {placeholder}
         ORDER BY sent_ts DESC, id DESC
@@ -3554,6 +3572,8 @@ def fetch_recent_push_notifications(
                 "payload": payload,
                 "sent_ts": row["sent_ts"],
                 "created_ts": row["created_ts"],
+                "read_at": row["read_at"],
+                "read": row["read_at"] is not None,
             }
         )
     return items
@@ -6386,8 +6406,60 @@ def api_push_notifications():
                 parsed_limit = None
 
     db = get_db()
+    ensure_push_notification_read_column(db)
     items = fetch_recent_push_notifications(db, username=username, limit=parsed_limit)
     return jsonify({"items": items})
+
+
+@app.post("/api/push/notifications/<int:notification_id>/read")
+@login_required
+def api_push_notification_mark_read(notification_id: int) -> ResponseReturnValue:
+    """Marca una notifica come letta."""
+    username = session.get("user")
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Verifica che la notifica appartenga all'utente
+    row = db.execute(
+        f"SELECT id FROM push_notification_log WHERE id = {placeholder} AND username = {placeholder}",
+        (notification_id, username)
+    ).fetchone()
+    
+    if not row:
+        return jsonify({"error": "Notifica non trovata"}), 404
+    
+    # Marca come letta
+    db.execute(
+        f"UPDATE push_notification_log SET read_at = {placeholder} WHERE id = {placeholder}",
+        (now_ms(), notification_id)
+    )
+    db.commit()
+    
+    return jsonify({"ok": True, "read_at": now_ms()})
+
+
+@app.post("/api/push/notifications/read-all")
+@login_required
+def api_push_notifications_mark_all_read() -> ResponseReturnValue:
+    """Marca tutte le notifiche dell'utente come lette."""
+    username = session.get("user")
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Marca tutte come lette
+    db.execute(
+        f"UPDATE push_notification_log SET read_at = {placeholder} WHERE username = {placeholder} AND read_at IS NULL",
+        (now_ms(), username)
+    )
+    db.commit()
+    
+    return jsonify({"ok": True})
 
 
 @app.get("/api/state")
@@ -10123,6 +10195,64 @@ CREATE INDEX IF NOT EXISTS idx_request_date ON user_requests(date_from);
 CREATE INDEX IF NOT EXISTS idx_request_type ON user_requests(request_type_id);
 """
 
+# Tabella per i documenti aziendali (circolari, comunicazioni, buste paga)
+USER_DOCUMENTS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS user_documents (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category ENUM('circolare', 'comunicazione', 'busta_paga') NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    file_path VARCHAR(500),
+    file_name VARCHAR(255),
+    target_users JSON DEFAULT NULL,
+    target_all BOOLEAN DEFAULT TRUE,
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_doc_category (category),
+    INDEX idx_doc_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+USER_DOCUMENTS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS user_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL CHECK(category IN ('circolare', 'comunicazione', 'busta_paga')),
+    title TEXT NOT NULL,
+    description TEXT,
+    file_path TEXT,
+    file_name TEXT,
+    target_users TEXT DEFAULT NULL,
+    target_all INTEGER DEFAULT 1,
+    created_by TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_doc_category ON user_documents(category);
+CREATE INDEX IF NOT EXISTS idx_doc_created ON user_documents(created_at);
+"""
+
+# Tabella per tracciare lettura documenti
+USER_DOCUMENTS_READ_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS user_documents_read (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    document_id INT NOT NULL,
+    username VARCHAR(100) NOT NULL,
+    read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_read (document_id, username),
+    FOREIGN KEY (document_id) REFERENCES user_documents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+USER_DOCUMENTS_READ_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS user_documents_read (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    read_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(document_id, username),
+    FOREIGN KEY (document_id) REFERENCES user_documents(id) ON DELETE CASCADE
+)
+"""
+
 
 def ensure_request_types_table(db: DatabaseLike) -> None:
     """Crea la tabella request_types se non esiste."""
@@ -10179,6 +10309,47 @@ def ensure_user_requests_table(db: DatabaseLike) -> None:
         db.commit()
     except Exception:
         pass  # Colonna già esiste
+
+
+def ensure_user_documents_table(db: DatabaseLike) -> None:
+    """Crea le tabelle user_documents e user_documents_read se non esistono."""
+    # Tabella documenti
+    statement = (
+        USER_DOCUMENTS_TABLE_MYSQL if DB_VENDOR == "mysql" else USER_DOCUMENTS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+    
+    # Aggiungi colonna notified_at se non esiste
+    existing = _get_existing_columns(db, "user_documents")
+    if "notified_at" not in existing:
+        col_type = "BIGINT" if DB_VENDOR == "mysql" else "INTEGER"
+        try:
+            db.execute(f"ALTER TABLE user_documents ADD COLUMN notified_at {col_type} DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass
+    
+    # Tabella letture
+    statement = (
+        USER_DOCUMENTS_READ_TABLE_MYSQL if DB_VENDOR == "mysql" else USER_DOCUMENTS_READ_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
 
 
 def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
@@ -10980,6 +11151,126 @@ def _send_turni_notifications(db: DatabaseLike, users_to_notify: Dict[int, List[
             except Exception as e:
                 app.logger.error("Errore salvataggio notifica nel log: %s", e)
     
+    return notifications_sent
+
+
+def _send_document_notifications(
+    db: DatabaseLike,
+    category: str,
+    title: str,
+    target_all: bool,
+    target_users_json: str
+) -> int:
+    """Invia notifiche push per un nuovo documento caricato."""
+    settings = get_webpush_settings()
+    if not settings:
+        app.logger.info("Notifiche push non configurate, skip invio documento")
+        return 0
+    
+    notifications_sent = 0
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Etichette categoria per il messaggio
+    category_labels = {
+        "circolare": "📋 Nuova Circolare",
+        "comunicazione": "📢 Nuova Comunicazione",
+        "busta_paga": "💰 Nuovo Cedolino"
+    }
+    
+    notification_title = category_labels.get(category, "📄 Nuovo Documento")
+    notification_body = title
+    
+    payload = {
+        "title": notification_title,
+        "body": notification_body,
+        "icon": "/static/icons/icon-192x192.png",
+        "badge": "/static/icons/icon-72x72.png",
+        "tag": f"document-{category}",
+        "data": {
+            "url": "/documents",
+            "type": "new_document"
+        }
+    }
+    
+    # Determina i destinatari
+    target_usernames = []
+    
+    if target_all:
+        # Tutti gli operatori (role = 'user')
+        rows = db.execute(
+            f"SELECT username FROM app_users WHERE role = {placeholder} AND is_active = 1",
+            ("user",)
+        ).fetchall()
+        target_usernames = [r['username'] if isinstance(r, dict) else r[0] for r in rows]
+    else:
+        # Utenti specifici dal JSON
+        try:
+            target_usernames = json.loads(target_users_json) if target_users_json else []
+        except:
+            target_usernames = []
+    
+    app.logger.info("Invio notifica documento a %d utenti", len(target_usernames))
+    
+    for username in target_usernames:
+        # Recupera le subscription push dell'utente
+        subscriptions = db.execute(
+            f"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE username = {placeholder}",
+            (username,)
+        ).fetchall()
+        
+        if not subscriptions:
+            continue
+        
+        user_notified = False
+        
+        # Invia a tutte le subscription dell'utente
+        for sub in subscriptions:
+            endpoint = sub['endpoint'] if isinstance(sub, dict) else sub[0]
+            p256dh = sub['p256dh'] if isinstance(sub, dict) else sub[1]
+            auth = sub['auth'] if isinstance(sub, dict) else sub[2]
+            
+            subscription_info = {
+                "endpoint": endpoint,
+                "keys": {
+                    "p256dh": p256dh,
+                    "auth": auth
+                }
+            }
+            
+            try:
+                webpush(
+                    subscription_info=subscription_info,
+                    data=json.dumps(payload),
+                    vapid_private_key=settings["vapid_private"],
+                    vapid_claims={"sub": settings["subject"]},
+                    ttl=86400,
+                )
+                notifications_sent += 1
+                user_notified = True
+                app.logger.info("Notifica documento inviata a %s", username)
+                    
+            except WebPushException as e:
+                app.logger.warning("Errore invio notifica documento a %s: %s", username, e)
+                if e.response and e.response.status_code in {404, 410}:
+                    remove_push_subscription(db, endpoint)
+            except Exception as e:
+                app.logger.error("Errore generico invio notifica documento: %s", e)
+        
+        # Salva nel log
+        if user_notified:
+            try:
+                record_push_notification(
+                    db,
+                    kind="new_document",
+                    title=notification_title,
+                    body=notification_body,
+                    payload=payload,
+                    username=username,
+                )
+            except Exception as e:
+                app.logger.error("Errore salvataggio notifica documento nel log: %s", e)
+    
+    app.logger.info("Inviate %d notifiche documento totali", notifications_sent)
     return notifications_sent
 
 
@@ -12795,6 +13086,356 @@ def _send_request_review_notification(db: DatabaseLike, username: str, type_name
 
 
 # =====================================================
+# ADMIN DOCUMENTS - Gestione documenti aziendali
+# =====================================================
+
+@app.get("/admin/documents")
+@login_required
+def admin_documents_page() -> ResponseReturnValue:
+    """Pagina admin per gestire i documenti aziendali."""
+    if not session.get("is_admin"):
+        return ("Forbidden", 403)
+    
+    username = session.get("username", "Admin")
+    initials = "".join([p[0].upper() for p in username.split()[:2]]) if username else "?"
+    
+    return render_template(
+        "admin_documents.html",
+        is_admin=True,
+        user_name=username,
+        user_initials=initials
+    )
+
+
+@app.get("/api/admin/documents")
+@login_required
+def api_admin_documents_list() -> ResponseReturnValue:
+    """Lista tutti i documenti caricati."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    db = get_db()
+    ensure_user_documents_table(db)
+    
+    rows = db.execute("""
+        SELECT id, category, title, description, file_path, file_name, 
+               target_users, target_all, created_by, created_at, notified_at
+        FROM user_documents
+        ORDER BY created_at DESC
+    """).fetchall()
+    
+    # Carica la lista utenti per mostrare i nomi completi
+    users_dict = {}
+    try:
+        users_rows = db.execute("SELECT username, display_name FROM users").fetchall()
+        for u in users_rows:
+            if isinstance(u, Mapping):
+                users_dict[u["username"]] = u["display_name"] or u["username"]
+            else:
+                users_dict[u[0]] = u[1] or u[0]
+    except:
+        pass
+    
+    documents = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            target_users = row["target_users"]
+            file_name = row["file_name"]
+        else:
+            target_users = row[6]
+            file_name = row[5]
+            
+        if target_users and isinstance(target_users, str):
+            try:
+                target_users = json.loads(target_users)
+            except:
+                target_users = []
+        
+        # Costruisci lista destinatari con nomi completi
+        target_users_display = []
+        if target_users:
+            for username in target_users:
+                display_name = users_dict.get(username, username)
+                target_users_display.append({"username": username, "display_name": display_name})
+        
+        # Costruisci file_url usando file_name (come API user)
+        file_url = None
+        if file_name:
+            file_url = f"/uploads/documents/{file_name}"
+        
+        if isinstance(row, Mapping):
+            documents.append({
+                "id": row["id"],
+                "category": row["category"],
+                "title": row["title"],
+                "description": row["description"],
+                "file_name": row["file_name"],
+                "file_url": file_url,
+                "target_users": target_users,
+                "target_users_display": target_users_display,
+                "target_all": bool(row["target_all"]),
+                "created_by": row["created_by"],
+                "created_at": row["created_at"],
+                "notified_at": row["notified_at"]
+            })
+        else:
+            documents.append({
+                "id": row[0],
+                "category": row[1],
+                "title": row[2],
+                "description": row[3],
+                "file_name": row[5],
+                "file_url": file_url,
+                "target_users": target_users,
+                "target_users_display": target_users_display,
+                "target_all": bool(row[7]),
+                "created_by": row[8],
+                "created_at": row[9],
+                "notified_at": row[10]
+            })
+    
+    return jsonify({"documents": documents})
+
+
+@app.post("/api/admin/documents")
+@login_required
+def api_admin_documents_create() -> ResponseReturnValue:
+    """Carica un nuovo documento."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    category = request.form.get("category")
+    title = request.form.get("title")
+    description = request.form.get("description", "")
+    target_all = request.form.get("target_all", "1") == "1"
+    target_users_json = request.form.get("target_users", "[]")
+    
+    if not category or category not in ("circolare", "comunicazione", "busta_paga"):
+        return jsonify({"error": "Categoria non valida"}), 400
+    
+    if not title:
+        return jsonify({"error": "Titolo obbligatorio"}), 400
+    
+    # Gestione file allegato
+    file_path = None
+    file_name = None
+    
+    if "file" in request.files:
+        file = request.files["file"]
+        if file and file.filename:
+            # Genera nome file univoco
+            import uuid
+            ext = os.path.splitext(file.filename)[1]
+            file_name = f"{uuid.uuid4().hex}{ext}"
+            file_path = os.path.join("uploads", "documents", file_name)
+            
+            # Salva il file
+            full_path = os.path.join(os.path.dirname(__file__), file_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            file.save(full_path)
+    
+    db = get_db()
+    ensure_user_documents_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    created_by = session.get("user", "admin")
+    
+    db.execute(f"""
+        INSERT INTO user_documents (category, title, description, file_path, file_name, 
+                                    target_users, target_all, created_by)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                {placeholder}, {placeholder}, {placeholder})
+    """, (category, title, description, file_path, file_name, 
+          target_users_json if not target_all else None, 
+          1 if target_all else 0, created_by))
+    
+    db.commit()
+    
+    # Invia notifiche push ai destinatari
+    _send_document_notifications(db, category, title, target_all, target_users_json)
+    
+    return jsonify({"success": True, "message": "Documento caricato"})
+
+
+@app.delete("/api/admin/documents/<int:doc_id>")
+@login_required
+def api_admin_documents_delete(doc_id: int) -> ResponseReturnValue:
+    """Elimina un documento."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    db = get_db()
+    ensure_user_documents_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera il file path per eliminarlo
+    row = db.execute(f"SELECT file_path FROM user_documents WHERE id = {placeholder}", (doc_id,)).fetchone()
+    if row:
+        file_path = row["file_path"] if isinstance(row, Mapping) else row[0]
+        if file_path:
+            full_path = os.path.join(os.path.dirname(__file__), file_path)
+            try:
+                os.remove(full_path)
+            except:
+                pass
+    
+    # Elimina dal database
+    db.execute(f"DELETE FROM user_documents_read WHERE document_id = {placeholder}", (doc_id,))
+    db.execute(f"DELETE FROM user_documents WHERE id = {placeholder}", (doc_id,))
+    db.commit()
+    
+    return jsonify({"success": True, "message": "Documento eliminato"})
+
+
+@app.post("/api/admin/documents/<int:doc_id>/notify")
+@login_required
+def api_admin_documents_notify(doc_id: int) -> ResponseReturnValue:
+    """Reinvia la notifica per un documento."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    db = get_db()
+    ensure_user_documents_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera il documento
+    row = db.execute(
+        f"SELECT category, title, target_all, target_users FROM user_documents WHERE id = {placeholder}",
+        (doc_id,)
+    ).fetchone()
+    
+    if not row:
+        return jsonify({"error": "Documento non trovato"}), 404
+    
+    if isinstance(row, Mapping):
+        category = row["category"]
+        title = row["title"]
+        target_all = row["target_all"]
+        target_users_json = row["target_users"] or "[]"
+    else:
+        category, title, target_all, target_users_json = row[0], row[1], row[2], row[3] or "[]"
+    
+    # Invia le notifiche
+    count = _send_document_notifications(db, category, title, bool(target_all), target_users_json)
+    
+    # Aggiorna notified_at
+    if count > 0:
+        db.execute(
+            f"UPDATE user_documents SET notified_at = {placeholder} WHERE id = {placeholder}",
+            (now_ms(), doc_id)
+        )
+        db.commit()
+    
+    return jsonify({
+        "success": True, 
+        "message": f"Notifica inviata a {count} dispositivi",
+        "count": count
+    })
+
+
+@app.get("/api/admin/documents/<int:doc_id>/recipients")
+@login_required
+def api_admin_documents_recipients(doc_id: int) -> ResponseReturnValue:
+    """Restituisce la lista dei destinatari di un documento con stato di lettura."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    db = get_db()
+    ensure_user_documents_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera il documento
+    row = db.execute(
+        f"SELECT target_all, target_users FROM user_documents WHERE id = {placeholder}",
+        (doc_id,)
+    ).fetchone()
+    
+    if not row:
+        return jsonify({"error": "Documento non trovato"}), 404
+    
+    if isinstance(row, Mapping):
+        target_all = row["target_all"]
+        target_users_json = row["target_users"] or "[]"
+    else:
+        target_all, target_users_json = row[0], row[1] or "[]"
+    
+    # Determina i destinatari
+    if target_all:
+        # Tutti gli operatori (role = 'user')
+        users_rows = db.execute(
+            f"SELECT username, display_name FROM app_users WHERE role = 'user' AND is_active = 1"
+        ).fetchall()
+        target_usernames = []
+        user_display_map = {}
+        for u in users_rows:
+            if isinstance(u, Mapping):
+                target_usernames.append(u["username"])
+                user_display_map[u["username"]] = u["display_name"]
+            else:
+                target_usernames.append(u[0])
+                user_display_map[u[0]] = u[1]
+    else:
+        # Destinatari specifici
+        try:
+            target_usernames = json.loads(target_users_json)
+        except json.JSONDecodeError:
+            target_usernames = []
+        
+        # Recupera display_name per ciascuno
+        user_display_map = {}
+        if target_usernames:
+            placeholders = ",".join([placeholder] * len(target_usernames))
+            users_rows = db.execute(
+                f"SELECT username, display_name FROM app_users WHERE username IN ({placeholders})",
+                tuple(target_usernames)
+            ).fetchall()
+            for u in users_rows:
+                if isinstance(u, Mapping):
+                    user_display_map[u["username"]] = u["display_name"]
+                else:
+                    user_display_map[u[0]] = u[1]
+    
+    # Recupera chi ha letto il documento
+    read_rows = db.execute(
+        f"SELECT username, read_at FROM user_documents_read WHERE document_id = {placeholder}",
+        (doc_id,)
+    ).fetchall()
+    
+    read_map = {}
+    for r in read_rows:
+        if isinstance(r, Mapping):
+            read_map[r["username"]] = r["read_at"]
+        else:
+            read_map[r[0]] = r[1]
+    
+    # Costruisci la lista destinatari con stato lettura
+    recipients = []
+    for username in target_usernames:
+        display_name = user_display_map.get(username, username)
+        read_at = read_map.get(username)
+        recipients.append({
+            "username": username,
+            "display_name": display_name,
+            "read": read_at is not None,
+            "read_at": str(read_at) if read_at else None
+        })
+    
+    # Ordina: prima non letti, poi letti
+    recipients.sort(key=lambda x: (x["read"], x["display_name"].lower()))
+    
+    return jsonify({
+        "target_all": bool(target_all),
+        "recipients": recipients,
+        "total": len(recipients),
+        "read_count": len(read_map),
+        "unread_count": len(recipients) - len(read_map)
+    })
+
+
+# =====================================================
 # ADMIN USER REQUESTS - Gestione richieste utenti
 # =====================================================
 
@@ -13016,6 +13657,105 @@ def user_notifications_page() -> ResponseReturnValue:
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
     )
+
+
+@app.route("/user/documents")
+@login_required
+def user_documents_page() -> ResponseReturnValue:
+    """Pagina utente per visualizzare i documenti (circolari, comunicazioni, buste paga)."""
+    return render_template(
+        "user_documents.html",
+        username=session.get("user"),
+        user_display=session.get("user_display", session.get("user")),
+        user_initials=session.get("user_initials", "U"),
+        user_role=session.get("user_role", "Utente"),
+    )
+
+
+# =====================================================
+# USER DOCUMENTS - API per documenti utente
+# =====================================================
+
+@app.get("/api/user/documents")
+@login_required
+def api_user_documents_list() -> ResponseReturnValue:
+    """Restituisce i documenti visibili all'utente (circolari, comunicazioni, buste paga)."""
+    username = session.get("user")
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    db = get_db()
+    ensure_user_documents_table(db)
+    
+    # Recupera documenti visibili all'utente (target_all=1 o username in target_users)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    rows = db.execute(f"""
+        SELECT d.id, d.category, d.title, d.description, d.file_path, d.file_name, d.created_at,
+               CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END as is_read
+        FROM user_documents d
+        LEFT JOIN user_documents_read r ON d.id = r.document_id AND r.username = {placeholder}
+        WHERE d.target_all = 1 
+           OR (d.target_users IS NOT NULL AND d.target_users LIKE {placeholder})
+        ORDER BY d.created_at DESC
+    """, (username, f'%"{username}"%')).fetchall()
+    
+    documents = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            doc = {
+                "id": row["id"],
+                "category": row["category"],
+                "title": row["title"],
+                "description": row["description"],
+                "file_url": f"/uploads/documents/{row['file_name']}" if row["file_name"] else None,
+                "created_at": row["created_at"],
+                "read": bool(row["is_read"])
+            }
+        else:
+            doc = {
+                "id": row[0],
+                "category": row[1],
+                "title": row[2],
+                "description": row[3],
+                "file_url": f"/uploads/documents/{row[5]}" if row[5] else None,
+                "created_at": row[6],
+                "read": bool(row[7])
+            }
+        documents.append(doc)
+    
+    return jsonify({"documents": documents})
+
+
+@app.post("/api/user/documents/<int:doc_id>/read")
+@login_required
+def api_user_document_mark_read(doc_id: int) -> ResponseReturnValue:
+    """Marca un documento come letto dall'utente."""
+    username = session.get("user")
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    db = get_db()
+    ensure_user_documents_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute(f"""
+                INSERT IGNORE INTO user_documents_read (document_id, username)
+                VALUES ({placeholder}, {placeholder})
+            """, (doc_id, username))
+        else:
+            db.execute(f"""
+                INSERT OR IGNORE INTO user_documents_read (document_id, username)
+                VALUES ({placeholder}, {placeholder})
+            """, (doc_id, username))
+        db.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        app.logger.error(f"Errore marcatura documento letto: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/user/request-types")
@@ -13306,6 +14046,16 @@ def serve_request_attachment(filename):
     
     return send_from_directory(
         os.path.join(app.root_path, 'uploads', 'requests'),
+        filename
+    )
+
+
+@app.route("/uploads/documents/<path:filename>")
+@login_required
+def serve_document_file(filename):
+    """Serve i file dei documenti aziendali."""
+    return send_from_directory(
+        os.path.join(app.root_path, 'uploads', 'documents'),
         filename
     )
 

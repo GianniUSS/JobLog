@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Documenti - JOBLog</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f8fafc;
+            --brand: #667eea;
+            --brand-light: #818cf8;
+            --brand-dark: #4f46e5;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+            --success: #10b981;
+            --success-bg: #d1fae5;
+            --warning: #f59e0b;
+            --warning-bg: #fef3c7;
+            --danger: #ef4444;
+            --danger-bg: #fee2e2;
+            --info: #3b82f6;
+            --info-bg: #dbeafe;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --brand: #818cf8;
+            --brand-light: #a5b4fc;
+            --brand-dark: #6366f1;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #334155;
+            --border-light: #1e293b;
+            --success-bg: rgba(16, 185, 129, 0.2);
+            --warning-bg: rgba(245, 158, 11, 0.2);
+            --danger-bg: rgba(239, 68, 68, 0.2);
+            --info-bg: rgba(59, 130, 246, 0.2);
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding-top: var(--safe-top);
+            padding-bottom: calc(var(--safe-bottom) + 20px);
+        }
+        
+        /* Side Menu Overlay */
+        .side-menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            z-index: 998;
+        }
+        
+        .side-menu-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100%;
+            background: var(--bg-card);
+            z-index: 999;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .side-menu.active {
+            transform: translateX(0);
+        }
+        
+        .side-menu-header {
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+            padding: calc(var(--safe-top) + 30px) 20px 25px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .side-menu-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 1.2rem;
+        }
+        
+        .side-menu-user-info {
+            flex: 1;
+        }
+        
+        .side-menu-user-name {
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+        
+        .side-menu-user-role {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.8rem;
+        }
+        
+        .side-menu-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px 0;
+        }
+        
+        .menu-section {
+            padding: 10px 15px;
+        }
+        
+        .menu-section-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+            padding: 0 10px;
+        }
+        
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            text-decoration: none;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        
+        .menu-item:hover {
+            background: var(--bg-card-hover);
+        }
+        
+        .menu-item.active {
+            background: var(--info-bg);
+            color: var(--info);
+        }
+        
+        .menu-item.danger {
+            color: var(--danger);
+        }
+        
+        .menu-item .icon {
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+        }
+        
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            margin-left: auto;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--border);
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: var(--success);
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+            padding: calc(var(--safe-top) + 20px) 20px 30px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+            pointer-events: none;
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: relative;
+        }
+        
+        .hamburger-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .hamburger-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .hamburger-btn span {
+            display: block;
+            width: 20px;
+            height: 2px;
+            background: white;
+            border-radius: 2px;
+            transition: all 0.3s ease;
+        }
+        
+        .header-title {
+            flex: 1;
+        }
+        
+        .header-title h1 {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        
+        .header-title p {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.875rem;
+        }
+        
+        .refresh-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+        
+        .refresh-btn.loading i {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Main Content */
+        .main-content {
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+            margin-top: 20px;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .stat-item {
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            padding: 16px 12px;
+            text-align: center;
+            box-shadow: var(--shadow);
+            transition: all 0.2s ease;
+        }
+        
+        .stat-item:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--brand);
+            display: block;
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Filter Pills */
+        .filter-pills {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-pill {
+            padding: 8px 16px;
+            border-radius: 50px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .filter-pill i {
+            font-size: 0.8rem;
+        }
+        
+        .filter-pill:hover {
+            border-color: var(--brand);
+            color: var(--brand);
+        }
+        
+        .filter-pill.active {
+            background: var(--brand);
+            border-color: var(--brand);
+            color: white;
+        }
+        
+        /* Documents List */
+        .documents-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .document-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 16px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-light);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            animation: slideIn 0.3s ease forwards;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        
+        .document-card:hover {
+            box-shadow: var(--shadow);
+            transform: translateY(-2px);
+        }
+        
+        .document-card.unread {
+            border-left: 4px solid var(--brand);
+            background: var(--bg-card-hover);
+        }
+        
+        @keyframes slideIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .document-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        
+        .document-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            flex-shrink: 0;
+        }
+        
+        .document-icon.circolare {
+            background: var(--info-bg);
+            color: var(--info);
+        }
+        
+        .document-icon.comunicazione {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+        
+        .document-icon.busta_paga {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        
+        .document-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .document-category {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .document-category.circolare {
+            color: var(--info);
+        }
+        
+        .document-category.comunicazione {
+            color: var(--warning);
+        }
+        
+        .document-category.busta_paga {
+            color: var(--success);
+        }
+        
+        .document-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            line-height: 1.3;
+        }
+        
+        .document-description {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        .document-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-light);
+        }
+        
+        .document-date {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .document-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .document-btn {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: none;
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .document-btn.primary {
+            background: var(--brand);
+            color: white;
+        }
+        
+        .document-btn.primary:hover {
+            background: var(--brand-dark);
+        }
+        
+        .document-btn.secondary {
+            background: var(--bg);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+        
+        .document-btn.secondary:hover {
+            border-color: var(--brand);
+            color: var(--brand);
+        }
+        
+        /* Read Badge */
+        .read-badge {
+            font-size: 0.7rem;
+            padding: 4px 8px;
+            border-radius: 20px;
+            background: var(--success-bg);
+            color: var(--success);
+            font-weight: 500;
+        }
+        
+        .unread-badge {
+            font-size: 0.7rem;
+            padding: 4px 8px;
+            border-radius: 20px;
+            background: var(--brand);
+            color: white;
+            font-weight: 500;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .empty-state-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+        
+        .empty-state-text {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        /* Loading */
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--brand);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 40px auto;
+        }
+        
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: calc(var(--safe-bottom) + 20px);
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--text-primary);
+            color: var(--bg);
+            padding: 12px 24px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            box-shadow: var(--shadow-lg);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+        
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- Side Menu Overlay -->
+    <div class="side-menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+    <!-- Side Menu -->
+    <div class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-avatar">{{ user_initials }}</div>
+            <div class="side-menu-user-info">
+                <div class="side-menu-user-name">{{ user_display }}</div>
+                <div class="side-menu-user-role">{{ user_role|default('Utente', true) }}</div>
+            </div>
+        </div>
+        
+        <div class="side-menu-content">
+            <div class="menu-section">
+                <div class="menu-section-title">📋 Menu</div>
+                <a href="{{ url_for('home') }}" class="menu-item">
+                    <span class="icon">🏠</span>
+                    <span>Home Timbrature</span>
+                </a>
+                <a href="{{ url_for('user_turni_page') }}" class="menu-item">
+                    <span class="icon">📅</span>
+                    <span>I Miei Turni</span>
+                </a>
+                <a href="{{ url_for('user_requests_page') }}" class="menu-item">
+                    <span class="icon">📝</span>
+                    <span>Richieste</span>
+                </a>
+                <a href="{{ url_for('user_documents_page') }}" class="menu-item active">
+                    <span class="icon">📄</span>
+                    <span>Documenti</span>
+                </a>
+                <a href="{{ url_for('user_notifications_page') }}" class="menu-item">
+                    <span class="icon">🔔</span>
+                    <span>Storico Notifiche</span>
+                </a>
+            </div>
+            
+            <div class="menu-section">
+                <div class="menu-section-title">⚙️ Impostazioni</div>
+                <div class="menu-item" onclick="toggleTheme(); closeMenu();">
+                    <span class="icon">🌙</span>
+                    <span>Tema Scuro</span>
+                </div>
+                <div class="menu-item notification-toggle-menu" id="notificationMenuItem">
+                    <span class="icon" id="notificationIcon">🔕</span>
+                    <span id="notificationLabel">Attiva Notifiche</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="pushToggle" onchange="togglePushNotifications()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="menu-section">
+                <a href="{{ url_for('logout') }}" class="menu-item danger">
+                    <span class="icon">🚪</span>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMenu()">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div class="header-title">
+                <h1>📄 Documenti</h1>
+                <p id="header-count">I tuoi documenti</p>
+            </div>
+            <button class="refresh-btn" onclick="loadDocuments()">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Stats -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-number" id="stat-total">-</span>
+                <span class="stat-label">Totali</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="stat-unread">-</span>
+                <span class="stat-label">Da leggere</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="stat-read">-</span>
+                <span class="stat-label">Letti</span>
+            </div>
+        </div>
+        
+        <!-- Filters -->
+        <div class="filter-pills">
+            <button class="filter-pill active" data-filter="all">
+                <i class="fas fa-inbox"></i>
+                Tutti
+            </button>
+            <button class="filter-pill" data-filter="circolare">
+                <i class="fas fa-bullhorn"></i>
+                Circolari
+            </button>
+            <button class="filter-pill" data-filter="comunicazione">
+                <i class="fas fa-envelope"></i>
+                Comunicazioni
+            </button>
+            <button class="filter-pill" data-filter="busta_paga">
+                <i class="fas fa-file-invoice-dollar"></i>
+                Buste Paga
+            </button>
+        </div>
+        
+        <!-- Documents List -->
+        <div id="documents-list" class="documents-list">
+            <div class="loading-spinner"></div>
+        </div>
+    </div>
+    
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // Theme detection
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                document.documentElement.setAttribute('data-theme', savedTheme);
+            } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        }
+        initTheme();
+
+        // Theme toggle
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        }
+        
+        // Menu functions
+        function toggleMenu() {
+            document.getElementById('sideMenu').classList.toggle('active');
+            document.getElementById('menuOverlay').classList.toggle('active');
+        }
+        
+        function closeMenu() {
+            document.getElementById('sideMenu').classList.remove('active');
+            document.getElementById('menuOverlay').classList.remove('active');
+        }
+
+        // Toast function
+        function showToast(message, duration = 3000) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), duration);
+        }
+        
+        // Data
+        let allDocuments = [];
+        let currentFilter = 'all';
+        
+        // Load documents
+        async function loadDocuments() {
+            const refreshBtn = document.querySelector('.refresh-btn');
+            refreshBtn.classList.add('loading');
+            
+            try {
+                const response = await fetch('/api/user/documents');
+                if (!response.ok) throw new Error('Errore caricamento');
+                
+                const data = await response.json();
+                allDocuments = data.documents || [];
+                
+                updateStats();
+                renderDocuments();
+                
+            } catch (error) {
+                console.error('Errore:', error);
+                showToast('Errore nel caricamento dei documenti');
+            } finally {
+                refreshBtn.classList.remove('loading');
+            }
+        }
+        
+        // Update stats
+        function updateStats() {
+            const total = allDocuments.length;
+            const unread = allDocuments.filter(d => !d.read).length;
+            const read = allDocuments.filter(d => d.read).length;
+            
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-unread').textContent = unread;
+            document.getElementById('stat-read').textContent = read;
+            
+            document.getElementById('header-count').textContent = 
+                unread > 0 ? `${unread} documento/i da leggere` : 'Tutti i documenti letti';
+        }
+        
+        // Render documents
+        function renderDocuments() {
+            const container = document.getElementById('documents-list');
+            
+            let filtered = allDocuments;
+            if (currentFilter !== 'all') {
+                filtered = allDocuments.filter(d => d.category === currentFilter);
+            }
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📄</div>
+                        <div class="empty-state-title">Nessun documento</div>
+                        <div class="empty-state-text">
+                            ${currentFilter === 'all' 
+                                ? 'Non hai ancora ricevuto documenti' 
+                                : 'Nessun documento in questa categoria'}
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = filtered.map((doc, index) => {
+                const icon = getCategoryIcon(doc.category);
+                const categoryLabel = getCategoryLabel(doc.category);
+                const date = formatDate(doc.created_at);
+                
+                return `
+                    <div class="document-card ${doc.read ? '' : 'unread'}" 
+                         style="animation-delay: ${index * 0.05}s"
+                         onclick="openDocument(${doc.id})">
+                        <div class="document-header">
+                            <div class="document-icon ${doc.category}">
+                                ${icon}
+                            </div>
+                            <div class="document-content">
+                                <div class="document-category ${doc.category}">${categoryLabel}</div>
+                                <div class="document-title">${escapeHtml(doc.title)}</div>
+                                ${doc.description ? `<div class="document-description">${escapeHtml(doc.description)}</div>` : ''}
+                            </div>
+                        </div>
+                        <div class="document-footer">
+                            <div class="document-date">
+                                <i class="fas fa-clock"></i>
+                                ${date}
+                            </div>
+                            <div class="document-actions">
+                                ${doc.read 
+                                    ? '<span class="read-badge"><i class="fas fa-check"></i> Letto</span>'
+                                    : '<span class="unread-badge"><i class="fas fa-circle"></i> Nuovo</span>'}
+                                ${doc.file_url 
+                                    ? `<button class="document-btn primary" onclick="event.stopPropagation(); downloadDocument('${doc.file_url}', '${escapeHtml(doc.title)}')">
+                                        <i class="fas fa-download"></i>
+                                       </button>`
+                                    : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Get category icon
+        function getCategoryIcon(category) {
+            const icons = {
+                'circolare': '📢',
+                'comunicazione': '📧',
+                'busta_paga': '💰'
+            };
+            return icons[category] || '📄';
+        }
+        
+        // Get category label
+        function getCategoryLabel(category) {
+            const labels = {
+                'circolare': 'Circolare',
+                'comunicazione': 'Comunicazione',
+                'busta_paga': 'Busta Paga'
+            };
+            return labels[category] || category;
+        }
+        
+        // Format date
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return 'Adesso';
+            if (diff < 3600000) return `${Math.floor(diff/60000)} min fa`;
+            if (diff < 86400000) return `${Math.floor(diff/3600000)} ore fa`;
+            if (diff < 172800000) return 'Ieri';
+            
+            return date.toLocaleDateString('it-IT', {
+                day: '2-digit',
+                month: 'short',
+                year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+            });
+        }
+        
+        // Escape HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Open document
+        async function openDocument(docId) {
+            // Mark as read
+            try {
+                await fetch(`/api/user/documents/${docId}/read`, { method: 'POST' });
+                
+                // Update local data
+                const doc = allDocuments.find(d => d.id === docId);
+                if (doc) {
+                    doc.read = true;
+                    updateStats();
+                    renderDocuments();
+                }
+                
+                // If has file, download it
+                if (doc && doc.file_url) {
+                    window.open(doc.file_url, '_blank');
+                }
+                
+            } catch (error) {
+                console.error('Errore:', error);
+            }
+        }
+        
+        // Download document
+        function downloadDocument(url, title) {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = title;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // Filter pills
+        document.querySelectorAll('.filter-pill').forEach(pill => {
+            pill.addEventListener('click', () => {
+                document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                currentFilter = pill.dataset.filter;
+                renderDocuments();
+            });
+        });
+        
+        // Push notification status check
+        async function checkPushStatus() {
+            try {
+                const response = await fetch('/api/push/status');
+                const data = await response.json();
+                const toggle = document.getElementById('pushToggle');
+                const icon = document.getElementById('notificationIcon');
+                const label = document.getElementById('notificationLabel');
+                
+                if (data.subscribed) {
+                    toggle.checked = true;
+                    icon.textContent = '🔔';
+                    label.textContent = 'Notifiche Attive';
+                } else {
+                    toggle.checked = false;
+                    icon.textContent = '🔕';
+                    label.textContent = 'Attiva Notifiche';
+                }
+            } catch (error) {
+                console.error('Errore verifica push:', error);
+            }
+        }
+        
+        // Toggle push notifications
+        async function togglePushNotifications() {
+            const toggle = document.getElementById('pushToggle');
+            const icon = document.getElementById('notificationIcon');
+            const label = document.getElementById('notificationLabel');
+            
+            if (toggle.checked) {
+                // Subscribe
+                try {
+                    const registration = await navigator.serviceWorker.ready;
+                    const subscription = await registration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(window.VAPID_PUBLIC_KEY || '')
+                    });
+                    
+                    await fetch('/api/push/subscribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(subscription)
+                    });
+                    
+                    icon.textContent = '🔔';
+                    label.textContent = 'Notifiche Attive';
+                    showToast('Notifiche attivate');
+                } catch (error) {
+                    toggle.checked = false;
+                    console.error('Errore attivazione notifiche:', error);
+                    showToast('Errore attivazione notifiche');
+                }
+            } else {
+                // Unsubscribe
+                try {
+                    await fetch('/api/push/unsubscribe', { method: 'POST' });
+                    icon.textContent = '🔕';
+                    label.textContent = 'Attiva Notifiche';
+                    showToast('Notifiche disattivate');
+                } catch (error) {
+                    toggle.checked = true;
+                    console.error('Errore disattivazione notifiche:', error);
+                }
+            }
+        }
+        
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+        
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDocuments();
+            checkPushStatus();
+        });
+    </script>
+</body>
+</html>
