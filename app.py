@@ -5270,6 +5270,20 @@ def ensure_timbrature_table(db: DatabaseLike) -> None:
             cursor.close()
         except AttributeError:
             pass
+    
+    # Migrazione: aggiungi colonna ora_mod se non esiste
+    if DB_VENDOR == "mysql":
+        try:
+            db.execute("ALTER TABLE timbrature ADD COLUMN ora_mod TIME DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass  # Colonna già esistente
+    else:
+        try:
+            db.execute("ALTER TABLE timbrature ADD COLUMN ora_mod TEXT")
+            db.commit()
+        except Exception:
+            pass
 
 
 def ensure_warehouse_activities_table(db: DatabaseLike) -> None:
