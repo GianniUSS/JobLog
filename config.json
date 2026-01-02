@@ -15,7 +15,7 @@
   },
   "cedolino_web": {
     "enabled": true,
-    "endpoint": "http://www.cedolinoweb.net/WebServices/crea_timbrata_elaborata",
+    "endpoint": "http://80.211.18.30/WebServices/crea_timbrata_elaborata",
     "retry_interval_minutes": 5,
     "max_retry_attempts": 10
   }

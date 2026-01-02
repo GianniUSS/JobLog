@@ -1465,7 +1465,7 @@ TIMEFRAME_INIZIO_PAUSA = 4
 TIMEFRAME_FINE_PAUSA = 5
 TIMEFRAME_FINE_GIORNATA = 8
 
-CEDOLINO_WEB_ENDPOINT = "http://www.cedolinoweb.net/WebServices/crea_timbrata_elaborata"
+CEDOLINO_WEB_ENDPOINT = "http://80.211.18.30/WebServices/crea_timbrata_elaborata"
 CEDOLINO_CODICE_TERMINALE = "musa_mobile"
 
 
