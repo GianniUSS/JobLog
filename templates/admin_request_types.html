@@ -44,27 +44,8 @@
             min-height: 100vh;
         }
         /* Menu dropdown */
-        .menu-container {
-            position: relative;
-        }
-        .menu-btn {
-            width: 44px;
-            height: 44px;
-            border-radius: 10px;
-            border: none;
-            background: rgba(255,255,255,0.15);
-            color: white;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .menu-btn:hover {
-            background: rgba(255,255,255,0.25);
-        }
-        .menu-dropdown {
-            display: none;
+        .menu-container { position: relative; z-index: 310; }
+        .hamburger-menu {
             position: absolute;
             top: 100%;
             left: 0;
@@ -72,82 +53,90 @@
             background: var(--bg-panel);
             border: 1px solid var(--border);
             border-radius: 12px;
-            min-width: 280px;
             box-shadow: var(--shadow);
-            z-index: 1000;
+            min-width: 220px;
+            z-index: 300;
             overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
         }
-        .menu-dropdown.active {
-            display: block;
-        }
-        .menu-section {
-            padding: 8px 0;
-            border-bottom: 1px solid var(--border);
-        }
-        .menu-section:last-child {
-            border-bottom: none;
-        }
-        .menu-section-title {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding: 8px 16px 4px;
+        .hamburger-menu.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
         }
         .menu-item {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 10px 16px;
+            padding: 12px 16px;
             color: var(--text);
             text-decoration: none;
             font-weight: 600;
             font-size: 14px;
-            transition: all 0.15s ease;
+            transition: background 0.15s ease;
         }
-        .menu-item:hover {
-            background: rgba(56,189,248,0.1);
-            color: var(--brand);
+        .menu-item:hover { background: var(--bg-soft); }
+        .menu-item.active { background: var(--bg-soft); color: var(--brand); }
+        .menu-item-icon { font-size: 18px; }
+        .menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 4px 0;
         }
-        .menu-item.active {
-            background: rgba(56,189,248,0.15);
-            color: var(--brand);
-        }
-        .menu-item.danger {
-            color: var(--danger);
-        }
-        .menu-item.danger:hover {
-            background: rgba(239,68,68,0.1);
-        }
-        .menu-item-icon {
-            font-size: 16px;
-        }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
         /* Main content */
         .main-content {
             flex: 1;
             min-height: 100vh;
         }
         header {
-            background: linear-gradient(135deg, #0c4a6e 0%, #075985 100%);
-            padding: 16px 24px;
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            color: #f8fafc;
+            padding: 12px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             position: sticky;
             top: 0;
-            z-index: 50;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+            overflow: visible;
         }
-        .page-title-header {
-            font-size: 20px;
-            font-weight: 800;
-            color: white;
-        }
+        .header-left { display: flex; align-items: center; gap: 16px; overflow: visible; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; color: white; }
         .header-actions {
             display: flex;
             gap: 12px;
             align-items: center;
         }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+        .header-user {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 999px;
+        }
+        .header-user-avatar {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px; color: white;
+        }
+        .header-user-name { font-weight: 600; font-size: 14px; color: white; }
         .theme-toggle {
             width: 40px;
             height: 40px;
@@ -437,68 +426,67 @@
     <!-- Main Content -->
     <div class="main-content">
         <header>
-            <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="header-left">
                 <div class="menu-container">
-                    <button class="menu-btn" id="menuBtn" onclick="toggleMenu()">☰</button>
-                    <div class="menu-dropdown" id="menuDropdown">
-                        <div class="menu-section">
-                            <div class="menu-section-title">Navigazione</div>
-                            <a href="{{ url_for('home') }}" class="menu-item">
-                                <span class="menu-item-icon">🏠</span>
-                                <span>Home</span>
-                            </a>
-                            <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
-                                <span class="menu-item-icon">📊</span>
-                                <span>Dashboard</span>
-                            </a>
-                            <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
-                                <span class="menu-item-icon">📋</span>
-                                <span>Gestione Sessioni</span>
-                            </a>
-                            <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
-                                <span class="menu-item-icon">📈</span>
-                                <span>Analisi Attività</span>
-                            </a>
-                            <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
-                                <span class="menu-item-icon">📅</span>
-                                <span>Pianificazioni Rentman</span>
-                            </a>
-                        </div>
-                        <div class="menu-section">
-                            <div class="menu-section-title">Configurazione</div>
-                            <a href="{{ url_for('admin_users_page') }}" class="menu-item">
-                                <span class="menu-item-icon">👥</span>
-                                <span>Gestione Utenti</span>
-                            </a>
-                            <a href="{{ url_for('admin_operators') }}" class="menu-item">
-                                <span class="menu-item-icon">🧑‍🔧</span>
-                                <span>Gestione Operatori</span>
-                            </a>
-                            <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
-                                <span class="menu-item-icon">⚙️</span>
-                                <span>Regole Timbrature</span>
-                            </a>
-                            <a href="{{ url_for('admin_request_types_page') }}" class="menu-item active">
-                                <span class="menu-item-icon">📝</span>
-                                <span>Tipologie Richieste</span>
-                            </a>
-                            <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
-                                <span class="menu-item-icon">📥</span>
-                                <span>Gestione Richieste</span>
-                            </a>
-                        </div>
-                        <div class="menu-section">
-                            <a href="{{ url_for('logout') }}" class="menu-item danger">
-                                <span class="menu-item-icon">🚪</span>
-                                <span>Logout</span>
-                            </a>
-                        </div>
-                    </div>
+                    <button id="menuToggle" class="header-icon-btn" type="button" aria-label="Menu">☰</button>
+                    <nav id="hamburgerMenu" class="hamburger-menu">
+                        <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
+                            <span class="menu-item-icon">📊</span>
+                            <span>Dashboard</span>
+                        </a>
+                        <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+                            <span class="menu-item-icon">�️</span>
+                            <span>Gestione Sessioni</span>
+                        </a>
+                        <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+                            <span class="menu-item-icon">🔬</span>
+                            <span>Analisi Attività</span>
+                        </a>
+                        <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+                            <span class="menu-item-icon">📅</span>
+                            <span>Pianificazioni Rentman</span>
+                        </a>
+                        {% if is_admin %}
+                        <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+                            <span class="menu-item-icon">👥</span>
+                            <span>Gestione Utenti</span>
+                        </a>
+                        <a href="{{ url_for('admin_operators') }}" class="menu-item">
+                            <span class="menu-item-icon">🧑‍🔧</span>
+                            <span>Gestione Operatori</span>
+                        </a>
+                        <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
+                            <span class="menu-item-icon">⚙️</span>
+                            <span>Regole Timbrature</span>
+                        </a>
+                        <a href="{{ url_for('admin_request_types_page') }}" class="menu-item active">
+                            <span class="menu-item-icon">📝</span>
+                            <span>Tipologie Richieste</span>
+                        </a>
+                        <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
+                            <span class="menu-item-icon">📥</span>
+                            <span>Gestione Richieste</span>
+                        </a>
+                        <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
+                            <span class="menu-item-icon">🏢</span>
+                            <span>Configurazione Azienda</span>
+                        </a>
+                        {% endif %}
+                        <div class="menu-divider"></div>
+                        <a href="{{ url_for('logout') }}" class="menu-item danger">
+                            <span class="menu-item-icon">🚪</span>
+                            <span>Logout</span>
+                        </a>
+                    </nav>
                 </div>
-                <span class="page-title-header">📝 Tipologie Richieste</span>
+                <span class="logo-title">Tipologie Richieste</span>
             </div>
             <div class="header-actions">
-                <button class="theme-toggle" id="themeToggle" title="Cambia tema">🌓</button>
+                <button class="header-icon-btn" id="themeToggle" title="Cambia tema">🌓</button>
+                <div class="header-user">
+                    <div class="header-user-avatar">{{ session.get('username', 'U')[0]|upper }}</div>
+                    <span class="header-user-name">{{ session.get('username', 'Utente') }}</span>
+                </div>
             </div>
         </header>
 
@@ -599,16 +587,17 @@
             localStorage.setItem('joblog-theme', next);
         });
 
-        // Sidebar toggle per mobile
-        function toggleMenu() {
-            document.getElementById('menuDropdown').classList.toggle('active');
-        }
+        // Menu hamburger toggle
+        document.getElementById('menuToggle').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('hamburgerMenu').classList.toggle('open');
+        });
 
         // Chiudi menu cliccando fuori
         document.addEventListener('click', (e) => {
             const menuContainer = document.querySelector('.menu-container');
             if (!menuContainer.contains(e.target)) {
-                document.getElementById('menuDropdown').classList.remove('active');
+                document.getElementById('hamburgerMenu').classList.remove('open');
             }
         });
 

@@ -577,6 +577,14 @@ def _apply_user_session(user_row: Mapping[str, Any]) -> None:
     session['is_admin'] = role == ROLE_ADMIN
     session['is_supervisor'] = role in {ROLE_SUPERVISOR, ROLE_ADMIN}
     session['is_magazzino'] = role in {ROLE_MAGAZZINO, ROLE_ADMIN}
+    
+    # Ripristina il progetto salvato per i supervisor
+    if role in {ROLE_SUPERVISOR, ROLE_ADMIN}:
+        current_project_code = user_row.get('current_project_code')
+        current_project_name = user_row.get('current_project_name')
+        if current_project_code:
+            session['supervisor_project_code'] = current_project_code
+            session['supervisor_project_name'] = current_project_name or current_project_code
 
 
 def _magazzino_only() -> Optional[ResponseReturnValue]:
@@ -1464,19 +1472,22 @@ CEDOLINO_CODICE_TERMINALE = "musa_mobile"
 MYSQL_SCHEMA_STATEMENTS: List[str] = [
     """
     CREATE TABLE IF NOT EXISTS activities (
-        activity_id VARCHAR(255) PRIMARY KEY,
+        activity_id VARCHAR(255) NOT NULL,
+        project_code VARCHAR(64) NOT NULL DEFAULT '',
         label VARCHAR(255) NOT NULL,
         sort_order INT NOT NULL,
         plan_start TEXT NULL,
         plan_end TEXT NULL,
         planned_members INT NULL,
         planned_duration_ms BIGINT NULL,
-        notes TEXT NULL
+        notes TEXT NULL,
+        PRIMARY KEY (activity_id, project_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
     CREATE TABLE IF NOT EXISTS member_state (
-        member_key VARCHAR(255) PRIMARY KEY,
+        member_key VARCHAR(255) NOT NULL,
+        project_code VARCHAR(64) NOT NULL DEFAULT '',
         member_name VARCHAR(255) NOT NULL,
         activity_id VARCHAR(255),
         running TINYINT(1) NOT NULL DEFAULT 0,
@@ -1484,19 +1495,18 @@ MYSQL_SCHEMA_STATEMENTS: List[str] = [
         elapsed_cached BIGINT NOT NULL DEFAULT 0,
         pause_start BIGINT,
         entered_ts BIGINT,
-        CONSTRAINT fk_member_activity
-            FOREIGN KEY (activity_id)
-            REFERENCES activities(activity_id)
-            ON DELETE SET NULL
+        PRIMARY KEY (member_key, project_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
     CREATE TABLE IF NOT EXISTS event_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        project_code VARCHAR(64) NOT NULL DEFAULT '',
         ts BIGINT NOT NULL,
         kind VARCHAR(64) NOT NULL,
         member_key VARCHAR(255),
-        details LONGTEXT
+        details LONGTEXT,
+        INDEX idx_event_project (project_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
@@ -1598,6 +1608,49 @@ def ensure_activity_schema(db: DatabaseLike) -> None:
             continue
         db.execute(alter_template.format(name=name, definition=definition))
     _ACTIVITY_SCHEMA_READY = True
+
+
+_PROJECT_CODE_MIGRATION_DONE = False
+
+
+def ensure_project_code_columns(db: DatabaseLike) -> None:
+    """Migra le tabelle esistenti per aggiungere la colonna project_code."""
+    global _PROJECT_CODE_MIGRATION_DONE
+    if _PROJECT_CODE_MIGRATION_DONE:
+        return
+    
+    tables_to_migrate = {
+        "activities": "VARCHAR(64) NOT NULL DEFAULT ''" if DB_VENDOR == "mysql" else "TEXT NOT NULL DEFAULT ''",
+        "member_state": "VARCHAR(64) NOT NULL DEFAULT ''" if DB_VENDOR == "mysql" else "TEXT NOT NULL DEFAULT ''",
+        "event_log": "VARCHAR(64) NOT NULL DEFAULT ''" if DB_VENDOR == "mysql" else "TEXT NOT NULL DEFAULT ''",
+    }
+    
+    for table, col_def in tables_to_migrate.items():
+        try:
+            existing = _get_existing_columns(db, table)
+            if "project_code" not in existing:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN project_code {col_def}")
+                app.logger.info("Aggiunta colonna project_code a tabella %s", table)
+        except Exception as e:
+            app.logger.warning("Impossibile aggiungere project_code a %s: %s", table, e)
+    
+    # Aggiungi indice su event_log se non esiste
+    try:
+        if DB_VENDOR == "mysql":
+            # MySQL: verifica se l'indice esiste
+            idx_check = db.execute(
+                "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=%s AND TABLE_NAME='event_log' AND INDEX_NAME='idx_event_project'",
+                (DATABASE_SETTINGS["name"],)
+            ).fetchone()
+            cnt = idx_check["cnt"] if isinstance(idx_check, Mapping) else idx_check[0]
+            if cnt == 0:
+                db.execute("CREATE INDEX idx_event_project ON event_log(project_code)")
+        else:
+            db.execute("CREATE INDEX IF NOT EXISTS idx_event_project ON event_log(project_code)")
+    except Exception as e:
+        app.logger.warning("Impossibile creare indice idx_event_project: %s", e)
+    
+    _PROJECT_CODE_MIGRATION_DONE = True
 
 
 def get_database_settings(force_refresh: bool = False) -> Dict[str, Any]:
@@ -2609,6 +2662,17 @@ def ensure_app_users_table(db: DatabaseLike) -> None:
             db.commit()
         except Exception:
             pass  # Colonna già esistente
+        # Migrazione: aggiungi colonne per progetto corrente supervisor
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN current_project_code VARCHAR(64) DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN current_project_name VARCHAR(255) DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass
     else:
         # SQLite
         try:
@@ -2618,6 +2682,16 @@ def ensure_app_users_table(db: DatabaseLike) -> None:
             pass
         try:
             db.execute("ALTER TABLE app_users ADD COLUMN rentman_crew_id INTEGER")
+            db.commit()
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN current_project_code TEXT")
+            db.commit()
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN current_project_name TEXT")
             db.commit()
         except Exception:
             pass
@@ -2773,18 +2847,21 @@ def init_db() -> None:
         db.executescript(
             """
             CREATE TABLE IF NOT EXISTS activities (
-                activity_id TEXT PRIMARY KEY,
+                activity_id TEXT NOT NULL,
+                project_code TEXT NOT NULL DEFAULT '',
                 label TEXT NOT NULL,
                 sort_order INTEGER NOT NULL,
                 plan_start TEXT,
                 plan_end TEXT,
                 planned_members INTEGER,
                 planned_duration_ms INTEGER,
-                notes TEXT
+                notes TEXT,
+                PRIMARY KEY (activity_id, project_code)
             );
 
             CREATE TABLE IF NOT EXISTS member_state (
-                member_key TEXT PRIMARY KEY,
+                member_key TEXT NOT NULL,
+                project_code TEXT NOT NULL DEFAULT '',
                 member_name TEXT NOT NULL,
                 activity_id TEXT,
                 running INTEGER NOT NULL DEFAULT 0,
@@ -2792,16 +2869,19 @@ def init_db() -> None:
                 elapsed_cached INTEGER NOT NULL DEFAULT 0,
                 pause_start INTEGER,
                 entered_ts INTEGER,
-                FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
+                PRIMARY KEY (member_key, project_code)
             );
 
             CREATE TABLE IF NOT EXISTS event_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT NOT NULL DEFAULT '',
                 ts INTEGER NOT NULL,
                 kind TEXT NOT NULL,
                 member_key TEXT,
                 details TEXT
             );
+
+            CREATE INDEX IF NOT EXISTS idx_event_project ON event_log(project_code);
 
             CREATE TABLE IF NOT EXISTS app_state (
                 key TEXT PRIMARY KEY,
@@ -3003,20 +3083,24 @@ def parse_iso_to_ms(value: Optional[str]) -> Optional[int]:
     return int(dt.timestamp() * 1000)
 
 
-def clear_project_state(db: DatabaseLike) -> None:
-    """Rimuove il progetto attivo e i relativi dati dal database."""
-
-    try:
-        previous_code = get_app_state(db, "project_code")
-    except Exception:
-        previous_code = None
-    db.execute("DELETE FROM activities")
-    db.execute("DELETE FROM member_state")
-    db.execute("DELETE FROM event_log")
-    db.execute(
-        f"DELETE FROM app_state WHERE {APP_STATE_KEY_COLUMN} IN ('project_code','project_name','activity_plan_meta','push_notified_activities','long_running_member_notifications')"
-    )
-    delete_project_materials_cache(db, previous_code)
+def clear_project_state(db: DatabaseLike, project_code: Optional[str] = None) -> None:
+    """Rimuove il progetto e i relativi dati dal database."""
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    if project_code:
+        # Cancella solo i dati del progetto specifico
+        db.execute(f"DELETE FROM activities WHERE project_code = {placeholder}", (project_code,))
+        db.execute(f"DELETE FROM member_state WHERE project_code = {placeholder}", (project_code,))
+        db.execute(f"DELETE FROM event_log WHERE project_code = {placeholder}", (project_code,))
+        delete_project_materials_cache(db, project_code)
+    else:
+        # Fallback: cancella tutto (per retrocompatibilità)
+        db.execute("DELETE FROM activities")
+        db.execute("DELETE FROM member_state")
+        db.execute("DELETE FROM event_log")
+        db.execute(
+            f"DELETE FROM app_state WHERE {APP_STATE_KEY_COLUMN} IN ('project_code','project_name','activity_plan_meta','push_notified_activities','long_running_member_notifications')"
+        )
 
 
 def has_active_member_sessions(db: DatabaseLike) -> bool:
@@ -3034,12 +3118,13 @@ def has_active_member_sessions(db: DatabaseLike) -> bool:
 
 
 def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
-    clear_project_state(db)
-
     activities = list(plan.get("activities") or [])
     team = list(plan.get("team") or [])
     project_code = str(plan.get("project_code") or "UNKNOWN")
     project_name = str(plan.get("project_name") or project_code)
+    
+    # Cancella solo i dati del progetto specifico (non tocca altri progetti)
+    clear_project_state(db, project_code)
 
     planned_counts: Dict[str, int] = {}
     for member in team:
@@ -3062,6 +3147,7 @@ def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
         activity_rows.append(
             (
                 activity_id,
+                project_code,
                 activity.get("label"),
                 index,
                 plan_start,
@@ -3075,9 +3161,9 @@ def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
     db.executemany(
         """
         INSERT INTO activities(
-            activity_id, label, sort_order, plan_start, plan_end,
+            activity_id, project_code, label, sort_order, plan_start, plan_end,
             planned_members, planned_duration_ms, notes
-        ) VALUES(?,?,?,?,?,?,?,?)
+        ) VALUES(?,?,?,?,?,?,?,?,?)
         """,
         activity_rows,
     )
@@ -3097,15 +3183,15 @@ def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
         running = RUN_STATE_PAUSED
         start_ts = None
         member_rows.append(
-            (key, name, activity_id, running, start_ts, 0, None, None)
+            (key, project_code, name, activity_id, running, start_ts, 0, None, None)
         )
 
     if member_rows:
         db.executemany(
             """
             INSERT INTO member_state(
-                member_key, member_name, activity_id, running, start_ts, elapsed_cached, pause_start, entered_ts
-            ) VALUES(?,?,?,?,?,?,?,?)
+                member_key, project_code, member_name, activity_id, running, start_ts, elapsed_cached, pause_start, entered_ts
+            ) VALUES(?,?,?,?,?,?,?,?,?)
             """,
             member_rows,
         )
@@ -3166,6 +3252,7 @@ def get_db() -> DatabaseLike:
             g.db = conn
         try:
             ensure_activity_schema(g.db)
+            ensure_project_code_columns(g.db)
             ensure_app_users_table(g.db)
             ensure_session_override_table(g.db)
             ensure_persistent_session_table(g.db)
@@ -3362,11 +3449,17 @@ def find_last_move_ts(db: DatabaseLike, member_key: str, activity_id: str) -> Op
     return None
 
 
-def fetch_member(db: DatabaseLike, member_key: str) -> Optional[Mapping[str, Any]]:
+def fetch_member(db: DatabaseLike, member_key: str, project_code: Optional[str] = None) -> Optional[Mapping[str, Any]]:
     if not member_key:
         return None
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    if project_code is not None:
+        return db.execute(
+            f"SELECT * FROM member_state WHERE member_key={placeholder} AND project_code={placeholder}",
+            (member_key, project_code),
+        ).fetchone()
     return db.execute(
-        "SELECT * FROM member_state WHERE member_key=?",
+        f"SELECT * FROM member_state WHERE member_key={placeholder}",
         (member_key,),
     ).fetchone()
 
@@ -3399,11 +3492,13 @@ def record_push_notification(
         serialized = json.dumps(payload, ensure_ascii=False)
     except TypeError:
         serialized = json.dumps({"payload_repr": repr(payload)}, ensure_ascii=False)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     db.execute(
-        """
+        f"""
         INSERT INTO push_notification_log(
             kind, activity_id, username, title, body, payload, sent_ts, created_ts
-        ) VALUES(?,?,?,?,?,?,?,?)
+        ) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder})
         """,
         (
             kind,
@@ -3416,6 +3511,7 @@ def record_push_notification(
             sent_ts,
         ),
     )
+    db.commit()
 
 
 def fetch_recent_push_notifications(
@@ -3424,16 +3520,17 @@ def fetch_recent_push_notifications(
     username: str,
     limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    sql = """
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    sql = f"""
         SELECT id, kind, activity_id, username, title, body, payload, sent_ts, created_ts
         FROM push_notification_log
-        WHERE username = ?
+        WHERE username = {placeholder}
         ORDER BY sent_ts DESC, id DESC
     """
     params: List[Any] = [username]
     if limit is not None and limit > 0:
         safe_limit = max(1, min(limit, 1000))
-        sql += " LIMIT ?"
+        sql += f" LIMIT {placeholder}"
         params.append(safe_limit)
     rows = db.execute(sql, tuple(params)).fetchall()
 
@@ -4843,7 +4940,7 @@ def api_user_turno_oggi():
     if not crew_id:
         return jsonify({"turno": None, "message": "Nessun operatore Rentman associato"})
     
-    # Recupera il turno di oggi dalla tabella rentman_plannings
+    # Recupera il turno di oggi dalla tabella rentman_plannings (solo se inviato)
     today = datetime.now().strftime("%Y-%m-%d")
     
     ensure_rentman_plannings_table(db)
@@ -4853,7 +4950,7 @@ def api_user_turno_oggi():
         SELECT project_code, project_name, function_name, plan_start, plan_end,
                hours_planned, remark, is_leader, transport
         FROM rentman_plannings
-        WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+        WHERE crew_id = {placeholder} AND planning_date = {placeholder} AND sent_to_webservice = 1
         ORDER BY plan_start ASC
         """,
         (crew_id, today)
@@ -5754,15 +5851,16 @@ def api_activities():
             return jsonify({"ok": False, "error": "invalid_activity_id"}), 400
 
     db = get_db()
-    project_code = get_app_state(db, "project_code")
+    project_code = session.get('supervisor_project_code', '')
     if not project_code:
         return jsonify({"ok": False, "error": "no_active_project"}), 409
-    project_name = get_app_state(db, "project_name") or project_code
+    project_name = session.get('supervisor_project_name') or project_code
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     if requested_id:
         existing = db.execute(
-            "SELECT 1 FROM activities WHERE activity_id=?",
-            (requested_id,),
+            f"SELECT 1 FROM activities WHERE activity_id={placeholder} AND project_code={placeholder}",
+            (requested_id, project_code),
         ).fetchone()
         if existing is not None:
             return jsonify({"ok": False, "error": "activity_id_in_use"}), 409
@@ -5770,7 +5868,7 @@ def api_activities():
     else:
         activity_id = _generate_activity_id(db, label)
 
-    order_row = db.execute("SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM activities").fetchone()
+    order_row = db.execute(f"SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM activities WHERE project_code={placeholder}", (project_code,)).fetchone()
     max_order = 0
     if order_row is not None:
         value = row_value(order_row, "max_order")
@@ -5790,14 +5888,15 @@ def api_activities():
     planned_duration_ms = compute_planned_duration_ms(plan_start, plan_end, planned_members)
 
     db.execute(
-        """
+        f"""
         INSERT INTO activities(
-            activity_id, label, sort_order, plan_start, plan_end,
+            activity_id, project_code, label, sort_order, plan_start, plan_end,
             planned_members, planned_duration_ms, notes
-        ) VALUES(?,?,?,?,?,?,?,?)
+        ) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder})
         """,
         (
             activity_id,
+            project_code,
             label,
             sort_order,
             plan_start,
@@ -5820,11 +5919,12 @@ def api_activities():
 
     now = now_ms()
     db.execute(
-        "INSERT INTO event_log(ts, kind, details) VALUES(?,?,?)",
+        f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
         (
             now,
             "create_activity",
             json.dumps({"activity_id": activity_id, "label": label}),
+            project_code,
         ),
     )
 
@@ -6119,9 +6219,11 @@ def api_push_notifications():
 def api_state():
     db = get_db()
     now = now_ms()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
-    project_code = get_app_state(db, "project_code")
-    project_name = get_app_state(db, "project_name") or project_code
+    # Ogni supervisor vede il proprio progetto (dalla sessione)
+    project_code = session.get('supervisor_project_code')
+    project_name = session.get('supervisor_project_name') or project_code
 
     if not project_code:
         return jsonify(
@@ -6135,7 +6237,8 @@ def api_state():
         )
 
     activity_rows = db.execute(
-        "SELECT activity_id, label FROM activities ORDER BY sort_order, label"
+        f"SELECT activity_id, label FROM activities WHERE project_code = {placeholder} ORDER BY sort_order, label",
+        (project_code,)
     ).fetchall()
 
     activity_meta = load_activity_meta(db)
@@ -6161,7 +6264,8 @@ def api_state():
         }
 
     members = db.execute(
-        "SELECT * FROM member_state ORDER BY member_name"
+        f"SELECT * FROM member_state WHERE project_code = {placeholder} ORDER BY member_name",
+        (project_code,)
     ).fetchall()
 
     team: List[Dict[str, Any]] = []
@@ -6169,8 +6273,8 @@ def api_state():
     paused_keys = {
         row["member_key"]
         for row in db.execute(
-            "SELECT member_key FROM member_state WHERE running=? AND pause_start IS NOT NULL",
-            (RUN_STATE_PAUSED,)
+            f"SELECT member_key FROM member_state WHERE project_code = {placeholder} AND running={placeholder} AND pause_start IS NOT NULL",
+            (project_code, RUN_STATE_PAUSED,)
         ).fetchall()
     }
     for row in members:
@@ -6222,6 +6326,8 @@ def api_state():
         save_activity_meta(db, activity_meta)
 
     all_paused = not any(m["running"] for m in team + active_members)
+    
+    # Verifica se il progetto del supervisor è sincronizzato con quello globale
     project_info = {
         "code": project_code,
         "name": project_name or project_code,
@@ -6242,17 +6348,22 @@ def api_state():
 @login_required
 def api_events():
     db = get_db()
-    project_code = get_app_state(db, "project_code")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    project_code = session.get('supervisor_project_code')
     if not project_code:
         return jsonify({"events": []})
 
     activity_labels = {
         row["activity_id"]: row["label"]
-        for row in db.execute("SELECT activity_id, label FROM activities")
+        for row in db.execute(
+            f"SELECT activity_id, label FROM activities WHERE project_code = {placeholder}",
+            (project_code,)
+        )
     }
 
     rows = db.execute(
-        "SELECT id, ts, kind, member_key, details FROM event_log ORDER BY ts DESC LIMIT 25"
+        f"SELECT id, ts, kind, member_key, details FROM event_log WHERE project_code = {placeholder} ORDER BY ts DESC LIMIT 25",
+        (project_code,)
     ).fetchall()
 
     events: List[Dict[str, Any]] = []
@@ -6654,10 +6765,30 @@ def api_load_project():
     if plan is None:
         clear_project_state(db)
         db.commit()
+        # Pulisce anche la sessione del supervisor
+        session.pop('supervisor_project_code', None)
+        session.pop('supervisor_project_name', None)
         return jsonify({"ok": False, "error": "project_not_found"}), 404
 
     apply_project_plan(db, plan)
     db.commit()
+    
+    # Salva il progetto nella sessione del supervisor (individuale)
+    session['supervisor_project_code'] = plan["project_code"]
+    session['supervisor_project_name'] = plan.get("project_name")
+    
+    # Salva anche nel database per persistenza dopo logout/login
+    username = session.get('user')
+    if username:
+        placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+        try:
+            db.execute(
+                f"UPDATE app_users SET current_project_code={placeholder}, current_project_name={placeholder} WHERE username={placeholder}",
+                (plan["project_code"], plan.get("project_name"), username)
+            )
+            db.commit()
+        except Exception as e:
+            app.logger.warning("Impossibile salvare progetto corrente per %s: %s", username, e)
 
     return jsonify(
         {
@@ -6686,39 +6817,44 @@ def api_move():
     if not member_key or not member_name:
         return jsonify({"ok": False, "error": "invalid_payload"}), 400
 
+    project_code = session.get('supervisor_project_code')
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_project_selected"}), 400
+
     db = get_db()
     now = now_ms()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     if activity_id:
         exists = db.execute(
-            "SELECT 1 FROM activities WHERE activity_id=?",
-            (activity_id,),
+            f"SELECT 1 FROM activities WHERE activity_id={placeholder} AND project_code={placeholder}",
+            (activity_id, project_code),
         ).fetchone()
         if exists is None:
             return jsonify({"ok": False, "error": "unknown_activity"}), 400
 
     existing = db.execute(
-        "SELECT * FROM member_state WHERE member_key=?",
-        (member_key,),
+        f"SELECT * FROM member_state WHERE member_key={placeholder} AND project_code={placeholder}",
+        (member_key, project_code),
     ).fetchone()
 
     if existing is None:
         db.execute(
-            """
+            f"""
             INSERT INTO member_state(
-                member_key, member_name, activity_id, running, start_ts, elapsed_cached, pause_start, entered_ts
-            ) VALUES(?,?,?,?,?,?,?,?)
+                member_key, project_code, member_name, activity_id, running, start_ts, elapsed_cached, pause_start, entered_ts
+            ) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder},{placeholder})
             """,
-            (member_key, member_name, None, 0, None, 0, None, None),
+            (member_key, project_code, member_name, None, 0, None, 0, None, None),
         )
         existing = db.execute(
-            "SELECT * FROM member_state WHERE member_key=?",
-            (member_key,),
+            f"SELECT * FROM member_state WHERE member_key={placeholder} AND project_code={placeholder}",
+            (member_key, project_code),
         ).fetchone()
     else:
         db.execute(
-            "UPDATE member_state SET member_name=? WHERE member_key=?",
-            (member_name, member_key),
+            f"UPDATE member_state SET member_name={placeholder} WHERE member_key={placeholder} AND project_code={placeholder}",
+            (member_name, member_key, project_code),
         )
 
     if existing is None:
@@ -6751,18 +6887,16 @@ def api_move():
         auto_closed_previous = True
 
     db.execute(
-        """
+        f"""
         UPDATE member_state
-        SET activity_id=?, running=?, start_ts=?, elapsed_cached=?, pause_start=NULL, entered_ts=?
-        WHERE member_key=?
+        SET activity_id={placeholder}, running={placeholder}, start_ts={placeholder}, elapsed_cached={placeholder}, pause_start=NULL, entered_ts={placeholder}
+        WHERE member_key={placeholder} AND project_code={placeholder}
         """,
-        (activity_id, running, start_ts, elapsed_cached, next_entered_ts, member_key),
+        (activity_id, running, start_ts, elapsed_cached, next_entered_ts, member_key, project_code),
     )
 
     if meta_changed:
         save_activity_meta(db, activity_meta)
-
-    current_project_code = get_app_state(db, "project_code")
 
     if auto_closed_previous:
         # Calcola il tempo totale partendo dall'ultimo move verso questa attività
@@ -6783,11 +6917,11 @@ def api_move():
             "total_ms": total_ms,
             "pause_ms": pause_ms,
             "auto_close": True,
-            "project_code": current_project_code,
+            "project_code": project_code,
         }
         db.execute(
-            "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
-            (now, "finish_activity", member_key, json.dumps(finish_payload)),
+            f"INSERT INTO event_log(ts, kind, member_key, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder})",
+            (now, "finish_activity", member_key, json.dumps(finish_payload), project_code),
         )
 
     move_details = {
@@ -6795,11 +6929,11 @@ def api_move():
         "to": activity_id,
         "member_name": member_name,
         "duration_ms": prev_elapsed,
-        "project_code": current_project_code,
+        "project_code": project_code,
     }
     db.execute(
-        "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
-        (now, "move", member_key, json.dumps(move_details)),
+        f"INSERT INTO event_log(ts, kind, member_key, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder})",
+        (now, "move", member_key, json.dumps(move_details), project_code),
     )
 
     db.commit()
@@ -6818,11 +6952,13 @@ def api_start_activity():
     
     now = now_ms()
     db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
-    # Verifica che l'attività esista
+    # Verifica che l'attività esista per questo progetto
     activity_exists = db.execute(
-        "SELECT 1 FROM activities WHERE activity_id=?",
-        (activity_id,),
+        f"SELECT 1 FROM activities WHERE activity_id={placeholder} AND project_code={placeholder}",
+        (activity_id, project_code),
     ).fetchone()
     
     if not activity_exists:
@@ -6830,8 +6966,8 @@ def api_start_activity():
 
     # Trova tutti i membri assegnati a questa attività con timer non avviato
     rows = db.execute(
-        "SELECT member_key FROM member_state WHERE activity_id=? AND running=?",
-        (activity_id, RUN_STATE_PAUSED),
+        f"SELECT member_key FROM member_state WHERE activity_id={placeholder} AND running={placeholder} AND project_code={placeholder}",
+        (activity_id, RUN_STATE_PAUSED, project_code),
     ).fetchall()
 
     if not rows:
@@ -6840,14 +6976,14 @@ def api_start_activity():
     affected = 0
     for row in rows:
         db.execute(
-            "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
-            (RUN_STATE_RUNNING, now, row["member_key"]),
+            f"UPDATE member_state SET running={placeholder}, start_ts={placeholder}, pause_start=NULL WHERE member_key={placeholder} AND project_code={placeholder}",
+            (RUN_STATE_RUNNING, now, row["member_key"], project_code),
         )
         affected += 1
 
     db.execute(
-        "INSERT INTO event_log(ts, kind, details) VALUES(?,?,?)",
-        (now, "start_activity", json.dumps({"activity_id": activity_id, "affected": affected})),
+        f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
+        (now, "start_activity", json.dumps({"activity_id": activity_id, "affected": affected}), project_code),
     )
 
     db.commit()
@@ -6866,11 +7002,13 @@ def api_start_member():
     
     now = now_ms()
     db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     # Verifica che il membro esista e abbia un'attività assegnata
     member = db.execute(
-        "SELECT member_key, member_name, activity_id, running FROM member_state WHERE member_key=?",
-        (member_key,),
+        f"SELECT member_key, member_name, activity_id, running FROM member_state WHERE member_key={placeholder} AND project_code={placeholder}",
+        (member_key, project_code),
     ).fetchone()
     
     if not member:
@@ -6881,9 +7019,6 @@ def api_start_member():
     
     if member["running"] == RUN_STATE_RUNNING:
         return jsonify({"ok": False, "error": "already_running"}), 400
-
-    # Recupera il codice progetto corrente
-    project_code = get_app_state(db, "project_code")
     
     # CedolinoWeb: invia timbrata INIZIO GIORNATA
     timbrata_ok, external_id, timbrata_error = send_timbrata(
@@ -6906,13 +7041,13 @@ def api_start_member():
 
     # Avvia il timer
     db.execute(
-        "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
-        (RUN_STATE_RUNNING, now, member_key),
+        f"UPDATE member_state SET running={placeholder}, start_ts={placeholder}, pause_start=NULL WHERE member_key={placeholder} AND project_code={placeholder}",
+        (RUN_STATE_RUNNING, now, member_key, project_code),
     )
 
     db.execute(
-        "INSERT INTO event_log(ts, kind, details) VALUES(?,?,?)",
-        (now, "start_member", json.dumps({"member_key": member_key})),
+        f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
+        (now, "start_member", json.dumps({"member_key": member_key}), project_code),
     )
 
     db.commit()
@@ -6925,11 +7060,13 @@ def api_start_all():
     """Avvia i timer per tutti i membri che hanno un'attività assegnata."""
     now = now_ms()
     db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     # Trova tutti i membri con activity_id assegnato ma non in esecuzione
     rows = db.execute(
-        "SELECT member_key FROM member_state WHERE activity_id IS NOT NULL AND running=?",
-        (RUN_STATE_PAUSED,),
+        f"SELECT member_key FROM member_state WHERE activity_id IS NOT NULL AND running={placeholder} AND project_code={placeholder}",
+        (RUN_STATE_PAUSED, project_code),
     ).fetchall()
 
     if not rows:
@@ -6938,14 +7075,14 @@ def api_start_all():
     affected = 0
     for row in rows:
         db.execute(
-            "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
-            (RUN_STATE_RUNNING, now, row["member_key"]),
+            f"UPDATE member_state SET running={placeholder}, start_ts={placeholder}, pause_start=NULL WHERE member_key={placeholder} AND project_code={placeholder}",
+            (RUN_STATE_RUNNING, now, row["member_key"], project_code),
         )
         affected += 1
 
     db.execute(
-        "INSERT INTO event_log(ts, kind, details) VALUES(?,?,?)",
-        (now, "start_all", json.dumps({"affected": affected})),
+        f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
+        (now, "start_all", json.dumps({"affected": affected}), project_code),
     )
 
     db.commit()
@@ -6957,28 +7094,30 @@ def api_start_all():
 def api_pause_all():
     now = now_ms()
     db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     rows = db.execute(
-        "SELECT member_key, start_ts, elapsed_cached FROM member_state WHERE running=?",
-        (RUN_STATE_RUNNING,),
+        f"SELECT member_key, start_ts, elapsed_cached FROM member_state WHERE running={placeholder} AND project_code={placeholder}",
+        (RUN_STATE_RUNNING, project_code),
     ).fetchall()
 
     for row in rows:
         start_ts = row["start_ts"] or now
         elapsed = (row["elapsed_cached"] or 0) + max(0, now - start_ts)
         db.execute(
-            """
+            f"""
             UPDATE member_state
-            SET running=?, start_ts=NULL, elapsed_cached=?, pause_start=?
-            WHERE member_key=?
+            SET running={placeholder}, start_ts=NULL, elapsed_cached={placeholder}, pause_start={placeholder}
+            WHERE member_key={placeholder} AND project_code={placeholder}
             """,
-            (RUN_STATE_PAUSED, elapsed, now, row["member_key"]),
+            (RUN_STATE_PAUSED, elapsed, now, row["member_key"], project_code),
         )
 
     if rows:
         db.execute(
-            "INSERT INTO event_log(ts, kind, details) VALUES(?,?,?)",
-            (now, "pause_all", json.dumps({"affected": len(rows)})),
+            f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
+            (now, "pause_all", json.dumps({"affected": len(rows)}), project_code),
         )
 
     db.commit()
@@ -6990,22 +7129,24 @@ def api_pause_all():
 def api_resume_all():
     now = now_ms()
     db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     rows = db.execute(
-        "SELECT member_key FROM member_state WHERE running=? AND pause_start IS NOT NULL",
-        (RUN_STATE_PAUSED,),
+        f"SELECT member_key FROM member_state WHERE running={placeholder} AND pause_start IS NOT NULL AND project_code={placeholder}",
+        (RUN_STATE_PAUSED, project_code),
     ).fetchall()
 
     for row in rows:
         db.execute(
-            "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
-            (RUN_STATE_RUNNING, now, row["member_key"]),
+            f"UPDATE member_state SET running={placeholder}, start_ts={placeholder}, pause_start=NULL WHERE member_key={placeholder} AND project_code={placeholder}",
+            (RUN_STATE_RUNNING, now, row["member_key"], project_code),
         )
 
     if rows:
         db.execute(
-            "INSERT INTO event_log(ts, kind, details) VALUES(?,?,?)",
-            (now, "resume_all", json.dumps({"affected": len(rows)})),
+            f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
+            (now, "resume_all", json.dumps({"affected": len(rows)}), project_code),
         )
 
     db.commit()
@@ -7017,9 +7158,12 @@ def api_resume_all():
 def api_finish_all():
     now = now_ms()
     db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     rows = db.execute(
-        "SELECT * FROM member_state WHERE activity_id IS NOT NULL"
+        f"SELECT * FROM member_state WHERE activity_id IS NOT NULL AND project_code={placeholder}",
+        (project_code,),
     ).fetchall()
 
     activity_meta = load_activity_meta(db)
@@ -7042,15 +7186,15 @@ def api_finish_all():
         pause_ms = max(0, total_ms - elapsed)
         
         db.execute(
-            """
+            f"""
             UPDATE member_state
-            SET activity_id=NULL, running=?, start_ts=NULL, elapsed_cached=0, pause_start=NULL, entered_ts=NULL
-            WHERE member_key=?
+            SET activity_id=NULL, running={placeholder}, start_ts=NULL, elapsed_cached=0, pause_start=NULL, entered_ts=NULL
+            WHERE member_key={placeholder} AND project_code={placeholder}
             """,
-            (RUN_STATE_FINISHED, row["member_key"]),
+            (RUN_STATE_FINISHED, row["member_key"], project_code),
         )
         db.execute(
-            "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
+            f"INSERT INTO event_log(ts, kind, member_key, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder})",
             (
                 now,
                 "finish_activity",
@@ -7064,17 +7208,19 @@ def api_finish_all():
                         "pause_ms": pause_ms,
                     }
                 ),
+                project_code,
             ),
         )
         affected += 1
 
     if affected:
         db.execute(
-            "INSERT INTO event_log(ts, kind, details) VALUES(?,?,?)",
+            f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
             (
                 now,
                 "finish_all",
                 json.dumps({"affected": affected}),
+                project_code,
             ),
         )
 
@@ -7094,7 +7240,10 @@ def api_member_pause():
         return jsonify({"ok": False, "error": "missing_member_key"}), 400
 
     db = get_db()
-    member = fetch_member(db, member_key)
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    member = fetch_member(db, member_key, project_code)
     if member is None:
         return jsonify({"ok": False, "error": "member_not_found"}), 404
 
@@ -7109,9 +7258,6 @@ def api_member_pause():
 
     now = now_ms()
     elapsed = compute_elapsed(member, now)
-
-    # Recupera il codice progetto corrente
-    project_code = get_app_state(db, "project_code")
 
     # CedolinoWeb: invia timbrata INIZIO PAUSA
     timbrata_ok, external_id, timbrata_error = send_timbrata(
@@ -7133,16 +7279,16 @@ def api_member_pause():
         }), 400
 
     db.execute(
-        """
+        f"""
         UPDATE member_state
-        SET running=?, start_ts=NULL, elapsed_cached=?, pause_start=?
-        WHERE member_key=?
+        SET running={placeholder}, start_ts=NULL, elapsed_cached={placeholder}, pause_start={placeholder}
+        WHERE member_key={placeholder} AND project_code={placeholder}
         """,
-        (RUN_STATE_PAUSED, elapsed, now, member_key),
+        (RUN_STATE_PAUSED, elapsed, now, member_key, project_code),
     )
 
     db.execute(
-        "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
+        f"INSERT INTO event_log(ts, kind, member_key, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder})",
         (
             now,
             "pause_member",
@@ -7154,6 +7300,7 @@ def api_member_pause():
                     "duration_ms": elapsed,
                 }
             ),
+            project_code,
         ),
     )
 
@@ -7170,7 +7317,10 @@ def api_member_resume():
         return jsonify({"ok": False, "error": "missing_member_key"}), 400
 
     db = get_db()
-    member = fetch_member(db, member_key)
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    member = fetch_member(db, member_key, project_code)
     if member is None:
         return jsonify({"ok": False, "error": "member_not_found"}), 404
 
@@ -7184,9 +7334,6 @@ def api_member_resume():
         return jsonify({"ok": False, "error": "member_not_paused"}), 400
 
     now = now_ms()
-
-    # Recupera il codice progetto corrente
-    project_code = get_app_state(db, "project_code")
 
     # CedolinoWeb: invia timbrata FINE PAUSA
     timbrata_ok, external_id, timbrata_error = send_timbrata(
@@ -7208,12 +7355,12 @@ def api_member_resume():
         }), 400
 
     db.execute(
-        "UPDATE member_state SET running=?, start_ts=?, pause_start=NULL WHERE member_key=?",
-        (RUN_STATE_RUNNING, now, member_key),
+        f"UPDATE member_state SET running={placeholder}, start_ts={placeholder}, pause_start=NULL WHERE member_key={placeholder} AND project_code={placeholder}",
+        (RUN_STATE_RUNNING, now, member_key, project_code),
     )
 
     db.execute(
-        "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
+        f"INSERT INTO event_log(ts, kind, member_key, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder})",
         (
             now,
             "resume_member",
@@ -7224,6 +7371,7 @@ def api_member_resume():
                     "activity_id": member["activity_id"],
                 }
             ),
+            project_code,
         ),
     )
 
@@ -7240,7 +7388,10 @@ def api_member_finish():
         return jsonify({"ok": False, "error": "missing_member_key"}), 400
 
     db = get_db()
-    member = fetch_member(db, member_key)
+    project_code = session.get("supervisor_project_code", "")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    member = fetch_member(db, member_key, project_code)
     if member is None:
         return jsonify({"ok": False, "error": "member_not_found"}), 404
 
@@ -7248,9 +7399,6 @@ def api_member_finish():
         return jsonify({"ok": False, "error": "member_not_assigned"}), 400
 
     now = now_ms()
-    
-    # Recupera il codice progetto corrente
-    project_code = get_app_state(db, "project_code")
 
     # CedolinoWeb: invia timbrata FINE GIORNATA
     timbrata_ok, external_id, timbrata_error = send_timbrata(
@@ -7287,16 +7435,16 @@ def api_member_finish():
     pause_ms = max(0, total_ms - elapsed)
 
     db.execute(
-        """
+        f"""
         UPDATE member_state
-        SET activity_id=NULL, running=?, start_ts=NULL, elapsed_cached=0, pause_start=NULL, entered_ts=NULL
-        WHERE member_key=?
+        SET activity_id=NULL, running={placeholder}, start_ts=NULL, elapsed_cached=0, pause_start=NULL, entered_ts=NULL
+        WHERE member_key={placeholder} AND project_code={placeholder}
         """,
-        (RUN_STATE_FINISHED, member_key),
+        (RUN_STATE_FINISHED, member_key, project_code),
     )
 
     db.execute(
-        "INSERT INTO event_log(ts, kind, member_key, details) VALUES(?,?,?,?)",
+        f"INSERT INTO event_log(ts, kind, member_key, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder})",
         (
             now,
             "finish_activity",
@@ -7310,6 +7458,7 @@ def api_member_finish():
                     "pause_ms": pause_ms,
                 }
             ),
+            project_code,
         ),
     )
 
@@ -9556,6 +9705,8 @@ CREATE TABLE IF NOT EXISTS user_requests (
     date_to DATE,
     value_amount DECIMAL(10,2) NOT NULL,
     notes TEXT,
+    cdc VARCHAR(100),
+    attachment_path VARCHAR(500),
     status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
     reviewed_by VARCHAR(100),
     reviewed_ts BIGINT,
@@ -9581,6 +9732,8 @@ CREATE TABLE IF NOT EXISTS user_requests (
     date_to TEXT,
     value_amount REAL NOT NULL,
     notes TEXT,
+    cdc TEXT,
+    attachment_path TEXT,
     status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
     reviewed_by TEXT,
     reviewed_ts INTEGER,
@@ -9614,7 +9767,7 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
 
 
 def ensure_user_requests_table(db: DatabaseLike) -> None:
-    """Crea la tabella user_requests se non esiste."""
+    """Crea la tabella user_requests se non esiste e aggiunge colonne mancanti."""
     statement = (
         USER_REQUESTS_TABLE_MYSQL if DB_VENDOR == "mysql" else USER_REQUESTS_TABLE_SQLITE
     )
@@ -9627,6 +9780,21 @@ def ensure_user_requests_table(db: DatabaseLike) -> None:
             cursor.close()
         except AttributeError:
             pass
+    
+    # Aggiungi colonne mancanti se la tabella esisteva già
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute("ALTER TABLE user_requests ADD COLUMN cdc VARCHAR(100)")
+            db.commit()
+    except Exception:
+        pass  # Colonna già esiste
+    
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute("ALTER TABLE user_requests ADD COLUMN attachment_path VARCHAR(500)")
+            db.commit()
+    except Exception:
+        pass  # Colonna già esiste
 
 
 def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
@@ -9672,12 +9840,13 @@ def get_joblog_hours_for_date(db: DatabaseLike, target_date: str) -> Dict[str, f
     end_ts = int(end_of_day.timestamp() * 1000)
     
     # Query per eventi finish_activity con duration_ms
-    query = """
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    query = f"""
         SELECT el.ts, el.member_key, el.details, ms.member_name
         FROM event_log el
-        LEFT JOIN member_state ms ON el.member_key = ms.member_key
+        LEFT JOIN member_state ms ON el.member_key = ms.member_key AND el.project_code = ms.project_code
         WHERE el.kind = 'finish_activity'
-        AND el.ts >= ? AND el.ts <= ?
+        AND el.ts >= {placeholder} AND el.ts <= {placeholder}
     """
     
     try:
@@ -10403,6 +10572,7 @@ def _send_turni_notifications(db: DatabaseLike, users_to_notify: Dict[int, List[
                 )
                 notifications_sent += 1
                 app.logger.info("Notifica turno inviata a %s", username)
+                    
             except WebPushException as e:
                 app.logger.warning("Errore invio notifica turno a %s: %s", username, e)
                 # Rimuovi subscription se non valida
@@ -10410,6 +10580,21 @@ def _send_turni_notifications(db: DatabaseLike, users_to_notify: Dict[int, List[
                     remove_push_subscription(db, endpoint)
             except Exception as e:
                 app.logger.error("Errore generico invio notifica turno: %s", e)
+        
+        # Salva la notifica nel log (una volta per utente, dopo aver provato tutte le subscription)
+        if notifications_sent > 0:
+            try:
+                record_push_notification(
+                    db,
+                    kind="turni_published",
+                    title=title,
+                    body=body,
+                    payload=payload,
+                    username=username,
+                )
+                app.logger.info("Notifica turno salvata nel log per %s", username)
+            except Exception as e:
+                app.logger.error("Errore salvataggio notifica nel log: %s", e)
     
     return notifications_sent
 
@@ -10600,6 +10785,7 @@ def admin_users_page() -> ResponseReturnValue:
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+        is_admin=True,
     )
 
 
@@ -10842,7 +11028,7 @@ def admin_operators() -> ResponseReturnValue:
     if not session.get("is_admin"):
         flash("Accesso non autorizzato", "danger")
         return redirect(url_for("index"))
-    return render_template("admin_operators.html")
+    return render_template("admin_operators.html", is_admin=True)
 
 
 @app.get("/api/admin/operators")
@@ -11019,7 +11205,9 @@ def ensure_timbratura_rules_table(db):
                 anticipo_max_minuti INT DEFAULT 30,
                 tolleranza_ritardo_minuti INT DEFAULT 5,
                 arrotondamento_ingresso_minuti INT DEFAULT 15,
+                arrotondamento_ingresso_tipo VARCHAR(1) DEFAULT '+',
                 arrotondamento_uscita_minuti INT DEFAULT 15,
+                arrotondamento_uscita_tipo VARCHAR(1) DEFAULT '-',
                 pausa_blocco_minimo_minuti INT DEFAULT 30,
                 pausa_incremento_minuti INT DEFAULT 15,
                 pausa_tolleranza_minuti INT DEFAULT 5,
@@ -11027,6 +11215,17 @@ def ensure_timbratura_rules_table(db):
                 updated_by VARCHAR(100)
             )
         """)
+        # Aggiunge colonne se mancanti (per upgrade)
+        try:
+            db.execute("ALTER TABLE timbratura_rules ADD COLUMN arrotondamento_ingresso_tipo VARCHAR(1) DEFAULT '+'")
+            db.commit()
+        except:
+            pass
+        try:
+            db.execute("ALTER TABLE timbratura_rules ADD COLUMN arrotondamento_uscita_tipo VARCHAR(1) DEFAULT '-'")
+            db.commit()
+        except:
+            pass
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS timbratura_rules (
@@ -11034,7 +11233,9 @@ def ensure_timbratura_rules_table(db):
                 anticipo_max_minuti INTEGER DEFAULT 30,
                 tolleranza_ritardo_minuti INTEGER DEFAULT 5,
                 arrotondamento_ingresso_minuti INTEGER DEFAULT 15,
+                arrotondamento_ingresso_tipo TEXT DEFAULT '+',
                 arrotondamento_uscita_minuti INTEGER DEFAULT 15,
+                arrotondamento_uscita_tipo TEXT DEFAULT '-',
                 pausa_blocco_minimo_minuti INTEGER DEFAULT 30,
                 pausa_incremento_minuti INTEGER DEFAULT 15,
                 pausa_tolleranza_minuti INTEGER DEFAULT 5,
@@ -11042,6 +11243,17 @@ def ensure_timbratura_rules_table(db):
                 updated_by TEXT
             )
         """)
+        # Aggiunge colonne se mancanti (per upgrade)
+        try:
+            db.execute("ALTER TABLE timbratura_rules ADD COLUMN arrotondamento_ingresso_tipo TEXT DEFAULT '+'")
+            db.commit()
+        except:
+            pass
+        try:
+            db.execute("ALTER TABLE timbratura_rules ADD COLUMN arrotondamento_uscita_tipo TEXT DEFAULT '-'")
+            db.commit()
+        except:
+            pass
     db.commit()
 
 
@@ -11080,7 +11292,7 @@ def admin_timbratura_rules_page() -> ResponseReturnValue:
     """Pagina configurazione regole timbrature (solo admin)."""
     if not session.get("is_admin"):
         abort(403)
-    return render_template("admin_timbratura_rules.html")
+    return render_template("admin_timbratura_rules.html", is_admin=True)
 
 
 @app.get("/api/admin/timbratura-rules")
@@ -11110,7 +11322,7 @@ def api_save_timbratura_rules():
     ensure_timbratura_rules_table(db)
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     
-    # Valida i dati
+    # Valida i dati numerici
     fields = {
         'anticipo_max_minuti': (0, 120),
         'tolleranza_ritardo_minuti': (0, 60),
@@ -11121,6 +11333,10 @@ def api_save_timbratura_rules():
         'pausa_tolleranza_minuti': (0, 30)
     }
     
+    # Campi di tipo arrotondamento (+ - ~)
+    tipo_fields = ['arrotondamento_ingresso_tipo', 'arrotondamento_uscita_tipo']
+    valid_tipos = ['+', '-', '~']
+    
     values = {}
     for field, (min_val, max_val) in fields.items():
         val = data.get(field)
@@ -11128,6 +11344,14 @@ def api_save_timbratura_rules():
             val = int(val)
             if val < min_val or val > max_val:
                 return jsonify({"error": f"{field} deve essere tra {min_val} e {max_val}"}), 400
+            values[field] = val
+    
+    # Valida e aggiungi campi tipo
+    for field in tipo_fields:
+        val = data.get(field)
+        if val is not None:
+            if val not in valid_tipos:
+                return jsonify({"error": f"{field} deve essere uno di: +, -, ~"}), 400
             values[field] = val
     
     if not values:
@@ -11263,6 +11487,339 @@ def calcola_pausa_mod(inizio_pausa: str, fine_pausa: str, rules: dict = None) ->
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  CONFIGURAZIONE AZIENDA - COMPANY SETTINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+COMPANY_SETTINGS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS company_settings (
+    id INT PRIMARY KEY DEFAULT 1,
+    company_name VARCHAR(200) NOT NULL DEFAULT 'La Mia Azienda',
+    external_id VARCHAR(100),
+    logo_path VARCHAR(500),
+    address TEXT,
+    phone VARCHAR(50),
+    email VARCHAR(200),
+    website VARCHAR(200),
+    vat_number VARCHAR(50),
+    fiscal_code VARCHAR(50),
+    modules_enabled JSON,
+    custom_settings JSON,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    updated_by VARCHAR(100)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+COMPANY_SETTINGS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS company_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    company_name TEXT NOT NULL DEFAULT 'La Mia Azienda',
+    external_id TEXT,
+    logo_path TEXT,
+    address TEXT,
+    phone TEXT,
+    email TEXT,
+    website TEXT,
+    vat_number TEXT,
+    fiscal_code TEXT,
+    modules_enabled TEXT,
+    custom_settings TEXT,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL,
+    updated_by TEXT
+)
+"""
+
+
+def ensure_company_settings_table(db: DatabaseLike) -> None:
+    """Crea la tabella company_settings se non esiste."""
+    statement = (
+        COMPANY_SETTINGS_TABLE_MYSQL if DB_VENDOR == "mysql" else COMPANY_SETTINGS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+    db.commit()
+
+
+def get_company_settings(db: DatabaseLike) -> dict:
+    """Ottiene le impostazioni azienda dal database."""
+    ensure_company_settings_table(db)
+    
+    cursor = db.execute("SELECT * FROM company_settings WHERE id = 1")
+    row = cursor.fetchone()
+    
+    if not row:
+        # Inserisci valori di default
+        now_ts = int(time.time() * 1000)
+        if DB_VENDOR == "mysql":
+            db.execute(
+                """INSERT INTO company_settings 
+                   (id, company_name, modules_enabled, custom_settings, created_ts, updated_ts) 
+                   VALUES (1, 'La Mia Azienda', '{}', '{}', %s, %s)""",
+                (now_ts, now_ts)
+            )
+        else:
+            db.execute(
+                """INSERT INTO company_settings 
+                   (id, company_name, modules_enabled, custom_settings, created_ts, updated_ts) 
+                   VALUES (1, 'La Mia Azienda', '{}', '{}', ?, ?)""",
+                (now_ts, now_ts)
+            )
+        db.commit()
+        cursor = db.execute("SELECT * FROM company_settings WHERE id = 1")
+        row = cursor.fetchone()
+    
+    # Converti in dizionario - gestisce sia tuple che dict
+    if isinstance(row, dict):
+        settings = dict(row)
+    else:
+        columns = [desc[0] for desc in cursor.description]
+        settings = dict(zip(columns, row))
+    
+    # Parse JSON fields
+    for json_field in ['modules_enabled', 'custom_settings']:
+        if settings.get(json_field):
+            try:
+                if isinstance(settings[json_field], str):
+                    settings[json_field] = json.loads(settings[json_field])
+            except (json.JSONDecodeError, TypeError):
+                settings[json_field] = {}
+        else:
+            settings[json_field] = {}
+    
+    return settings
+
+
+def save_company_settings(db: DatabaseLike, data: dict, updated_by: str) -> bool:
+    """Salva le impostazioni azienda (INSERT o UPDATE)."""
+    ensure_company_settings_table(db)
+    now_ts = int(time.time() * 1000)
+    
+    # Prepara JSON fields
+    modules_enabled = json.dumps(data.get('modules_enabled', {}))
+    custom_settings = json.dumps(data.get('custom_settings', {}))
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Verifica se esiste già un record
+    cursor = db.execute("SELECT id FROM company_settings WHERE id = 1")
+    exists = cursor.fetchone() is not None
+    
+    if exists:
+        # UPDATE
+        db.execute(f"""
+            UPDATE company_settings SET
+                company_name = {placeholder},
+                external_id = {placeholder},
+                logo_path = {placeholder},
+                address = {placeholder},
+                phone = {placeholder},
+                email = {placeholder},
+                website = {placeholder},
+                vat_number = {placeholder},
+                fiscal_code = {placeholder},
+                modules_enabled = {placeholder},
+                custom_settings = {placeholder},
+                updated_ts = {placeholder},
+                updated_by = {placeholder}
+            WHERE id = 1
+        """, (
+            data.get('company_name', 'La Mia Azienda'),
+            data.get('external_id'),
+            data.get('logo_path'),
+            data.get('address'),
+            data.get('phone'),
+            data.get('email'),
+            data.get('website'),
+            data.get('vat_number'),
+            data.get('fiscal_code'),
+            modules_enabled,
+            custom_settings,
+            now_ts,
+            updated_by
+        ))
+    else:
+        # INSERT
+        db.execute(f"""
+            INSERT INTO company_settings (
+                id, company_name, external_id, logo_path, address, phone, email, 
+                website, vat_number, fiscal_code, modules_enabled, custom_settings, 
+                created_ts, updated_ts, updated_by
+            ) VALUES (
+                1, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                {placeholder}, {placeholder}, {placeholder}, {placeholder}
+            )
+        """, (
+            data.get('company_name', 'La Mia Azienda'),
+            data.get('external_id'),
+            data.get('logo_path'),
+            data.get('address'),
+            data.get('phone'),
+            data.get('email'),
+            data.get('website'),
+            data.get('vat_number'),
+            data.get('fiscal_code'),
+            modules_enabled,
+            custom_settings,
+            now_ts,
+            now_ts,
+            updated_by
+        ))
+    
+    db.commit()
+    return True
+
+
+@app.get("/admin/company-settings")
+@login_required
+def admin_company_settings_page() -> ResponseReturnValue:
+    """Pagina configurazione azienda (solo admin)."""
+    if not session.get("is_admin"):
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    return render_template(
+        "admin_company_settings.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+        is_admin=True,
+    )
+
+
+@app.get("/api/admin/company-settings")
+@login_required
+def api_get_company_settings() -> ResponseReturnValue:
+    """API per ottenere le impostazioni azienda."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    db = get_db()
+    settings = get_company_settings(db)
+    return jsonify(settings)
+
+
+@app.post("/api/admin/company-settings")
+@login_required
+def api_save_company_settings() -> ResponseReturnValue:
+    """API per salvare le impostazioni azienda."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati mancanti"}), 400
+    
+    db = get_db()
+    username = session.get("user") or session.get("username") or "admin"
+    
+    try:
+        save_company_settings(db, data, username)
+        return jsonify({"ok": True, "message": "Impostazioni salvate"})
+    except Exception as e:
+        app.logger.error(f"Errore salvataggio company settings: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/company-settings/logo")
+@login_required
+def api_upload_company_logo() -> ResponseReturnValue:
+    """API per caricare il logo aziendale."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    if 'logo' not in request.files:
+        return jsonify({"error": "Nessun file caricato"}), 400
+    
+    file = request.files['logo']
+    if file.filename == '':
+        return jsonify({"error": "Nessun file selezionato"}), 400
+    
+    # Verifica estensione
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in allowed_extensions:
+        return jsonify({"error": f"Formato non supportato. Usa: {', '.join(allowed_extensions)}"}), 400
+    
+    # Salva il file
+    logo_dir = os.path.join(app.root_path, 'static', 'uploads', 'logo')
+    os.makedirs(logo_dir, exist_ok=True)
+    
+    # Nome file univoco
+    filename = f"company_logo_{int(time.time())}.{ext}"
+    filepath = os.path.join(logo_dir, filename)
+    file.save(filepath)
+    
+    # Path relativo per il database
+    logo_path = f"/static/uploads/logo/{filename}"
+    
+    # Aggiorna database
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    now_ts = int(time.time() * 1000)
+    username = session.get("user") or session.get("username") or "admin"
+    
+    ensure_company_settings_table(db)
+    db.execute(f"""
+        UPDATE company_settings SET 
+            logo_path = {placeholder}, 
+            updated_ts = {placeholder},
+            updated_by = {placeholder}
+        WHERE id = 1
+    """, (logo_path, now_ts, username))
+    db.commit()
+    
+    return jsonify({"ok": True, "logo_path": logo_path})
+
+
+@app.delete("/api/admin/company-settings/logo")
+@login_required
+def api_delete_company_logo() -> ResponseReturnValue:
+    """API per eliminare il logo aziendale."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    db = get_db()
+    settings = get_company_settings(db)
+    
+    # Elimina file se esiste
+    if settings.get('logo_path'):
+        old_path = os.path.join(app.root_path, settings['logo_path'].lstrip('/'))
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except Exception as e:
+                app.logger.warning(f"Errore eliminazione logo: {e}")
+    
+    # Aggiorna database
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    now_ts = int(time.time() * 1000)
+    username = session.get("user") or session.get("username") or "admin"
+    
+    db.execute(f"""
+        UPDATE company_settings SET 
+            logo_path = NULL, 
+            updated_ts = {placeholder},
+            updated_by = {placeholder}
+        WHERE id = 1
+    """, (now_ts, username))
+    db.commit()
+    
+    return jsonify({"ok": True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  GESTIONE TIPOLOGIE RICHIESTE - ADMIN UI
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -11290,6 +11847,7 @@ def admin_request_types_page() -> ResponseReturnValue:
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+        is_admin=True,
     )
 
 
@@ -11507,6 +12065,7 @@ def _send_request_review_notification(db: DatabaseLike, username: str, type_name
     }
     
     # Invia a tutte le subscription dell'utente
+    sent_ok = False
     for sub in subscriptions:
         endpoint = sub['endpoint'] if isinstance(sub, dict) else sub[0]
         p256dh = sub['p256dh'] if isinstance(sub, dict) else sub[1]
@@ -11529,12 +12088,29 @@ def _send_request_review_notification(db: DatabaseLike, username: str, type_name
                 ttl=86400,  # 24 ore
             )
             app.logger.info("Notifica revisione richiesta inviata a %s", username)
+            sent_ok = True
+                
         except WebPushException as e:
             app.logger.warning("Errore invio notifica revisione a %s: %s", username, e)
             if e.response and e.response.status_code in {404, 410}:
                 remove_push_subscription(db, endpoint)
         except Exception as e:
             app.logger.error("Errore generico invio notifica revisione: %s", e)
+    
+    # Salva la notifica nel log (una volta per utente)
+    if sent_ok:
+        try:
+            record_push_notification(
+                db,
+                kind="request_reviewed",
+                title=title,
+                body=body,
+                payload=payload,
+                username=username,
+            )
+            app.logger.info("Notifica revisione salvata nel log per %s", username)
+        except Exception as e:
+            app.logger.error("Errore salvataggio notifica revisione nel log: %s", e)
 
 
 # =====================================================
@@ -11547,7 +12123,16 @@ def admin_user_requests_page() -> ResponseReturnValue:
     """Pagina admin per gestire le richieste degli utenti."""
     if not session.get("is_admin"):
         return ("Forbidden", 403)
-    return render_template("admin_user_requests.html")
+    
+    username = session.get("username", "Admin")
+    initials = "".join([p[0].upper() for p in username.split()[:2]]) if username else "?"
+    
+    return render_template(
+        "admin_user_requests.html",
+        is_admin=True,
+        user_name=username,
+        user_initials=initials
+    )
 
 
 @app.get("/api/admin/user-requests")
@@ -11564,7 +12149,8 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
         rows = db.execute("""
             SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
                    ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
-                   ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts
+                   ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts,
+                   ur.cdc, ur.attachment_path
             FROM user_requests ur
             JOIN request_types rt ON ur.request_type_id = rt.id
             ORDER BY 
@@ -11575,7 +12161,8 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
         rows = db.execute("""
             SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
                    ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
-                   ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts
+                   ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts,
+                   ur.cdc, ur.attachment_path
             FROM user_requests ur
             JOIN request_types rt ON ur.request_type_id = rt.id
             ORDER BY 
@@ -11602,6 +12189,8 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
                 "review_notes": row["review_notes"],
                 "created_ts": row["created_ts"],
                 "updated_ts": row["updated_ts"],
+                "cdc": row["cdc"],
+                "attachment_path": row["attachment_path"],
             })
         else:
             requests.append({
@@ -11620,6 +12209,8 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
                 "review_notes": row[12],
                 "created_ts": row[13],
                 "updated_ts": row[14],
+                "cdc": row[15] if len(row) > 15 else None,
+                "attachment_path": row[16] if len(row) > 16 else None,
             })
 
     return jsonify({"requests": requests})
@@ -11706,7 +12297,26 @@ def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
 @login_required
 def user_requests_page() -> ResponseReturnValue:
     """Pagina utente per inviare richieste (ferie, permessi, rimborsi, ecc.)."""
-    return render_template("user_requests.html")
+    return render_template(
+        "user_requests.html",
+        username=session.get("user"),
+        user_display=session.get("user_display", session.get("user")),
+        user_initials=session.get("user_initials", "U"),
+        user_role=session.get("user_role", "Utente"),
+    )
+
+
+@app.route("/user/notifications")
+@login_required
+def user_notifications_page() -> ResponseReturnValue:
+    """Pagina utente per visualizzare lo storico delle notifiche push."""
+    return render_template(
+        "user_notifications.html",
+        username=session.get("user"),
+        user_display=session.get("user_display", session.get("user")),
+        user_initials=session.get("user_initials", "U"),
+        user_role=session.get("user_role", "Utente"),
+    )
 
 
 @app.get("/api/user/request-types")
@@ -11773,7 +12383,7 @@ def api_user_requests_list() -> ResponseReturnValue:
         rows = db.execute("""
             SELECT ur.id, ur.request_type_id, rt.name as type_name, rt.value_type,
                    ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
-                   ur.review_notes, ur.created_ts, ur.updated_ts
+                   ur.review_notes, ur.created_ts, ur.updated_ts, ur.cdc, ur.attachment_path
             FROM user_requests ur
             JOIN request_types rt ON ur.request_type_id = rt.id
             WHERE ur.username = %s
@@ -11783,7 +12393,7 @@ def api_user_requests_list() -> ResponseReturnValue:
         rows = db.execute("""
             SELECT ur.id, ur.request_type_id, rt.name as type_name, rt.value_type,
                    ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
-                   ur.review_notes, ur.created_ts, ur.updated_ts
+                   ur.review_notes, ur.created_ts, ur.updated_ts, ur.cdc, ur.attachment_path
             FROM user_requests ur
             JOIN request_types rt ON ur.request_type_id = rt.id
             WHERE ur.username = ?
@@ -11809,6 +12419,8 @@ def api_user_requests_list() -> ResponseReturnValue:
                 "admin_notes": row["review_notes"],
                 "created_ts": row["created_ts"],
                 "updated_ts": row["updated_ts"],
+                "cdc": row["cdc"],
+                "attachment_path": row["attachment_path"],
             })
         else:
             requests.append({
@@ -11825,6 +12437,8 @@ def api_user_requests_list() -> ResponseReturnValue:
                 "admin_notes": row[9],
                 "created_ts": row[10],
                 "updated_ts": row[11],
+                "cdc": row[12] if len(row) > 12 else None,
+                "attachment_path": row[13] if len(row) > 13 else None,
             })
 
     return jsonify({"requests": requests})
@@ -11833,15 +12447,35 @@ def api_user_requests_list() -> ResponseReturnValue:
 @app.post("/api/user/requests")
 @login_required
 def api_user_requests_create() -> ResponseReturnValue:
-    """Crea una nuova richiesta utente."""
+    """Crea una nuova richiesta utente. Supporta JSON o multipart/form-data per upload file."""
     username = session.get("user", "")
-    data = request.get_json() or {}
     
-    request_type_id = data.get("request_type_id")
-    date_start = data.get("date_start")
-    date_end = data.get("date_end")
-    value = data.get("value")
-    notes = data.get("notes", "").strip()
+    # Determina se è multipart/form-data o JSON
+    content_type = request.content_type or ""
+    
+    if 'multipart/form-data' in content_type:
+        # Form con allegati (supporta multipli)
+        request_type_id = request.form.get("request_type_id")
+        date_start = request.form.get("date_start") or request.form.get("start_date")
+        date_end = request.form.get("date_end") or request.form.get("end_date")
+        value = request.form.get("value")
+        notes = (request.form.get("notes") or "").strip()
+        cdc = (request.form.get("cdc") or "").strip() or None
+        # Supporta sia 'attachment' singolo che 'attachments' multipli
+        attachment_files = request.files.getlist("attachments") or []
+        single_attachment = request.files.get("attachment")
+        if single_attachment and single_attachment.filename:
+            attachment_files.append(single_attachment)
+    else:
+        # JSON (senza allegato) - force=True per evitare errore 415
+        data = request.get_json(force=True, silent=True) or {}
+        request_type_id = data.get("request_type_id")
+        date_start = data.get("date_start") or data.get("start_date")
+        date_end = data.get("date_end") or data.get("end_date")
+        value = data.get("value")
+        notes = (data.get("notes") or "").strip()
+        cdc = (data.get("cdc") or "").strip() or None
+        attachment_files = []
 
     if not request_type_id or not date_start:
         return jsonify({"error": "Tipo richiesta e data inizio sono obbligatori"}), 400
@@ -11858,23 +12492,83 @@ def api_user_requests_create() -> ResponseReturnValue:
     if not rt:
         return jsonify({"error": "Tipologia richiesta non valida o non attiva"}), 400
 
+    value_type = rt["value_type"] if isinstance(rt, dict) else rt[1]
+    
+    # Validazioni specifiche per value_type
+    if value_type == "amount":
+        if not cdc:
+            return jsonify({"error": "Centro di costo (CDC) è obbligatorio per i rimborsi"}), 400
+        if not attachment_files or len(attachment_files) == 0:
+            return jsonify({"error": "Almeno un allegato (foto ricevuta) è obbligatorio per i rimborsi"}), 400
+
+    # Gestione upload file multipli
+    attachment_paths = []
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'}
+    
+    for idx, attachment_file in enumerate(attachment_files):
+        if attachment_file and attachment_file.filename:
+            ext = attachment_file.filename.rsplit('.', 1)[-1].lower() if '.' in attachment_file.filename else ''
+            if ext not in allowed_extensions:
+                return jsonify({"error": f"Formato file non supportato: {attachment_file.filename}. Usa: {', '.join(allowed_extensions)}"}), 400
+            
+            # Crea directory se non esiste
+            upload_dir = os.path.join(app.root_path, 'uploads', 'requests', username)
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            # Nome file univoco (con indice per multipli)
+            timestamp = int(time.time() * 1000)  # millisecondi per unicità
+            filename = f"request_{timestamp}_{idx}.{ext}"
+            filepath = os.path.join(upload_dir, filename)
+            attachment_file.save(filepath)
+            attachment_paths.append(f"/uploads/requests/{username}/{filename}")
+    
+    # Salva come JSON array se ci sono più file, altrimenti stringa singola per retrocompatibilità
+    if len(attachment_paths) == 0:
+        attachment_path = None
+    elif len(attachment_paths) == 1:
+        attachment_path = attachment_paths[0]
+    else:
+        attachment_path = json.dumps(attachment_paths)
+
     now = int(datetime.now().timestamp() * 1000)  # timestamp in millisecondi
     value_amount = float(value) if value else 0.0
     
     if DB_VENDOR == "mysql":
         db.execute("""
-            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, status, created_ts, updated_ts)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)
-        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, now, now))
+            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, cdc, attachment_path, status, created_ts, updated_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)
+        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, cdc, attachment_path, now, now))
     else:
         db.execute("""
-            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, status, created_ts, updated_ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, now, now))
+            INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, cdc, attachment_path, status, created_ts, updated_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        """, (0, username, request_type_id, date_start, date_end, value_amount, notes, cdc, attachment_path, now, now))
     
     db.commit()
 
     return jsonify({"ok": True, "message": "Richiesta inviata con successo"})
+
+
+# Route per servire gli allegati delle richieste
+@app.route('/uploads/requests/<path:filename>')
+@login_required
+def serve_request_attachment(filename):
+    """Serve gli allegati delle richieste (solo per l'utente proprietario o admin)."""
+    # Verifica accesso: l'utente può vedere solo i propri file, admin può vedere tutti
+    username = session.get("user", "")
+    is_admin = session.get("is_admin", False)
+    
+    # Estrai username dal path
+    parts = filename.split('/')
+    if len(parts) >= 1:
+        file_owner = parts[0]
+        if not is_admin and file_owner != username:
+            return jsonify({"error": "Accesso negato"}), 403
+    
+    return send_from_directory(
+        os.path.join(app.root_path, 'uploads', 'requests'),
+        filename
+    )
 
 
 if __name__ == "__main__":

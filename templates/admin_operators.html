@@ -69,7 +69,7 @@
 
         /* Header */
         header {
-            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(249,115,22,0.7));
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
             color: #f8fafc;
             padding: 12px 20px;
             display: flex;
@@ -79,6 +79,7 @@
             top: 0;
             z-index: 220;
             box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+            overflow: visible;
         }
         .header-left { display: flex; align-items: center; gap: 16px; }
         .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
@@ -96,30 +97,19 @@
         .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
 
         /* ─── Hamburger Menu ─── */
-        .menu-container { position: relative; }
-        .menu-toggle {
-            background: rgba(255,255,255,0.12);
-            border: none;
-            font-size: 20px;
-            cursor: pointer;
-            width: 40px; height: 40px;
-            border-radius: 10px;
-            display: flex; align-items: center; justify-content: center;
-            color: white;
-            transition: background 0.2s ease;
-        }
-        .menu-toggle:hover { background: rgba(255,255,255,0.2); }
+        .menu-container { position: relative; z-index: 310; }
         .hamburger-menu {
             position: absolute;
             top: 100%;
             left: 0;
-            background: var(--card);
+            margin-top: 8px;
+            background: var(--bg-panel);
             border: 1px solid var(--border);
-            border-radius: 16px;
+            border-radius: 12px;
             box-shadow: var(--shadow);
             min-width: 220px;
-            padding: 8px 0;
-            z-index: 100;
+            z-index: 300;
+            overflow: hidden;
             opacity: 0;
             visibility: hidden;
             transform: translateY(-10px);
@@ -137,19 +127,38 @@
             padding: 12px 16px;
             color: var(--text);
             text-decoration: none;
-            font-weight: 500;
+            font-weight: 600;
+            font-size: 14px;
             transition: background 0.15s ease;
         }
-        .menu-item:hover { background: rgba(249,115,22,0.15); }
+        .menu-item:hover { background: var(--bg-soft); }
         .menu-item.active {
-            background: rgba(249,115,22,0.15);
-            color: var(--orange);
+            background: var(--bg-soft);
+            color: var(--brand);
         }
+        .menu-item-icon { font-size: 18px; }
         .menu-divider {
             height: 1px;
             background: var(--border);
-            margin: 8px 0;
+            margin: 4px 0;
         }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+        .header-user {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 999px;
+        }
+        .header-user-avatar {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px;
+        }
+        .header-user-name { font-weight: 600; font-size: 14px; }
 
         /* Main Content */
         main {
@@ -541,25 +550,67 @@
     <header>
         <div class="header-left">
             <div class="menu-container">
-                <button id="menuToggle" class="menu-toggle" type="button" aria-label="Menu">☰</button>
+                <button id="menuToggle" class="header-icon-btn" type="button" aria-label="Menu">☰</button>
                 <nav id="hamburgerMenu" class="hamburger-menu">
-                    <a href="/admin/dashboard" class="menu-item">📊 Dashboard</a>
-                    <a href="/admin/sessions" class="menu-item">📋 Gestione Sessioni</a>
-                    <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
-                    <a href="/admin/rentman-planning" class="menu-item">📅 Pianificazioni Rentman</a>
-                    <a href="/admin/users" class="menu-item">👥 Gestione Utenti</a>
-                    <a href="/admin/operators" class="menu-item active">🧑‍🔧 Gestione Operatori</a>
-                    <a href="/admin/timbratura-rules" class="menu-item">⚙️ Regole Timbrature</a>
+                    <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📊</span>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+                        <span class="menu-item-icon">�️</span>
+                        <span>Gestione Sessioni</span>
+                    </a>
+                    <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🔬</span>
+                        <span>Analisi Attività</span>
+                    </a>
+                    <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📅</span>
+                        <span>Pianificazioni Rentman</span>
+                    </a>
+                    {% if is_admin %}
+                    <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+                        <span class="menu-item-icon">👥</span>
+                        <span>Gestione Utenti</span>
+                    </a>
+                    <a href="{{ url_for('admin_operators') }}" class="menu-item active">
+                        <span class="menu-item-icon">🧑‍🔧</span>
+                        <span>Gestione Operatori</span>
+                    </a>
+                    <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
+                        <span class="menu-item-icon">⚙️</span>
+                        <span>Regole Timbrature</span>
+                    </a>
+                    <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📝</span>
+                        <span>Tipologie Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📥</span>
+                        <span>Gestione Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🏢</span>
+                        <span>Configurazione Azienda</span>
+                    </a>
+                    {% endif %}
                     <div class="menu-divider"></div>
-                    <a href="/logout" class="menu-item">🚪 Logout</a>
+                    <a href="{{ url_for('logout') }}" class="menu-item danger">
+                        <span class="menu-item-icon">🚪</span>
+                        <span>Logout</span>
+                    </a>
                 </nav>
             </div>
-            <span class="logo-title">🧑‍🔧 Gestione Operatori</span>
+            <span class="logo-title">Gestione Operatori</span>
         </div>
         <div class="header-actions">
             <button class="header-icon-btn" id="syncBtn" title="Sincronizza da Rentman">🔄</button>
             <button class="header-icon-btn" id="refreshBtn" title="Aggiorna">↻</button>
             <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <div class="header-user">
+                <div class="header-user-avatar">{{ session.get('username', 'U')[0]|upper }}</div>
+                <span class="header-user-name">{{ session.get('username', 'Utente') }}</span>
+            </div>
         </div>
     </header>
 

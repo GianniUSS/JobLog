@@ -1,171 +1,645 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="it" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestione Richieste - Admin</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gestione Richieste · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
     <style>
-        body { background: #f5f5f5; }
-        .navbar { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
-        .card { border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
-        .card-header { background: #fff; border-bottom: 1px solid #eee; font-weight: 600; }
-        .status-badge { font-size: 0.85rem; }
-        .status-pending { background: #ffc107; color: #000; }
-        .status-approved { background: #28a745; color: #fff; }
-        .status-rejected { background: #dc3545; color: #fff; }
-        .request-card { transition: all 0.2s; }
-        .request-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        .filter-btn.active { background: #0d6efd; color: #fff; }
-        .action-btn { min-width: 100px; }
-        .notes-textarea { resize: vertical; min-height: 60px; }
-        .user-info { font-size: 0.9rem; color: #666; }
-        .date-info { font-size: 0.85rem; }
-        .value-display { font-weight: 600; font-size: 1.1rem; color: #333; }
-        .dropdown-menu { min-width: 220px; }
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --purple: #a855f7;
+            --pink: #ec4899;
+            --cyan: #06b6d4;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --text-muted: #475569;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --purple: #9333ea;
+            --pink: #db2777;
+            --cyan: #0891b2;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .hidden { display: none !important; }
+
+        /* Header */
+        header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            color: #f8fafc;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+            overflow: visible;
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; overflow: visible; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Hamburger Menu */
+        .menu-container { position: relative; z-index: 310; }
+        .hamburger-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 8px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            min-width: 220px;
+            z-index: 300;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+        }
+        .hamburger-menu.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.15s ease;
+        }
+        .menu-item:hover { background: var(--bg-soft); }
+        .menu-item.active { background: var(--bg-soft); color: var(--brand); }
+        .menu-item-icon { font-size: 18px; }
+        .menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+        .header-user {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 999px;
+        }
+        .header-user-avatar {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px;
+        }
+        .header-user-name { font-weight: 600; font-size: 14px; }
+
+        /* Main content */
+        main {
+            flex: 1;
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Filter bar */
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        .filter-tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--bg-panel);
+            padding: 4px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+        .filter-tab {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 13px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .filter-tab:hover { background: var(--bg-soft); color: var(--text); }
+        .filter-tab.active { background: var(--brand); color: white; }
+        .filter-tab .badge {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            background: rgba(0,0,0,0.15);
+        }
+        .filter-tab.active .badge { background: rgba(255,255,255,0.2); }
+        
+        .filter-select, .filter-input {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-panel);
+            color: var(--text);
+            font-size: 14px;
+            min-width: 160px;
+        }
+        .filter-input { min-width: 200px; }
+
+        /* Cards */
+        .request-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px 20px;
+            margin-bottom: 12px;
+            display: grid;
+            grid-template-columns: 1fr 1fr auto auto auto;
+            gap: 16px;
+            align-items: center;
+            transition: all 0.2s;
+        }
+        .request-card:hover {
+            box-shadow: var(--shadow);
+            transform: translateY(-2px);
+        }
+        .request-user {
+            font-weight: 700;
+            font-size: 15px;
+        }
+        .request-type {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .request-dates {
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .request-value {
+            font-weight: 700;
+            font-size: 16px;
+            color: var(--brand);
+        }
+        .request-status {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .status-pending { background: rgba(245,158,11,0.2); color: #b45309; }
+        .status-approved { background: rgba(34,197,94,0.2); color: #16a34a; }
+        .status-rejected { background: rgba(239,68,68,0.2); color: #dc2626; }
+        
+        .request-time {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .request-notes {
+            grid-column: 1 / -1;
+            font-size: 13px;
+            color: var(--text-muted);
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+            margin-top: 4px;
+        }
+        .request-cdc {
+            grid-column: 1 / -1;
+            font-size: 13px;
+            color: var(--text);
+            padding-top: 8px;
+        }
+        .request-attachment {
+            grid-column: 1 / -1;
+            font-size: 13px;
+            padding-top: 4px;
+        }
+        .attachment-link {
+            color: var(--brand);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .attachment-link:hover {
+            text-decoration: underline;
+        }
+        .attachment-thumbnail {
+            max-width: 80px;
+            max-height: 60px;
+            border-radius: 6px;
+            vertical-align: middle;
+            margin-right: 8px;
+            border: 1px solid var(--border);
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .attachment-thumbnail:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .attachment-thumbnails {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .attachment-thumb-link {
+            display: inline-block;
+        }
+        .request-review-info {
+            grid-column: 1 / -1;
+            font-size: 12px;
+            color: var(--text-muted);
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: var(--brand); color: white; }
+        .btn-primary:hover { filter: brightness(1.1); }
+        .btn-success { background: var(--success); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-ghost { background: transparent; color: var(--text-muted); }
+        .btn-ghost:hover { background: var(--bg-soft); }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+        .empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state-text { font-size: 16px; font-weight: 600; }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 400;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+        }
+        .modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal {
+            background: var(--bg-panel);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow: auto;
+            transform: scale(0.9);
+            transition: transform 0.2s;
+        }
+        .modal-overlay.open .modal {
+            transform: scale(1);
+        }
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-title { font-weight: 700; font-size: 18px; }
+        .modal-close {
+            width: 32px; height: 32px;
+            border: none; border-radius: 8px;
+            background: var(--bg-soft);
+            color: var(--text-muted);
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .modal-body { padding: 20px; }
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; color: var(--text-muted); }
+        .form-textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            resize: vertical;
+            min-height: 80px;
+        }
+        .summary-box {
+            background: var(--bg-soft);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 16px;
+        }
+        .summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+        .summary-label { color: var(--text-muted); }
+        .summary-value { font-weight: 600; }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 500;
+        }
+        .toast {
+            padding: 14px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+            animation: slideIn 0.3s ease;
+        }
+        .toast-success { background: var(--success); }
+        .toast-danger { background: var(--danger); }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .request-card {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        @media (max-width: 600px) {
+            .request-card {
+                grid-template-columns: 1fr;
+            }
+            .filter-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .filter-tabs {
+                overflow-x: auto;
+            }
+        }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark px-3 mb-4">
-        <div class="d-flex align-items-center">
-            <a href="{{ url_for('admin_dashboard_page') }}" class="text-white text-decoration-none me-3">
-                <i class="bi bi-arrow-left"></i>
-            </a>
-            <span class="navbar-brand mb-0 h5">
-                <i class="bi bi-inbox-fill me-2"></i>Gestione Richieste
-            </span>
+    <header>
+        <div class="header-left">
+            <div class="menu-container">
+                <button id="menuToggle" class="header-icon-btn" aria-label="Menu">☰</button>
+                <nav class="hamburger-menu" id="hamburgerMenu">
+                    <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📊</span>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🗓️</span>
+                        <span>Gestione Sessioni</span>
+                    </a>
+                    <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🔬</span>
+                        <span>Analisi Attività</span>
+                    </a>
+                    <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📅</span>
+                        <span>Pianificazioni Rentman</span>
+                    </a>
+                    {% if is_admin %}
+                    <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+                        <span class="menu-item-icon">👥</span>
+                        <span>Gestione Utenti</span>
+                    </a>
+                    <a href="{{ url_for('admin_operators') }}" class="menu-item">
+                        <span class="menu-item-icon">🧑‍🔧</span>
+                        <span>Gestione Operatori</span>
+                    </a>
+                    <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
+                        <span class="menu-item-icon">⚙️</span>
+                        <span>Regole Timbrature</span>
+                    </a>
+                    <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📝</span>
+                        <span>Tipologie Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item active">
+                        <span class="menu-item-icon">📥</span>
+                        <span>Gestione Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🏢</span>
+                        <span>Configurazione Azienda</span>
+                    </a>
+                    {% endif %}
+                    <div class="menu-divider"></div>
+                    <a href="{{ url_for('logout') }}" class="menu-item danger">
+                        <span class="menu-item-icon">🚪</span>
+                        <span>Logout</span>
+                    </a>
+                </nav>
+            </div>
+            <span class="logo-title">📥 Gestione Richieste</span>
         </div>
-        <div class="dropdown">
-            <button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                <i class="bi bi-grid-3x3-gap-fill me-1"></i> Menu
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" href="{{ url_for('admin_dashboard_page') }}"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('admin_activity_analysis_page') }}"><i class="bi bi-graph-up me-2"></i>Analisi Attività</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('admin_sessions_page') }}"><i class="bi bi-clock-history me-2"></i>Sessioni</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('admin_operators') }}"><i class="bi bi-people me-2"></i>Operatori</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('admin_users_page') }}"><i class="bi bi-person-gear me-2"></i>Utenti</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('admin_timbratura_rules_page') }}"><i class="bi bi-clock me-2"></i>Regole Timbratura</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('admin_request_types_page') }}"><i class="bi bi-tags me-2"></i>Tipologie Richieste</a></li>
-                <li><a class="dropdown-item active" href="{{ url_for('admin_user_requests_page') }}"><i class="bi bi-inbox me-2"></i>Gestione Richieste</a></li>
-                <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item" href="{{ url_for('home') }}"><i class="bi bi-house me-2"></i>Home Utente</a></li>
-            </ul>
-        </div>
-    </nav>
-
-    <div class="container-fluid px-4">
-        <!-- Filtri -->
-        <div class="card mb-4">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col-md-6 mb-2 mb-md-0">
-                        <div class="btn-group" role="group">
-                            <button type="button" class="btn btn-outline-secondary filter-btn active" data-filter="all">
-                                Tutte <span class="badge bg-secondary ms-1" id="count-all">0</span>
-                            </button>
-                            <button type="button" class="btn btn-outline-warning filter-btn" data-filter="pending">
-                                In attesa <span class="badge bg-warning text-dark ms-1" id="count-pending">0</span>
-                            </button>
-                            <button type="button" class="btn btn-outline-success filter-btn" data-filter="approved">
-                                Approvate <span class="badge bg-success ms-1" id="count-approved">0</span>
-                            </button>
-                            <button type="button" class="btn btn-outline-danger filter-btn" data-filter="rejected">
-                                Respinte <span class="badge bg-danger ms-1" id="count-rejected">0</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <select class="form-select" id="filterType">
-                            <option value="">Tutte le tipologie</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input type="text" class="form-control" id="searchUser" placeholder="Cerca utente...">
-                        </div>
-                    </div>
-                </div>
+        <div class="header-actions">
+            <button class="header-icon-btn" id="refreshBtn" title="Aggiorna">↻</button>
+            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <div class="header-user">
+                <span class="header-user-avatar">{{ user_initials or '?' }}</span>
+                <span class="header-user-name">{{ user_name or 'Admin' }}</span>
             </div>
         </div>
+    </header>
 
-        <!-- Lista Richieste -->
+    <main>
+        <div class="filter-bar">
+            <div class="filter-tabs">
+                <button class="filter-tab active" data-filter="all">
+                    Tutte <span class="badge" id="count-all">0</span>
+                </button>
+                <button class="filter-tab" data-filter="pending">
+                    In attesa <span class="badge" id="count-pending">0</span>
+                </button>
+                <button class="filter-tab" data-filter="approved">
+                    Approvate <span class="badge" id="count-approved">0</span>
+                </button>
+                <button class="filter-tab" data-filter="rejected">
+                    Respinte <span class="badge" id="count-rejected">0</span>
+                </button>
+            </div>
+            <select class="filter-select" id="filterType">
+                <option value="">Tutte le tipologie</option>
+            </select>
+            <input type="text" class="filter-input" id="searchUser" placeholder="🔍 Cerca utente...">
+        </div>
+
         <div id="requestsList">
-            <div class="text-center py-5 text-muted">
-                <div class="spinner-border" role="status"></div>
-                <p class="mt-2">Caricamento richieste...</p>
+            <div class="empty-state">
+                <div class="empty-state-icon">⏳</div>
+                <div class="empty-state-text">Caricamento...</div>
             </div>
         </div>
-    </div>
+    </main>
 
     <!-- Modal Revisione -->
-    <div class="modal fade" id="reviewModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-pencil-square me-2"></i>Revisiona Richiesta
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <div class="modal-overlay" id="reviewModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">📝 Revisiona Richiesta</span>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="summary-box" id="reviewSummary"></div>
+                <div class="form-group">
+                    <label class="form-label">Note di revisione (opzionale)</label>
+                    <textarea class="form-textarea" id="reviewNotes" placeholder="Aggiungi note per l'utente..."></textarea>
                 </div>
-                <div class="modal-body">
-                    <div id="reviewRequestSummary" class="mb-3 p-3 bg-light rounded"></div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Note di revisione</label>
-                        <textarea class="form-control notes-textarea" id="reviewNotes" 
-                                  placeholder="Aggiungi note opzionali per l'utente..."></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-                    <button type="button" class="btn btn-danger action-btn" id="btnReject">
-                        <i class="bi bi-x-circle me-1"></i>Respingi
-                    </button>
-                    <button type="button" class="btn btn-success action-btn" id="btnApprove">
-                        <i class="bi bi-check-circle me-1"></i>Approva
-                    </button>
-                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal()">Annulla</button>
+                <button class="btn btn-danger" onclick="submitReview('rejected')">❌ Respingi</button>
+                <button class="btn btn-success" onclick="submitReview('approved')">✅ Approva</button>
             </div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <div class="toast-container" id="toastContainer"></div>
+
     <script>
         let allRequests = [];
         let currentFilter = 'all';
         let currentRequestId = null;
-        let reviewModal = null;
 
         document.addEventListener('DOMContentLoaded', () => {
-            reviewModal = new bootstrap.Modal(document.getElementById('reviewModal'));
             loadRequests();
             loadRequestTypes();
             setupEventListeners();
+            loadTheme();
         });
 
         function setupEventListeners() {
-            // Filtri status
-            document.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    currentFilter = btn.dataset.filter;
+            // Menu toggle
+            document.getElementById('menuToggle').addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.getElementById('hamburgerMenu').classList.toggle('open');
+            });
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.menu-container')) {
+                    document.getElementById('hamburgerMenu').classList.remove('open');
+                }
+            });
+
+            // Theme toggle
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+
+            // Refresh
+            document.getElementById('refreshBtn').addEventListener('click', loadRequests);
+
+            // Filter tabs
+            document.querySelectorAll('.filter-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    currentFilter = tab.dataset.filter;
                     renderRequests();
                 });
             });
 
-            // Filtro tipo
+            // Filter type & search
             document.getElementById('filterType').addEventListener('change', renderRequests);
-            
-            // Ricerca utente
             document.getElementById('searchUser').addEventListener('input', renderRequests);
+        }
 
-            // Bottoni modal
-            document.getElementById('btnApprove').addEventListener('click', () => submitReview('approved'));
-            document.getElementById('btnReject').addEventListener('click', () => submitReview('rejected'));
+        function loadTheme() {
+            const theme = localStorage.getItem('theme') || 'light';
+            document.body.setAttribute('data-theme', theme);
+        }
+
+        function toggleTheme() {
+            const current = document.body.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.body.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
         }
 
         async function loadRequests() {
@@ -178,8 +652,9 @@
                 renderRequests();
             } catch (err) {
                 document.getElementById('requestsList').innerHTML = `
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle me-2"></i>Errore nel caricamento delle richieste
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <div class="empty-state-text">Errore nel caricamento</div>
                     </div>`;
             }
         }
@@ -226,9 +701,9 @@
 
             if (filtered.length === 0) {
                 document.getElementById('requestsList').innerHTML = `
-                    <div class="text-center py-5 text-muted">
-                        <i class="bi bi-inbox" style="font-size: 3rem;"></i>
-                        <p class="mt-2">Nessuna richiesta trovata</p>
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div class="empty-state-text">Nessuna richiesta trovata</div>
                     </div>`;
                 return;
             }
@@ -238,62 +713,94 @@
         }
 
         function renderRequestCard(r) {
-            const statusLabels = {
-                pending: '<span class="badge status-badge status-pending"><i class="bi bi-clock me-1"></i>In attesa</span>',
-                approved: '<span class="badge status-badge status-approved"><i class="bi bi-check me-1"></i>Approvata</span>',
-                rejected: '<span class="badge status-badge status-rejected"><i class="bi bi-x me-1"></i>Respinta</span>'
-            };
-
+            console.log('Rendering request:', r.id, 'cdc:', r.cdc, 'attachment:', r.attachment_path);
+            const statusClass = `status-${r.status}`;
+            const statusLabels = { pending: 'In attesa', approved: 'Approvata', rejected: 'Respinta' };
             const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km' };
             const valueUnit = valueUnits[r.value_type] || '';
             
             const dateFrom = formatDate(r.date_from);
-            const dateTo = r.date_to ? ` - ${formatDate(r.date_to)}` : '';
+            const dateTo = r.date_to ? ` → ${formatDate(r.date_to)}` : '';
             const createdDate = r.created_ts ? formatDateTime(r.created_ts) : '';
 
-            const reviewInfo = r.status !== 'pending' && r.reviewed_by ? `
-                <div class="mt-2 pt-2 border-top">
-                    <small class="text-muted">
-                        <i class="bi bi-person-check me-1"></i>Revisionata da <strong>${r.reviewed_by}</strong>
+            let reviewInfo = '';
+            if (r.status !== 'pending' && r.reviewed_by) {
+                reviewInfo = `
+                    <div class="request-review-info">
+                        👤 Revisionata da <strong>${r.reviewed_by}</strong>
                         ${r.reviewed_ts ? ' il ' + formatDateTime(r.reviewed_ts) : ''}
-                    </small>
-                    ${r.review_notes ? `<div class="mt-1 fst-italic">"${r.review_notes}"</div>` : ''}
-                </div>` : '';
+                        ${r.review_notes ? `<br>📝 "${r.review_notes}"` : ''}
+                    </div>`;
+            }
 
             const actionBtn = r.status === 'pending' ? `
-                <button class="btn btn-primary btn-sm" onclick="openReviewModal(${r.id})">
-                    <i class="bi bi-pencil-square me-1"></i>Revisiona
-                </button>` : '';
+                <button class="btn btn-primary" onclick="openReviewModal(${r.id})">
+                    Revisiona
+                </button>` : `<span class="request-time">📅 ${createdDate}</span>`;
+
+            let notesHtml = '';
+            if (r.notes) {
+                notesHtml = `<div class="request-notes">💬 ${r.notes}</div>`;
+            }
+            
+            // CDC e Allegato per rimborsi
+            let cdcHtml = '';
+            if (r.cdc) {
+                cdcHtml = `<div class="request-cdc">🏢 CDC: <strong>${r.cdc}</strong></div>`;
+            }
+            
+            let attachmentHtml = '';
+            if (r.attachment_path) {
+                // Controlla se è un JSON array (più file) o un singolo path
+                let paths = [];
+                try {
+                    if (r.attachment_path.startsWith('[')) {
+                        paths = JSON.parse(r.attachment_path);
+                    } else {
+                        paths = [r.attachment_path];
+                    }
+                } catch (e) {
+                    paths = [r.attachment_path];
+                }
+                
+                if (paths.length > 0) {
+                    let thumbnailsHtml = paths.map((path, idx) => {
+                        const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(path);
+                        if (isImage) {
+                            return `<a href="${path}" target="_blank" class="attachment-thumb-link">
+                                <img src="${path}" alt="Allegato ${idx + 1}" class="attachment-thumbnail">
+                            </a>`;
+                        } else {
+                            return `<a href="${path}" target="_blank" class="attachment-link">📄 File ${idx + 1}</a>`;
+                        }
+                    }).join('');
+                    
+                    attachmentHtml = `
+                        <div class="request-attachment">
+                            📎 <strong>${paths.length}</strong> allegat${paths.length > 1 ? 'i' : 'o'}:
+                            <div class="attachment-thumbnails">${thumbnailsHtml}</div>
+                        </div>`;
+                }
+            }
 
             return `
-                <div class="card request-card" data-id="${r.id}">
-                    <div class="card-body">
-                        <div class="row align-items-center">
-                            <div class="col-md-3">
-                                <div class="fw-bold">${r.username}</div>
-                                <small class="text-muted">${r.type_name}</small>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="date-info">
-                                    <i class="bi bi-calendar3 me-1"></i>${dateFrom}${dateTo}
-                                </div>
-                                ${r.value ? `<div class="value-display">${r.value} ${valueUnit}</div>` : ''}
-                            </div>
-                            <div class="col-md-2">
-                                ${statusLabels[r.status] || ''}
-                            </div>
-                            <div class="col-md-2">
-                                <small class="text-muted">
-                                    <i class="bi bi-clock me-1"></i>${createdDate}
-                                </small>
-                            </div>
-                            <div class="col-md-2 text-end">
-                                ${actionBtn}
-                            </div>
-                        </div>
-                        ${r.notes ? `<div class="mt-2 text-muted small"><i class="bi bi-chat-left-text me-1"></i>${r.notes}</div>` : ''}
-                        ${reviewInfo}
+                <div class="request-card">
+                    <div>
+                        <div class="request-user">${r.username}</div>
+                        <div class="request-type">${r.type_name}</div>
                     </div>
+                    <div class="request-dates">
+                        📅 ${dateFrom}${dateTo}
+                    </div>
+                    <div class="request-value">
+                        ${r.value ? r.value + ' ' + valueUnit : '-'}
+                    </div>
+                    <span class="request-status ${statusClass}">${statusLabels[r.status]}</span>
+                    ${actionBtn}
+                    ${cdcHtml}
+                    ${attachmentHtml}
+                    ${notesHtml}
+                    ${reviewInfo}
                 </div>`;
         }
 
@@ -322,17 +829,22 @@
             const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km' };
             const valueUnit = valueUnits[r.value_type] || '';
             const dateFrom = formatDate(r.date_from);
-            const dateTo = r.date_to ? ` - ${formatDate(r.date_to)}` : '';
+            const dateTo = r.date_to ? ` → ${formatDate(r.date_to)}` : '';
 
-            document.getElementById('reviewRequestSummary').innerHTML = `
-                <div><strong>Utente:</strong> ${r.username}</div>
-                <div><strong>Tipo:</strong> ${r.type_name}</div>
-                <div><strong>Data:</strong> ${dateFrom}${dateTo}</div>
-                ${r.value ? `<div><strong>Valore:</strong> ${r.value} ${valueUnit}</div>` : ''}
-                ${r.notes ? `<div><strong>Note utente:</strong> ${r.notes}</div>` : ''}
+            document.getElementById('reviewSummary').innerHTML = `
+                <div class="summary-row"><span class="summary-label">Utente</span><span class="summary-value">${r.username}</span></div>
+                <div class="summary-row"><span class="summary-label">Tipo</span><span class="summary-value">${r.type_name}</span></div>
+                <div class="summary-row"><span class="summary-label">Data</span><span class="summary-value">${dateFrom}${dateTo}</span></div>
+                ${r.value ? `<div class="summary-row"><span class="summary-label">Valore</span><span class="summary-value">${r.value} ${valueUnit}</span></div>` : ''}
+                ${r.notes ? `<div class="summary-row"><span class="summary-label">Note</span><span class="summary-value">${r.notes}</span></div>` : ''}
             `;
 
-            reviewModal.show();
+            document.getElementById('reviewModal').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('reviewModal').classList.remove('open');
+            currentRequestId = null;
         }
 
         async function submitReview(status) {
@@ -352,7 +864,7 @@
                     throw new Error(err.error || 'Errore nella revisione');
                 }
 
-                reviewModal.hide();
+                closeModal();
                 loadRequests();
                 
                 const statusLabel = status === 'approved' ? 'approvata' : 'respinta';
@@ -362,20 +874,13 @@
             }
         }
 
-        function showToast(message, type = 'info') {
-            const toastHtml = `
-                <div class="toast-container position-fixed bottom-0 end-0 p-3">
-                    <div class="toast show bg-${type} text-white">
-                        <div class="toast-body">
-                            <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>
-                            ${message}
-                        </div>
-                    </div>
-                </div>`;
-            const container = document.createElement('div');
-            container.innerHTML = toastHtml;
-            document.body.appendChild(container);
-            setTimeout(() => container.remove(), 3000);
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
         }
     </script>
 </body>

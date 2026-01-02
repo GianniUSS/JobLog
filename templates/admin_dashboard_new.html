@@ -63,7 +63,7 @@
         
         /* Header */
         header {
-            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,0.9));
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
             color: #f8fafc;
             padding: 12px 20px;
             display: flex;
@@ -409,9 +409,9 @@
             <div class="menu-container">
                 <button id="menuToggle" class="header-icon-btn" aria-label="Menu">☰</button>
                 <nav class="hamburger-menu" id="hamburgerMenu">
-                    <a href="{{ url_for('home') }}" class="menu-item">
-                        <span class="menu-item-icon">🏠</span>
-                        <span>Home</span>
+                    <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item active">
+                        <span class="menu-item-icon">📊</span>
+                        <span>Dashboard</span>
                     </a>
                     <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
                         <span class="menu-item-icon">🗓️</span>
@@ -446,12 +446,11 @@
                         <span class="menu-item-icon">📥</span>
                         <span>Gestione Richieste</span>
                     </a>
-                    {% endif %}
-                    <div class="menu-divider"></div>
-                    <a href="{{ url_for('api_admin_day_sessions_export_xlsx') }}?date_start=" id="menuExport" class="menu-item">
-                        <span class="menu-item-icon">📥</span>
-                        <span>Esporta Excel</span>
+                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🏢</span>
+                        <span>Configurazione Azienda</span>
                     </a>
+                    {% endif %}
                     <div class="menu-divider"></div>
                     <a href="{{ url_for('logout') }}" class="menu-item danger">
                         <span class="menu-item-icon">🚪</span>

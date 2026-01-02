@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Notifiche - JOBLog</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f8fafc;
+            --brand: #667eea;
+            --brand-light: #818cf8;
+            --brand-dark: #4f46e5;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+            --success: #10b981;
+            --success-bg: #d1fae5;
+            --warning: #f59e0b;
+            --warning-bg: #fef3c7;
+            --danger: #ef4444;
+            --danger-bg: #fee2e2;
+            --info: #3b82f6;
+            --info-bg: #dbeafe;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --brand: #818cf8;
+            --brand-light: #a5b4fc;
+            --brand-dark: #6366f1;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #334155;
+            --border-light: #1e293b;
+            --success-bg: rgba(16, 185, 129, 0.2);
+            --warning-bg: rgba(245, 158, 11, 0.2);
+            --danger-bg: rgba(239, 68, 68, 0.2);
+            --info-bg: rgba(59, 130, 246, 0.2);
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding-top: var(--safe-top);
+            padding-bottom: calc(var(--safe-bottom) + 20px);
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+            padding: calc(var(--safe-top) + 20px) 20px 30px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+            pointer-events: none;
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: relative;
+        }
+        
+        .back-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+        
+        .back-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+        
+        .header-title {
+            flex: 1;
+        }
+        
+        .header-title h1 {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        
+        .header-title p {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.875rem;
+        }
+        
+        .refresh-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+        
+        .refresh-btn.loading i {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Main Content */
+        .main-content {
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+            margin-top: 20px;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .stat-item {
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            padding: 16px 12px;
+            text-align: center;
+            box-shadow: var(--shadow);
+            transition: all 0.2s ease;
+        }
+        
+        .stat-item:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--brand);
+            display: block;
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Filter Pills */
+        .filter-pills {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-pills::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .filter-pill {
+            padding: 8px 12px;
+            border-radius: 50px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .filter-pill i {
+            font-size: 0.75rem;
+        }
+        
+        .filter-pill:hover {
+            border-color: var(--brand);
+            color: var(--brand);
+        }
+        
+        .filter-pill.active {
+            background: var(--brand);
+            border-color: var(--brand);
+            color: white;
+        }
+        
+        .filter-pill .count {
+            background: rgba(255,255,255,0.2);
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+        }
+        
+        .filter-pill.active .count {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        /* Notifications List */
+        .notifications-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .notification-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 16px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-light);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            animation: slideIn 0.3s ease forwards;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        
+        .notification-card:hover {
+            box-shadow: var(--shadow);
+            transform: translateY(-2px);
+        }
+        
+        .notification-card.unread {
+            border-left: 4px solid var(--brand);
+            background: var(--bg-card-hover);
+        }
+        
+        @keyframes slideIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .notification-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        
+        .notification-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        
+        .notification-icon.info {
+            background: var(--info-bg);
+            color: var(--info);
+        }
+        
+        .notification-icon.success {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        
+        .notification-icon.warning {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+        
+        .notification-icon.danger {
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+        
+        .notification-icon.turni {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        
+        .notification-icon.request {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+        
+        .notification-meta {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .notification-title {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            line-height: 1.3;
+        }
+        
+        .notification-time {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .notification-body {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        
+        .notification-footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-light);
+        }
+        
+        .notification-kind {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--bg);
+            color: var(--text-secondary);
+        }
+        
+        .notification-kind.turni {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        
+        .notification-kind.request {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+        
+        .notification-kind.alert {
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+        
+        .notification-date {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .empty-state-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            font-size: 2rem;
+            color: var(--text-muted);
+        }
+        
+        .empty-state h3 {
+            font-size: 1.25rem;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+        
+        .empty-state p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        /* Loading */
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            padding: 40px;
+        }
+        
+        .loading-spinner::after {
+            content: '';
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--brand);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: calc(var(--safe-bottom) + 20px);
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--text-primary);
+            color: var(--bg);
+            padding: 14px 24px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            z-index: 1000;
+            opacity: 0;
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        
+        /* Responsive */
+        @media (max-width: 400px) {
+            .stats-bar {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 8px;
+            }
+            
+            .stat-item {
+                padding: 12px 8px;
+            }
+            
+            .stat-number {
+                font-size: 1.25rem;
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           HAMBURGER MENU & SIDE MENU
+           ═══════════════════════════════════════════════════════════════════ */
+        
+        /* Hamburger Button */
+        .hamburger-btn {
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            transition: all 0.2s ease;
+        }
+        .hamburger-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+        .hamburger-btn span {
+            display: block;
+            width: 20px;
+            height: 2px;
+            background: white;
+            border-radius: 1px;
+            transition: all 0.3s ease;
+        }
+        .hamburger-btn.active span:nth-child(1) {
+            transform: rotate(45deg) translate(5px, 5px);
+        }
+        .hamburger-btn.active span:nth-child(2) {
+            opacity: 0;
+        }
+        .hamburger-btn.active span:nth-child(3) {
+            transform: rotate(-45deg) translate(5px, -5px);
+        }
+
+        /* Side Menu Overlay */
+        .side-menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 600;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        .side-menu-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: -320px;
+            width: 300px;
+            max-width: 85vw;
+            height: 100vh;
+            height: 100dvh;
+            background: var(--bg-card);
+            z-index: 700;
+            transition: left 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+        }
+        .side-menu.active {
+            left: 0;
+        }
+        .side-menu-header {
+            padding: 20px;
+            padding-top: calc(20px + env(safe-area-inset-top, 0px));
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+        }
+        .side-menu-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .side-menu-user-info {
+            flex: 1;
+        }
+        .side-menu-user-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: white;
+        }
+        .side-menu-user-role {
+            font-size: 13px;
+            color: rgba(255,255,255,0.8);
+        }
+        .side-menu-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        .menu-section {
+            margin-bottom: 24px;
+        }
+        .menu-section-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            padding: 0 8px;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 14px;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+        .menu-item:hover {
+            background: var(--bg);
+        }
+        .menu-item.active {
+            background: rgba(102, 126, 234, 0.15);
+            color: var(--brand);
+            font-weight: 600;
+        }
+        .menu-item .icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+        .menu-item.danger {
+            color: var(--danger);
+        }
+        .notification-toggle-menu {
+            display: flex;
+            align-items: center;
+        }
+        .notification-toggle-menu .toggle-switch {
+            margin-left: auto;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 28px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 28px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: var(--success);
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(22px);
+        }
+    </style>
+</head>
+<body>
+    <!-- Side Menu Overlay -->
+    <div class="side-menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+    <!-- Side Menu -->
+    <div class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-avatar">{{ user_initials }}</div>
+            <div class="side-menu-user-info">
+                <div class="side-menu-user-name">{{ user_display }}</div>
+                <div class="side-menu-user-role">{{ user_role|default('Utente', true) }}</div>
+            </div>
+        </div>
+        
+        <div class="side-menu-content">
+            <div class="menu-section">
+                <div class="menu-section-title">📋 Menu</div>
+                <a href="{{ url_for('home') }}" class="menu-item">
+                    <span class="icon">🏠</span>
+                    <span>Home Timbrature</span>
+                </a>
+                <a href="{{ url_for('user_turni_page') }}" class="menu-item">
+                    <span class="icon">📅</span>
+                    <span>I Miei Turni</span>
+                </a>
+                <a href="{{ url_for('user_requests_page') }}" class="menu-item">
+                    <span class="icon">📝</span>
+                    <span>Richieste</span>
+                </a>
+                <a href="/user/notifications" class="menu-item active">
+                    <span class="icon">🔔</span>
+                    <span>Storico Notifiche</span>
+                </a>
+            </div>
+            
+            <div class="menu-section">
+                <div class="menu-section-title">⚙️ Impostazioni</div>
+                <div class="menu-item" onclick="toggleTheme(); closeMenu();">
+                    <span class="icon">🌙</span>
+                    <span>Tema Scuro</span>
+                </div>
+                <div class="menu-item notification-toggle-menu" id="notificationMenuItem">
+                    <span class="icon" id="notificationIcon">🔕</span>
+                    <span id="notificationLabel">Attiva Notifiche</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="pushToggle" onchange="togglePushNotifications()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="menu-section">
+                <a href="{{ url_for('logout') }}" class="menu-item danger">
+                    <span class="icon">🚪</span>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMenu()">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div class="header-title">
+                <h1>Notifiche</h1>
+                <p id="header-count">Centro messaggi</p>
+            </div>
+            <button class="refresh-btn" onclick="loadNotifications()">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Stats -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-number" id="stat-total">-</span>
+                <span class="stat-label">Totali</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="stat-today">-</span>
+                <span class="stat-label">Oggi</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="stat-week">-</span>
+                <span class="stat-label">Settimana</span>
+            </div>
+        </div>
+        
+        <!-- Filters -->
+        <div class="filter-pills">
+            <button class="filter-pill active" data-filter="all">
+                <i class="fas fa-inbox"></i>
+                Tutte
+            </button>
+            <button class="filter-pill" data-filter="turni">
+                <i class="fas fa-calendar-alt"></i>
+                Turni
+            </button>
+            <button class="filter-pill" data-filter="request">
+                <i class="fas fa-file-alt"></i>
+                Richieste
+            </button>
+            <button class="filter-pill" data-filter="other">
+                <i class="fas fa-bell"></i>
+                Altro
+            </button>
+        </div>
+        
+        <!-- Notifications List -->
+        <div id="notifications-list" class="notifications-list">
+            <div class="loading-spinner"></div>
+        </div>
+    </div>
+    
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // Theme detection
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                document.documentElement.setAttribute('data-theme', savedTheme);
+            } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        }
+        initTheme();
+
+        // Theme toggle
+        function toggleTheme() {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            if (isDark) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.removeItem('theme');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // Menu functions
+        function toggleMenu() {
+            const btn = document.getElementById('hamburgerBtn');
+            const menu = document.getElementById('sideMenu');
+            const overlay = document.getElementById('menuOverlay');
+            
+            btn.classList.toggle('active');
+            menu.classList.toggle('active');
+            overlay.classList.toggle('active');
+        }
+
+        function closeMenu() {
+            document.getElementById('hamburgerBtn').classList.remove('active');
+            document.getElementById('sideMenu').classList.remove('active');
+            document.getElementById('menuOverlay').classList.remove('active');
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // PUSH NOTIFICATIONS
+        // ═══════════════════════════════════════════════════════════════════
+
+        const pushState = {
+            supported: 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
+            subscribed: false,
+            publicKey: null,
+            permission: typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+        };
+
+        async function loadPushState() {
+            if (!pushState.supported) {
+                updatePushUI();
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/push/status');
+                const data = await res.json();
+                
+                if (data.enabled) {
+                    pushState.publicKey = data.publicKey;
+                    pushState.subscribed = data.subscribed || false;
+                }
+                
+                if ('serviceWorker' in navigator) {
+                    const registration = await navigator.serviceWorker.ready;
+                    const subscription = await registration.pushManager.getSubscription();
+                    pushState.subscribed = Boolean(subscription);
+                }
+            } catch (err) {
+                console.warn('Errore caricamento stato push:', err);
+            }
+            
+            updatePushUI();
+        }
+
+        function updatePushUI() {
+            const toggle = document.getElementById('pushToggle');
+            const icon = document.getElementById('notificationIcon');
+            const label = document.getElementById('notificationLabel');
+            const menuItem = document.getElementById('notificationMenuItem');
+            
+            if (!pushState.supported) {
+                menuItem.style.display = 'none';
+                return;
+            }
+            
+            toggle.checked = pushState.subscribed;
+            
+            if (pushState.subscribed) {
+                icon.textContent = '🔔';
+                label.textContent = 'Notifiche attive';
+            } else {
+                icon.textContent = '🔕';
+                label.textContent = 'Attiva Notifiche';
+            }
+            
+            if (pushState.permission === 'denied') {
+                toggle.disabled = true;
+                label.textContent = 'Notifiche bloccate';
+            }
+        }
+
+        async function togglePushNotifications() {
+            const toggle = document.getElementById('pushToggle');
+            
+            if (toggle.checked) {
+                await subscribeToPush();
+            } else {
+                await unsubscribeFromPush();
+            }
+            
+            updatePushUI();
+        }
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        async function subscribeToPush() {
+            if (!pushState.supported || !pushState.publicKey) {
+                showToast('⚠️ Notifiche non disponibili');
+                return false;
+            }
+            
+            if (Notification.permission === 'denied') {
+                showToast('⚠️ Notifiche bloccate dal browser');
+                return false;
+            }
+            
+            if (Notification.permission !== 'granted') {
+                const permission = await Notification.requestPermission();
+                pushState.permission = permission;
+                if (permission !== 'granted') {
+                    showToast('⚠️ Permesso notifiche negato');
+                    return false;
+                }
+            }
+            
+            try {
+                let registration = await navigator.serviceWorker.getRegistration();
+                if (!registration) {
+                    registration = await navigator.serviceWorker.register('/sw.js');
+                    await navigator.serviceWorker.ready;
+                }
+                
+                const applicationServerKey = urlBase64ToUint8Array(pushState.publicKey);
+                const subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey
+                });
+                
+                const payload = subscription.toJSON();
+                payload.userAgent = navigator.userAgent || null;
+                payload.contentEncoding = 'aes128gcm';
+                
+                const res = await fetch('/api/push/subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    pushState.subscribed = true;
+                    showToast('🔔 Notifiche attivate!');
+                    return true;
+                } else {
+                    throw new Error('Errore registrazione server');
+                }
+            } catch (err) {
+                console.error('Errore subscribe push:', err);
+                showToast('⚠️ Errore attivazione notifiche');
+                return false;
+            }
+        }
+
+        async function unsubscribeFromPush() {
+            try {
+                const registration = await navigator.serviceWorker.ready;
+                const subscription = await registration.pushManager.getSubscription();
+                
+                if (subscription) {
+                    await subscription.unsubscribe();
+                    
+                    await fetch('/api/push/unsubscribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ endpoint: subscription.endpoint })
+                    });
+                }
+                
+                pushState.subscribed = false;
+                showToast('🔕 Notifiche disattivate');
+            } catch (err) {
+                console.error('Errore unsubscribe push:', err);
+                showToast('⚠️ Errore disattivazione notifiche');
+            }
+        }
+        
+        // State
+        let allNotifications = [];
+        let currentFilter = 'all';
+
+        // DOM Elements
+        const filterPills = document.querySelectorAll('.filter-pill');
+        const notificationsList = document.getElementById('notifications-list');
+
+        // Filter Pills
+        filterPills.forEach(pill => {
+            pill.addEventListener('click', () => {
+                filterPills.forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                currentFilter = pill.dataset.filter;
+                renderNotifications();
+            });
+        });
+
+        // Toast
+        function showToast(message, duration = 3000) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), duration);
+        }
+
+        // Format Date
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        // Format DateTime
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('it-IT', { 
+                day: '2-digit', 
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Time Ago
+        function timeAgo(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            const now = new Date();
+            const diff = Math.floor((now - d) / 1000);
+            
+            if (diff < 60) return 'Adesso';
+            if (diff < 3600) return `${Math.floor(diff/60)} min fa`;
+            if (diff < 86400) return `${Math.floor(diff/3600)} ore fa`;
+            if (diff < 172800) return 'Ieri';
+            if (diff < 604800) return `${Math.floor(diff/86400)} giorni fa`;
+            return formatDate(dateStr);
+        }
+
+        // Get notification type from kind
+        function getNotificationType(kind) {
+            if (!kind) return 'other';
+            kind = kind.toLowerCase();
+            if (kind.includes('turni') || kind.includes('planning')) return 'turni';
+            if (kind.includes('request') || kind.includes('richiesta')) return 'request';
+            if (kind.includes('alert') || kind.includes('warning')) return 'alert';
+            return 'other';
+        }
+
+        // Get icon by type
+        function getIcon(type) {
+            switch(type) {
+                case 'turni': return 'fas fa-calendar-check';
+                case 'request': return 'fas fa-file-alt';
+                case 'alert': return 'fas fa-exclamation-triangle';
+                default: return 'fas fa-bell';
+            }
+        }
+
+        // Load Notifications
+        async function loadNotifications() {
+            const refreshBtn = document.querySelector('.refresh-btn');
+            refreshBtn.classList.add('loading');
+            
+            try {
+                const res = await fetch('/api/push/notifications?limit=100');
+                const data = await res.json();
+                allNotifications = data.items || data || [];
+                
+                // Update stats
+                updateStats();
+                renderNotifications();
+                
+                // Update header count
+                document.getElementById('header-count').textContent = 
+                    `${allNotifications.length} notifiche`;
+                    
+            } catch (err) {
+                console.error('Error loading notifications:', err);
+                notificationsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-exclamation-circle"></i>
+                        </div>
+                        <h3>Errore</h3>
+                        <p>Impossibile caricare le notifiche.<br>Riprova più tardi.</p>
+                    </div>
+                `;
+                showToast('Errore nel caricamento');
+            } finally {
+                refreshBtn.classList.remove('loading');
+            }
+        }
+
+        // Update Stats
+        function updateStats() {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+            let todayCount = 0;
+            let weekCount = 0;
+
+            allNotifications.forEach(n => {
+                const ts = n.sent_ts || n.created_ts;
+                if (!ts) return;
+                const d = new Date(ts);
+                if (d >= today) todayCount++;
+                if (d >= weekAgo) weekCount++;
+            });
+
+            document.getElementById('stat-total').textContent = allNotifications.length;
+            document.getElementById('stat-today').textContent = todayCount;
+            document.getElementById('stat-week').textContent = weekCount;
+        }
+
+        // Render Notifications
+        function renderNotifications() {
+            let filtered = allNotifications;
+            
+            if (currentFilter !== 'all') {
+                filtered = allNotifications.filter(n => {
+                    const type = getNotificationType(n.kind);
+                    if (currentFilter === 'other') {
+                        return type !== 'turni' && type !== 'request';
+                    }
+                    return type === currentFilter;
+                });
+            }
+
+            if (filtered.length === 0) {
+                notificationsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-bell-slash"></i>
+                        </div>
+                        <h3>Nessuna notifica</h3>
+                        <p>${currentFilter !== 'all' 
+                            ? 'Non ci sono notifiche di questo tipo.' 
+                            : 'Non hai ancora ricevuto notifiche.'}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            notificationsList.innerHTML = filtered.map((n, index) => {
+                const type = getNotificationType(n.kind);
+                const ts = n.sent_ts || n.created_ts;
+                const icon = getIcon(type);
+                
+                return `
+                    <div class="notification-card" style="animation-delay: ${index * 0.05}s">
+                        <div class="notification-header">
+                            <div class="notification-icon ${type}">
+                                <i class="${icon}"></i>
+                            </div>
+                            <div class="notification-meta">
+                                <div class="notification-title">${n.title || 'Notifica'}</div>
+                                <div class="notification-time">
+                                    <i class="far fa-clock"></i>
+                                    ${timeAgo(ts)}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="notification-body">${n.body || ''}</div>
+                        <div class="notification-footer">
+                            ${n.kind ? `<span class="notification-kind ${type}"><i class="${icon}"></i> ${n.kind}</span>` : ''}
+                            <span class="notification-date">${formatDateTime(ts)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            loadNotifications();
+            loadPushState();
+        });
+
+        // Pull to refresh (simple implementation)
+        let touchStartY = 0;
+        document.addEventListener('touchstart', e => {
+            touchStartY = e.touches[0].clientY;
+        });
+
+        document.addEventListener('touchend', e => {
+            const touchEndY = e.changedTouches[0].clientY;
+            const diff = touchEndY - touchStartY;
+            
+            // If scrolled to top and pulled down more than 100px
+            if (window.scrollY === 0 && diff > 100) {
+                loadNotifications();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,485 +1,753 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="it" data-theme="dark">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Regole Timbrature - Admin JOBLog</title>
-<style>
-:root {
-  --bg: #f1f5f9;
-  --bg-card: #ffffff;
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --primary: #3b82f6;
-  --primary-dark: #2563eb;
-  --green: #22c55e;
-  --green-dark: #16a34a;
-  --orange: #f97316;
-  --red: #ef4444;
-  --border: #e2e8f0;
-  --shadow: rgba(0,0,0,0.1);
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text-primary);
-  min-height: 100vh;
-}
-.header {
-  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-  color: white;
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.header-back {
-  width: 40px;
-  height: 40px;
-  background: rgba(255,255,255,0.1);
-  border: none;
-  border-radius: 10px;
-  color: white;
-  font-size: 20px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-}
-.header-back:hover {
-  background: rgba(255,255,255,0.2);
-}
-.header-info h1 {
-  font-size: 20px;
-  font-weight: 700;
-}
-.header-info p {
-  font-size: 13px;
-  opacity: 0.8;
-}
-.container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-.card {
-  background: var(--bg-card);
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 8px var(--shadow);
-}
-.card-title {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.card-title .icon {
-  font-size: 20px;
-}
-.card-description {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 20px;
-  line-height: 1.5;
-}
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-@media (max-width: 600px) {
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-}
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.form-group label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-.form-group input {
-  padding: 12px 14px;
-  border: 2px solid var(--border);
-  border-radius: 10px;
-  font-size: 15px;
-  transition: border-color 0.2s;
-}
-.form-group input:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-.form-group .hint {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.form-group .unit {
-  position: relative;
-}
-.form-group .unit input {
-  padding-right: 50px;
-}
-.form-group .unit::after {
-  content: 'min';
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 13px;
-  color: var(--text-secondary);
-  pointer-events: none;
-}
-.save-section {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-.btn-save {
-  padding: 14px 32px;
-  background: var(--green);
-  color: white;
-  border: none;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.btn-save:hover {
-  background: var(--green-dark);
-}
-.btn-save:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.save-message {
-  font-size: 14px;
-  color: var(--green);
-  display: none;
-}
-.save-message.error {
-  color: var(--red);
-}
-.save-message.show {
-  display: block;
-}
-.example-box {
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px;
-  margin-top: 16px;
-}
-.example-box h4 {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 10px;
-  color: var(--text-secondary);
-}
-.example-list {
-  font-size: 13px;
-  line-height: 1.8;
-}
-.example-list .row {
-  display: flex;
-  gap: 12px;
-}
-.example-list .time {
-  font-family: monospace;
-  background: white;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-}
-.example-list .arrow {
-  color: var(--text-secondary);
-}
-.example-list .result {
-  font-weight: 600;
-  color: var(--primary);
-}
-</style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Regole Timbrature · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --purple: #a855f7;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --purple: #9333ea;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .hidden { display: none !important; }
+
+        /* Header */
+        header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            color: #f8fafc;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+            overflow: visible;
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; overflow: visible; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Hamburger Menu */
+        .menu-container { position: relative; z-index: 310; }
+        .hamburger-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 8px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            min-width: 220px;
+            z-index: 300;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+        }
+        .hamburger-menu.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.15s ease;
+        }
+        .menu-item:hover { background: var(--bg-soft); }
+        .menu-item.active { background: var(--bg-soft); color: var(--brand); }
+        .menu-item-icon { font-size: 18px; }
+        .menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 4px 0;
+        }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+        .header-user {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 999px;
+        }
+        .header-user-avatar {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px;
+        }
+        .header-user-name { font-weight: 600; font-size: 14px; }
+
+        /* Main content */
+        main {
+            flex: 1;
+            padding: 24px;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--brand), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0 0 8px 0;
+        }
+        .page-subtitle {
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .card-description {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        /* Forms */
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        @media (max-width: 600px) {
+            .form-row { grid-template-columns: 1fr; }
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-group label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .form-group input {
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 15px;
+            font-weight: 600;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .form-group .hint {
+            font-size: 11px;
+            color: var(--muted);
+        }
+        .form-group .unit {
+            position: relative;
+        }
+        .form-group .unit input {
+            padding-right: 50px;
+        }
+        .form-group .unit::after {
+            content: 'min';
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 13px;
+            color: var(--muted);
+            pointer-events: none;
+        }
+        .form-group .unit.no-suffix::after {
+            content: none;
+        }
+        .form-group .unit.no-suffix input {
+            padding-right: 14px;
+        }
+        
+        /* Input con select tipo */
+        .input-with-type {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .input-with-type .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .input-with-type .field-group.min-field {
+            flex: 1;
+        }
+        .input-with-type .field-group label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .input-with-type .unit {
+            flex: 1;
+        }
+        .input-with-type select {
+            width: 60px;
+            padding: 12px 8px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: border-color 0.2s;
+            text-align: center;
+        }
+        .input-with-type select:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .input-with-type select option {
+            font-size: 16px;
+        }
+
+        /* Example Box */
+        .example-box {
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .example-box h4 {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: var(--muted);
+        }
+        .example-list {
+            font-size: 13px;
+            line-height: 2;
+        }
+        .example-list .row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .example-list .time {
+            font-family: monospace;
+            background: var(--bg-panel);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+        }
+        .example-list .arrow { color: var(--muted); }
+        .example-list .result {
+            font-weight: 700;
+            color: var(--brand);
+        }
+
+        /* Save Section */
+        .save-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 24px;
+        }
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn.primary {
+            background: var(--success);
+            color: white;
+        }
+        .btn.primary:hover { background: #16a34a; }
+        .btn.primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .save-message {
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .save-message.show { opacity: 1; }
+        .save-message.success { color: var(--success); }
+        .save-message.error { color: var(--danger); }
+    </style>
 </head>
 <body>
-
-<div class="header">
-  <a href="{{ url_for('admin_dashboard_page') }}" class="header-back">←</a>
-  <div class="header-info">
-    <h1>⚙️ Regole Timbrature</h1>
-    <p>Configura arrotondamenti e normalizzazioni</p>
-  </div>
-</div>
-
-<div class="container">
-  <!-- Regole Normalizzazione -->
-  <div class="card">
-    <h2 class="card-title">
-      <span class="icon">🎯</span>
-      Normalizzazione (con turno programmato)
-    </h2>
-    <p class="card-description">
-      Quando un operatore ha un turno programmato, la timbratura viene normalizzata all'orario del turno 
-      se rientra nella finestra definita (anticipo + tolleranza ritardo).
-    </p>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label>Anticipo Massimo</label>
-        <div class="unit">
-          <input type="number" id="anticipoMax" min="0" max="120" value="30">
+    <header>
+        <div class="header-left">
+            <div class="menu-container">
+                <button id="menuToggle" class="header-icon-btn" type="button" aria-label="Menu">☰</button>
+                <nav id="hamburgerMenu" class="hamburger-menu">
+                    <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📊</span>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+                        <span class="menu-item-icon">�️</span>
+                        <span>Gestione Sessioni</span>
+                    </a>
+                    <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🔬</span>
+                        <span>Analisi Attività</span>
+                    </a>
+                    <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📅</span>
+                        <span>Pianificazioni Rentman</span>
+                    </a>
+                    {% if is_admin %}
+                    <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+                        <span class="menu-item-icon">👥</span>
+                        <span>Gestione Utenti</span>
+                    </a>
+                    <a href="{{ url_for('admin_operators') }}" class="menu-item">
+                        <span class="menu-item-icon">🧑‍🔧</span>
+                        <span>Gestione Operatori</span>
+                    </a>
+                    <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item active">
+                        <span class="menu-item-icon">⚙️</span>
+                        <span>Regole Timbrature</span>
+                    </a>
+                    <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📝</span>
+                        <span>Tipologie Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📥</span>
+                        <span>Gestione Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🏢</span>
+                        <span>Configurazione Azienda</span>
+                    </a>
+                    {% endif %}
+                    <div class="menu-divider"></div>
+                    <a href="{{ url_for('logout') }}" class="menu-item danger">
+                        <span class="menu-item-icon">🚪</span>
+                        <span>Logout</span>
+                    </a>
+                </nav>
+            </div>
+            <span class="logo-title">Regole Timbrature</span>
         </div>
-        <span class="hint">Quanto prima del turno si può timbrare e normalizzare</span>
-      </div>
-      <div class="form-group">
-        <label>Tolleranza Ritardo</label>
-        <div class="unit">
-          <input type="number" id="tolleranzaRitardo" min="0" max="60" value="5">
+        <div class="header-actions">
+            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <div class="header-user">
+                <div class="header-user-avatar">{{ session.get('username', 'U')[0]|upper }}</div>
+                <span class="header-user-name">{{ session.get('username', 'Utente') }}</span>
+            </div>
         </div>
-        <span class="hint">Minuti di ritardo tollerati (timbrata = orario turno)</span>
-      </div>
-    </div>
-    
-    <div class="example-box">
-      <h4>📖 Esempio con turno alle 08:00</h4>
-      <div class="example-list" id="exampleNormalizzazione">
-        <!-- Popolato via JS -->
-      </div>
-    </div>
-  </div>
-  
-  <!-- Regole Arrotondamento -->
-  <div class="card">
-    <h2 class="card-title">
-      <span class="icon">⏱️</span>
-      Arrotondamento (senza turno o fuori finestra)
-    </h2>
-    <p class="card-description">
-      Quando non c'è un turno programmato o la timbratura è fuori dalla finestra di normalizzazione, 
-      si applica l'arrotondamento: in eccesso per l'ingresso, in difetto per l'uscita.
-    </p>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label>Arrotondamento Ingresso</label>
-        <div class="unit">
-          <input type="number" id="arrotondamentoIngresso" min="1" max="60" value="15">
+    </header>
+
+    <main>
+        <h1 class="page-title">⚙️ Regole Timbrature</h1>
+        <p class="page-subtitle">Configura arrotondamenti e normalizzazioni per le timbrature</p>
+
+        <!-- Regole Normalizzazione -->
+        <div class="card">
+            <h2 class="card-title">🎯 Normalizzazione (con turno programmato)</h2>
+            <p class="card-description">
+                Quando un operatore ha un turno programmato, la timbratura viene normalizzata all'orario del turno 
+                se rientra nella finestra definita (anticipo + tolleranza ritardo).
+            </p>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Anticipo Massimo</label>
+                    <div class="unit">
+                        <input type="number" id="anticipoMax" min="0" max="120" value="30">
+                    </div>
+                    <span class="hint">Quanto prima del turno si può timbrare e normalizzare</span>
+                </div>
+                <div class="form-group">
+                    <label>Tolleranza Ritardo</label>
+                    <div class="unit">
+                        <input type="number" id="tolleranzaRitardo" min="0" max="60" value="5">
+                    </div>
+                    <span class="hint">Minuti di ritardo tollerati (timbrata = orario turno)</span>
+                </div>
+            </div>
+            
+            <div class="example-box">
+                <h4>📖 Esempio con turno alle 08:00</h4>
+                <div class="example-list" id="exampleNormalizzazione"></div>
+            </div>
         </div>
-        <span class="hint">Arrotonda in eccesso al prossimo blocco</span>
-      </div>
-      <div class="form-group">
-        <label>Arrotondamento Uscita</label>
-        <div class="unit">
-          <input type="number" id="arrotondamentoUscita" min="1" max="60" value="15">
+        
+        <!-- Regole Arrotondamento -->
+        <div class="card">
+            <h2 class="card-title">⏱️ Arrotondamento (senza turno o fuori finestra)</h2>
+            <p class="card-description">
+                Quando non c'è un turno programmato o la timbratura è fuori dalla finestra di normalizzazione, 
+                si applica l'arrotondamento: in eccesso per l'ingresso, in difetto per l'uscita.
+            </p>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Arrotondamento Ingresso</label>
+                    <div class="input-with-type">
+                        <div class="field-group min-field">
+                            <label>Min</label>
+                            <div class="unit no-suffix">
+                                <input type="number" id="arrotondamentoIngresso" min="1" max="60" value="15">
+                            </div>
+                        </div>
+                        <div class="field-group">
+                            <label>Tipo</label>
+                            <select id="arrotondamentoIngressoTipo" title="Tipo arrotondamento">
+                                <option value="+">+</option>
+                                <option value="-">-</option>
+                                <option value="~">~</option>
+                            </select>
+                        </div>
+                    </div>
+                    <span class="hint">+ eccesso, - difetto, ~ al più vicino</span>
+                </div>
+                <div class="form-group">
+                    <label>Arrotondamento Uscita</label>
+                    <div class="input-with-type">
+                        <div class="field-group min-field">
+                            <label>Min</label>
+                            <div class="unit no-suffix">
+                                <input type="number" id="arrotondamentoUscita" min="1" max="60" value="15">
+                            </div>
+                        </div>
+                        <div class="field-group">
+                            <label>Tipo</label>
+                            <select id="arrotondamentoUscitaTipo" title="Tipo arrotondamento">
+                                <option value="+">+</option>
+                                <option value="-" selected>-</option>
+                                <option value="~">~</option>
+                            </select>
+                        </div>
+                    </div>
+                    <span class="hint">+ eccesso, - difetto, ~ al più vicino</span>
+                </div>
+            </div>
+            
+            <div class="example-box">
+                <h4>📖 Esempio arrotondamento</h4>
+                <div class="example-list" id="exampleArrotondamento"></div>
+            </div>
         </div>
-        <span class="hint">Arrotonda in difetto al blocco precedente</span>
-      </div>
-    </div>
-    
-    <div class="example-box">
-      <h4>📖 Esempio arrotondamento</h4>
-      <div class="example-list" id="exampleArrotondamento">
-        <!-- Popolato via JS -->
-      </div>
-    </div>
-  </div>
-  
-  <!-- Regole Pause -->
-  <div class="card">
-    <h2 class="card-title">
-      <span class="icon">☕</span>
-      Regole Pause
-    </h2>
-    <p class="card-description">
-      Le pause hanno un blocco minimo e vengono arrotondate per incrementi successivi, 
-      con una tolleranza prima di passare al blocco superiore.
-    </p>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label>Blocco Minimo Pausa</label>
-        <div class="unit">
-          <input type="number" id="pausaBloccoMinimo" min="5" max="120" value="30">
+        
+        <!-- Regole Pause -->
+        <div class="card">
+            <h2 class="card-title">☕ Regole Pause</h2>
+            <p class="card-description">
+                Le pause hanno un blocco minimo e vengono arrotondate per incrementi successivi, 
+                con una tolleranza prima di passare al blocco superiore.
+            </p>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Blocco Minimo Pausa</label>
+                    <div class="unit">
+                        <input type="number" id="pausaBloccoMinimo" min="5" max="120" value="30">
+                    </div>
+                    <span class="hint">Durata minima conteggiata per la pausa</span>
+                </div>
+                <div class="form-group">
+                    <label>Incremento</label>
+                    <div class="unit">
+                        <input type="number" id="pausaIncremento" min="5" max="60" value="15">
+                    </div>
+                    <span class="hint">Blocco di arrotondamento dopo il minimo</span>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Tolleranza Pausa</label>
+                    <div class="unit">
+                        <input type="number" id="pausaTolleranza" min="0" max="30" value="5">
+                    </div>
+                    <span class="hint">Minuti extra tollerati prima del prossimo blocco</span>
+                </div>
+            </div>
+            
+            <div class="example-box">
+                <h4>📖 Esempio durata pause</h4>
+                <div class="example-list" id="examplePause"></div>
+            </div>
         </div>
-        <span class="hint">Durata minima conteggiata per la pausa</span>
-      </div>
-      <div class="form-group">
-        <label>Incremento</label>
-        <div class="unit">
-          <input type="number" id="pausaIncremento" min="5" max="60" value="15">
+        
+        <!-- Salvataggio -->
+        <div class="save-section">
+            <button class="btn primary" id="btnSave">💾 Salva Regole</button>
+            <span class="save-message" id="saveMessage"></span>
         </div>
-        <span class="hint">Blocco di arrotondamento dopo il minimo</span>
-      </div>
-    </div>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label>Tolleranza Pausa</label>
-        <div class="unit">
-          <input type="number" id="pausaTolleranza" min="0" max="30" value="5">
-        </div>
-        <span class="hint">Minuti extra tollerati prima del prossimo blocco</span>
-      </div>
-    </div>
-    
-    <div class="example-box">
-      <h4>📖 Esempio durata pause</h4>
-      <div class="example-list" id="examplePause">
-        <!-- Popolato via JS -->
-      </div>
-    </div>
-  </div>
-  
-  <!-- Salvataggio -->
-  <div class="save-section">
-    <button class="btn-save" id="btnSave" onclick="saveRules()">💾 Salva Regole</button>
-    <span class="save-message" id="saveMessage"></span>
-  </div>
-</div>
+    </main>
 
-<script>
-// Carica regole all'avvio
-async function loadRules() {
-  try {
-    const res = await fetch('/api/admin/timbratura-rules');
-    if (res.ok) {
-      const data = await res.json();
-      document.getElementById('anticipoMax').value = data.anticipo_max_minuti || 30;
-      document.getElementById('tolleranzaRitardo').value = data.tolleranza_ritardo_minuti || 5;
-      document.getElementById('arrotondamentoIngresso').value = data.arrotondamento_ingresso_minuti || 15;
-      document.getElementById('arrotondamentoUscita').value = data.arrotondamento_uscita_minuti || 15;
-      document.getElementById('pausaBloccoMinimo').value = data.pausa_blocco_minimo_minuti || 30;
-      document.getElementById('pausaIncremento').value = data.pausa_incremento_minuti || 15;
-      document.getElementById('pausaTolleranza').value = data.pausa_tolleranza_minuti || 5;
-    }
-  } catch (err) {
-    console.error('Errore caricamento regole:', err);
-  }
-  updateExamples();
-}
+    <script>
+        // Menu toggle
+        document.getElementById('menuToggle').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('hamburgerMenu').classList.toggle('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.menu-container')) {
+                document.getElementById('hamburgerMenu').classList.remove('open');
+            }
+        });
 
-// Salva regole
-async function saveRules() {
-  const btn = document.getElementById('btnSave');
-  const msg = document.getElementById('saveMessage');
-  
-  btn.disabled = true;
-  btn.textContent = 'Salvataggio...';
-  msg.className = 'save-message';
-  
-  const data = {
-    anticipo_max_minuti: parseInt(document.getElementById('anticipoMax').value) || 30,
-    tolleranza_ritardo_minuti: parseInt(document.getElementById('tolleranzaRitardo').value) || 5,
-    arrotondamento_ingresso_minuti: parseInt(document.getElementById('arrotondamentoIngresso').value) || 15,
-    arrotondamento_uscita_minuti: parseInt(document.getElementById('arrotondamentoUscita').value) || 15,
-    pausa_blocco_minimo_minuti: parseInt(document.getElementById('pausaBloccoMinimo').value) || 30,
-    pausa_incremento_minuti: parseInt(document.getElementById('pausaIncremento').value) || 15,
-    pausa_tolleranza_minuti: parseInt(document.getElementById('pausaTolleranza').value) || 5
-  };
-  
-  try {
-    const res = await fetch('/api/admin/timbratura-rules', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    
-    const result = await res.json();
-    
-    if (res.ok && result.success) {
-      msg.textContent = '✓ Regole salvate con successo!';
-      msg.className = 'save-message show';
-    } else {
-      msg.textContent = result.error || 'Errore nel salvataggio';
-      msg.className = 'save-message error show';
-    }
-  } catch (err) {
-    console.error('Errore:', err);
-    msg.textContent = 'Errore di connessione';
-    msg.className = 'save-message error show';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '💾 Salva Regole';
-    setTimeout(() => msg.className = 'save-message', 3000);
-  }
-}
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('click', () => {
+            const root = document.documentElement;
+            const current = root.dataset.theme;
+            const next = current === 'dark' ? 'light' : 'dark';
+            root.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+        });
 
-// Aggiorna esempi in tempo reale
-function updateExamples() {
-  const anticipo = parseInt(document.getElementById('anticipoMax').value) || 30;
-  const tolleranza = parseInt(document.getElementById('tolleranzaRitardo').value) || 5;
-  const arrIngresso = parseInt(document.getElementById('arrotondamentoIngresso').value) || 15;
-  const arrUscita = parseInt(document.getElementById('arrotondamentoUscita').value) || 15;
-  const pausaMin = parseInt(document.getElementById('pausaBloccoMinimo').value) || 30;
-  const pausaInc = parseInt(document.getElementById('pausaIncremento').value) || 15;
-  const pausaToll = parseInt(document.getElementById('pausaTolleranza').value) || 5;
-  
-  // Esempio normalizzazione (turno 08:00)
-  const turnoH = 8, turnoM = 0;
-  const minAnticipo = turnoH * 60 + turnoM - anticipo;
-  const maxRitardo = turnoH * 60 + turnoM + tolleranza;
-  
-  document.getElementById('exampleNormalizzazione').innerHTML = `
-    <div class="row"><span class="time">${formatTime(minAnticipo)}</span> <span class="arrow">→</span> <span class="result">08:00</span> (anticipo ${anticipo} min)</div>
-    <div class="row"><span class="time">07:45</span> <span class="arrow">→</span> <span class="result">08:00</span> (nel range)</div>
-    <div class="row"><span class="time">08:0${tolleranza}</span> <span class="arrow">→</span> <span class="result">08:00</span> (tolleranza)</div>
-    <div class="row"><span class="time">08:${String(tolleranza + 1).padStart(2, '0')}</span> <span class="arrow">→</span> <span class="result">Arrotondamento</span> (fuori range)</div>
-  `;
-  
-  // Esempio arrotondamento
-  const ex1 = Math.ceil(6 / arrIngresso) * arrIngresso;
-  const ex2 = Math.ceil((arrIngresso + 1) / arrIngresso) * arrIngresso;
-  const ex3 = Math.floor(52 / arrUscita) * arrUscita;
-  
-  document.getElementById('exampleArrotondamento').innerHTML = `
-    <div class="row"><b>Ingresso:</b></div>
-    <div class="row"><span class="time">08:06</span> <span class="arrow">→</span> <span class="result">08:${String(ex1).padStart(2, '0')}</span></div>
-    <div class="row"><span class="time">08:${String(arrIngresso + 1).padStart(2, '0')}</span> <span class="arrow">→</span> <span class="result">08:${String(ex2).padStart(2, '0')}</span></div>
-    <div class="row"><b>Uscita:</b></div>
-    <div class="row"><span class="time">17:52</span> <span class="arrow">→</span> <span class="result">17:${String(ex3).padStart(2, '0')}</span></div>
-  `;
-  
-  // Esempio pause
-  const p1 = pausaMin; // 10 min effettivi
-  const p2 = pausaMin; // 30 min effettivi
-  const p3 = pausaMin; // 33 min con tolleranza
-  const p4 = pausaMin + pausaInc; // 36 min > tolleranza
-  
-  document.getElementById('examplePause').innerHTML = `
-    <div class="row"><span class="time">10 min</span> <span class="arrow">→</span> <span class="result">${pausaMin} min</span> (blocco minimo)</div>
-    <div class="row"><span class="time">${pausaMin} min</span> <span class="arrow">→</span> <span class="result">${pausaMin} min</span> (esatto)</div>
-    <div class="row"><span class="time">${pausaMin + pausaToll} min</span> <span class="arrow">→</span> <span class="result">${pausaMin} min</span> (≤${pausaToll} tolleranza)</div>
-    <div class="row"><span class="time">${pausaMin + pausaToll + 1} min</span> <span class="arrow">→</span> <span class="result">${pausaMin + pausaInc} min</span> (>${pausaToll} tolleranza)</div>
-  `;
-}
+        // Load rules
+        async function loadRules() {
+            try {
+                const res = await fetch('/api/admin/timbratura-rules');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('anticipoMax').value = data.anticipo_max_minuti || 30;
+                    document.getElementById('tolleranzaRitardo').value = data.tolleranza_ritardo_minuti || 5;
+                    document.getElementById('arrotondamentoIngresso').value = data.arrotondamento_ingresso_minuti || 15;
+                    document.getElementById('arrotondamentoIngressoTipo').value = data.arrotondamento_ingresso_tipo || '+';
+                    document.getElementById('arrotondamentoUscita').value = data.arrotondamento_uscita_minuti || 15;
+                    document.getElementById('arrotondamentoUscitaTipo').value = data.arrotondamento_uscita_tipo || '-';
+                    document.getElementById('pausaBloccoMinimo').value = data.pausa_blocco_minimo_minuti || 30;
+                    document.getElementById('pausaIncremento').value = data.pausa_incremento_minuti || 15;
+                    document.getElementById('pausaTolleranza').value = data.pausa_tolleranza_minuti || 5;
+                }
+            } catch (err) {
+                console.error('Errore caricamento regole:', err);
+            }
+            updateExamples();
+        }
 
-function formatTime(minutes) {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
+        // Save rules
+        document.getElementById('btnSave').addEventListener('click', async () => {
+            const btn = document.getElementById('btnSave');
+            const msg = document.getElementById('saveMessage');
+            
+            btn.disabled = true;
+            btn.textContent = 'Salvataggio...';
+            msg.className = 'save-message';
+            
+            const data = {
+                anticipo_max_minuti: parseInt(document.getElementById('anticipoMax').value) || 30,
+                tolleranza_ritardo_minuti: parseInt(document.getElementById('tolleranzaRitardo').value) || 5,
+                arrotondamento_ingresso_minuti: parseInt(document.getElementById('arrotondamentoIngresso').value) || 15,
+                arrotondamento_ingresso_tipo: document.getElementById('arrotondamentoIngressoTipo').value || '+',
+                arrotondamento_uscita_minuti: parseInt(document.getElementById('arrotondamentoUscita').value) || 15,
+                arrotondamento_uscita_tipo: document.getElementById('arrotondamentoUscitaTipo').value || '-',
+                pausa_blocco_minimo_minuti: parseInt(document.getElementById('pausaBloccoMinimo').value) || 30,
+                pausa_incremento_minuti: parseInt(document.getElementById('pausaIncremento').value) || 15,
+                pausa_tolleranza_minuti: parseInt(document.getElementById('pausaTolleranza').value) || 5
+            };
+            
+            try {
+                const res = await fetch('/api/admin/timbratura-rules', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await res.json();
+                
+                if (res.ok && result.success) {
+                    msg.textContent = '✓ Regole salvate con successo!';
+                    msg.className = 'save-message success show';
+                } else {
+                    msg.textContent = result.error || 'Errore nel salvataggio';
+                    msg.className = 'save-message error show';
+                }
+            } catch (err) {
+                console.error('Errore:', err);
+                msg.textContent = 'Errore di connessione';
+                msg.className = 'save-message error show';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '💾 Salva Regole';
+                setTimeout(() => msg.className = 'save-message', 3000);
+            }
+        });
 
-// Eventi input per aggiornare esempi
-document.querySelectorAll('input').forEach(input => {
-  input.addEventListener('input', updateExamples);
-});
+        // Update examples
+        function updateExamples() {
+            const anticipo = parseInt(document.getElementById('anticipoMax').value) || 30;
+            const tolleranza = parseInt(document.getElementById('tolleranzaRitardo').value) || 5;
+            const arrIngresso = parseInt(document.getElementById('arrotondamentoIngresso').value) || 15;
+            const arrIngressoTipo = document.getElementById('arrotondamentoIngressoTipo').value || '+';
+            const arrUscita = parseInt(document.getElementById('arrotondamentoUscita').value) || 15;
+            const arrUscitaTipo = document.getElementById('arrotondamentoUscitaTipo').value || '-';
+            const pausaMin = parseInt(document.getElementById('pausaBloccoMinimo').value) || 30;
+            const pausaInc = parseInt(document.getElementById('pausaIncremento').value) || 15;
+            const pausaToll = parseInt(document.getElementById('pausaTolleranza').value) || 5;
+            
+            const turnoH = 8, turnoM = 0;
+            const minAnticipo = turnoH * 60 + turnoM - anticipo;
+            
+            document.getElementById('exampleNormalizzazione').innerHTML = `
+                <div class="row"><span class="time">${formatTime(minAnticipo)}</span> <span class="arrow">→</span> <span class="result">08:00</span> (anticipo ${anticipo} min)</div>
+                <div class="row"><span class="time">07:45</span> <span class="arrow">→</span> <span class="result">08:00</span> (nel range)</div>
+                <div class="row"><span class="time">08:0${tolleranza}</span> <span class="arrow">→</span> <span class="result">08:00</span> (tolleranza)</div>
+                <div class="row"><span class="time">08:${String(tolleranza + 1).padStart(2, '0')}</span> <span class="arrow">→</span> <span class="result">Arrotondamento</span> (fuori range)</div>
+            `;
+            
+            // Calcola esempi in base al tipo di arrotondamento
+            const ex1Ingresso = arrotonda(6, arrIngresso, arrIngressoTipo);
+            const ex2Ingresso = arrotonda(arrIngresso + 1, arrIngresso, arrIngressoTipo);
+            const ex3Uscita = arrotonda(52, arrUscita, arrUscitaTipo);
+            
+            const tipoLabelIngresso = arrIngressoTipo === '+' ? 'eccesso' : (arrIngressoTipo === '-' ? 'difetto' : 'vicino');
+            const tipoLabelUscita = arrUscitaTipo === '+' ? 'eccesso' : (arrUscitaTipo === '-' ? 'difetto' : 'vicino');
+            
+            document.getElementById('exampleArrotondamento').innerHTML = `
+                <div class="row"><b>Ingresso (${tipoLabelIngresso}):</b></div>
+                <div class="row"><span class="time">08:06</span> <span class="arrow">→</span> <span class="result">08:${String(ex1Ingresso).padStart(2, '0')}</span></div>
+                <div class="row"><span class="time">08:${String(arrIngresso + 1).padStart(2, '0')}</span> <span class="arrow">→</span> <span class="result">08:${String(ex2Ingresso).padStart(2, '0')}</span></div>
+                <div class="row"><b>Uscita (${tipoLabelUscita}):</b></div>
+                <div class="row"><span class="time">17:52</span> <span class="arrow">→</span> <span class="result">17:${String(ex3Uscita).padStart(2, '0')}</span></div>
+            `;
+            
+            document.getElementById('examplePause').innerHTML = `
+                <div class="row"><span class="time">10 min</span> <span class="arrow">→</span> <span class="result">${pausaMin} min</span> (blocco minimo)</div>
+                <div class="row"><span class="time">${pausaMin} min</span> <span class="arrow">→</span> <span class="result">${pausaMin} min</span> (esatto)</div>
+                <div class="row"><span class="time">${pausaMin + pausaToll} min</span> <span class="arrow">→</span> <span class="result">${pausaMin} min</span> (≤${pausaToll} tolleranza)</div>
+                <div class="row"><span class="time">${pausaMin + pausaToll + 1} min</span> <span class="arrow">→</span> <span class="result">${pausaMin + pausaInc} min</span> (>${pausaToll} tolleranza)</div>
+            `;
+        }
+        
+        // Funzione di arrotondamento in base al tipo
+        function arrotonda(minuti, blocco, tipo) {
+            if (tipo === '+') {
+                return Math.ceil(minuti / blocco) * blocco;
+            } else if (tipo === '-') {
+                return Math.floor(minuti / blocco) * blocco;
+            } else {
+                return Math.round(minuti / blocco) * blocco;
+            }
+        }
 
-// Inizializzazione
-loadRules();
-</script>
+        function formatTime(minutes) {
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        }
 
+        // Events
+        document.querySelectorAll('input, select').forEach(el => {
+            el.addEventListener('input', updateExamples);
+            el.addEventListener('change', updateExamples);
+        });
+
+        // Init
+        loadRules();
+    </script>
 </body>
 </html>

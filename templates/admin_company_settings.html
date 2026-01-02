@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Configurazione Azienda · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --purple: #a855f7;
+            --pink: #ec4899;
+            --cyan: #06b6d4;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --purple: #9333ea;
+            --pink: #db2777;
+            --cyan: #0891b2;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .hidden { display: none !important; }
+
+        /* Header */
+        header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            color: #f8fafc;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+            overflow: visible;
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; overflow: visible; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Hamburger Menu */
+        .menu-container { position: relative; z-index: 310; }
+        .hamburger-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 8px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            min-width: 220px;
+            z-index: 300;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+        }
+        .hamburger-menu.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.15s ease;
+        }
+        .menu-item:hover { background: var(--bg-soft); }
+        .menu-item.active { background: var(--bg-soft); color: var(--brand); }
+        .menu-item-icon { font-size: 18px; }
+        .menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+        .header-user {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 999px;
+        }
+        .header-user-avatar {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px;
+        }
+        .header-user-name { font-weight: 600; font-size: 14px; }
+
+        /* Main content */
+        main {
+            flex: 1;
+            padding: 24px;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .page-header {
+            margin-bottom: 24px;
+        }
+        .page-title {
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+        .page-subtitle {
+            color: var(--muted);
+            font-size: 15px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .card-title-icon {
+            font-size: 22px;
+        }
+
+        /* Form */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+        .form-label {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text);
+        }
+        .form-input, .form-textarea {
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 15px;
+            font-family: inherit;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-input:focus, .form-textarea:focus {
+            outline: none;
+            border-color: var(--brand);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+        }
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        .form-hint {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        /* Logo upload */
+        .logo-upload-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            padding: 24px;
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            background: var(--bg-soft);
+            transition: border-color 0.2s, background 0.2s;
+            cursor: pointer;
+        }
+        .logo-upload-area:hover {
+            border-color: var(--brand);
+            background: rgba(56, 189, 248, 0.05);
+        }
+        .logo-upload-area.dragover {
+            border-color: var(--brand);
+            background: rgba(56, 189, 248, 0.1);
+        }
+        .logo-preview {
+            max-width: 200px;
+            max-height: 120px;
+            border-radius: 8px;
+            object-fit: contain;
+        }
+        .logo-placeholder {
+            width: 100px;
+            height: 100px;
+            border-radius: 12px;
+            background: var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: var(--muted);
+        }
+        .logo-upload-text {
+            text-align: center;
+        }
+        .logo-upload-text strong {
+            display: block;
+            font-size: 15px;
+            margin-bottom: 4px;
+        }
+        .logo-upload-text span {
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .logo-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        /* Modules section */
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+        .module-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 16px;
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .module-card:hover {
+            border-color: var(--brand);
+        }
+        .module-card.enabled {
+            border-color: var(--success);
+            background: rgba(34, 197, 94, 0.08);
+        }
+        .module-icon {
+            font-size: 28px;
+        }
+        .module-info {
+            flex: 1;
+        }
+        .module-name {
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 2px;
+        }
+        .module-desc {
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .module-toggle {
+            width: 48px;
+            height: 26px;
+            border-radius: 13px;
+            background: var(--border);
+            position: relative;
+            transition: background 0.2s;
+        }
+        .module-toggle::after {
+            content: '';
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: white;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.2s;
+        }
+        .module-card.enabled .module-toggle {
+            background: var(--success);
+        }
+        .module-card.enabled .module-toggle::after {
+            transform: translateX(22px);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn.primary {
+            background: var(--brand);
+            color: white;
+        }
+        .btn.primary:hover {
+            background: var(--brand-strong);
+            transform: translateY(-1px);
+        }
+        .btn.secondary {
+            background: var(--bg-soft);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn.secondary:hover {
+            background: var(--border);
+        }
+        .btn.danger {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+        }
+        .btn.danger:hover {
+            background: rgba(239, 68, 68, 0.25);
+        }
+        .btn.sm {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        .actions-bar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            margin-top: 20px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 14px 20px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 14px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+        .toast.success {
+            background: var(--success);
+            color: white;
+        }
+        .toast.error {
+            background: var(--danger);
+            color: white;
+        }
+        @keyframes slideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* Loading */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 500;
+        }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--border);
+            border-top-color: var(--brand);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 600px) {
+            main { padding: 16px; }
+            .card { padding: 16px; }
+            .form-grid { grid-template-columns: 1fr; }
+            .page-title { font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <div class="menu-container">
+                <button id="menuToggle" class="header-icon-btn" aria-label="Menu">☰</button>
+                <nav class="hamburger-menu" id="hamburgerMenu">
+                    <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📊</span>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🗓️</span>
+                        <span>Gestione Sessioni</span>
+                    </a>
+                    <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🔬</span>
+                        <span>Analisi Attività</span>
+                    </a>
+                    <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📅</span>
+                        <span>Pianificazioni Rentman</span>
+                    </a>
+                    {% if is_admin %}
+                    <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+                        <span class="menu-item-icon">👥</span>
+                        <span>Gestione Utenti</span>
+                    </a>
+                    <a href="{{ url_for('admin_operators') }}" class="menu-item">
+                        <span class="menu-item-icon">🧑‍🔧</span>
+                        <span>Gestione Operatori</span>
+                    </a>
+                    <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
+                        <span class="menu-item-icon">⚙️</span>
+                        <span>Regole Timbrature</span>
+                    </a>
+                    <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📝</span>
+                        <span>Tipologie Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📥</span>
+                        <span>Gestione Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item active">
+                        <span class="menu-item-icon">🏢</span>
+                        <span>Configurazione Azienda</span>
+                    </a>
+                    {% endif %}
+                    <div class="menu-divider"></div>
+                    <a href="{{ url_for('logout') }}" class="menu-item danger">
+                        <span class="menu-item-icon">🚪</span>
+                        <span>Logout</span>
+                    </a>
+                </nav>
+            </div>
+            <span class="logo-title">🏢 Configurazione Azienda</span>
+        </div>
+        <div class="header-actions">
+            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <div class="header-user">
+                <span class="header-user-avatar">{{ user_initials or '?' }}</span>
+                <span class="header-user-name">{{ user_name or 'Admin' }}</span>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="page-header">
+            <h1 class="page-title">🏢 Configurazione Azienda</h1>
+            <p class="page-subtitle">Gestisci le informazioni aziendali e i moduli attivi</p>
+        </div>
+
+        <!-- Logo e Informazioni Base -->
+        <div class="card">
+            <h2 class="card-title">
+                <span class="card-title-icon">🖼️</span>
+                Logo Aziendale
+            </h2>
+            <div class="logo-upload-area" id="logoUploadArea">
+                <div id="logoPreviewContainer">
+                    <div class="logo-placeholder" id="logoPlaceholder">🏢</div>
+                    <img src="" alt="Logo" class="logo-preview hidden" id="logoPreview">
+                </div>
+                <div class="logo-upload-text">
+                    <strong>Clicca o trascina per caricare</strong>
+                    <span>PNG, JPG, SVG, WebP (max 2MB)</span>
+                </div>
+                <input type="file" id="logoInput" accept="image/*" class="hidden">
+            </div>
+            <div class="logo-actions" id="logoActions" style="display: none; justify-content: center;">
+                <button type="button" class="btn secondary sm" id="btnChangeLogo">📷 Cambia</button>
+                <button type="button" class="btn danger sm" id="btnDeleteLogo">🗑️ Rimuovi</button>
+            </div>
+        </div>
+
+        <!-- Dati Aziendali -->
+        <div class="card">
+            <h2 class="card-title">
+                <span class="card-title-icon">📋</span>
+                Informazioni Aziendali
+            </h2>
+            <form id="companyForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Nome Azienda *</label>
+                        <input type="text" class="form-input" id="companyName" required placeholder="Es. Acme S.r.l.">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">ID Esterno</label>
+                        <input type="text" class="form-input" id="externalId" placeholder="Es. ID Rentman, SAP, etc.">
+                        <span class="form-hint">Identificativo per integrazioni esterne</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Partita IVA</label>
+                        <input type="text" class="form-input" id="vatNumber" placeholder="Es. IT12345678901">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Codice Fiscale</label>
+                        <input type="text" class="form-input" id="fiscalCode" placeholder="Es. 12345678901">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label">Indirizzo</label>
+                        <textarea class="form-textarea" id="address" rows="2" placeholder="Via, numero civico, CAP, Città"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-input" id="email" placeholder="info@azienda.it">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Telefono</label>
+                        <input type="tel" class="form-input" id="phone" placeholder="+39 02 12345678">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label">Sito Web</label>
+                        <input type="url" class="form-input" id="website" placeholder="https://www.azienda.it">
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Moduli (predisposizione futura) -->
+        <div class="card">
+            <h2 class="card-title">
+                <span class="card-title-icon">🧩</span>
+                Moduli Abilitati
+            </h2>
+            <p style="color: var(--muted); margin-bottom: 16px; font-size: 14px;">
+                Attiva o disattiva le funzionalità disponibili nell'applicazione
+            </p>
+            <div class="modules-grid" id="modulesGrid">
+                <div class="module-card enabled" data-module="timbrature">
+                    <span class="module-icon">⏱️</span>
+                    <div class="module-info">
+                        <div class="module-name">Timbrature</div>
+                        <div class="module-desc">Gestione presenze e orari</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+                <div class="module-card enabled" data-module="sessions">
+                    <span class="module-icon">🗓️</span>
+                    <div class="module-info">
+                        <div class="module-name">Sessioni Lavoro</div>
+                        <div class="module-desc">Tracciamento attività</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+                <div class="module-card enabled" data-module="requests">
+                    <span class="module-icon">📝</span>
+                    <div class="module-info">
+                        <div class="module-name">Richieste</div>
+                        <div class="module-desc">Ferie, permessi, rimborsi</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+                <div class="module-card enabled" data-module="rentman">
+                    <span class="module-icon">🔗</span>
+                    <div class="module-info">
+                        <div class="module-name">Integrazione Rentman</div>
+                        <div class="module-desc">Sincronizzazione progetti</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+                <div class="module-card" data-module="magazzino">
+                    <span class="module-icon">📦</span>
+                    <div class="module-info">
+                        <div class="module-name">Magazzino</div>
+                        <div class="module-desc">Gestione inventario</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+                <div class="module-card" data-module="reports">
+                    <span class="module-icon">📊</span>
+                    <div class="module-info">
+                        <div class="module-name">Report Avanzati</div>
+                        <div class="module-desc">Analytics e statistiche</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions-bar">
+            <button type="button" class="btn secondary" onclick="loadSettings()">↺ Annulla modifiche</button>
+            <button type="button" class="btn primary" id="btnSave">💾 Salva Impostazioni</button>
+        </div>
+    </main>
+
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <script>
+        // State
+        let currentSettings = {};
+        let hasChanges = false;
+
+        // DOM Elements
+        const menuToggle = document.getElementById('menuToggle');
+        const hamburgerMenu = document.getElementById('hamburgerMenu');
+        const themeToggle = document.getElementById('themeToggle');
+        const logoInput = document.getElementById('logoInput');
+        const logoUploadArea = document.getElementById('logoUploadArea');
+        const logoPreview = document.getElementById('logoPreview');
+        const logoPlaceholder = document.getElementById('logoPlaceholder');
+        const logoActions = document.getElementById('logoActions');
+        const btnChangeLogo = document.getElementById('btnChangeLogo');
+        const btnDeleteLogo = document.getElementById('btnDeleteLogo');
+        const btnSave = document.getElementById('btnSave');
+        const modulesGrid = document.getElementById('modulesGrid');
+
+        // Menu toggle
+        menuToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hamburgerMenu.classList.toggle('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!hamburgerMenu.contains(e.target) && !menuToggle.contains(e.target)) {
+                hamburgerMenu.classList.remove('open');
+            }
+        });
+
+        // Theme toggle
+        themeToggle.addEventListener('click', () => {
+            const root = document.documentElement;
+            const current = root.dataset.theme;
+            const next = current === 'dark' ? 'light' : 'dark';
+            root.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+        });
+
+        // Logo upload
+        logoUploadArea.addEventListener('click', () => logoInput.click());
+        btnChangeLogo.addEventListener('click', (e) => {
+            e.stopPropagation();
+            logoInput.click();
+        });
+
+        logoUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            logoUploadArea.classList.add('dragover');
+        });
+        logoUploadArea.addEventListener('dragleave', () => {
+            logoUploadArea.classList.remove('dragover');
+        });
+        logoUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            logoUploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                uploadLogo(file);
+            }
+        });
+
+        logoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                uploadLogo(file);
+            }
+        });
+
+        btnDeleteLogo.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (!confirm('Eliminare il logo aziendale?')) return;
+            
+            showLoading();
+            try {
+                const res = await fetch('/api/admin/company-settings/logo', { method: 'DELETE' });
+                const data = await res.json();
+                if (data.ok) {
+                    currentSettings.logo_path = null;  // Aggiorna lo stato!
+                    showLogo(null);
+                    showToast('Logo eliminato', 'success');
+                } else {
+                    showToast(data.error || 'Errore', 'error');
+                }
+            } catch (err) {
+                showToast('Errore di connessione', 'error');
+            }
+            hideLoading();
+        });
+
+        async function uploadLogo(file) {
+            if (file.size > 2 * 1024 * 1024) {
+                showToast('File troppo grande (max 2MB)', 'error');
+                return;
+            }
+
+            showLoading();
+            const formData = new FormData();
+            formData.append('logo', file);
+
+            try {
+                const res = await fetch('/api/admin/company-settings/logo', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    currentSettings.logo_path = data.logo_path;  // Aggiorna lo stato!
+                    showLogo(data.logo_path);
+                    showToast('Logo caricato', 'success');
+                } else {
+                    showToast(data.error || 'Errore upload', 'error');
+                }
+            } catch (err) {
+                showToast('Errore di connessione', 'error');
+            }
+            hideLoading();
+        }
+
+        function showLogo(path) {
+            if (path) {
+                logoPreview.src = path + '?t=' + Date.now();
+                logoPreview.classList.remove('hidden');
+                logoPlaceholder.classList.add('hidden');
+                logoActions.style.display = 'flex';
+            } else {
+                logoPreview.classList.add('hidden');
+                logoPlaceholder.classList.remove('hidden');
+                logoActions.style.display = 'none';
+            }
+        }
+
+        // Modules toggle
+        modulesGrid.addEventListener('click', (e) => {
+            const card = e.target.closest('.module-card');
+            if (card) {
+                card.classList.toggle('enabled');
+                hasChanges = true;
+            }
+        });
+
+        // Form tracking
+        document.querySelectorAll('.form-input, .form-textarea').forEach(el => {
+            el.addEventListener('input', () => { hasChanges = true; });
+        });
+
+        // Save
+        btnSave.addEventListener('click', saveSettings);
+
+        async function loadSettings() {
+            showLoading();
+            try {
+                const res = await fetch('/api/admin/company-settings');
+                const data = await res.json();
+                
+                currentSettings = data;
+                
+                // Populate form
+                document.getElementById('companyName').value = data.company_name || '';
+                document.getElementById('externalId').value = data.external_id || '';
+                document.getElementById('vatNumber').value = data.vat_number || '';
+                document.getElementById('fiscalCode').value = data.fiscal_code || '';
+                document.getElementById('address').value = data.address || '';
+                document.getElementById('email').value = data.email || '';
+                document.getElementById('phone').value = data.phone || '';
+                document.getElementById('website').value = data.website || '';
+                
+                // Show logo
+                showLogo(data.logo_path);
+                
+                // Set modules
+                const modules = data.modules_enabled || {};
+                document.querySelectorAll('.module-card').forEach(card => {
+                    const mod = card.dataset.module;
+                    const enabled = modules[mod] !== false; // default enabled
+                    card.classList.toggle('enabled', enabled);
+                });
+                
+                hasChanges = false;
+            } catch (err) {
+                showToast('Errore caricamento', 'error');
+            }
+            hideLoading();
+        }
+
+        async function saveSettings() {
+            const data = {
+                company_name: document.getElementById('companyName').value.trim() || 'La Mia Azienda',
+                external_id: document.getElementById('externalId').value.trim() || null,
+                vat_number: document.getElementById('vatNumber').value.trim() || null,
+                fiscal_code: document.getElementById('fiscalCode').value.trim() || null,
+                address: document.getElementById('address').value.trim() || null,
+                email: document.getElementById('email').value.trim() || null,
+                phone: document.getElementById('phone').value.trim() || null,
+                website: document.getElementById('website').value.trim() || null,
+                modules_enabled: {},
+                logo_path: currentSettings.logo_path
+            };
+
+            // Collect modules
+            document.querySelectorAll('.module-card').forEach(card => {
+                const mod = card.dataset.module;
+                data.modules_enabled[mod] = card.classList.contains('enabled');
+            });
+
+            showLoading();
+            try {
+                const res = await fetch('/api/admin/company-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    showToast('Impostazioni salvate!', 'success');
+                    hasChanges = false;
+                    currentSettings = { ...currentSettings, ...data };
+                } else {
+                    showToast(result.error || 'Errore salvataggio', 'error');
+                }
+            } catch (err) {
+                showToast('Errore di connessione', 'error');
+            }
+            hideLoading();
+        }
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Loading
+        function showLoading() {
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        // Warn on leave
+        window.addEventListener('beforeunload', (e) => {
+            if (hasChanges) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        // Init
+        loadSettings();
+    </script>
+</body>
+</html>

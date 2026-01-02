@@ -4996,7 +4996,7 @@ function setProjectLabel(project) {
         return;
     }
     if (project) {
-        projectLabel.textContent = `${project.code} · ${project.name}`;
+        projectLabel.textContent = `${project.code} - ${project.name}`;
     } else {
         projectLabel.textContent = "Nessun progetto attivo";
     }

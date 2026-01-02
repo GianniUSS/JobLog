@@ -566,6 +566,10 @@
                         <span class="menu-item-icon">📥</span>
                         <span>Gestione Richieste</span>
                     </a>
+                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🏢</span>
+                        <span>Configurazione Azienda</span>
+                    </a>
                     {% endif %}
                     <div class="menu-divider"></div>
                     <a href="{{ url_for('logout') }}" class="menu-item danger">
@@ -587,8 +591,6 @@
     </header>
 
     <main>
-        <a href="{{ url_for('admin_dashboard_page') }}" class="back-link">← Torna alla Dashboard</a>
-
         <div class="controls">
             <div class="control-group">
                 <span class="control-label">Data pianificazione</span>

@@ -2,362 +2,1036 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="theme-color" content="#f0f4f0" />
+<meta name="theme-color" content="#667eea" />
 <link rel="manifest" href="/static/manifest.json" />
 <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <title>I Miei Turni - JOBLog</title>
 <style>
 :root {
-  --bg: #f0f4f0;
+  --bg: #f0f2f5;
   --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --brand: #667eea;
+  --brand-light: #818cf8;
+  --brand-dark: #4f46e5;
   --text-primary: #1e293b;
   --text-secondary: #64748b;
-  --green: #22c55e;
-  --green-dark: #16a34a;
-  --blue: #3b82f6;
-  --blue-dark: #1d4ed8;
-  --red: #ef4444;
-  --orange: #f97316;
+  --text-muted: #94a3b8;
   --border: #e2e8f0;
-  --shadow: rgba(0,0,0,0.1);
+  --border-light: #f1f5f9;
+  --success: #10b981;
+  --success-bg: #d1fae5;
+  --warning: #f59e0b;
+  --warning-bg: #fef3c7;
+  --danger: #ef4444;
+  --danger-bg: #fee2e2;
+  --info: #3b82f6;
+  --info-bg: #dbeafe;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
+
 [data-theme="dark"] {
   --bg: #0f172a;
   --bg-card: #1e293b;
+  --bg-card-hover: #334155;
+  --brand: #818cf8;
+  --brand-light: #a5b4fc;
+  --brand-dark: #6366f1;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
+  --text-muted: #64748b;
   --border: #334155;
-  --shadow: rgba(0,0,0,0.3);
+  --border-light: #1e293b;
+  --success-bg: rgba(16, 185, 129, 0.2);
+  --warning-bg: rgba(245, 158, 11, 0.2);
+  --danger-bg: rgba(239, 68, 68, 0.2);
+  --info-bg: rgba(59, 130, 246, 0.2);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow: 0 4px 6px -1px rgba(0,0,0,0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
 }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background: var(--bg);
   color: var(--text-primary);
   min-height: 100vh;
-  min-height: 100dvh;
+  padding-top: var(--safe-top);
+  padding-bottom: calc(var(--safe-bottom) + 20px);
 }
 
 /* Header */
 .header {
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  padding: 16px 20px;
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
-  color: white;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+  padding: calc(var(--safe-top) + 20px) 20px 30px;
   position: sticky;
   top: 0;
   z-index: 100;
 }
+
+.header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: relative;
+}
+
 .back-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
   background: rgba(255,255,255,0.2);
-  border: none;
-  border-radius: 10px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
   color: white;
-  font-size: 20px;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
   text-decoration: none;
 }
+
+.back-btn:hover {
+  background: rgba(255,255,255,0.3);
+  transform: scale(1.05);
+}
+
 .header-title {
   flex: 1;
-  font-size: 18px;
-  font-weight: 700;
-}
-.header-icon {
-  font-size: 24px;
 }
 
-/* Container */
-.container {
+.header-title h1 {
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.header-title p {
+  color: rgba(255,255,255,0.8);
+  font-size: 0.875rem;
+}
+
+.refresh-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refresh-btn:hover {
+  background: rgba(255,255,255,0.3);
+  transform: scale(1.05);
+}
+
+.refresh-btn.loading i {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Main Content */
+.main-content {
+  padding: 20px;
   max-width: 600px;
   margin: 0 auto;
-  padding: 16px;
-  padding-bottom: calc(24px + var(--safe-bottom));
 }
 
-/* Filter Tabs */
-.filter-tabs {
+/* Stats Bar */
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+  margin-top: 20px;
+  position: relative;
+  z-index: 10;
+}
+
+.stat-item {
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  padding: 16px 12px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  transition: all 0.2s ease;
+}
+
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.stat-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--brand);
+  display: block;
+}
+
+.stat-number.success { color: var(--success); }
+.stat-number.warning { color: var(--warning); }
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Filter Pills */
+.filter-pills {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 20px;
   overflow-x: auto;
+  padding: 4px 0;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 4px;
 }
-.filter-tab {
-  padding: 10px 16px;
+
+.filter-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-pill {
+  padding: 10px 18px;
+  border-radius: 50px;
   background: var(--bg-card);
-  border: 2px solid var(--border);
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
+  border: 1px solid var(--border);
   color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.filter-tab:hover {
-  border-color: var(--blue);
-  color: var(--blue);
+
+.filter-pill:hover {
+  border-color: var(--brand);
+  color: var(--brand);
 }
-.filter-tab.active {
-  background: var(--blue);
-  border-color: var(--blue);
+
+.filter-pill.active {
+  background: var(--brand);
+  border-color: var(--brand);
   color: white;
 }
 
-/* Turno Card */
+/* Turni List */
 .turni-list {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
+
+/* Turno Card */
 .turno-card {
   background: var(--bg-card);
-  border-radius: 16px;
+  border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: 0 2px 12px var(--shadow);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+  transition: all 0.3s ease;
+  animation: slideIn 0.3s ease forwards;
+  opacity: 0;
+  transform: translateY(10px);
 }
+
+.turno-card:hover {
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+}
+
 .turno-card.today {
-  border: 2px solid var(--green);
+  border: 2px solid var(--success);
 }
+
 .turno-card.past {
   opacity: 0.7;
 }
+
+@keyframes slideIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .turno-date-header {
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  padding: 12px 16px;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+  padding: 14px 18px;
   color: white;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+
 .turno-card.past .turno-date-header {
-  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  background: linear-gradient(135deg, var(--text-secondary) 0%, var(--text-muted) 100%);
 }
+
 .turno-card.today .turno-date-header {
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
 }
+
 .turno-date {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
 }
+
 .turno-day {
-  font-size: 13px;
+  font-size: 0.8rem;
   opacity: 0.9;
 }
+
 .turno-badge {
   background: rgba(255,255,255,0.2);
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
+  backdrop-filter: blur(10px);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
+
 .turno-badge.leader {
-  background: #fbbf24;
+  background: var(--warning);
   color: #92400e;
 }
+
 .turno-content {
-  padding: 16px;
+  padding: 18px;
 }
+
 .turno-project {
-  font-size: 17px;
+  font-size: 1.1rem;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
+
 .turno-project .code {
-  font-size: 12px;
+  font-size: 0.75rem;
   background: var(--bg);
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
   color: var(--text-secondary);
   font-weight: 600;
 }
+
 .turno-details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
-  margin-top: 12px;
 }
+
 .turno-detail {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
+  gap: 10px;
+  font-size: 0.9rem;
   color: var(--text-secondary);
 }
+
 .turno-detail .icon {
-  font-size: 16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
 }
+
 .turno-detail .value {
   font-weight: 600;
   color: var(--text-primary);
 }
+
 .turno-note {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: var(--bg);
-  border-radius: 8px;
-  font-size: 13px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--warning-bg);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
   color: var(--text-secondary);
-  border-left: 3px solid var(--orange);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.turno-note i {
+  color: var(--warning);
+  margin-top: 2px;
 }
 
 /* Empty State */
 .empty-state {
   text-align: center;
-  padding: 48px 20px;
-  color: var(--text-secondary);
+  padding: 60px 20px;
 }
-.empty-state .icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  opacity: 0.5;
+
+.empty-state-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  font-size: 2rem;
+  color: var(--text-muted);
 }
-.empty-state .title {
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 8px;
+
+.empty-state h3 {
+  font-size: 1.25rem;
   color: var(--text-primary);
+  margin-bottom: 8px;
 }
-.empty-state .message {
-  font-size: 14px;
+
+.empty-state p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
 }
 
 /* Loading */
-.loading {
-  text-align: center;
-  padding: 48px;
-  color: var(--text-secondary);
+.loading-spinner {
+  display: flex;
+  justify-content: center;
+  padding: 40px;
 }
-.loading .spinner {
+
+.loading-spinner::after {
+  content: '';
   width: 40px;
   height: 40px;
   border: 3px solid var(--border);
-  border-top-color: var(--blue);
+  border-top-color: var(--brand);
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  margin: 0 auto 16px;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Stats summary */
-.stats-summary {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
-}
-.stat-box {
-  background: var(--bg-card);
-  border-radius: 12px;
-  padding: 14px;
-  text-align: center;
-  box-shadow: 0 2px 8px var(--shadow);
-}
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--blue);
-}
-.stat-label {
-  font-size: 11px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 4px;
-}
-.stat-box.today .stat-value {
-  color: var(--green);
-}
-.stat-box.hours .stat-value {
-  color: var(--orange);
 }
 
 /* Toast */
 .toast {
   position: fixed;
-  top: calc(20px + env(safe-area-inset-top, 0px));
+  bottom: calc(var(--safe-bottom) + 20px);
   left: 50%;
-  transform: translateX(-50%) translateY(-100px);
-  background: var(--bg-card);
+  transform: translateX(-50%) translateY(100px);
+  background: var(--text-primary);
+  color: var(--bg);
   padding: 14px 24px;
   border-radius: 12px;
-  box-shadow: 0 8px 32px var(--shadow);
+  font-size: 0.9rem;
+  font-weight: 500;
+  z-index: 1000;
+  opacity: 0;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-lg);
+}
+
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+/* Responsive */
+@media (max-width: 400px) {
+  .stats-bar {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  
+  .stat-item {
+    padding: 12px 8px;
+  }
+  
+  .stat-number {
+    font-size: 1.25rem;
+  }
+  
+  .turno-details {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   HAMBURGER MENU & SIDE MENU
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Hamburger Button */
+.hamburger-btn {
+  background: rgba(255,255,255,0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+}
+.hamburger-btn:hover {
+  background: rgba(255,255,255,0.3);
+  transform: scale(1.05);
+}
+.hamburger-btn span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: white;
+  border-radius: 1px;
+  transition: all 0.3s ease;
+}
+.hamburger-btn.active span:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 5px);
+}
+.hamburger-btn.active span:nth-child(2) {
+  opacity: 0;
+}
+.hamburger-btn.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(5px, -5px);
+}
+
+/* Side Menu Overlay */
+.side-menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 600;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+}
+.side-menu-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Side Menu */
+.side-menu {
+  position: fixed;
+  top: 0;
+  left: -320px;
+  width: 300px;
+  max-width: 85vw;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg-card);
+  z-index: 700;
+  transition: left 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+}
+.side-menu.active {
+  left: 0;
+}
+.side-menu-header {
+  padding: 20px;
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+}
+.side-menu-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+.side-menu-user-info {
+  flex: 1;
+}
+.side-menu-user-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
+}
+.side-menu-user-role {
+  font-size: 13px;
+  color: rgba(255,255,255,0.8);
+}
+.side-menu-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.menu-section {
+  margin-bottom: 24px;
+}
+.menu-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  padding: 0 8px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 14px;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.menu-item:hover {
+  background: var(--bg);
+}
+.menu-item.active {
+  background: rgba(102, 126, 234, 0.15);
+  color: var(--brand);
   font-weight: 600;
-  z-index: 1001;
-  transition: transform 0.3s ease;
-  max-width: calc(100vw - 40px);
+}
+.menu-item .icon {
+  font-size: 18px;
+  width: 24px;
   text-align: center;
 }
-.toast.show { transform: translateX(-50%) translateY(0); }
-.toast.success { border-left: 4px solid var(--green); }
-.toast.error { border-left: 4px solid var(--red); }
+.menu-item.danger {
+  color: var(--danger);
+}
+.notification-toggle-menu {
+  display: flex;
+  align-items: center;
+}
+.notification-toggle-menu .toggle-switch {
+  margin-left: auto;
+}
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 28px;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #ccc;
+  transition: 0.3s;
+  border-radius: 28px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background-color: var(--success);
+}
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(22px);
+}
 </style>
 </head>
 <body>
 
-<header class="header">
-  <a href="{{ url_for('home') }}" class="back-btn">←</a>
-  <h1 class="header-title">I Miei Turni</h1>
-  <span class="header-icon">📅</span>
-</header>
+<!-- Side Menu Overlay -->
+<div class="side-menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
 
-<div class="container">
+<!-- Side Menu -->
+<div class="side-menu" id="sideMenu">
+  <div class="side-menu-header">
+    <div class="side-menu-avatar">{{ user_initials }}</div>
+    <div class="side-menu-user-info">
+      <div class="side-menu-user-name">{{ user_display }}</div>
+      <div class="side-menu-user-role">{{ user_role|default('Utente', true) }}</div>
+    </div>
+  </div>
+  
+  <div class="side-menu-content">
+    <div class="menu-section">
+      <div class="menu-section-title">📋 Menu</div>
+      <a href="{{ url_for('home') }}" class="menu-item">
+        <span class="icon">🏠</span>
+        <span>Home Timbrature</span>
+      </a>
+      <a href="{{ url_for('user_turni_page') }}" class="menu-item active">
+        <span class="icon">📅</span>
+        <span>I Miei Turni</span>
+      </a>
+      <a href="{{ url_for('user_requests_page') }}" class="menu-item">
+        <span class="icon">📝</span>
+        <span>Richieste</span>
+      </a>
+      <a href="/user/notifications" class="menu-item">
+        <span class="icon">🔔</span>
+        <span>Storico Notifiche</span>
+      </a>
+    </div>
+    
+    <div class="menu-section">
+      <div class="menu-section-title">⚙️ Impostazioni</div>
+      <div class="menu-item" onclick="toggleTheme(); closeMenu();">
+        <span class="icon">🌙</span>
+        <span>Tema Scuro</span>
+      </div>
+      <div class="menu-item notification-toggle-menu" id="notificationMenuItem">
+        <span class="icon" id="notificationIcon">🔕</span>
+        <span id="notificationLabel">Attiva Notifiche</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="pushToggle" onchange="togglePushNotifications()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    
+    <div class="menu-section">
+      <a href="{{ url_for('logout') }}" class="menu-item danger">
+        <span class="icon">🚪</span>
+        <span>Logout</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-content">
+    <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMenu()">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <div class="header-title">
+      <h1>I Miei Turni</h1>
+      <p>Pianificazione lavori</p>
+    </div>
+    <button class="refresh-btn" onclick="loadTurni()">
+      <i class="fas fa-sync-alt"></i>
+    </button>
+  </div>
+</div>
+
+<div class="main-content">
   <!-- Stats Summary -->
-  <div class="stats-summary">
-    <div class="stat-box today">
-      <div class="stat-value" id="statToday">-</div>
-      <div class="stat-label">Oggi</div>
+  <div class="stats-bar">
+    <div class="stat-item">
+      <span class="stat-number success" id="statToday">-</span>
+      <span class="stat-label">Oggi</span>
     </div>
-    <div class="stat-box">
-      <div class="stat-value" id="statUpcoming">-</div>
-      <div class="stat-label">Prossimi</div>
+    <div class="stat-item">
+      <span class="stat-number" id="statUpcoming">-</span>
+      <span class="stat-label">Prossimi</span>
     </div>
-    <div class="stat-box hours">
-      <div class="stat-value" id="statHours">-</div>
-      <div class="stat-label">Ore Tot.</div>
+    <div class="stat-item">
+      <span class="stat-number warning" id="statHours">-</span>
+      <span class="stat-label">Ore Tot.</span>
     </div>
   </div>
 
-  <!-- Filter Tabs -->
-  <div class="filter-tabs">
-    <button class="filter-tab active" data-filter="all">Tutti</button>
-    <button class="filter-tab" data-filter="upcoming">Prossimi</button>
-    <button class="filter-tab" data-filter="past">Passati</button>
-    <button class="filter-tab" data-filter="today">Oggi</button>
+  <!-- Filter Pills -->
+  <div class="filter-pills">
+    <button class="filter-pill active" data-filter="all">
+      <i class="fas fa-calendar-alt"></i>
+      Tutti
+    </button>
+    <button class="filter-pill" data-filter="upcoming">
+      <i class="fas fa-arrow-right"></i>
+      Prossimi
+    </button>
+    <button class="filter-pill" data-filter="today">
+      <i class="fas fa-star"></i>
+      Oggi
+    </button>
+    <button class="filter-pill" data-filter="past">
+      <i class="fas fa-history"></i>
+      Passati
+    </button>
   </div>
 
   <!-- Turni List -->
   <div id="turniContainer">
-    <div class="loading">
-      <div class="spinner"></div>
-      <div>Caricamento turni...</div>
-    </div>
+    <div class="loading-spinner"></div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
+// ═══════════════════════════════════════════════════════════════════
+// MENU & THEME FUNCTIONS (Global Scope)
+// ═══════════════════════════════════════════════════════════════════
+
+function toggleMenu() {
+  const btn = document.getElementById('hamburgerBtn');
+  const menu = document.getElementById('sideMenu');
+  const overlay = document.getElementById('menuOverlay');
+  
+  btn.classList.toggle('active');
+  menu.classList.toggle('active');
+  overlay.classList.toggle('active');
+}
+
+function closeMenu() {
+  document.getElementById('hamburgerBtn').classList.remove('active');
+  document.getElementById('sideMenu').classList.remove('active');
+  document.getElementById('menuOverlay').classList.remove('active');
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.removeItem('theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem('theme', 'dark');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PUSH NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════════
+
+const pushState = {
+  supported: 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
+  subscribed: false,
+  publicKey: null,
+  permission: typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+};
+
+async function loadPushState() {
+  if (!pushState.supported) {
+    updatePushUI();
+    return;
+  }
+  
+  try {
+    const res = await fetch('/api/push/status');
+    const data = await res.json();
+    
+    if (data.enabled) {
+      pushState.publicKey = data.publicKey;
+      pushState.subscribed = data.subscribed || false;
+    }
+    
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      pushState.subscribed = Boolean(subscription);
+    }
+  } catch (err) {
+    console.warn('Errore caricamento stato push:', err);
+  }
+  
+  updatePushUI();
+}
+
+function updatePushUI() {
+  const toggle = document.getElementById('pushToggle');
+  const icon = document.getElementById('notificationIcon');
+  const label = document.getElementById('notificationLabel');
+  const menuItem = document.getElementById('notificationMenuItem');
+  
+  if (!pushState.supported) {
+    menuItem.style.display = 'none';
+    return;
+  }
+  
+  toggle.checked = pushState.subscribed;
+  
+  if (pushState.subscribed) {
+    icon.textContent = '🔔';
+    label.textContent = 'Notifiche attive';
+  } else {
+    icon.textContent = '🔕';
+    label.textContent = 'Attiva Notifiche';
+  }
+  
+  if (pushState.permission === 'denied') {
+    toggle.disabled = true;
+    label.textContent = 'Notifiche bloccate';
+  }
+}
+
+async function togglePushNotifications() {
+  const toggle = document.getElementById('pushToggle');
+  
+  if (toggle.checked) {
+    await subscribeToPush();
+  } else {
+    await unsubscribeFromPush();
+  }
+  
+  updatePushUI();
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+async function subscribeToPush() {
+  if (!pushState.supported || !pushState.publicKey) {
+    showToastGlobal('⚠️ Notifiche non disponibili');
+    return false;
+  }
+  
+  if (Notification.permission === 'denied') {
+    showToastGlobal('⚠️ Notifiche bloccate dal browser');
+    return false;
+  }
+  
+  if (Notification.permission !== 'granted') {
+    const permission = await Notification.requestPermission();
+    pushState.permission = permission;
+    if (permission !== 'granted') {
+      showToastGlobal('⚠️ Permesso notifiche negato');
+      return false;
+    }
+  }
+  
+  try {
+    let registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) {
+      registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+    }
+    
+    const applicationServerKey = urlBase64ToUint8Array(pushState.publicKey);
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey
+    });
+    
+    const payload = subscription.toJSON();
+    payload.userAgent = navigator.userAgent || null;
+    payload.contentEncoding = 'aes128gcm';
+    
+    const res = await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (res.ok) {
+      pushState.subscribed = true;
+      showToastGlobal('🔔 Notifiche attivate!');
+      return true;
+    } else {
+      throw new Error('Errore registrazione server');
+    }
+  } catch (err) {
+    console.error('Errore subscribe push:', err);
+    showToastGlobal('⚠️ Errore attivazione notifiche');
+    return false;
+  }
+}
+
+async function unsubscribeFromPush() {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    
+    if (subscription) {
+      await subscription.unsubscribe();
+      
+      await fetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: subscription.endpoint })
+      });
+    }
+    
+    pushState.subscribed = false;
+    showToastGlobal('🔕 Notifiche disattivate');
+  } catch (err) {
+    console.error('Errore unsubscribe push:', err);
+    showToastGlobal('⚠️ Errore disattivazione notifiche');
+  }
+}
+
+function showToastGlobal(message) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TURNI APP
+// ═══════════════════════════════════════════════════════════════════
+
 (function() {
   'use strict';
   
@@ -369,7 +1043,7 @@ body {
   let currentFilter = 'all';
   
   const container = document.getElementById('turniContainer');
-  const filterTabs = document.querySelectorAll('.filter-tab');
+  const filterPills = document.querySelectorAll('.filter-pill');
   const statToday = document.getElementById('statToday');
   const statUpcoming = document.getElementById('statUpcoming');
   const statHours = document.getElementById('statHours');
@@ -400,14 +1074,17 @@ body {
     return dateStr < today;
   }
   
-  function showToast(message, type = 'success') {
+  function showToast(message) {
     const toast = document.getElementById('toast');
     toast.textContent = message;
-    toast.className = `toast ${type} show`;
+    toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), 3000);
   }
   
   async function loadTurni() {
+    const refreshBtn = document.querySelector('.refresh-btn');
+    if (refreshBtn) refreshBtn.classList.add('loading');
+    
     try {
       const response = await fetch('/api/user/turni');
       const data = await response.json();
@@ -424,13 +1101,19 @@ body {
       console.error('Errore:', error);
       container.innerHTML = `
         <div class="empty-state">
-          <div class="icon">⚠️</div>
-          <div class="title">Errore</div>
-          <div class="message">${error.message}</div>
+          <div class="empty-state-icon">
+            <i class="fas fa-exclamation-circle"></i>
+          </div>
+          <h3>Errore</h3>
+          <p>${error.message}</p>
         </div>
       `;
+      showToast('Errore nel caricamento');
+    } finally {
+      if (refreshBtn) refreshBtn.classList.remove('loading');
     }
   }
+  window.loadTurni = loadTurni;
   
   function updateStats() {
     const today = new Date().toISOString().split('T')[0];
@@ -470,26 +1153,28 @@ body {
       
       container.innerHTML = `
         <div class="empty-state">
-          <div class="icon">📅</div>
-          <div class="title">${message}</div>
-          <div class="message">I turni pubblicati appariranno qui</div>
+          <div class="empty-state-icon">
+            <i class="fas fa-calendar-times"></i>
+          </div>
+          <h3>${message}</h3>
+          <p>I turni pubblicati appariranno qui</p>
         </div>
       `;
       return;
     }
     
-    const html = filtered.map(turno => {
+    const html = filtered.map((turno, index) => {
       const todayClass = isToday(turno.date) ? 'today' : (isPast(turno.date) ? 'past' : '');
       const dateLabel = isToday(turno.date) ? 'OGGI' : formatDate(turno.date);
       
       return `
-        <div class="turno-card ${todayClass}">
+        <div class="turno-card ${todayClass}" style="animation-delay: ${index * 0.05}s">
           <div class="turno-date-header">
             <div>
               <div class="turno-date">${dateLabel}</div>
               ${!isToday(turno.date) ? `<div class="turno-day">${formatDateShort(turno.date)}</div>` : ''}
             </div>
-            ${turno.is_leader ? '<span class="turno-badge leader">👑 Leader</span>' : ''}
+            ${turno.is_leader ? '<span class="turno-badge leader"><i class="fas fa-crown"></i> Leader</span>' : ''}
           </div>
           <div class="turno-content">
             <div class="turno-project">
@@ -499,30 +1184,30 @@ body {
             <div class="turno-details">
               ${turno.start || turno.end ? `
                 <div class="turno-detail">
-                  <span class="icon">🕐</span>
+                  <span class="icon"><i class="fas fa-clock"></i></span>
                   <span class="value">${turno.start || '?'} - ${turno.end || '?'}</span>
                 </div>
               ` : ''}
               ${turno.hours ? `
                 <div class="turno-detail">
-                  <span class="icon">⏱️</span>
+                  <span class="icon"><i class="fas fa-hourglass-half"></i></span>
                   <span class="value">${turno.hours.toFixed(1)}h</span>
                 </div>
               ` : ''}
               ${turno.function ? `
                 <div class="turno-detail">
-                  <span class="icon">👷</span>
+                  <span class="icon"><i class="fas fa-user-hard-hat"></i></span>
                   <span class="value">${turno.function}</span>
                 </div>
               ` : ''}
               ${turno.transport ? `
                 <div class="turno-detail">
-                  <span class="icon">🚗</span>
+                  <span class="icon"><i class="fas fa-car"></i></span>
                   <span class="value">${turno.transport}</span>
                 </div>
               ` : ''}
             </div>
-            ${turno.note ? `<div class="turno-note">📝 ${turno.note}</div>` : ''}
+            ${turno.note ? `<div class="turno-note"><i class="fas fa-sticky-note"></i> ${turno.note}</div>` : ''}
           </div>
         </div>
       `;
@@ -532,17 +1217,18 @@ body {
   }
   
   // Event listeners
-  filterTabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      filterTabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      currentFilter = tab.dataset.filter;
+  filterPills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      filterPills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      currentFilter = pill.dataset.filter;
       renderTurni();
     });
   });
   
   // Init
   loadTurni();
+  loadPushState();
   
   // Registra service worker per ricevere notifiche
   if ('serviceWorker' in navigator) {
