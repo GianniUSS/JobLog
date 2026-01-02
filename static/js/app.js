@@ -20,6 +20,7 @@ let newActivityModalOpen = false;
 let newActivityToolbarWasVisible = false;
 let newActivitySaving = false;
 const collapsedActivities = new Set();
+const cardCollapsedActivities = new Set(); // Card completamente chiuse
 const activityTotalDisplays = new Map();
 const activityOverdueTrackers = new Map();
 const activityRuntimeOffsets = new Map();
@@ -57,6 +58,7 @@ let pushNotificationsLoading = false;
 let pushNotificationsModalOpen = false;
 let lastKnownState = null;
 let teamCollapsed = true;
+let teamCardCollapsed = true;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  PWA INSTALL PROMPT
@@ -940,6 +942,11 @@ function updateActivityTotalDisplay(activityId) {
     const correctedTotal = Math.max(naiveTotal, previousTotal);
     if (display) {
         display.textContent = formatTime(correctedTotal);
+    }
+    // Update anche nel summary collassato
+    const collapsedTime = card.querySelector(".collapsed-time");
+    if (collapsedTime) {
+        collapsedTime.textContent = formatTime(correctedTotal);
     }
     activityTotalValues.set(key, correctedTotal);
     updateActivityDelayUI(key, correctedTotal);
@@ -4329,7 +4336,7 @@ function setProjectVisibility(active) {
             .forEach((node) => {
                 node.classList.remove("selected");
             });
-        setKeypadVisibility(false);
+        // Non chiudere il keypad qui - l'utente potrebbe star inserendo un codice
         setTimelineVisibility(false);
         eventsCache = [];
         renderEvents([]);
@@ -4455,6 +4462,34 @@ function toggleActivityCollapse(card, activityId) {
     updateActivitySelectButtons();
     if (activityId) {
         updateActivityTotalDisplay(activityId);
+    }
+}
+
+function toggleCardCollapse(card, activityId) {
+    if (!card) {
+        return;
+    }
+    const targetId = activityId ? String(activityId) : "";
+    const isCollapsed = card.classList.toggle("card-collapsed");
+    if (targetId) {
+        if (isCollapsed) {
+            cardCollapsedActivities.add(targetId);
+        } else {
+            cardCollapsedActivities.delete(targetId);
+        }
+    }
+    // Aggiorna tempo nel summary collapsed
+    if (activityId) {
+        updateCollapsedSummaryTime(card, activityId);
+    }
+}
+
+function updateCollapsedSummaryTime(card, activityId) {
+    if (!card) return;
+    const summaryTime = card.querySelector(".collapsed-time");
+    if (summaryTime && activityId) {
+        const totalMs = activityTotalValues.get(String(activityId)) || 0;
+        summaryTime.textContent = formatTime(totalMs);
     }
 }
 
@@ -4809,6 +4844,32 @@ function setTeamCollapsed(collapsed) {
     updateTeamCollapseUI();
 }
 
+function toggleTeamCardCollapse() {
+    teamCardCollapsed = !teamCardCollapsed;
+    const card = document.getElementById("teamCard");
+    if (card) {
+        card.classList.toggle("card-collapsed", teamCardCollapsed);
+    }
+}
+
+let projectBarCollapsed = false;
+
+function toggleProjectBarCollapse() {
+    projectBarCollapsed = !projectBarCollapsed;
+    const bar = document.getElementById("projectBar");
+    if (bar) {
+        bar.classList.toggle("collapsed", projectBarCollapsed);
+    }
+}
+
+function setProjectBarCollapsed(collapsed) {
+    projectBarCollapsed = collapsed;
+    const bar = document.getElementById("projectBar");
+    if (bar) {
+        bar.classList.toggle("collapsed", collapsed);
+    }
+}
+
 function renderActivities(activities) {
     const container = document.getElementById("activities");
     if (!container) {
@@ -4848,10 +4909,12 @@ function renderActivities(activities) {
         if (activityId && !seenActivityIds.has(activityId)) {
             seenActivityIds.add(activityId);
             collapsedActivities.add(activityId);
+            cardCollapsedActivities.add(activityId); // Card inizia collassata
         }
         card.dataset.activityId = activityId;
         const scheduleLabel = formatPlanningRange(activity.plan_start, activity.plan_end);
         const isCollapsed = activityId ? collapsedActivities.has(activityId) : true;
+        const isCardCollapsed = activityId ? cardCollapsedActivities.has(activityId) : true;
 
         const header = document.createElement("div");
         header.className = "task-header";
@@ -4965,21 +5028,53 @@ function renderActivities(activities) {
         selectBtn.className = "activity-select-btn";
         selectBtn.dataset.activitySelect = activity.activity_id || "";
         selectBtn.textContent = "Seleziona tutti";
-        selectBtn.addEventListener("click", () =>
-            toggleActivitySelection(selectBtn.dataset.activitySelect)
-        );
+        selectBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleActivitySelection(selectBtn.dataset.activitySelect);
+        });
         meta.appendChild(selectBtn);
 
         const completeBtn = document.createElement("button");
         completeBtn.type = "button";
         completeBtn.className = "activity-complete-btn";
         completeBtn.textContent = "Attività completata";
-        completeBtn.addEventListener("click", () => openFeedbackModalForActivity(activity));
+        completeBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openFeedbackModalForActivity(activity);
+        });
         meta.appendChild(completeBtn);
+
+        // Summary compatto visibile quando card collassata
+        const collapsedSummary = document.createElement("div");
+        collapsedSummary.className = "collapsed-summary";
+        const summaryOps = document.createElement("span");
+        summaryOps.textContent = `${memberCount} op`;
+        const summaryTime = document.createElement("span");
+        summaryTime.className = "collapsed-time";
+        summaryTime.textContent = formatTime(correctedTotalMs);
+        collapsedSummary.appendChild(summaryOps);
+        collapsedSummary.appendChild(summaryTime);
+        meta.appendChild(collapsedSummary);
+
+        // Indicatore espansione
+        const expandIndicator = document.createElement("span");
+        expandIndicator.className = "card-expand-indicator";
+        expandIndicator.textContent = "▼";
+        meta.appendChild(expandIndicator);
 
         header.appendChild(info);
         header.appendChild(meta);
+        
+        // Click su header per toggle card
+        header.addEventListener("click", () => {
+            toggleCardCollapse(card, activityId);
+        });
+        
         card.appendChild(header);
+
+        // Body che contiene tutto il resto
+        const cardBody = document.createElement("div");
+        cardBody.className = "task-card-body";
 
         const body = document.createElement("div");
         body.className = "task-members";
@@ -4991,7 +5086,14 @@ function renderActivities(activities) {
             card.classList.add("collapsed");
             body.classList.add("hidden");
         }
-        card.appendChild(body);
+        cardBody.appendChild(body);
+        card.appendChild(cardBody);
+        
+        // Applica stato card-collapsed
+        if (isCardCollapsed) {
+            card.classList.add("card-collapsed");
+        }
+        
         container.appendChild(card);
         if (activityId) {
             updateActivityTotalDisplay(activityId);
@@ -5073,6 +5175,7 @@ function resetProjectStateUI() {
     updateSelectionToolbar();
     activitySearchTerm = "";
     collapsedActivities.clear();
+    cardCollapsedActivities.clear();
     seenActivityIds.clear();
     activityTotalDisplays.clear();
     activityOverdueTrackers.clear();
@@ -5897,6 +6000,7 @@ async function loadProject(projectCode) {
         if (res.ok) {
             const data = await res.json();
             showPopup(`📦 Progetto ${data.project.code} pronto`);
+            setProjectBarCollapsed(true);
             await refreshState();
         } else if (res.status === 404) {
             resetProjectStateUI();
@@ -6631,12 +6735,8 @@ function bindUI() {
         });
     }
 
-    document.addEventListener("mousedown", (event) => {
-        handleGlobalPointerForKeypad(event, projectInputGroup);
-    });
-    document.addEventListener("touchstart", (event) => {
-        handleGlobalPointerForKeypad(event, projectInputGroup);
-    });
+    // Tastiera numerica resta aperta fino a "Carica Progetto"
+    // (rimosso auto-close su click fuori)
 
     const keypad = document.getElementById("projectKeypad");
     if (keypad) {
@@ -6756,6 +6856,32 @@ function bindUI() {
         });
     }
 
+    // Click su header team card per toggle
+    const teamHeader = document.querySelector("#teamCard .team-header");
+    if (teamHeader) {
+        teamHeader.addEventListener("click", (e) => {
+            // Non toggle se clicco sui pulsanti dentro
+            if (e.target.closest("button")) return;
+            toggleTeamCardCollapse();
+        });
+    }
+
+    // Click su project bar header per toggle
+    const projectBarHeader = document.querySelector("#projectBar .project-bar-header");
+    const projectBarBody = document.querySelector("#projectBar .project-bar-body");
+    if (projectBarHeader) {
+        projectBarHeader.addEventListener("click", (e) => {
+            if (e.target.closest("button") || e.target.closest("input")) return;
+            toggleProjectBarCollapse();
+        });
+    }
+    // Blocca propagazione click dal body alla project-bar
+    if (projectBarBody) {
+        projectBarBody.addEventListener("click", (e) => {
+            e.stopPropagation();
+        });
+    }
+
     // Aggiungi Operatore Modal
     const teamAddOperatorBtn = document.getElementById("teamAddOperatorBtn");
     const addOperatorModal = document.getElementById("addOperatorModal");
@@ -6820,7 +6946,7 @@ function bindUI() {
         }
     });
 
-    setProjectVisibility(false);
+    // Non nascondere qui - verrà gestito da hydrateInitialContentFromCache/applyState
     updateProjectInput();
 }
 
@@ -6840,6 +6966,11 @@ async function init() {
     bindUI();
     forceCloseOverlays();
     setTeamCollapsed(true);
+    teamCardCollapsed = true;
+    const teamCardEl = document.getElementById("teamCard");
+    if (teamCardEl) teamCardEl.classList.add("card-collapsed");
+    // Nascondi card inizialmente - verranno mostrate se c'è un progetto cached
+    setProjectVisibility(false);
     setProjectDefaultDate();
     hydrateInitialContentFromCache();
     renderAttachments();
@@ -6857,7 +6988,41 @@ async function init() {
     await initPushNotifications();
     await fetchPushNotifications({ silent: true });
     await refreshState();
+    
+    // Auto-load progetto salvato del supervisor se non c'è già un progetto attivo
+    await autoLoadSavedSupervisorProject();
+    
     fetchProjectMaterials({ silent: true, refresh: false });
+}
+
+async function autoLoadSavedSupervisorProject() {
+    // Se c'è già un progetto attivo (da cache o stato), non fare nulla
+    if (projectVisible) {
+        return;
+    }
+    // Controlla se c'è un progetto salvato per questo supervisor
+    const savedProject = window.__SAVED_SUPERVISOR_PROJECT__;
+    if (!savedProject || !savedProject.code) {
+        return;
+    }
+    // Pre-popola il codice progetto e carica automaticamente
+    const projectInput = document.getElementById("projectInput");
+    if (projectInput) {
+        projectInput.value = savedProject.code;
+    }
+    // Usa la data odierna
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const dateInput = document.getElementById("projectDateInput");
+    if (dateInput) {
+        dateInput.value = dateStr;
+    }
+    // Carica il progetto
+    try {
+        await loadProject();
+    } catch (e) {
+        console.warn("Impossibile caricare progetto salvato:", e);
+    }
 }
 
 window.addEventListener('online', handleOnlineEvent);

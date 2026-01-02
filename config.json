@@ -18,5 +18,18 @@
     "endpoint": "http://80.211.18.30/WebServices/crea_timbrata_elaborata",
     "retry_interval_minutes": 5,
     "max_retry_attempts": 10
+  },
+  "timbratura": {
+    "qr_enabled": true,
+    "gps_enabled": true,
+    "gps_locations": [
+      {
+        "name": "Sede Principale",
+        "latitude": 45.4642,
+        "longitude": 9.1900,
+        "radius_meters": 100
+      }
+    ],
+    "gps_max_accuracy_meters": 50
   }
 }

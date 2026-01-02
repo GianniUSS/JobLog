@@ -460,6 +460,56 @@
             .form-grid { grid-template-columns: 1fr; }
             .page-title { font-size: 22px; }
         }
+
+        /* GPS Location Cards */
+        .gps-location-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 12px;
+            position: relative;
+        }
+        .gps-location-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .gps-location-header input {
+            flex: 1;
+            font-weight: 600;
+        }
+        .gps-location-delete {
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        .gps-location-delete:hover {
+            background: rgba(239, 68, 68, 0.25);
+        }
+        .gps-location-coords {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+        }
+        @media (max-width: 600px) {
+            .gps-location-coords {
+                grid-template-columns: 1fr;
+            }
+        }
+        .gps-location-coords .form-group {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 <body>
@@ -663,6 +713,63 @@
             </div>
         </div>
 
+        <!-- Configurazione Timbratura -->
+        <div class="card">
+            <h2 class="card-title">
+                <span class="card-title-icon">⏱️</span>
+                Configurazione Timbratura
+            </h2>
+            <p style="color: var(--muted); margin-bottom: 16px; font-size: 14px;">
+                Configura i metodi di verifica per la timbratura dei dipendenti
+            </p>
+            
+            <!-- Metodi di Timbratura -->
+            <div style="margin-bottom: 24px;">
+                <label class="form-label" style="margin-bottom: 12px; display: block;">Metodi di Verifica</label>
+                <div class="modules-grid">
+                    <div class="module-card enabled" data-timbratura="qr_enabled" id="timbraturaQr">
+                        <span class="module-icon">📷</span>
+                        <div class="module-info">
+                            <div class="module-name">QR Code</div>
+                            <div class="module-desc">Scansione codice in sede</div>
+                        </div>
+                        <div class="module-toggle"></div>
+                    </div>
+                    <div class="module-card" data-timbratura="gps_enabled" id="timbraturaGps">
+                        <span class="module-icon">📍</span>
+                        <div class="module-info">
+                            <div class="module-name">GPS</div>
+                            <div class="module-desc">Geolocalizzazione</div>
+                        </div>
+                        <div class="module-toggle"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Impostazioni GPS -->
+            <div id="gpsSettingsPanel" style="display: none;">
+                <div style="background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+                    <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                        <span>📍</span> Impostazioni GPS
+                    </h3>
+                    
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label">Precisione GPS Massima (metri)</label>
+                        <input type="number" class="form-input" id="gpsMaxAccuracy" value="50" min="10" max="200" style="max-width: 150px;">
+                        <span class="form-hint">L'utente deve avere una precisione GPS inferiore a questo valore</span>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <label class="form-label" style="margin-bottom: 12px; display: block;">Sedi Autorizzate</label>
+                        <div id="gpsLocationsContainer"></div>
+                        <button type="button" class="btn secondary sm" id="btnAddLocation" style="margin-top: 12px;">
+                            ➕ Aggiungi Sede
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Actions -->
         <div class="actions-bar">
             <button type="button" class="btn secondary" onclick="loadSettings()">↺ Annulla modifiche</button>
@@ -678,6 +785,7 @@
         // State
         let currentSettings = {};
         let hasChanges = false;
+        let gpsLocations = [];
 
         // DOM Elements
         const menuToggle = document.getElementById('menuToggle');
@@ -692,6 +800,11 @@
         const btnDeleteLogo = document.getElementById('btnDeleteLogo');
         const btnSave = document.getElementById('btnSave');
         const modulesGrid = document.getElementById('modulesGrid');
+        const gpsSettingsPanel = document.getElementById('gpsSettingsPanel');
+        const gpsLocationsContainer = document.getElementById('gpsLocationsContainer');
+        const btnAddLocation = document.getElementById('btnAddLocation');
+        const timbraturaQrCard = document.getElementById('timbraturaQr');
+        const timbraturaGpsCard = document.getElementById('timbraturaGps');
 
         // Menu toggle
         menuToggle.addEventListener('click', (e) => {
@@ -815,6 +928,157 @@
             }
         });
 
+        // Timbratura toggles
+        timbraturaQrCard.addEventListener('click', () => {
+            timbraturaQrCard.classList.toggle('enabled');
+            hasChanges = true;
+        });
+
+        timbraturaGpsCard.addEventListener('click', () => {
+            timbraturaGpsCard.classList.toggle('enabled');
+            updateGpsSettingsVisibility();
+            hasChanges = true;
+        });
+
+        function updateGpsSettingsVisibility() {
+            const gpsEnabled = timbraturaGpsCard.classList.contains('enabled');
+            gpsSettingsPanel.style.display = gpsEnabled ? 'block' : 'none';
+        }
+
+        // GPS Locations Management
+        btnAddLocation.addEventListener('click', () => {
+            addGpsLocation({ name: '', latitude: '', longitude: '', radius_meters: 100 });
+            hasChanges = true;
+        });
+
+        function addGpsLocation(loc, index = null) {
+            if (index === null) {
+                index = gpsLocations.length;
+                gpsLocations.push(loc);
+            }
+            
+            const card = document.createElement('div');
+            card.className = 'gps-location-card';
+            card.dataset.index = index;
+            card.innerHTML = `
+                <div class="gps-location-header">
+                    <input type="text" class="form-input" placeholder="Nome sede (es. Sede Centrale)" 
+                           value="${loc.name || ''}" data-field="name">
+                    <button type="button" class="gps-location-delete" title="Elimina">🗑️</button>
+                </div>
+                <div class="gps-location-coords">
+                    <div class="form-group">
+                        <label class="form-label">Latitudine</label>
+                        <input type="number" step="any" class="form-input" placeholder="45.4642" 
+                               value="${loc.latitude || ''}" data-field="latitude">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Longitudine</label>
+                        <input type="number" step="any" class="form-input" placeholder="9.1900" 
+                               value="${loc.longitude || ''}" data-field="longitude">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Raggio (m)</label>
+                        <input type="number" class="form-input" placeholder="100" min="10" max="1000"
+                               value="${loc.radius_meters || 100}" data-field="radius_meters">
+                    </div>
+                </div>
+                <button type="button" class="btn secondary sm gps-get-location" style="margin-top: 12px; width: 100%;">
+                    📍 Usa posizione attuale
+                </button>
+            `;
+            
+            // Event listeners
+            card.querySelector('.gps-location-delete').addEventListener('click', () => {
+                const idx = parseInt(card.dataset.index);
+                gpsLocations.splice(idx, 1);
+                renderGpsLocations();
+                hasChanges = true;
+            });
+            
+            // Pulsante "Usa posizione attuale"
+            card.querySelector('.gps-get-location').addEventListener('click', async function() {
+                const btn = this;
+                const idx = parseInt(card.dataset.index);
+                
+                if (!navigator.geolocation) {
+                    showToast('⚠️ Geolocalizzazione non supportata', 'error');
+                    return;
+                }
+                
+                btn.disabled = true;
+                btn.textContent = '📍 Rilevamento in corso...';
+                
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        const accuracy = Math.round(position.coords.accuracy);
+                        
+                        // Aggiorna i campi
+                        card.querySelector('[data-field="latitude"]').value = lat.toFixed(6);
+                        card.querySelector('[data-field="longitude"]').value = lng.toFixed(6);
+                        
+                        // Aggiorna lo stato
+                        gpsLocations[idx].latitude = lat;
+                        gpsLocations[idx].longitude = lng;
+                        hasChanges = true;
+                        
+                        btn.disabled = false;
+                        btn.textContent = '📍 Usa posizione attuale';
+                        showToast(`✅ Posizione rilevata (precisione: ±${accuracy}m)`, 'success');
+                    },
+                    (error) => {
+                        btn.disabled = false;
+                        btn.textContent = '📍 Usa posizione attuale';
+                        
+                        let msg = 'Errore GPS';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                msg = '⚠️ Permesso posizione negato';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                msg = '⚠️ Posizione non disponibile';
+                                break;
+                            case error.TIMEOUT:
+                                msg = '⚠️ Timeout rilevamento GPS';
+                                break;
+                        }
+                        showToast(msg, 'error');
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            });
+            
+            card.querySelectorAll('input').forEach(input => {
+                input.addEventListener('input', () => {
+                    const idx = parseInt(card.dataset.index);
+                    const field = input.dataset.field;
+                    let value = input.value;
+                    if (field === 'latitude' || field === 'longitude') {
+                        value = parseFloat(value) || '';
+                    } else if (field === 'radius_meters') {
+                        value = parseInt(value) || 100;
+                    }
+                    gpsLocations[idx][field] = value;
+                    hasChanges = true;
+                });
+            });
+            
+            gpsLocationsContainer.appendChild(card);
+        }
+
+        function renderGpsLocations() {
+            gpsLocationsContainer.innerHTML = '';
+            gpsLocations.forEach((loc, idx) => {
+                addGpsLocation(loc, idx);
+            });
+        }
+
         // Form tracking
         document.querySelectorAll('.form-input, .form-textarea').forEach(el => {
             el.addEventListener('input', () => { hasChanges = true; });
@@ -846,11 +1110,22 @@
                 
                 // Set modules
                 const modules = data.modules_enabled || {};
-                document.querySelectorAll('.module-card').forEach(card => {
+                document.querySelectorAll('.module-card[data-module]').forEach(card => {
                     const mod = card.dataset.module;
                     const enabled = modules[mod] !== false; // default enabled
                     card.classList.toggle('enabled', enabled);
                 });
+                
+                // Set timbratura config
+                const timbratura = data.custom_settings?.timbratura || {};
+                timbraturaQrCard.classList.toggle('enabled', timbratura.qr_enabled !== false);
+                timbraturaGpsCard.classList.toggle('enabled', timbratura.gps_enabled === true);
+                
+                // GPS Settings
+                document.getElementById('gpsMaxAccuracy').value = timbratura.gps_max_accuracy_meters || 50;
+                gpsLocations = timbratura.gps_locations || [];
+                renderGpsLocations();
+                updateGpsSettingsVisibility();
                 
                 hasChanges = false;
             } catch (err) {
@@ -870,14 +1145,32 @@
                 phone: document.getElementById('phone').value.trim() || null,
                 website: document.getElementById('website').value.trim() || null,
                 modules_enabled: {},
+                custom_settings: currentSettings.custom_settings || {},
                 logo_path: currentSettings.logo_path
             };
 
             // Collect modules
-            document.querySelectorAll('.module-card').forEach(card => {
+            document.querySelectorAll('.module-card[data-module]').forEach(card => {
                 const mod = card.dataset.module;
                 data.modules_enabled[mod] = card.classList.contains('enabled');
             });
+
+            // Collect timbratura settings
+            const validLocations = gpsLocations.filter(loc => 
+                loc.name && loc.latitude && loc.longitude
+            );
+            
+            data.custom_settings.timbratura = {
+                qr_enabled: timbraturaQrCard.classList.contains('enabled'),
+                gps_enabled: timbraturaGpsCard.classList.contains('enabled'),
+                gps_max_accuracy_meters: parseInt(document.getElementById('gpsMaxAccuracy').value) || 50,
+                gps_locations: validLocations.map(loc => ({
+                    name: loc.name,
+                    latitude: parseFloat(loc.latitude),
+                    longitude: parseFloat(loc.longitude),
+                    radius_meters: parseInt(loc.radius_meters) || 100
+                }))
+            };
 
             showLoading();
             try {

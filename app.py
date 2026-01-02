@@ -442,7 +442,8 @@ def fetch_user_record(db: DatabaseLike, username: str) -> Optional[Mapping[str, 
         return None
     return db.execute(
         """
-        SELECT username, password_hash, display_name, full_name, role, is_active
+        SELECT username, password_hash, display_name, full_name, role, is_active,
+               current_project_code, current_project_name
         FROM app_users
         WHERE LOWER(username)=LOWER(?)
         """,
@@ -582,6 +583,7 @@ def _apply_user_session(user_row: Mapping[str, Any]) -> None:
     if role in {ROLE_SUPERVISOR, ROLE_ADMIN}:
         current_project_code = user_row.get('current_project_code')
         current_project_name = user_row.get('current_project_name')
+        app.logger.info("Login %s: recupero progetto salvato = %s", username, current_project_code)
         if current_project_code:
             session['supervisor_project_code'] = current_project_code
             session['supervisor_project_name'] = current_project_name or current_project_code
@@ -4554,6 +4556,15 @@ def home() -> ResponseReturnValue:
             initial_materials["from_cache"] = True
     header_clock = datetime.now().strftime("%d/%m/%Y | %H:%M")
 
+    # Progetto salvato del supervisor (per auto-load se necessario)
+    saved_supervisor_project = None
+    supervisor_project_code = session.get('supervisor_project_code')
+    if supervisor_project_code:
+        saved_supervisor_project = {
+            "code": supervisor_project_code,
+            "name": session.get('supervisor_project_name') or supervisor_project_code,
+        }
+
     return render_template(
         "index.html",
         user_name=primary_name,
@@ -4564,6 +4575,7 @@ def home() -> ResponseReturnValue:
         initial_attachments=initial_attachments,
         initial_materials=initial_materials,
         initial_project=initial_project,
+        saved_supervisor_project=saved_supervisor_project,
         header_clock=header_clock,
     )
 
@@ -4641,6 +4653,67 @@ def api_timbratura_registra():
     # Verifica bypass QR (solo per sviluppo)
     bypass_qr = data.get('bypass_qr', False)
     
+    # Gestione dati offline (GPS o QR salvati quando offline)
+    offline_timestamp = data.get('offline_timestamp')  # ISO timestamp da quando era offline
+    offline_gps = data.get('offline_gps')  # {latitude, longitude, accuracy}
+    offline_qr = data.get('offline_qr')  # QR code scansionato offline
+    
+    db = get_db()
+    ensure_timbrature_table(db)
+    
+    # Se presente offline_gps, valida le coordinate
+    if offline_gps and not bypass_qr:
+        try:
+            latitude = offline_gps.get('latitude')
+            longitude = offline_gps.get('longitude')
+            accuracy = offline_gps.get('accuracy', 9999)
+            
+            # Recupera configurazione GPS
+            settings = get_company_settings(db)
+            custom = settings.get('custom_settings', {})
+            timbratura_config = custom.get('timbratura', {})
+            gps_latitude = timbratura_config.get('gps_latitude')
+            gps_longitude = timbratura_config.get('gps_longitude')
+            gps_radius = timbratura_config.get('gps_radius', 100)
+            gps_enabled = timbratura_config.get('gps_enabled', False)
+            
+            if gps_enabled and gps_latitude and gps_longitude:
+                from math import radians, sin, cos, sqrt, atan2
+                
+                R = 6371000  # Raggio Terra in metri
+                lat1, lon1 = radians(float(gps_latitude)), radians(float(gps_longitude))
+                lat2, lon2 = radians(float(latitude)), radians(float(longitude))
+                dlat = lat2 - lat1
+                dlon = lon2 - lon1
+                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                c = 2 * atan2(sqrt(a), sqrt(1-a))
+                distance = R * c
+                
+                if distance > gps_radius:
+                    app.logger.warning(f"Timbratura offline GPS rifiutata: {username} - distanza {distance:.0f}m > {gps_radius}m")
+                    return jsonify({"error": f"Posizione GPS non valida (distanza: {distance:.0f}m)"}), 400
+                
+                app.logger.info(f"Timbratura offline GPS validata: {username} - distanza {distance:.0f}m")
+                bypass_qr = True  # GPS valido, bypassa verifica QR
+        except Exception as e:
+            app.logger.error(f"Errore validazione GPS offline: {e}")
+    
+    # Se presente offline_qr, valida il QR code
+    if offline_qr and not bypass_qr:
+        try:
+            settings = get_company_settings(db)
+            custom = settings.get('custom_settings', {})
+            timbratura_config = custom.get('timbratura', {})
+            qr_code = timbratura_config.get('qr_code', '')
+            if qr_code and offline_qr == qr_code:
+                app.logger.info(f"Timbratura offline QR validata: {username}")
+                bypass_qr = True  # QR valido
+            else:
+                app.logger.warning(f"Timbratura offline QR rifiutata: {username} - QR non corrispondente")
+                return jsonify({"error": "QR Code non valido"}), 400
+        except Exception as e:
+            app.logger.error(f"Errore validazione QR offline: {e}")
+    
     if not bypass_qr:
         # Verifica token di validazione QR
         token = data.get('token')
@@ -4656,10 +4729,20 @@ def api_timbratura_registra():
             session.pop('timbratura_token_expires', None)
             return jsonify({"error": "Token scaduto, scansiona nuovamente il QR", "need_qr": True}), 403
     
-    db = get_db()
-    ensure_timbrature_table(db)
+    # Usa timestamp offline se presente, altrimenti ora attuale
+    if offline_timestamp:
+        try:
+            # Parse ISO timestamp
+            from dateutil import parser as dateparser
+            offline_dt = dateparser.parse(offline_timestamp)
+            now = offline_dt
+            app.logger.info(f"Usando timestamp offline: {offline_timestamp}")
+        except Exception as e:
+            app.logger.warning(f"Errore parsing offline_timestamp: {e}, uso ora attuale")
+            now = datetime.now()
+    else:
+        now = datetime.now()
     
-    now = datetime.now()
     today = now.strftime("%Y-%m-%d")
     ora = now.strftime("%H:%M:%S")
     created_ts = now_ms()
@@ -6801,6 +6884,7 @@ def api_load_project():
                 (plan["project_code"], plan.get("project_name"), username)
             )
             db.commit()
+            app.logger.info("Progetto %s salvato per utente %s", plan["project_code"], username)
         except Exception as e:
             app.logger.warning("Impossibile salvare progetto corrente per %s: %s", username, e)
 
@@ -9035,6 +9119,27 @@ def ensure_crew_members_table(db: DatabaseLike) -> None:
                 app.logger.info("Colonna external_group_id aggiunta a crew_members")
     except Exception as e:
         app.logger.warning("Migrazione external_group_id: %s", e)
+    
+    # Migrazione: aggiunge colonna timbratura_override per eccezioni per operatore
+    try:
+        if DB_VENDOR == "mysql":
+            check = db.execute(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='crew_members' AND column_name='timbratura_override'"
+            ).fetchone()
+            col_exists = (check[0] if check else 0) > 0
+            if not col_exists:
+                db.execute("ALTER TABLE crew_members ADD COLUMN timbratura_override TEXT DEFAULT NULL")
+                db.commit()
+                app.logger.info("Colonna timbratura_override aggiunta a crew_members")
+        else:
+            cols = db.execute("PRAGMA table_info(crew_members)").fetchall()
+            col_names = [c[1] for c in cols]
+            if "timbratura_override" not in col_names:
+                db.execute("ALTER TABLE crew_members ADD COLUMN timbratura_override TEXT DEFAULT NULL")
+                db.commit()
+                app.logger.info("Colonna timbratura_override aggiunta a crew_members")
+    except Exception as e:
+        app.logger.warning("Migrazione timbratura_override: %s", e)
 
 
 def sync_crew_member_from_rentman(db: DatabaseLike, rentman_id: int, name: str) -> None:
@@ -10953,6 +11058,274 @@ def api_timbratura_validate_qr():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  TIMBRATURA GPS - Geolocalizzazione
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_timbratura_config() -> Dict[str, Any]:
+    """Restituisce la configurazione timbratura.
+    
+    Priorità:
+    1. Database (company_settings.custom_settings.timbratura)
+    2. config.json (fallback per retrocompatibilità)
+    3. Valori di default
+    """
+    default_config = {
+        "qr_enabled": True,
+        "gps_enabled": False,
+        "gps_locations": [],
+        "gps_max_accuracy_meters": 50
+    }
+    
+    # Prova prima dal database
+    try:
+        db = get_db()
+        company_settings = get_company_settings(db)
+        custom_settings = company_settings.get("custom_settings", {})
+        
+        if isinstance(custom_settings, str):
+            custom_settings = json.loads(custom_settings) if custom_settings else {}
+        
+        if "timbratura" in custom_settings:
+            db_config = custom_settings["timbratura"]
+            # Merge con i default
+            return {
+                "qr_enabled": db_config.get("qr_enabled", True),
+                "gps_enabled": db_config.get("gps_enabled", False),
+                "gps_locations": db_config.get("gps_locations", []),
+                "gps_max_accuracy_meters": db_config.get("gps_max_accuracy_meters", 50)
+            }
+    except Exception as e:
+        app.logger.warning(f"Errore lettura config timbratura da DB: {e}")
+    
+    # Fallback: config.json (per retrocompatibilità)
+    config = load_config()
+    if "timbratura" in config:
+        file_config = config["timbratura"]
+        return {
+            "qr_enabled": file_config.get("qr_enabled", True),
+            "gps_enabled": file_config.get("gps_enabled", False),
+            "gps_locations": file_config.get("gps_locations", []),
+            "gps_max_accuracy_meters": file_config.get("gps_max_accuracy_meters", 50)
+        }
+    
+    return default_config
+
+
+def get_user_timbratura_config(member_key: str = None) -> Dict[str, Any]:
+    """
+    Restituisce la configurazione timbratura effettiva per un utente.
+    
+    Se l'utente ha delle eccezioni configurate (timbratura_override),
+    queste DISABILITANO i metodi per quell'operatore.
+    
+    La logica è:
+    - Config aziendale definisce i metodi disponibili per tutti
+    - Le eccezioni operatore DISABILITANO metodi specifici
+    - Se tutti i metodi sono disabilitati = timbratura diretta
+    """
+    base_config = get_timbratura_config()
+    
+    if not member_key:
+        return base_config
+    
+    # Cerca le eccezioni per questo operatore
+    try:
+        db = get_db()
+        ensure_crew_members_table(db)
+        
+        # Cerca prima per corrispondenza esatta, poi per corrispondenza parziale (nome inizia con)
+        row = None
+        member_key_lower = member_key.lower().strip()
+        
+        if DB_VENDOR == "mysql":
+            # Prima cerca corrispondenza esatta
+            row = db.execute(
+                "SELECT timbratura_override FROM crew_members WHERE rentman_id = %s OR LOWER(name) = %s LIMIT 1",
+                (member_key, member_key_lower)
+            ).fetchone()
+            
+            # Se non trovato, cerca per nome che inizia con member_key (es. "angelo" -> "Angelo Ruggieri")
+            if not row:
+                row = db.execute(
+                    "SELECT timbratura_override FROM crew_members WHERE LOWER(name) LIKE %s AND timbratura_override IS NOT NULL LIMIT 1",
+                    (member_key_lower + '%',)
+                ).fetchone()
+        else:
+            row = db.execute(
+                "SELECT timbratura_override FROM crew_members WHERE rentman_id = ? OR LOWER(name) = ? LIMIT 1",
+                (member_key, member_key_lower)
+            ).fetchone()
+            
+            if not row:
+                row = db.execute(
+                    "SELECT timbratura_override FROM crew_members WHERE LOWER(name) LIKE ? AND timbratura_override IS NOT NULL LIMIT 1",
+                    (member_key_lower + '%',)
+                ).fetchone()
+        
+        if row and row[0]:
+            override = row[0]
+            if isinstance(override, str):
+                override = json.loads(override)
+            
+            app.logger.info(f"Trovata eccezione timbratura per '{member_key}': {override}")
+            
+            # Le eccezioni DISABILITANO i metodi (override con False)
+            if "qr_disabled" in override and override.get("qr_disabled"):
+                base_config["qr_enabled"] = False
+            if "gps_disabled" in override and override.get("gps_disabled"):
+                base_config["gps_enabled"] = False
+                
+    except Exception as e:
+        app.logger.warning(f"Errore lettura eccezioni timbratura per {member_key}: {e}")
+    
+    return base_config
+
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calcola la distanza in metri tra due coordinate usando la formula di Haversine.
+    """
+    import math
+    R = 6371000  # Raggio della Terra in metri
+    
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    a = math.sin(delta_phi / 2) ** 2 + \
+        math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    
+    return R * c
+
+
+@app.get("/api/timbratura/config")
+@login_required
+def api_timbratura_config():
+    """Restituisce le opzioni di timbratura disponibili per l'utente corrente."""
+    # Recupera il nome utente dalla sessione per verificare eventuali eccezioni
+    # user_name contiene il nome completo che dovrebbe corrispondere a crew_members.name
+    user_full_name = session.get("user_name") or session.get("user_display") or session.get("user")
+    timb_config = get_user_timbratura_config(user_full_name)
+    
+    app.logger.debug(f"Timbratura config per utente '{user_full_name}': qr={timb_config.get('qr_enabled')}, gps={timb_config.get('gps_enabled')}")
+    
+    # Non esporre le coordinate esatte, solo i nomi delle locations
+    locations = []
+    for loc in timb_config.get("gps_locations", []):
+        locations.append({
+            "name": loc.get("name", "Sede"),
+            "radius_meters": loc.get("radius_meters", 100)
+        })
+    
+    return jsonify({
+        "qr_enabled": timb_config.get("qr_enabled", True),
+        "gps_enabled": timb_config.get("gps_enabled", False),
+        "gps_locations": locations,
+        "gps_max_accuracy_meters": timb_config.get("gps_max_accuracy_meters", 50)
+    })
+
+
+@app.post("/api/timbratura/validate-gps")
+@login_required
+def api_timbratura_validate_gps():
+    """
+    Valida la posizione GPS dell'utente per la timbratura.
+    Verifica che l'utente si trovi entro il raggio di una delle sedi configurate.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"valid": False, "error": "Dati mancanti"}), 400
+    
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+    accuracy = data.get("accuracy", 999999)  # Accuratezza in metri
+    
+    if latitude is None or longitude is None:
+        return jsonify({"valid": False, "error": "Coordinate GPS mancanti"}), 400
+    
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+        accuracy = float(accuracy)
+    except (TypeError, ValueError):
+        return jsonify({"valid": False, "error": "Coordinate non valide"}), 400
+    
+    # Recupera il nome utente dalla sessione per verificare eventuali eccezioni
+    user_full_name = session.get("user_name") or session.get("user_display") or session.get("user")
+    timb_config = get_user_timbratura_config(user_full_name)
+    
+    # Verifica se GPS è abilitato (considerando eccezioni utente)
+    if not timb_config.get("gps_enabled", False):
+        return jsonify({"valid": False, "error": "Timbratura GPS non abilitata"}), 400
+    
+    # Verifica accuratezza del GPS
+    max_accuracy = timb_config.get("gps_max_accuracy_meters", 50)
+    if accuracy > max_accuracy:
+        return jsonify({
+            "valid": False, 
+            "error": f"Precisione GPS insufficiente ({int(accuracy)}m). Richiesta: max {max_accuracy}m. Prova all'aperto o attendi qualche secondo."
+        }), 400
+    
+    locations = timb_config.get("gps_locations", [])
+    if not locations:
+        return jsonify({"valid": False, "error": "Nessuna sede configurata per timbratura GPS"}), 400
+    
+    # Verifica se l'utente è entro il raggio di una delle sedi
+    matched_location = None
+    min_distance = float('inf')
+    
+    for loc in locations:
+        loc_lat = loc.get("latitude")
+        loc_lon = loc.get("longitude")
+        loc_radius = loc.get("radius_meters", 100)
+        
+        if loc_lat is None or loc_lon is None:
+            continue
+        
+        distance = haversine_distance(latitude, longitude, loc_lat, loc_lon)
+        
+        if distance < min_distance:
+            min_distance = distance
+        
+        # Considera anche l'accuratezza del GPS nell'errore
+        effective_distance = distance - accuracy  # Distanza minima possibile
+        
+        if effective_distance <= loc_radius:
+            matched_location = loc
+            break
+    
+    if not matched_location:
+        return jsonify({
+            "valid": False, 
+            "error": f"Non sei in una sede autorizzata. Distanza minima: {int(min_distance)}m",
+            "distance": int(min_distance)
+        }), 400
+    
+    # GPS valido! Genera token come per QR
+    validation_token = secrets.token_urlsafe(32)
+    expires = now_ms() + (5 * 60 * 1000)  # 5 minuti
+    
+    # Salva in sessione (stesso meccanismo del QR)
+    session["timbratura_token"] = validation_token
+    session["timbratura_token_expires"] = expires
+    session["timbratura_method"] = "gps"
+    session["timbratura_location"] = matched_location.get("name", "Sede")
+    
+    app.logger.info(f"GPS validato per {session.get('user')}: {matched_location.get('name')} (distanza: {int(min_distance)}m, accuracy: {int(accuracy)}m)")
+    
+    return jsonify({
+        "valid": True,
+        "token": validation_token,
+        "expires_in": 300,
+        "location": matched_location.get("name", "Sede"),
+        "distance": int(min_distance),
+        "accuracy": int(accuracy)
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  GESTIONE UTENTI - ADMIN UI
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -11233,18 +11606,25 @@ def api_admin_operators_list() -> ResponseReturnValue:
 
     if DB_VENDOR == "mysql":
         cursor = db.execute(
-            "SELECT id, rentman_id, name, external_id, external_group_id, email, phone, is_active, created_ts, updated_ts "
+            "SELECT id, rentman_id, name, external_id, external_group_id, email, phone, is_active, created_ts, updated_ts, timbratura_override "
             "FROM crew_members ORDER BY name"
         )
     else:
         cursor = db.execute(
-            "SELECT id, rentman_id, name, external_id, external_group_id, email, phone, is_active, created_ts, updated_ts "
+            "SELECT id, rentman_id, name, external_id, external_group_id, email, phone, is_active, created_ts, updated_ts, timbratura_override "
             "FROM crew_members ORDER BY name"
         )
     rows = cursor.fetchall()
 
     operators = []
     for row in rows:
+        timbratura_override = row[10] if len(row) > 10 else None
+        if timbratura_override and isinstance(timbratura_override, str):
+            try:
+                timbratura_override = json.loads(timbratura_override)
+            except:
+                timbratura_override = None
+        
         operators.append({
             "id": row[0],
             "rentman_id": row[1],
@@ -11255,7 +11635,8 @@ def api_admin_operators_list() -> ResponseReturnValue:
             "phone": row[6],
             "is_active": bool(row[7]),
             "created_ts": row[8],
-            "updated_ts": row[9]
+            "updated_ts": row[9],
+            "timbratura_override": timbratura_override
         })
 
     return jsonify({"ok": True, "operators": operators})
@@ -11324,6 +11705,21 @@ def api_admin_operators_update(operator_id: int) -> ResponseReturnValue:
     if "is_active" in data:
         updates.append("is_active = " + ("%s" if DB_VENDOR == "mysql" else "?"))
         params.append(is_active)
+    
+    # Gestione eccezioni timbratura (qr_disabled, gps_disabled)
+    if "timbratura_override" in data:
+        timbratura_override = data.get("timbratura_override")
+        if timbratura_override and isinstance(timbratura_override, dict):
+            # Verifica se c'è almeno una disabilitazione attiva
+            has_override = timbratura_override.get("qr_disabled") or timbratura_override.get("gps_disabled")
+            if has_override:
+                timbratura_override = json.dumps(timbratura_override)
+            else:
+                timbratura_override = None
+        else:
+            timbratura_override = None
+        updates.append("timbratura_override = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(timbratura_override)
 
     if not updates:
         return jsonify({"error": "Nessun campo da aggiornare"}), 400

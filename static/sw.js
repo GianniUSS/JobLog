@@ -15,6 +15,7 @@ const OFFLINE_QUEUE_PATHS = [
     '/api/pause_all',
     '/api/resume_all',
     '/api/finish_all',
+    '/api/timbratura',
 ];
 
 const API_CACHE_PATHS = ['/api/state', '/api/events', '/api/push/notifications'];
@@ -308,11 +309,20 @@ async function processQueue() {
     for (const entry of entries) {
         try {
             const response = await replayQueuedRequest(entry);
-            if (!response || !response.ok) {
-                throw new Error(`HTTP ${response ? response.status : '0'}`);
+            // Rimuovi dalla coda anche se 400 (es. "già registrato") - non è un errore di rete
+            if (response && (response.ok || response.status === 400)) {
+                await deleteQueueEntry(entry.id);
+                if (response.ok) {
+                    await notifyOfflineQueue({ action: 'delivered', id: entry.id, url: entry.url, pathname: entry.pathname });
+                } else {
+                    // 400 = richiesta già processata o non valida, rimuovi silenziosamente
+                    console.log('[ServiceWorker] Richiesta rimossa (400):', entry.pathname);
+                }
+            } else if (!response) {
+                throw new Error('No response');
+            } else {
+                throw new Error(`HTTP ${response.status}`);
             }
-            await deleteQueueEntry(entry.id);
-            await notifyOfflineQueue({ action: 'delivered', id: entry.id, url: entry.url, pathname: entry.pathname });
         } catch (error) {
             console.warn('[ServiceWorker] Errore durante la ripetizione della richiesta', error);
             await notifyOfflineQueue({
@@ -322,7 +332,7 @@ async function processQueue() {
                 pathname: entry.pathname,
                 error: error && error.message ? error.message : String(error),
             });
-            throw error;
+            // Non rilanciare l'errore, continua con le altre richieste
         }
     }
     await notifyOfflineQueue({ action: 'idle' });

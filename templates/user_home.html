@@ -211,6 +211,208 @@ header {
   touch-action: manipulation;
 }
 
+/* Method Choice Modal */
+.method-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 1000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.method-modal.active {
+  display: flex;
+}
+.method-container {
+  background: var(--bg-card);
+  border-radius: 20px;
+  padding: 24px;
+  max-width: 350px;
+  width: 100%;
+  text-align: center;
+}
+.method-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.method-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+.method-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.method-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.method-btn:hover {
+  border-color: var(--brand);
+  background: rgba(102, 126, 234, 0.1);
+}
+.method-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.method-btn-icon {
+  font-size: 32px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border-radius: 12px;
+}
+.method-btn-content {
+  text-align: left;
+  flex: 1;
+}
+.method-btn-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.method-btn-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.method-cancel {
+  padding: 12px 24px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+
+/* GPS Modal */
+.gps-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.95);
+  z-index: 1000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.gps-modal.active {
+  display: flex;
+}
+.gps-container {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 350px;
+  width: 100%;
+  text-align: center;
+}
+.gps-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.gps-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.gps-location-name {
+  font-size: 15px;
+  color: var(--text-primary);
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(29, 78, 216, 0.1) 100%);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gps-location-name .location-label {
+  font-size: 18px;
+}
+.gps-status {
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  background: var(--bg);
+}
+.gps-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.gps-icon.loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}
+.gps-message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.gps-accuracy {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.gps-accuracy.good { color: var(--green); }
+.gps-accuracy.medium { color: var(--warning); }
+.gps-accuracy.poor { color: var(--danger); }
+.gps-tip {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: block;
+  margin-top: 4px;
+}
+.gps-buttons {
+  display: flex;
+  gap: 12px;
+}
+.gps-btn {
+  flex: 1;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gps-btn.primary {
+  background: var(--green);
+  color: white;
+}
+.gps-btn.primary:disabled {
+  background: #64748b;
+  cursor: not-allowed;
+}
+.gps-btn.secondary {
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
 .actions {
   display: flex;
   flex-direction: column;
@@ -369,6 +571,31 @@ header {
 .history-item .dot.start { background: var(--green); }
 .history-item .dot.end { background: var(--red); }
 .history-item .dot.pause { background: var(--orange); }
+
+/* Sync status indicator */
+.history-item .sync-status {
+  margin-left: auto;
+  font-size: 14px;
+}
+.history-item .sync-status.synced {
+  color: var(--green);
+  font-size: 12px;
+}
+.history-item .sync-status.pending {
+  animation: pulse-cloud 1.5s ease-in-out infinite;
+}
+@keyframes pulse-cloud {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.history-item.offline-pending {
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 8px;
+  padding-left: 10px;
+  padding-right: 10px;
+  margin: 2px -10px;
+}
+
 .empty-history {
   text-align: center;
   color: var(--text-secondary);
@@ -431,6 +658,22 @@ header {
 }
 .toast.success { border-left: 4px solid var(--green); }
 .toast.error { border-left: 4px solid var(--red); }
+.toast.warning { border-left: 4px solid var(--yellow); }
+
+/* Offline Status Bar */
+.offline-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  padding: 8px 16px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 13px;
+  z-index: 1100;
+}
 
 /* Box Turno */
 .turno-box {
@@ -1141,15 +1384,6 @@ header {
     <div class="clock" id="clock">--:--:--</div>
   </div>
 
-  <!-- Dev Mode Toggle -->
-  <div class="dev-toggle" id="devToggle">
-    <span class="dev-badge">DEV</span>
-    <label>
-      <input type="checkbox" id="qrBypassToggle" onchange="toggleQrBypass()">
-      Salta verifica QR Code
-    </label>
-  </div>
-
   <!-- Box Turno Oggi -->
   <div class="turno-box" id="turnoBox" style="display:none;">
     <div class="turno-header">
@@ -1212,6 +1446,49 @@ header {
   </div>
 </div>
 
+<!-- Method Choice Modal -->
+<div class="method-modal" id="methodModal">
+  <div class="method-container">
+    <h2 class="method-title" id="methodTitle">Come vuoi confermare?</h2>
+    <p class="method-subtitle" id="methodSubtitle">Scegli il metodo di timbratura</p>
+    <div class="method-options">
+      <button class="method-btn" id="methodQrBtn" onclick="selectMethod('qr')">
+        <div class="method-btn-icon">📷</div>
+        <div class="method-btn-content">
+          <div class="method-btn-title">QR Code</div>
+          <div class="method-btn-desc">Scansiona il codice in sede</div>
+        </div>
+      </button>
+      <button class="method-btn" id="methodGpsBtn" onclick="selectMethod('gps')">
+        <div class="method-btn-icon">📍</div>
+        <div class="method-btn-content">
+          <div class="method-btn-title">Posizione GPS</div>
+          <div class="method-btn-desc">Conferma con geolocalizzazione</div>
+        </div>
+      </button>
+    </div>
+    <button class="method-cancel" onclick="closeMethodModal()">Annulla</button>
+  </div>
+</div>
+
+<!-- GPS Modal -->
+<div class="gps-modal" id="gpsModal">
+  <div class="gps-container">
+    <h2 class="gps-title" id="gpsTitle">📍 Verifica Posizione</h2>
+    <p class="gps-subtitle" id="gpsSubtitle">Attendere la localizzazione...</p>
+    <div class="gps-location-name" id="gpsLocationName"></div>
+    <div class="gps-status" id="gpsStatus">
+      <div class="gps-icon loading" id="gpsIcon">📍</div>
+      <div class="gps-message" id="gpsMessage">Rilevamento posizione...</div>
+      <div class="gps-accuracy" id="gpsAccuracy"></div>
+    </div>
+    <div class="gps-buttons">
+      <button class="gps-btn secondary" onclick="closeGpsModal()">Annulla</button>
+      <button class="gps-btn primary" id="gpsConfirmBtn" onclick="confirmGpsLocation()" disabled>Conferma</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- QR Scanner Library -->
@@ -1228,7 +1505,6 @@ const TIMBRATURA_TYPES = {
 let todayTimbrature = [];
 let html5QrcodeScanner = null;
 let pendingTimbraturaType = null;  // Tipo di timbratura in attesa di conferma QR
-let qrBypassEnabled = localStorage.getItem('qrBypassEnabled') === 'true';
 
 // Aggiorna orologio
 function updateClock() {
@@ -1254,36 +1530,343 @@ function showToast(message, type = 'success') {
   setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// Inizia processo timbratura: apre scanner o bypass
+// Configurazione timbratura (caricata dal server)
+let timbraturaConfig = {
+  qr_enabled: true,
+  gps_enabled: false,
+  gps_locations: [],
+  gps_max_accuracy_meters: 50
+};
+
+// Stato GPS
+let gpsWatchId = null;
+let lastGpsPosition = null;
+
+// Carica configurazione timbratura dal server
+async function loadTimbraturaConfig() {
+  try {
+    const res = await fetch('/api/timbratura/config');
+    if (res.ok) {
+      timbraturaConfig = await res.json();
+      console.log('Timbratura config loaded:', timbraturaConfig);
+    }
+  } catch (err) {
+    console.warn('Errore caricamento config timbratura:', err);
+  }
+}
+
+// Inizia processo timbratura: sceglie metodo o apre direttamente
 function startTimbratura(tipo) {
   pendingTimbraturaType = tipo;
   const label = TIMBRATURA_TYPES[tipo]?.label || tipo;
   
-  // Se bypass attivo, registra direttamente
-  if (qrBypassEnabled) {
+  // Se NESSUN metodo è abilitato (entrambi disabilitati), timbratura diretta
+  if (!timbraturaConfig.qr_enabled && !timbraturaConfig.gps_enabled) {
     registerTimbraturaDirectly(tipo);
     return;
   }
   
-  // Aggiorna titolo scanner con il tipo di timbratura
+  // Se entrambi i metodi sono abilitati, mostra la scelta
+  if (timbraturaConfig.qr_enabled && timbraturaConfig.gps_enabled) {
+    openMethodModal(label);
+    return;
+  }
+  
+  // Se solo GPS è abilitato
+  if (timbraturaConfig.gps_enabled && !timbraturaConfig.qr_enabled) {
+    openGpsModal(label);
+    return;
+  }
+  
+  // Se solo QR è abilitato
   document.getElementById('scannerTitle').textContent = '📷 ' + label;
   document.getElementById('scannerSubtitle').textContent = 'Scansiona il QR per confermare';
-  
   openScanner();
 }
 
-// Registra timbratura direttamente (senza QR - solo dev mode)
-async function registerTimbraturaDirectly(tipo) {
+// ═══════════════════════════════════════════════════════════════════
+// METHOD CHOICE MODAL
+// ═══════════════════════════════════════════════════════════════════
+
+function openMethodModal(label) {
+  document.getElementById('methodTitle').textContent = label;
+  document.getElementById('methodSubtitle').textContent = 'Come vuoi confermare la timbratura?';
+  
+  // Abilita/disabilita pulsanti in base alla config
+  document.getElementById('methodQrBtn').style.display = timbraturaConfig.qr_enabled ? 'flex' : 'none';
+  document.getElementById('methodGpsBtn').style.display = timbraturaConfig.gps_enabled ? 'flex' : 'none';
+  
+  document.getElementById('methodModal').classList.add('active');
+}
+
+function closeMethodModal() {
+  document.getElementById('methodModal').classList.remove('active');
+  pendingTimbraturaType = null;
+}
+
+function selectMethod(method) {
+  closeMethodModal();
+  const label = TIMBRATURA_TYPES[pendingTimbraturaType]?.label || pendingTimbraturaType;
+  
+  if (method === 'qr') {
+    document.getElementById('scannerTitle').textContent = '📷 ' + label;
+    document.getElementById('scannerSubtitle').textContent = 'Scansiona il QR per confermare';
+    openScanner();
+  } else if (method === 'gps') {
+    openGpsModal(label);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GPS MODAL
+// ═══════════════════════════════════════════════════════════════════
+
+function openGpsModal(label) {
+  document.getElementById('gpsTitle').textContent = '📍 ' + label;
+  document.getElementById('gpsSubtitle').textContent = 'Verifica posizione in corso...';
+  
+  // Mostra i nomi delle location configurate
+  const locationNames = timbraturaConfig.gps_locations.map(l => l.name).join(', ') || 'Sede';
+  document.getElementById('gpsLocationName').innerHTML = `<span class="location-label">🏢</span> <strong>${locationNames}</strong>`;
+  
+  document.getElementById('gpsIcon').textContent = '📍';
+  document.getElementById('gpsIcon').classList.add('loading');
+  document.getElementById('gpsMessage').textContent = 'Rilevamento posizione...';
+  document.getElementById('gpsAccuracy').textContent = '';
+  document.getElementById('gpsAccuracy').className = 'gps-accuracy';
+  document.getElementById('gpsConfirmBtn').disabled = true;
+  
+  lastGpsPosition = null;
+  
+  document.getElementById('gpsModal').classList.add('active');
+  
+  // Inizia il tracking GPS
+  startGpsTracking();
+}
+
+function closeGpsModal() {
+  document.getElementById('gpsModal').classList.remove('active');
+  stopGpsTracking();
+  pendingTimbraturaType = null;
+  lastGpsPosition = null;
+}
+
+function startGpsTracking() {
+  if (!navigator.geolocation) {
+    updateGpsStatus('error', '❌ GPS non supportato', 'Il tuo browser non supporta la geolocalizzazione');
+    return;
+  }
+  
+  const options = {
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 0
+  };
+  
+  gpsWatchId = navigator.geolocation.watchPosition(
+    onGpsSuccess,
+    onGpsError,
+    options
+  );
+}
+
+function stopGpsTracking() {
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+}
+
+function onGpsSuccess(position) {
+  const { latitude, longitude, accuracy } = position.coords;
+  lastGpsPosition = { latitude, longitude, accuracy };
+  
+  // Determina qualità del segnale
+  let accuracyClass = 'poor';
+  let accuracyText = 'Precisione bassa';
+  let accuracyTip = '💡 Vai all\'aperto per migliorare';
+  
+  if (accuracy <= 15) {
+    accuracyClass = 'good';
+    accuracyText = 'Precisione ottima';
+    accuracyTip = '';
+  } else if (accuracy <= 30) {
+    accuracyClass = 'good';
+    accuracyText = 'Precisione buona';
+    accuracyTip = '';
+  } else if (accuracy <= timbraturaConfig.gps_max_accuracy_meters) {
+    accuracyClass = 'medium';
+    accuracyText = 'Precisione sufficiente';
+    accuracyTip = '';
+  }
+  
+  const isAccuracyOk = accuracy <= timbraturaConfig.gps_max_accuracy_meters;
+  
+  document.getElementById('gpsIcon').textContent = isAccuracyOk ? '✅' : '📍';
+  document.getElementById('gpsIcon').classList.toggle('loading', !isAccuracyOk);
+  document.getElementById('gpsMessage').textContent = isAccuracyOk 
+    ? 'Posizione rilevata!' 
+    : `In attesa di precisione migliore...`;
+  
+  let accuracyDisplay = `${accuracyText} (±${Math.round(accuracy)}m)`;
+  if (accuracyTip) {
+    accuracyDisplay += `<br><span class="gps-tip">${accuracyTip}</span>`;
+  }
+  document.getElementById('gpsAccuracy').innerHTML = accuracyDisplay;
+  document.getElementById('gpsAccuracy').className = 'gps-accuracy ' + accuracyClass;
+  document.getElementById('gpsConfirmBtn').disabled = !isAccuracyOk;
+  
+  if (isAccuracyOk) {
+    document.getElementById('gpsSubtitle').textContent = 'Premi Conferma per timbrare';
+  }
+}
+
+function onGpsError(error) {
+  let message = 'Errore GPS';
+  let detail = '';
+  
+  switch(error.code) {
+    case error.PERMISSION_DENIED:
+      message = '⚠️ Permesso negato';
+      detail = 'Abilita la posizione nelle impostazioni';
+      break;
+    case error.POSITION_UNAVAILABLE:
+      message = '⚠️ Posizione non disponibile';
+      detail = 'Prova all\'aperto o attendi';
+      break;
+    case error.TIMEOUT:
+      message = '⚠️ Timeout';
+      detail = 'Rilevamento troppo lento';
+      break;
+  }
+  
+  updateGpsStatus('error', message, detail);
+}
+
+function updateGpsStatus(type, message, detail) {
+  document.getElementById('gpsIcon').textContent = type === 'error' ? '⚠️' : '📍';
+  document.getElementById('gpsIcon').classList.remove('loading');
+  document.getElementById('gpsMessage').textContent = message;
+  document.getElementById('gpsAccuracy').textContent = detail;
+  document.getElementById('gpsAccuracy').className = 'gps-accuracy poor';
+  document.getElementById('gpsConfirmBtn').disabled = true;
+}
+
+async function confirmGpsLocation() {
+  if (!lastGpsPosition) {
+    showToast('Posizione non disponibile', 'error');
+    return;
+  }
+  
+  const tipo = pendingTimbraturaType;
+  const confirmBtn = document.getElementById('gpsConfirmBtn');
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = 'Verifica...';
+  
+  // Se offline, salva la timbratura con coordinate per sincronizzarla dopo
+  if (!navigator.onLine) {
+    closeGpsModal();
+    saveOfflineTimbratura(tipo, {
+      gps: {
+        latitude: lastGpsPosition.latitude,
+        longitude: lastGpsPosition.longitude,
+        accuracy: lastGpsPosition.accuracy
+      }
+    });
+    showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline con coordinate GPS. Verrà sincronizzata automaticamente.', 'warning');
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Conferma';
+    return;
+  }
+  
   try {
+    // Valida posizione con il server
+    const validateRes = await fetch('/api/timbratura/validate-gps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        latitude: lastGpsPosition.latitude,
+        longitude: lastGpsPosition.longitude,
+        accuracy: lastGpsPosition.accuracy
+      })
+    });
+    
+    const validateData = await validateRes.json();
+    
+    if (!validateRes.ok || !validateData.valid) {
+      showToast(validateData.error || 'Posizione non valida', 'error');
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Conferma';
+      return;
+    }
+    
+    closeGpsModal();
+    
+    // GPS valido, registra timbratura
+    const token = validateData.token;
+    
     const res = await fetch('/api/timbratura', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo, bypass_qr: true })
+      body: JSON.stringify({ tipo, token })
     });
     
     const data = await res.json();
     
-    if (res.ok && data.success) {
+    // Gestisci risposta 202 dal Service Worker (richiesta in coda offline)
+    if (res.status === 202 && data.queued) {
+      showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline. Verrà sincronizzata automaticamente.', 'warning');
+      saveOfflineTimbratura(tipo);
+    } else if (res.ok && data.success) {
+      const locationName = validateData.location || 'Sede';
+      showToast(`${TIMBRATURA_TYPES[tipo]?.label} registrata (${locationName})! ✓`, 'success');
+      loadTimbrature();
+      
+      if (data.cedolino_url) {
+        showCedolinoDebugPopup(data.cedolino_url);
+      }
+    } else {
+      showToast(data.error || 'Errore registrazione', 'error');
+    }
+  } catch (err) {
+    console.error('Errore GPS:', err);
+    // Fallback offline
+    closeGpsModal();
+    saveOfflineTimbratura(tipo, {
+      gps: {
+        latitude: lastGpsPosition.latitude,
+        longitude: lastGpsPosition.longitude,
+        accuracy: lastGpsPosition.accuracy
+      }
+    });
+    showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline. Verrà sincronizzata automaticamente.', 'warning');
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Conferma';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// QR SCANNER (esistente)
+// ═══════════════════════════════════════════════════════════════════
+
+// Registra timbratura direttamente (modalità diretta o offline)
+async function registerTimbraturaDirectly(tipo) {
+  try {
+    const payload = { tipo, bypass_qr: true, offline_ts: Date.now() };
+    
+    const res = await fetch('/api/timbratura', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    const data = await res.json();
+    
+    // Gestisci risposta 202 dal Service Worker (richiesta in coda offline)
+    if (res.status === 202 && data.queued) {
+      showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline. Verrà sincronizzata automaticamente.', 'warning');
+      saveOfflineTimbratura(tipo);
+    } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
       loadTimbrature();
     } else {
@@ -1291,9 +1874,91 @@ async function registerTimbraturaDirectly(tipo) {
     }
   } catch (err) {
     console.error('Errore:', err);
-    showToast('Errore di connessione', 'error');
+    
+    // Se offline, il Service Worker metterà in coda la richiesta
+    if (!navigator.onLine) {
+      showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline. Verrà sincronizzata automaticamente.', 'warning');
+      // Salva anche in localStorage come backup
+      saveOfflineTimbratura(tipo);
+    } else {
+      showToast('Errore di connessione', 'error');
+    }
   }
   pendingTimbraturaType = null;
+}
+
+// Salva timbratura offline in localStorage come backup
+function saveOfflineTimbratura(tipo, extra = {}) {
+  const offlineQueue = JSON.parse(localStorage.getItem('offline_timbrature') || '[]');
+  offlineQueue.push({
+    tipo,
+    timestamp: new Date().toISOString(),
+    ts: Date.now(),
+    ...extra
+  });
+  localStorage.setItem('offline_timbrature', JSON.stringify(offlineQueue));
+  updateUI(); // Aggiorna subito lo storico per mostrare la timbratura offline
+}
+
+// Sincronizza timbrature offline
+async function syncOfflineTimbrature() {
+  const offlineQueue = JSON.parse(localStorage.getItem('offline_timbrature') || '[]');
+  if (offlineQueue.length === 0) return;
+  
+  console.log('[Offline Sync] Sincronizzazione di', offlineQueue.length, 'timbrature...');
+  
+  const remaining = [];
+  let syncedCount = 0;
+  
+  for (const item of offlineQueue) {
+    try {
+      // Costruisci payload con dati opzionali (GPS, QR)
+      const payload = { 
+        tipo: item.tipo, 
+        bypass_qr: true,
+        offline_ts: item.ts,
+        offline_timestamp: item.timestamp
+      };
+      
+      // Se ha dati GPS, aggiungi al payload per validazione server
+      if (item.gps) {
+        payload.offline_gps = item.gps;
+      }
+      
+      // Se ha dati QR, aggiungi al payload
+      if (item.qr_code) {
+        payload.offline_qr = item.qr_code;
+      }
+      
+      const res = await fetch('/api/timbratura', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      if (res.ok) {
+        console.log('[Offline Sync] Sincronizzata:', item.tipo, item.timestamp);
+        syncedCount++;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.warn('[Offline Sync] Errore server:', errData.error || res.status);
+        remaining.push(item);
+      }
+    } catch (err) {
+      remaining.push(item);
+    }
+  }
+  
+  localStorage.setItem('offline_timbrature', JSON.stringify(remaining));
+  
+  if (syncedCount > 0) {
+    showToast(`✅ ${syncedCount} timbratur${syncedCount === 1 ? 'a' : 'e'} sincronizzat${syncedCount === 1 ? 'a' : 'e'}!`, 'success');
+    loadTimbrature(); // Ricarica dal server per avere i dati completi
+  }
+  
+  if (remaining.length > 0) {
+    console.warn('[Offline Sync] Rimaste', remaining.length, 'timbrature non sincronizzate');
+  }
 }
 
 // Apri scanner
@@ -1356,6 +2021,13 @@ async function onScanSuccess(decodedText, decodedResult) {
     return;
   }
   
+  // Se offline, salva QR code per validazione successiva
+  if (!navigator.onLine) {
+    saveOfflineTimbratura(tipo, { qr_code: decodedText });
+    showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline con QR. Verrà sincronizzata automaticamente.', 'warning');
+    return;
+  }
+  
   try {
     // Prima valida il QR
     const validateRes = await fetch('/api/timbratura/validate-qr', {
@@ -1382,7 +2054,11 @@ async function onScanSuccess(decodedText, decodedResult) {
     
     const data = await res.json();
     
-    if (res.ok && data.success) {
+    // Gestisci risposta 202 dal Service Worker (richiesta in coda offline)
+    if (res.status === 202 && data.queued) {
+      showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline. Verrà sincronizzata automaticamente.', 'warning');
+      saveOfflineTimbratura(tipo);
+    } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
       loadTimbrature();
       
@@ -1395,7 +2071,9 @@ async function onScanSuccess(decodedText, decodedResult) {
     }
   } catch (err) {
     console.error('Errore:', err);
-    showToast('Errore di connessione', 'error');
+    // Fallback offline
+    saveOfflineTimbratura(tipo, { qr_code: decodedText });
+    showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline. Verrà sincronizzata automaticamente.', 'warning');
   }
 }
 
@@ -1468,9 +2146,28 @@ function onScanFailure(error) {
 
 // Aggiorna UI in base alle timbrature
 function updateUI() {
-  const hasStarted = todayTimbrature.some(t => t.tipo === 'inizio_giornata');
-  const hasEnded = todayTimbrature.some(t => t.tipo === 'fine_giornata');
-  const lastPause = [...todayTimbrature].reverse().find(t => t.tipo === 'inizio_pausa' || t.tipo === 'fine_pausa');
+  // Combina timbrature server + offline pending
+  const offlineQueue = JSON.parse(localStorage.getItem('offline_timbrature') || '[]');
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Filtra solo timbrature offline di oggi e crea oggetti compatibili
+  const offlineToday = offlineQueue
+    .filter(item => item.timestamp && item.timestamp.startsWith(today))
+    .map(item => ({
+      tipo: item.tipo,
+      ora: item.timestamp.split('T')[1].substring(0, 8), // HH:MM:SS
+      ora_mod: null,
+      offline: true,  // Marca come offline
+      offline_ts: item.ts
+    }));
+  
+  // Combina e ordina per ora
+  const allTimbrature = [...todayTimbrature.map(t => ({...t, offline: false})), ...offlineToday]
+    .sort((a, b) => a.ora.localeCompare(b.ora));
+  
+  const hasStarted = allTimbrature.some(t => t.tipo === 'inizio_giornata');
+  const hasEnded = allTimbrature.some(t => t.tipo === 'fine_giornata');
+  const lastPause = [...allTimbrature].reverse().find(t => t.tipo === 'inizio_pausa' || t.tipo === 'fine_pausa');
   const inPause = lastPause?.tipo === 'inizio_pausa';
 
   // Pulsanti - abilitati in base allo stato (la validazione QR avviene al click)
@@ -1489,18 +2186,26 @@ function updateUI() {
 
   // Storico
   const historyList = document.getElementById('historyList');
-  if (todayTimbrature.length === 0) {
+  if (allTimbrature.length === 0) {
     historyList.innerHTML = '<li class="empty-history">Nessuna timbratura registrata</li>';
   } else {
-    historyList.innerHTML = todayTimbrature.map((t, idx) => {
+    historyList.innerHTML = allTimbrature.map((t, idx) => {
       const info = TIMBRATURA_TYPES[t.tipo] || { label: t.tipo, dotClass: 'start' };
       // Mostra ora originale e ora modificata se diversa
       let oraDisplay = t.ora;
       let extraInfo = '';
       
+      // Icona sync status
+      let syncIcon = '';
+      if (t.offline) {
+        syncIcon = '<span class="sync-status pending" title="In attesa di sincronizzazione">☁️</span>';
+      } else {
+        syncIcon = '<span class="sync-status synced" title="Sincronizzata">✓</span>';
+      }
+      
       if (t.tipo === 'fine_pausa') {
         // Per fine_pausa, trova l'inizio_pausa corrispondente e mostra durata
-        const inizioPausa = [...todayTimbrature].slice(0, idx).reverse().find(x => x.tipo === 'inizio_pausa');
+        const inizioPausa = [...allTimbrature].slice(0, idx).reverse().find(x => x.tipo === 'inizio_pausa');
         if (inizioPausa) {
           const inizioMin = parseInt(inizioPausa.ora.split(':')[0]) * 60 + parseInt(inizioPausa.ora.split(':')[1]);
           const fineMin = parseInt(t.ora.split(':')[0]) * 60 + parseInt(t.ora.split(':')[1]);
@@ -1522,10 +2227,11 @@ function updateUI() {
       }
       
       return `
-        <li class="history-item">
+        <li class="history-item ${t.offline ? 'offline-pending' : ''}">
           <span class="dot ${info.dotClass}"></span>
           <span class="time">${oraDisplay}</span>
           <span class="type">- ${info.label}${extraInfo}</span>
+          ${syncIcon}
         </li>
       `;
     }).join('');
@@ -1736,13 +2442,6 @@ function toggleTheme() {
   }
 }
 
-// QR Bypass toggle
-function toggleQrBypass() {
-  qrBypassEnabled = document.getElementById('qrBypassToggle').checked;
-  localStorage.setItem('qrBypassEnabled', qrBypassEnabled);
-  showToast(qrBypassEnabled ? '⚠️ QR bypass attivo' : 'QR verifica riattivata', qrBypassEnabled ? 'error' : 'success');
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // PUSH NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════════════
@@ -1943,9 +2642,12 @@ setInterval(updateClock, 1000);
 loadTimbrature();
 loadTurno();
 loadPushState(); // Carica stato notifiche
+loadTimbraturaConfig(); // Carica configurazione timbratura (QR/GPS)
 
-// Init dev toggle
-document.getElementById('qrBypassToggle').checked = qrBypassEnabled;
+// Sync offline timbrature se online
+if (navigator.onLine) {
+  syncOfflineTimbrature();
+}
 
 // Tema
 if (localStorage.getItem('theme') === 'dark') {
@@ -1957,6 +2659,57 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js')
     .then(reg => console.log('Service Worker registrato'))
     .catch(err => console.warn('Service Worker fallito:', err));
+    
+  // Ascolta messaggi dal Service Worker (sincronizzazione offline)
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'offline-queue') {
+      console.log('[SW Message]', event.data);
+      
+      if (event.data.action === 'delivered' && event.data.pathname === '/api/timbratura') {
+        // Richiesta timbratura sincronizzata con successo
+        showToast('✅ Timbratura sincronizzata dal Service Worker!', 'success');
+        loadTimbrature();
+      } else if (event.data.action === 'error' && event.data.pathname === '/api/timbratura') {
+        showToast('⚠️ Errore sincronizzazione timbratura', 'error');
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  OFFLINE / ONLINE EVENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+window.addEventListener('online', () => {
+  console.log('[Network] Online');
+  document.getElementById('offline-bar')?.remove();
+  showToast('✅ Connessione ripristinata', 'success');
+  // Sincronizza timbrature offline
+  syncOfflineTimbrature();
+  // Aggiorna lista timbrature dal server
+  setTimeout(loadTimbrature, 1000);
+});
+
+window.addEventListener('offline', () => {
+  console.log('[Network] Offline');
+  // Mostra barra offline se non esiste già
+  if (!document.getElementById('offline-bar')) {
+    const bar = document.createElement('div');
+    bar.id = 'offline-bar';
+    bar.className = 'offline-bar';
+    bar.innerHTML = '📴 Sei offline - Le timbrature verranno salvate in locale';
+    document.body.prepend(bar);
+  }
+  showToast('📴 Connessione persa - Modalità offline', 'warning');
+});
+
+// Mostra barra offline se già offline all'avvio
+if (!navigator.onLine) {
+  const bar = document.createElement('div');
+  bar.id = 'offline-bar';
+  bar.className = 'offline-bar';
+  bar.innerHTML = '📴 Sei offline - Le timbrature verranno salvate in locale';
+  document.body.prepend(bar);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
