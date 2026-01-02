@@ -8967,6 +8967,34 @@ def ensure_cedolino_timbrature_table(db: DatabaseLike) -> None:
                 pass
         except Exception:
             pass
+    
+    # Migrazioni: aggiungi colonne se non esistono
+    if DB_VENDOR == "mysql":
+        migrations = [
+            "ALTER TABLE cedolino_timbrature ADD COLUMN username VARCHAR(190) DEFAULT NULL",
+            "ALTER TABLE cedolino_timbrature ADD COLUMN ora_originale TIME DEFAULT NULL",
+            "ALTER TABLE cedolino_timbrature ADD COLUMN ora_modificata TIME DEFAULT NULL",
+            "ALTER TABLE cedolino_timbrature ADD COLUMN data_riferimento DATE DEFAULT NULL",
+        ]
+        for migration in migrations:
+            try:
+                db.execute(migration)
+                db.commit()
+            except Exception:
+                pass  # Colonna già esistente
+    else:
+        migrations = [
+            "ALTER TABLE cedolino_timbrature ADD COLUMN username TEXT",
+            "ALTER TABLE cedolino_timbrature ADD COLUMN ora_originale TEXT",
+            "ALTER TABLE cedolino_timbrature ADD COLUMN ora_modificata TEXT",
+            "ALTER TABLE cedolino_timbrature ADD COLUMN data_riferimento TEXT",
+        ]
+        for migration in migrations:
+            try:
+                db.execute(migration)
+                db.commit()
+            except Exception:
+                pass
 
 
 def get_cedolino_settings() -> Optional[Dict[str, Any]]:
