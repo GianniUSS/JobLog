@@ -11187,7 +11187,7 @@ def _send_document_notifications(
         "badge": "/static/icons/icon-72x72.png",
         "tag": f"document-{category}",
         "data": {
-            "url": "/documents",
+            "url": "/user/documents",
             "type": "new_document"
         }
     }
