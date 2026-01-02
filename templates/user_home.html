@@ -1688,12 +1688,16 @@ function openMethodModal(label) {
 
 function closeMethodModal() {
   document.getElementById('methodModal').classList.remove('active');
-  pendingTimbraturaType = null;
+  pendingTimbraturaType = null;  // Reset solo quando l'utente annulla
 }
 
 function selectMethod(method) {
-  closeMethodModal();
-  const label = TIMBRATURA_TYPES[pendingTimbraturaType]?.label || pendingTimbraturaType;
+  // Salva il tipo PRIMA di chiudere il modal
+  const tipo = pendingTimbraturaType;
+  const label = TIMBRATURA_TYPES[tipo]?.label || tipo;
+  
+  // Chiudi solo il modal visivamente
+  document.getElementById('methodModal').classList.remove('active');
   
   if (method === 'qr') {
     document.getElementById('scannerTitle').textContent = '📷 ' + label;
@@ -1908,10 +1912,6 @@ async function confirmGpsLocation() {
       const locationName = validateData.location || 'Sede';
       showToast(`${TIMBRATURA_TYPES[tipo]?.label} registrata (${locationName})! ✓`, 'success');
       loadTimbrature();
-      
-      if (data.cedolino_url) {
-        showCedolinoDebugPopup(data.cedolino_url);
-      }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
     }
@@ -2148,11 +2148,6 @@ async function onScanSuccess(decodedText, decodedResult) {
     } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
       loadTimbrature();
-      
-      // DEBUG: Mostra popup con URL CedolinoWeb se presente
-      if (data.cedolino_url) {
-        showCedolinoDebugPopup(data.cedolino_url);
-      }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
     }
@@ -2162,68 +2157,6 @@ async function onScanSuccess(decodedText, decodedResult) {
     saveOfflineTimbratura(tipo, { qr_code: decodedText });
     showToast('📴 ' + TIMBRATURA_TYPES[tipo]?.label + ' salvata offline. Verrà sincronizzata automaticamente.', 'warning');
   }
-}
-
-// DEBUG: Mostra popup con URL CedolinoWeb
-function showCedolinoDebugPopup(url) {
-  // Crea overlay
-  const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.8);
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-  `;
-  
-  // Crea popup
-  const popup = document.createElement('div');
-  popup.style.cssText = `
-    background: var(--bg-card);
-    border-radius: 12px;
-    padding: 20px;
-    max-width: 100%;
-    max-height: 80vh;
-    overflow: auto;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-  `;
-  
-  popup.innerHTML = `
-    <h3 style="margin-bottom: 12px; color: var(--text-primary);">🔗 CedolinoWeb Request URL</h3>
-    <div style="
-      background: #1e293b;
-      color: #22c55e;
-      padding: 12px;
-      border-radius: 8px;
-      font-family: monospace;
-      font-size: 11px;
-      word-break: break-all;
-      white-space: pre-wrap;
-      max-height: 50vh;
-      overflow: auto;
-    ">${url}</div>
-    <div style="margin-top: 16px; display: flex; gap: 10px;">
-      <button onclick="navigator.clipboard.writeText('${url.replace(/'/g, "\\'")}'); this.textContent='Copiato!'" 
-        style="flex:1; padding: 10px; border: none; border-radius: 8px; background: #3b82f6; color: white; cursor: pointer;">
-        📋 Copia URL
-      </button>
-      <button onclick="this.closest('div').closest('div').closest('div').remove()" 
-        style="flex:1; padding: 10px; border: none; border-radius: 8px; background: #64748b; color: white; cursor: pointer;">
-        Chiudi
-      </button>
-    </div>
-  `;
-  
-  overlay.appendChild(popup);
-  document.body.appendChild(overlay);
-  
-  // Chiudi cliccando fuori dal popup
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
 }
 
 // Callback scan fallito (ignora errori continui)
