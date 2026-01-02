@@ -4840,7 +4840,7 @@ def api_timbratura_registra():
         if not timbrata_ok and external_id is None:
             # Utente senza ID esterno - blocca l'operazione (rollback implicito)
             return jsonify({
-                "error": "Utente senza ID esterno CedolinoWeb. Contattare l'amministratore.",
+                "error": timbrata_error or "Utente senza ID esterno CedolinoWeb. Contattare l'amministratore.",
                 "missing_external_id": True,
                 "cedolino_url": cedolino_url  # Mostra comunque l'URL per debug
             }), 400
@@ -9005,13 +9005,24 @@ def get_external_id_for_member(db: DatabaseLike, member_key: str) -> Optional[st
     return external_id if external_id else None
 
 
-def get_external_id_for_username(db: DatabaseLike, username: str) -> Optional[str]:
+def get_external_id_for_username(db: DatabaseLike, username: str, return_reason: bool = False):
     """
     Recupera l'external_id (ID CedolinoWeb) per un utente dato il suo username.
     L'utente deve avere un rentman_crew_id associato in app_users,
     che viene poi cercato in crew_members per ottenere l'external_id.
+    
+    Args:
+        db: connessione database
+        username: username dell'utente
+        return_reason: se True, ritorna anche il motivo in caso di errore
+    
+    Returns:
+        Se return_reason=False: external_id o None
+        Se return_reason=True: (external_id, reason) dove reason spiega il problema
     """
     if not username:
+        if return_reason:
+            return None, "Username non fornito"
         return None
     
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
@@ -9024,11 +9035,15 @@ def get_external_id_for_username(db: DatabaseLike, username: str) -> Optional[st
     
     if not user_row:
         app.logger.debug("CedolinoWeb: utente %s non trovato", username)
+        if return_reason:
+            return None, "Utente non trovato nel database"
         return None
     
     crew_id = user_row['rentman_crew_id'] if isinstance(user_row, dict) else user_row[0]
     if not crew_id:
         app.logger.debug("CedolinoWeb: utente %s non ha rentman_crew_id", username)
+        if return_reason:
+            return None, "Utente non ha un Operatore associato. Vai in Gestione Utenti e associa un operatore."
         return None
     
     # Cerca l'external_id nella tabella crew_members
@@ -9045,10 +9060,19 @@ def get_external_id_for_username(db: DatabaseLike, username: str) -> Optional[st
     
     if not row:
         app.logger.debug("CedolinoWeb: nessun crew_member trovato per rentman_id %s", crew_id)
+        if return_reason:
+            return None, f"Operatore (ID {crew_id}) non trovato nella tabella operatori"
         return None
     
     external_id = row["external_id"] if isinstance(row, dict) else row[0]
-    return external_id if external_id else None
+    if not external_id:
+        if return_reason:
+            return None, "L'operatore associato non ha l'ID Esterno CedolinoWeb configurato. Vai in Gestione Operatori."
+        return None
+    
+    if return_reason:
+        return external_id, ""
+    return external_id
 
 
 def get_external_group_id_for_username(db: DatabaseLike, username: str) -> Optional[str]:
@@ -9327,11 +9351,11 @@ def send_timbrata_utente(
     if not settings:
         return True, None, None, None
     
-    # Recupera external_id dall'username
-    external_id = get_external_id_for_username(db, username)
+    # Recupera external_id dall'username con motivo dettagliato
+    external_id, reason = get_external_id_for_username(db, username, return_reason=True)
     if not external_id:
         # Utente senza ID esterno - blocca l'operazione
-        return False, None, "Utente senza ID esterno CedolinoWeb", None
+        return False, None, reason or "Utente senza ID esterno CedolinoWeb", None
     
     # Recupera external_group_id dall'username
     external_group_id = get_external_group_id_for_username(db, username)
