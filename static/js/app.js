@@ -4889,25 +4889,29 @@ function renderActivities(activities) {
         count.textContent = `${memberCount} operatori`;
         meta.appendChild(count);
 
+        // Contenitore riga unica per durata e tempo
+        const timesRow = document.createElement("div");
+        timesRow.className = "activity-times-row";
+
         if (plannedDurationLabel) {
             const plannedSummary = document.createElement("div");
             plannedSummary.className = "activity-time-summary activity-duration-summary";
             const plannedLabel = document.createElement("span");
             plannedLabel.className = "activity-time-label";
-            plannedLabel.textContent = "Durata prevista";
+            plannedLabel.textContent = "Durata";
             const plannedValue = document.createElement("span");
             plannedValue.className = "activity-time-value";
             plannedValue.textContent = plannedDurationLabel;
             plannedSummary.appendChild(plannedLabel);
             plannedSummary.appendChild(plannedValue);
-            meta.appendChild(plannedSummary);
+            timesRow.appendChild(plannedSummary);
         }
 
         const timeSummary = document.createElement("div");
         timeSummary.className = "activity-time-summary";
         const timeLabel = document.createElement("span");
         timeLabel.className = "activity-time-label";
-        timeLabel.textContent = "Tempo in corso";
+        timeLabel.textContent = "Tempo";
         const timeValue = document.createElement("span");
         timeValue.className = "activity-time-value";
         timeValue.textContent = formatTime(correctedTotalMs);
@@ -4916,7 +4920,8 @@ function renderActivities(activities) {
         }
         timeSummary.appendChild(timeLabel);
         timeSummary.appendChild(timeValue);
-        meta.appendChild(timeSummary);
+        timesRow.appendChild(timeSummary);
+        meta.appendChild(timesRow);
 
         if (plannedDurationMs !== null) {
             const delaySummary = document.createElement("div");
@@ -5016,6 +5021,28 @@ function setProjectLabel(project) {
     }
 }
 
+function refreshPlannedDurationDisplay() {
+    const node = document.getElementById("plannedDuration");
+    if (!node) {
+        return;
+    }
+    // Somma planned_duration_ms di tutte le attività
+    let totalPlannedMs = 0;
+    if (Array.isArray(cachedActivities)) {
+        for (const activity of cachedActivities) {
+            const planned = getActivityPlannedDurationMs(activity);
+            if (planned && planned > 0) {
+                totalPlannedMs += planned;
+            }
+        }
+    }
+    if (totalPlannedMs > 0) {
+        node.textContent = formatTime(totalPlannedMs);
+    } else {
+        node.textContent = "--:--:--";
+    }
+}
+
 function resetProjectStateUI() {
     clearTimers();
     renderTeam([]);
@@ -5059,6 +5086,10 @@ function resetProjectStateUI() {
     const totalRunning = document.getElementById("totalRunningTime");
     if (totalRunning) {
         totalRunning.textContent = "00:00:00";
+    }
+    const plannedDuration = document.getElementById("plannedDuration");
+    if (plannedDuration) {
+        plannedDuration.textContent = "--:--:--";
     }
 }
 
@@ -5115,6 +5146,7 @@ function applyState(state) {
     updateToggleButton();
     updateSelectionToolbar();
     refreshTotalRunningTimeDisplay();
+    refreshPlannedDurationDisplay();
     lastKnownState = cloneStateSnapshot(state);
 }
 
