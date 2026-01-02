@@ -216,31 +216,59 @@ body {
 /* Filter Pills */
 .filter-pills {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 20px;
   overflow-x: auto;
-  padding: 4px 0;
+  padding: 4px 4px 4px 0;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Assicura che tutti i pulsanti siano visibili con scroll */
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .filter-pills::-webkit-scrollbar {
   display: none;
 }
 
+/* Aggiunge un fade per indicare lo scroll */
+.filter-pills-wrapper {
+  position: relative;
+}
+
+.filter-pills-wrapper::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  background: linear-gradient(to right, transparent, var(--bg));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.filter-pills-wrapper.has-scroll::after {
+  opacity: 1;
+}
+
 .filter-pill {
-  padding: 10px 18px;
+  padding: 8px 14px;
   border-radius: 50px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .filter-pill:hover {
@@ -252,6 +280,32 @@ body {
   background: var(--brand);
   border-color: var(--brand);
   color: white;
+}
+
+/* Indicatore scroll per i filtri */
+.scroll-indicator {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  background: var(--bg-card);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: -4px 0 8px rgba(0,0,0,0.1);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+  z-index: 5;
+}
+
+.scroll-indicator.hidden {
+  opacity: 0;
 }
 
 /* Turni List */
@@ -794,23 +848,28 @@ body {
   </div>
 
   <!-- Filter Pills -->
-  <div class="filter-pills">
-    <button class="filter-pill active" data-filter="all">
-      <i class="fas fa-calendar-alt"></i>
-      Tutti
-    </button>
-    <button class="filter-pill" data-filter="upcoming">
-      <i class="fas fa-arrow-right"></i>
-      Prossimi
-    </button>
-    <button class="filter-pill" data-filter="today">
-      <i class="fas fa-star"></i>
-      Oggi
-    </button>
-    <button class="filter-pill" data-filter="past">
-      <i class="fas fa-history"></i>
-      Passati
-    </button>
+  <div class="filter-pills-wrapper">
+    <div class="filter-pills" id="filterPillsContainer">
+      <button class="filter-pill active" data-filter="all">
+        <i class="fas fa-calendar-alt"></i>
+        Tutti
+      </button>
+      <button class="filter-pill" data-filter="upcoming">
+        <i class="fas fa-arrow-right"></i>
+        Prossimi
+      </button>
+      <button class="filter-pill" data-filter="today">
+        <i class="fas fa-star"></i>
+        Oggi
+      </button>
+      <button class="filter-pill" data-filter="past">
+        <i class="fas fa-history"></i>
+        Passati
+      </button>
+    </div>
+    <div class="scroll-indicator">
+      <i class="fas fa-chevron-right"></i>
+    </div>
   </div>
 
   <!-- Turni List -->
@@ -1044,9 +1103,25 @@ function showToastGlobal(message) {
   
   const container = document.getElementById('turniContainer');
   const filterPills = document.querySelectorAll('.filter-pill');
+  const filterPillsContainer = document.getElementById('filterPillsContainer');
+  const scrollIndicator = document.querySelector('.scroll-indicator');
   const statToday = document.getElementById('statToday');
   const statUpcoming = document.getElementById('statUpcoming');
   const statHours = document.getElementById('statHours');
+
+  // Gestione indicatore scroll per i filtri
+  function checkScrollIndicator() {
+    if (filterPillsContainer && scrollIndicator) {
+      const isAtEnd = filterPillsContainer.scrollLeft + filterPillsContainer.clientWidth >= filterPillsContainer.scrollWidth - 5;
+      scrollIndicator.classList.toggle('hidden', isAtEnd);
+    }
+  }
+  
+  if (filterPillsContainer) {
+    filterPillsContainer.addEventListener('scroll', checkScrollIndicator);
+    // Check iniziale
+    setTimeout(checkScrollIndicator, 100);
+  }
   
   // Giorni della settimana
   const GIORNI = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];

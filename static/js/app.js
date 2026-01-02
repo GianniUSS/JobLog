@@ -558,9 +558,23 @@ async function postJson(url, payload) {
         body: JSON.stringify(payload || {}),
     });
     if (!res.ok) {
-        const error = new Error(`HTTP ${res.status} for ${url}`);
+        let errorMessage = `HTTP ${res.status} for ${url}`;
+        let errorData = null;
+        try {
+            errorData = await res.json();
+            if (errorData && errorData.error) {
+                errorMessage = errorData.error;
+            }
+            if (errorData && errorData.message) {
+                errorMessage = errorData.message;
+            }
+        } catch (e) {
+            // JSON parsing failed, keep default message
+        }
+        const error = new Error(errorMessage);
         error.status = res.status;
         error.url = url;
+        error.data = errorData;
         if (res.status === 401) {
             handleUnauthenticated();
             if (materialsModalOpen) {
@@ -5295,12 +5309,18 @@ async function startSelection() {
     try {
         let started = 0;
         const queuedKeys = [];
+        const errors = [];
         for (const memberKey of keys) {
-            const result = await postJson("/api/start_member", { member_key: memberKey });
-            if (result && result.__queued) {
-                queuedKeys.push(memberKey);
-            } else {
-                started++;
+            try {
+                const result = await postJson("/api/start_member", { member_key: memberKey });
+                if (result && result.__queued) {
+                    queuedKeys.push(memberKey);
+                } else {
+                    started++;
+                }
+            } catch (memberErr) {
+                console.error(`startSelection error for ${memberKey}:`, memberErr);
+                errors.push({ key: memberKey, error: memberErr.message || memberErr.toString() });
             }
         }
         if (queuedKeys.length > 0) {
@@ -5312,6 +5332,18 @@ async function startSelection() {
         }
         if (started > 0) {
             showPopup(`▶️ ${started} timer avviati`);
+        }
+        if (errors.length > 0) {
+            const errorMsg = errors[0].error;
+            if (errorMsg.includes('missing_external_id') || errorMsg.includes('ID esterno')) {
+                showPopup("⚠️ Operatore senza ID esterno CedolinoWeb");
+            } else if (errorMsg.includes('no_activity_assigned')) {
+                showPopup("⚠️ Nessuna attività assegnata");
+            } else if (errorMsg.includes('already_running')) {
+                showPopup("⚠️ Timer già in esecuzione");
+            } else {
+                showPopup(`⚠️ Errore: ${errorMsg}`);
+            }
         }
         
         // Deseleziona tutti gli operatori avviati
@@ -5862,6 +5894,180 @@ async function loadProject(projectCode) {
             btn.textContent = original || "🚚 Carica Progetto";
         }
         isLoadingProject = false;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Aggiungi Operatore Modal
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let addOperatorModalOpen = false;
+let availableOperators = [];
+
+function openAddOperatorModal() {
+    const modal = document.getElementById("addOperatorModal");
+    if (!modal) return;
+    modal.classList.add("open");
+    addOperatorModalOpen = true;
+    
+    // Carica operatori disponibili
+    loadAvailableOperators();
+    
+    // Focus sulla ricerca
+    const searchInput = document.getElementById("operatorSearchInput");
+    if (searchInput) {
+        searchInput.value = "";
+        setTimeout(() => searchInput.focus(), 100);
+    }
+}
+
+function closeAddOperatorModal() {
+    const modal = document.getElementById("addOperatorModal");
+    if (!modal) return;
+    modal.classList.remove("open");
+    addOperatorModalOpen = false;
+    
+    // Reset form manuale
+    const form = document.getElementById("addOperatorManualForm");
+    if (form) form.reset();
+    
+    // Reset tab
+    switchOperatorTab("list");
+}
+
+function switchOperatorTab(tabName) {
+    const tabs = document.querySelectorAll(".operator-tab");
+    const contents = document.querySelectorAll(".operator-tab-content");
+    
+    tabs.forEach(tab => {
+        tab.classList.toggle("active", tab.dataset.tab === tabName);
+    });
+    
+    contents.forEach(content => {
+        const isActive = (tabName === "list" && content.id === "operatorListTab") ||
+                         (tabName === "manual" && content.id === "operatorManualTab");
+        content.style.display = isActive ? "block" : "none";
+        content.classList.toggle("active", isActive);
+    });
+}
+
+async function loadAvailableOperators() {
+    const container = document.getElementById("availableOperatorsList");
+    if (!container) return;
+    
+    container.innerHTML = '<div class="loading-operators">Caricamento...</div>';
+    
+    try {
+        const res = await fetch("/api/project/available-operators");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Errore");
+        
+        availableOperators = data.operators || [];
+        renderAvailableOperators();
+    } catch (err) {
+        console.error("loadAvailableOperators", err);
+        container.innerHTML = '<div class="no-operators">Errore nel caricamento</div>';
+    }
+}
+
+function renderAvailableOperators(filter = "") {
+    const container = document.getElementById("availableOperatorsList");
+    if (!container) return;
+    
+    const filterLower = filter.toLowerCase().trim();
+    const filtered = filterLower
+        ? availableOperators.filter(op => op.name.toLowerCase().includes(filterLower))
+        : availableOperators;
+    
+    if (filtered.length === 0) {
+        container.innerHTML = filterLower
+            ? '<div class="no-operators">Nessun operatore trovato</div>'
+            : '<div class="no-operators">Tutti gli operatori sono già nel progetto</div>';
+        return;
+    }
+    
+    container.innerHTML = filtered.map(op => `
+        <div class="available-operator-item" data-rentman-id="${op.rentman_id}" data-key="${op.key}">
+            <span class="available-operator-name">${op.name}</span>
+            <span class="available-operator-add">+</span>
+        </div>
+    `).join("");
+    
+    // Bind click events
+    container.querySelectorAll(".available-operator-item").forEach(item => {
+        item.addEventListener("click", () => {
+            const rentmanId = item.dataset.rentmanId;
+            addOperatorToProject(parseInt(rentmanId, 10));
+        });
+    });
+}
+
+async function addOperatorToProject(rentmanId) {
+    try {
+        const res = await fetch("/api/project/add-operator", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rentman_id: rentmanId })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.ok) {
+            const errorMsg = data.error || data.message || "Errore";
+            if (errorMsg === "already_in_project") {
+                showPopup("⚠️ Operatore già nel progetto");
+            } else {
+                showPopup("⚠️ " + errorMsg);
+            }
+            return;
+        }
+        
+        showPopup(`✅ ${data.member.name} aggiunto`);
+        
+        // Rimuovi dalla lista disponibili
+        availableOperators = availableOperators.filter(op => op.rentman_id !== rentmanId);
+        renderAvailableOperators(document.getElementById("operatorSearchInput")?.value || "");
+        
+        // Aggiorna lo stato
+        await refreshState();
+        
+    } catch (err) {
+        console.error("addOperatorToProject", err);
+        showPopup("⚠️ Errore di rete");
+    }
+}
+
+async function addManualOperator(name) {
+    if (!name.trim()) {
+        showPopup("⚠️ Inserisci un nome");
+        return;
+    }
+    
+    try {
+        const res = await fetch("/api/project/add-operator", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name.trim() })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.ok) {
+            showPopup("⚠️ " + (data.error || data.message || "Errore"));
+            return;
+        }
+        
+        showPopup(`✅ ${data.member.name} aggiunto`);
+        closeAddOperatorModal();
+        
+        // Aggiorna lo stato
+        await refreshState();
+        
+    } catch (err) {
+        console.error("addManualOperator", err);
+        showPopup("⚠️ Errore di rete");
     }
 }
 
@@ -6518,6 +6724,52 @@ function bindUI() {
         });
     }
 
+    // Aggiungi Operatore Modal
+    const teamAddOperatorBtn = document.getElementById("teamAddOperatorBtn");
+    const addOperatorModal = document.getElementById("addOperatorModal");
+    const addOperatorCancelBtn = document.getElementById("addOperatorCancelBtn");
+    const operatorSearchInput = document.getElementById("operatorSearchInput");
+    const addOperatorManualForm = document.getElementById("addOperatorManualForm");
+    const operatorTabs = document.querySelectorAll(".operator-tab");
+    
+    if (teamAddOperatorBtn) {
+        teamAddOperatorBtn.addEventListener("click", openAddOperatorModal);
+    }
+    
+    if (addOperatorCancelBtn) {
+        addOperatorCancelBtn.addEventListener("click", closeAddOperatorModal);
+    }
+    
+    if (addOperatorModal) {
+        addOperatorModal.addEventListener("click", (event) => {
+            if (event.target === addOperatorModal) {
+                closeAddOperatorModal();
+            }
+        });
+    }
+    
+    if (operatorSearchInput) {
+        operatorSearchInput.addEventListener("input", (event) => {
+            renderAvailableOperators(event.target.value);
+        });
+    }
+    
+    operatorTabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+            switchOperatorTab(tab.dataset.tab);
+        });
+    });
+    
+    if (addOperatorManualForm) {
+        addOperatorManualForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            const nameInput = document.getElementById("manualOperatorName");
+            if (nameInput) {
+                addManualOperator(nameInput.value);
+            }
+        });
+    }
+
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
             closeFeedbackModal();
@@ -6532,6 +6784,7 @@ function bindUI() {
             closeAttachmentsModal();
             closeMaterialsModal();
             closeEquipmentModal();
+            closeAddOperatorModal();
         }
     });
 

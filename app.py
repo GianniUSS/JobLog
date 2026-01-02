@@ -7033,25 +7033,6 @@ def api_start_member():
     
     if member["running"] == RUN_STATE_RUNNING:
         return jsonify({"ok": False, "error": "already_running"}), 400
-    
-    # CedolinoWeb: invia timbrata INIZIO GIORNATA
-    timbrata_ok, external_id, timbrata_error = send_timbrata(
-        db,
-        member_key=member_key,
-        member_name=member["member_name"],
-        timeframe_id=TIMEFRAME_INIZIO_GIORNATA,
-        timestamp_ms=now,
-        project_code=project_code,
-        activity_id=member["activity_id"],
-    )
-    
-    if not timbrata_ok and external_id is None:
-        # Operatore senza ID esterno - blocca l'operazione
-        return jsonify({
-            "ok": False,
-            "error": "missing_external_id",
-            "message": "Operatore senza ID esterno CedolinoWeb. Configurare l'ID esterno in Gestione Operatori."
-        }), 400
 
     # Avvia il timer
     db.execute(
@@ -7273,25 +7254,6 @@ def api_member_pause():
     now = now_ms()
     elapsed = compute_elapsed(member, now)
 
-    # CedolinoWeb: invia timbrata INIZIO PAUSA
-    timbrata_ok, external_id, timbrata_error = send_timbrata(
-        db,
-        member_key=member_key,
-        member_name=member["member_name"],
-        timeframe_id=TIMEFRAME_INIZIO_PAUSA,
-        timestamp_ms=now,
-        project_code=project_code,
-        activity_id=member["activity_id"],
-    )
-    
-    if not timbrata_ok and external_id is None:
-        # Operatore senza ID esterno - blocca l'operazione
-        return jsonify({
-            "ok": False,
-            "error": "missing_external_id",
-            "message": "Operatore senza ID esterno CedolinoWeb. Configurare l'ID esterno in Gestione Operatori."
-        }), 400
-
     db.execute(
         f"""
         UPDATE member_state
@@ -7349,25 +7311,6 @@ def api_member_resume():
 
     now = now_ms()
 
-    # CedolinoWeb: invia timbrata FINE PAUSA
-    timbrata_ok, external_id, timbrata_error = send_timbrata(
-        db,
-        member_key=member_key,
-        member_name=member["member_name"],
-        timeframe_id=TIMEFRAME_FINE_PAUSA,
-        timestamp_ms=now,
-        project_code=project_code,
-        activity_id=member["activity_id"],
-    )
-    
-    if not timbrata_ok and external_id is None:
-        # Operatore senza ID esterno - blocca l'operazione
-        return jsonify({
-            "ok": False,
-            "error": "missing_external_id",
-            "message": "Operatore senza ID esterno CedolinoWeb. Configurare l'ID esterno in Gestione Operatori."
-        }), 400
-
     db.execute(
         f"UPDATE member_state SET running={placeholder}, start_ts={placeholder}, pause_start=NULL WHERE member_key={placeholder} AND project_code={placeholder}",
         (RUN_STATE_RUNNING, now, member_key, project_code),
@@ -7413,25 +7356,6 @@ def api_member_finish():
         return jsonify({"ok": False, "error": "member_not_assigned"}), 400
 
     now = now_ms()
-
-    # CedolinoWeb: invia timbrata FINE GIORNATA
-    timbrata_ok, external_id, timbrata_error = send_timbrata(
-        db,
-        member_key=member_key,
-        member_name=member["member_name"],
-        timeframe_id=TIMEFRAME_FINE_GIORNATA,
-        timestamp_ms=now,
-        project_code=project_code,
-        activity_id=member["activity_id"],
-    )
-    
-    if not timbrata_ok and external_id is None:
-        # Operatore senza ID esterno - blocca l'operazione
-        return jsonify({
-            "ok": False,
-            "error": "missing_external_id",
-            "message": "Operatore senza ID esterno CedolinoWeb. Configurare l'ID esterno in Gestione Operatori."
-        }), 400
 
     elapsed = compute_elapsed(member, now)
     activity_meta = load_activity_meta(db)
@@ -7480,6 +7404,206 @@ def api_member_finish():
         save_activity_meta(db, activity_meta)
 
     db.commit()
+    return jsonify({"ok": True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  API - Gestione operatori nel progetto (capo squadra)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/project/available-operators")
+@login_required
+def api_project_available_operators():
+    """Lista operatori disponibili (non già nel progetto) dalla tabella crew_members."""
+    db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_project"}), 400
+    
+    ensure_crew_members_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Ottieni gli operatori già nel progetto
+    existing_keys = set()
+    existing_rows = db.execute(
+        f"SELECT member_key FROM member_state WHERE project_code = {placeholder}",
+        (project_code,)
+    ).fetchall()
+    for row in existing_rows:
+        key = row["member_key"] if isinstance(row, dict) else row[0]
+        existing_keys.add(key)
+    
+    # Ottieni tutti gli operatori attivi da crew_members
+    if DB_VENDOR == "mysql":
+        crew_rows = db.execute(
+            "SELECT rentman_id, name FROM crew_members WHERE is_active = 1 ORDER BY name"
+        ).fetchall()
+    else:
+        crew_rows = db.execute(
+            "SELECT rentman_id, name FROM crew_members WHERE is_active = 1 ORDER BY name"
+        ).fetchall()
+    
+    available = []
+    for row in crew_rows:
+        rentman_id = row["rentman_id"] if isinstance(row, dict) else row[0]
+        name = row["name"] if isinstance(row, dict) else row[1]
+        member_key = f"rentman-crew-{rentman_id}"
+        
+        # Escludi operatori già nel progetto
+        if member_key not in existing_keys:
+            available.append({
+                "key": member_key,
+                "name": name,
+                "rentman_id": rentman_id
+            })
+    
+    return jsonify({"ok": True, "operators": available})
+
+
+@app.post("/api/project/add-operator")
+@login_required
+def api_project_add_operator():
+    """Aggiunge un operatore al progetto corrente."""
+    data = request.get_json(silent=True) or {}
+    
+    # Supporta sia l'aggiunta da crew_members (rentman_id) che un nuovo operatore manuale (name)
+    rentman_id = data.get("rentman_id")
+    name = (data.get("name") or "").strip()
+    
+    if not rentman_id and not name:
+        return jsonify({"ok": False, "error": "missing_data"}), 400
+    
+    db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_project"}), 400
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    now = now_ms()
+    
+    if rentman_id:
+        # Aggiunta da crew_members
+        member_key = f"rentman-crew-{rentman_id}"
+        
+        # Verifica che non esista già nel progetto
+        existing = db.execute(
+            f"SELECT 1 FROM member_state WHERE member_key = {placeholder} AND project_code = {placeholder}",
+            (member_key, project_code)
+        ).fetchone()
+        
+        if existing:
+            return jsonify({"ok": False, "error": "already_in_project"}), 400
+        
+        # Ottieni il nome da crew_members
+        if DB_VENDOR == "mysql":
+            crew = db.execute(
+                "SELECT name FROM crew_members WHERE rentman_id = %s", (rentman_id,)
+            ).fetchone()
+        else:
+            crew = db.execute(
+                "SELECT name FROM crew_members WHERE rentman_id = ?", (rentman_id,)
+            ).fetchone()
+        
+        if not crew:
+            return jsonify({"ok": False, "error": "operator_not_found"}), 404
+        
+        member_name = crew["name"] if isinstance(crew, dict) else crew[0]
+    else:
+        # Operatore manuale - genera una chiave unica
+        base_key = f"local-{name.lower().replace(' ', '-')}"
+        member_key = base_key
+        counter = 1
+        
+        while True:
+            existing = db.execute(
+                f"SELECT 1 FROM member_state WHERE member_key = {placeholder} AND project_code = {placeholder}",
+                (member_key, project_code)
+            ).fetchone()
+            if not existing:
+                break
+            member_key = f"{base_key}-{counter}"
+            counter += 1
+        
+        member_name = name
+    
+    # Inserisci l'operatore nel progetto
+    db.execute(
+        f"""
+        INSERT INTO member_state (member_key, project_code, member_name, activity_id, running, start_ts, elapsed_cached, pause_start, entered_ts)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, NULL, {placeholder}, NULL, 0, NULL, NULL)
+        """,
+        (member_key, project_code, member_name, RUN_STATE_PAUSED)
+    )
+    
+    # Log evento
+    db.execute(
+        f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
+        (now, "add_operator", json.dumps({"member_key": member_key, "member_name": member_name}), project_code)
+    )
+    
+    db.commit()
+    
+    return jsonify({
+        "ok": True,
+        "member": {
+            "key": member_key,
+            "name": member_name
+        }
+    })
+
+
+@app.post("/api/project/remove-operator")
+@login_required
+def api_project_remove_operator():
+    """Rimuove un operatore dal progetto corrente."""
+    data = request.get_json(silent=True) or {}
+    member_key = (data.get("member_key") or "").strip()
+    
+    if not member_key:
+        return jsonify({"ok": False, "error": "missing_member_key"}), 400
+    
+    db = get_db()
+    project_code = session.get("supervisor_project_code", "")
+    
+    if not project_code:
+        return jsonify({"ok": False, "error": "no_project"}), 400
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    now = now_ms()
+    
+    # Verifica che l'operatore esista e non sia in attività
+    member = db.execute(
+        f"SELECT member_name, activity_id, running FROM member_state WHERE member_key = {placeholder} AND project_code = {placeholder}",
+        (member_key, project_code)
+    ).fetchone()
+    
+    if not member:
+        return jsonify({"ok": False, "error": "member_not_found"}), 404
+    
+    member_name = member["member_name"] if isinstance(member, dict) else member[0]
+    activity_id = member["activity_id"] if isinstance(member, dict) else member[1]
+    running = member["running"] if isinstance(member, dict) else member[2]
+    
+    # Non permettere la rimozione se l'operatore ha un timer attivo
+    if running == RUN_STATE_RUNNING:
+        return jsonify({"ok": False, "error": "member_running", "message": "Ferma il timer prima di rimuovere l'operatore"}), 400
+    
+    # Rimuovi l'operatore
+    db.execute(
+        f"DELETE FROM member_state WHERE member_key = {placeholder} AND project_code = {placeholder}",
+        (member_key, project_code)
+    )
+    
+    # Log evento
+    db.execute(
+        f"INSERT INTO event_log(ts, kind, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder})",
+        (now, "remove_operator", json.dumps({"member_key": member_key, "member_name": member_name}), project_code)
+    )
+    
+    db.commit()
+    
     return jsonify({"ok": True})
 
 
