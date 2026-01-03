@@ -692,6 +692,26 @@
             background: rgba(255,255,255,0.3);
         }
         
+        .file-viewer-share {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 1.1rem;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        .file-viewer-share:active {
+            transform: scale(0.95);
+            background: rgba(255,255,255,0.3);
+        }
+        
         .file-viewer-content {
             flex: 1;
             display: flex;
@@ -1346,6 +1366,62 @@
             pdfDoc = null;
         }
         
+        // Share document using Web Share API
+        async function shareDocument() {
+            if (!currentFileUrl) {
+                showToast('Nessun documento da condividere');
+                return;
+            }
+            
+            // Check if Web Share API is available
+            if (!navigator.share) {
+                showToast('Condivisione non supportata su questo dispositivo');
+                return;
+            }
+            
+            try {
+                // Try to share the file directly
+                const response = await fetch(currentFileUrl);
+                const blob = await response.blob();
+                
+                // Determine file extension and MIME type
+                const ext = currentFileUrl.split('.').pop().toLowerCase();
+                let mimeType = blob.type || 'application/octet-stream';
+                let fileName = currentFileTitle || 'documento';
+                
+                // Add extension if not present
+                if (!fileName.toLowerCase().endsWith('.' + ext)) {
+                    fileName += '.' + ext;
+                }
+                
+                const file = new File([blob], fileName, { type: mimeType });
+                
+                // Check if file sharing is supported
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: currentFileTitle || 'Documento',
+                    });
+                    showToast('Documento condiviso');
+                } else {
+                    // Fallback: share URL only
+                    await navigator.share({
+                        title: currentFileTitle || 'Documento',
+                        text: `Documento: ${currentFileTitle}`,
+                        url: window.location.origin + currentFileUrl
+                    });
+                    showToast('Link condiviso');
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    // User cancelled sharing
+                    return;
+                }
+                console.error('Errore condivisione:', error);
+                showToast('Errore durante la condivisione');
+            }
+        }
+        
         // Download current file (kept for potential future use)
         function downloadCurrentFile() {
             if (currentFileUrl) {
@@ -1477,7 +1553,9 @@
                 <i class="fas fa-times"></i>
             </button>
             <div class="file-viewer-title" id="fileViewerTitle">Documento</div>
-            <div style="width: 40px;"></div>
+            <button class="file-viewer-share" onclick="shareDocument()">
+                <i class="fas fa-share-alt"></i>
+            </button>
         </div>
         <div class="file-viewer-content" id="fileViewerContent">
             <!-- Content loaded dynamically -->
