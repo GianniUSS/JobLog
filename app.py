@@ -13251,10 +13251,10 @@ def api_admin_documents_create() -> ResponseReturnValue:
     
     db.commit()
     
-    # Invia notifiche push ai destinatari
-    _send_document_notifications(db, category, title, target_all, target_users_json)
+    # Le notifiche NON vengono inviate automaticamente
+    # L'admin deve inviarle manualmente dal tab "Da Inviare"
     
-    return jsonify({"success": True, "message": "Documento caricato"})
+    return jsonify({"success": True, "message": "Documento caricato. Vai su 'Da Inviare' per inviare le notifiche."})
 
 
 @app.delete("/api/admin/documents/<int:doc_id>")
