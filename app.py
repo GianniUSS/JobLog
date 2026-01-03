@@ -76,6 +76,7 @@ app.secret_key = _load_or_create_secret_key()
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload
 
 PERSISTENT_SESSION_COOKIE_NAME = os.environ.get('JOBLOG_PERSISTENT_COOKIE_NAME', 'joblog_auth')
 PERSISTENT_SESSION_MAX_AGE = int(os.environ.get('JOBLOG_PERSISTENT_SESSION_MAX_AGE', str(30 * 86400)))
