@@ -1203,23 +1203,26 @@
         
         // Open document
         async function openDocument(docId) {
-            // Mark as read
+            // Get document first
+            const doc = allDocuments.find(d => d.id === docId);
+            if (!doc) return;
+            
+            // If has file, open in viewer immediately
+            if (doc.file_url) {
+                viewFile(doc.file_url, doc.title);
+            }
+            
+            // Mark as read (async, don't wait)
             try {
                 await fetch(`/api/user/documents/${docId}/read`, { method: 'POST' });
                 
-                // Update local data
-                const doc = allDocuments.find(d => d.id === docId);
-                if (doc) {
-                    doc.read = true;
-                    updateStats();
+                // Update local data after API call
+                doc.read = true;
+                updateStats();
+                // Only re-render if viewer is not open (avoid visual glitch)
+                if (!document.getElementById('fileViewerOverlay').classList.contains('active')) {
                     renderDocuments();
                 }
-                
-                // If has file, open in viewer
-                if (doc && doc.file_url) {
-                    viewFile(doc.file_url, doc.title);
-                }
-                
             } catch (error) {
                 console.error('Errore:', error);
             }
@@ -1364,6 +1367,9 @@
             currentFileUrl = null;
             currentFileTitle = null;
             pdfDoc = null;
+            
+            // Re-render documents to update read status
+            renderDocuments();
         }
         
         // Share document using Web Share API
