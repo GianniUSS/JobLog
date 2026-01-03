@@ -642,7 +642,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.98);
+            background: var(--bg);
             z-index: 10000;
             display: none;
             flex-direction: column;
@@ -655,99 +655,141 @@
         .file-viewer-header {
             display: flex;
             align-items: center;
-            justify-content: space-between;
             padding: 12px 16px;
             padding-top: calc(var(--safe-top) + 12px);
-            background: #dc3545;
+            background: var(--brand);
             gap: 12px;
         }
         
         .file-viewer-title {
             color: white;
-            font-size: 0.9rem;
-            font-weight: 500;
+            font-size: 0.95rem;
+            font-weight: 600;
             flex: 1;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            text-align: center;
         }
         
         .file-viewer-close {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 14px 24px;
-            background: white;
-            color: #dc3545;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background: rgba(255,255,255,0.2);
+            color: white;
             border: none;
-            border-radius: 30px;
-            font-size: 1.1rem;
-            font-weight: 700;
+            border-radius: 50%;
+            font-size: 1.2rem;
             cursor: pointer;
             flex-shrink: 0;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         }
         
         .file-viewer-close:active {
             transform: scale(0.95);
+            background: rgba(255,255,255,0.3);
         }
         
         .file-viewer-content {
             flex: 1;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: auto;
-            padding: 20px;
+            flex-direction: column;
+            overflow: hidden;
+            background: #525659;
         }
         
-        .file-viewer-content iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
+        .pdf-container {
+            flex: 1;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+            gap: 10px;
+        }
+        
+        .pdf-container canvas {
+            max-width: 100%;
+            height: auto !important;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .pdf-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 12px 16px;
+            padding-bottom: calc(var(--safe-bottom) + 12px);
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+        }
+        
+        .pdf-controls button {
+            padding: 10px 16px;
             border-radius: 8px;
-            background: white;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .pdf-controls button:active {
+            background: var(--bg-card-hover);
+        }
+        
+        .pdf-controls button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .pdf-page-info {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            min-width: 80px;
+            text-align: center;
         }
         
         .file-viewer-content img {
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
-            border-radius: 8px;
+            margin: auto;
         }
         
-        .file-viewer-footer {
-            display: flex;
-            gap: 12px;
-            padding: 16px 20px;
-            padding-bottom: calc(var(--safe-bottom) + 16px);
-            background: rgba(0, 0, 0, 0.9);
-        }
-        
-        .file-viewer-btn {
+        .file-viewer-message {
             flex: 1;
-            padding: 16px 20px;
-            border-radius: 12px;
-            border: none;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            padding: 40px 20px;
+            text-align: center;
         }
         
-        .file-viewer-btn.download {
-            background: var(--success);
-            color: white;
+        .file-viewer-message .icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
         }
         
-        .file-viewer-btn.external {
-            background: var(--bg-card);
+        .file-viewer-message .title {
+            font-size: 1.2rem;
+            font-weight: 600;
             color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+        
+        .file-viewer-message .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
         }
         
         /* Empty State */
@@ -1181,22 +1223,31 @@
             
             if (imageExts.includes(ext)) {
                 // Image - show directly in modal
-                content.innerHTML = `<img src="${url}" alt="${escapeHtml(title)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">`;
-            } else if (pdfExts.includes(ext)) {
-                // PDF - embed directly in modal
                 content.innerHTML = `
-                    <iframe src="${url}" 
-                            style="width: 100%; height: 100%; border: none; background: white; border-radius: 8px;"
-                            type="application/pdf">
-                    </iframe>
+                    <div style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px;">
+                        <img src="${url}" alt="${escapeHtml(title)}" style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px;">
+                    </div>
                 `;
-            } else {
-                // Other files - show download option
+            } else if (pdfExts.includes(ext)) {
+                // PDF - render with PDF.js
                 content.innerHTML = `
-                    <div style="text-align: center; color: white; width: 100%; padding: 20px;">
-                        <div style="font-size: 4rem; margin-bottom: 20px;">📎</div>
-                        <div style="font-size: 1.2rem; margin-bottom: 8px; font-weight: 600;">${escapeHtml(title)}</div>
-                        <div style="color: rgba(255,255,255,0.6); margin-bottom: 30px;">Documento allegato</div>
+                    <div class="pdf-container" id="pdfContainer">
+                        <div style="color: var(--text-secondary); padding: 40px;">Caricamento PDF...</div>
+                    </div>
+                    <div class="pdf-controls">
+                        <button onclick="pdfPrevPage()" id="pdfPrev"><i class="fas fa-chevron-left"></i></button>
+                        <span class="pdf-page-info" id="pdfPageInfo">-</span>
+                        <button onclick="pdfNextPage()" id="pdfNext"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                `;
+                loadPdfWithPdfJs(url);
+            } else {
+                // Other files - show message
+                content.innerHTML = `
+                    <div class="file-viewer-message">
+                        <div class="icon">📎</div>
+                        <div class="title">${escapeHtml(title)}</div>
+                        <div class="subtitle">Questo tipo di file non può essere visualizzato</div>
                     </div>
                 `;
             }
@@ -1205,18 +1256,97 @@
             document.body.style.overflow = 'hidden';
         }
         
-        // Close file viewer
-        function closeFileViewer(event) {
-            if (event && event.target !== event.currentTarget) return;
+        // PDF.js variables
+        let pdfDoc = null;
+        let currentPage = 1;
+        let totalPages = 0;
+        
+        // Load PDF with PDF.js
+        async function loadPdfWithPdfJs(url) {
+            const container = document.getElementById('pdfContainer');
             
+            try {
+                pdfDoc = await pdfjsLib.getDocument(url).promise;
+                totalPages = pdfDoc.numPages;
+                currentPage = 1;
+                
+                container.innerHTML = '';
+                
+                // Render all pages
+                for (let i = 1; i <= totalPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    
+                    // Scale for good quality on mobile
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    
+                    await page.render({
+                        canvasContext: context,
+                        viewport: viewport
+                    }).promise;
+                    
+                    container.appendChild(canvas);
+                }
+                
+                updatePdfControls();
+                
+            } catch (error) {
+                console.error('Errore caricamento PDF:', error);
+                container.innerHTML = `
+                    <div class="file-viewer-message">
+                        <div class="icon">⚠️</div>
+                        <div class="title">Errore caricamento PDF</div>
+                        <div class="subtitle">Impossibile visualizzare il documento</div>
+                    </div>
+                `;
+            }
+        }
+        
+        // PDF navigation
+        function pdfPrevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                scrollToPage(currentPage);
+                updatePdfControls();
+            }
+        }
+        
+        function pdfNextPage() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                scrollToPage(currentPage);
+                updatePdfControls();
+            }
+        }
+        
+        function scrollToPage(pageNum) {
+            const container = document.getElementById('pdfContainer');
+            const canvases = container.querySelectorAll('canvas');
+            if (canvases[pageNum - 1]) {
+                canvases[pageNum - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+        
+        function updatePdfControls() {
+            document.getElementById('pdfPageInfo').textContent = `${currentPage} / ${totalPages}`;
+            document.getElementById('pdfPrev').disabled = currentPage <= 1;
+            document.getElementById('pdfNext').disabled = currentPage >= totalPages;
+        }
+        
+        // Close file viewer
+        function closeFileViewer() {
             const overlay = document.getElementById('fileViewerOverlay');
             overlay.classList.remove('active');
             document.body.style.overflow = '';
             currentFileUrl = null;
             currentFileTitle = null;
+            pdfDoc = null;
         }
         
-        // Download current file
+        // Download current file (kept for potential future use)
         function downloadCurrentFile() {
             if (currentFileUrl) {
                 const link = document.createElement('a');
@@ -1229,7 +1359,7 @@
             }
         }
         
-        // Open file externally
+        // Open file externally (kept for potential future use)
         function openExternally() {
             if (currentFileUrl) {
                 window.open(currentFileUrl, '_blank');
@@ -1341,22 +1471,26 @@
     </script>
     
     <!-- File Viewer Modal -->
-    <div class="file-viewer-overlay" id="fileViewerOverlay" onclick="closeFileViewer(event)">
-        <div class="file-viewer-header" onclick="event.stopPropagation()">
+    <div class="file-viewer-overlay" id="fileViewerOverlay">
+        <div class="file-viewer-header">
             <button class="file-viewer-close" onclick="closeFileViewer()">
-                ← CHIUDI
+                <i class="fas fa-times"></i>
             </button>
             <div class="file-viewer-title" id="fileViewerTitle">Documento</div>
+            <div style="width: 40px;"></div>
         </div>
-        <div class="file-viewer-content" id="fileViewerContent" onclick="event.stopPropagation()">
+        <div class="file-viewer-content" id="fileViewerContent">
             <!-- Content loaded dynamically -->
         </div>
-        <div class="file-viewer-footer" onclick="event.stopPropagation()">
-            <button class="file-viewer-btn download" id="fileViewerDownload" onclick="downloadCurrentFile()">
-                <i class="fas fa-download"></i>
-                Scarica File
-            </button>
-        </div>
     </div>
+    
+    <!-- PDF.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // Configure PDF.js worker
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+    </script>
 </body>
 </html>
