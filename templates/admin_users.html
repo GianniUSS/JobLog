@@ -359,7 +359,7 @@
             border-radius: 20px;
             box-shadow: var(--shadow);
             width: 100%;
-            max-width: 480px;
+            max-width: 700px;
             transform: translateY(20px);
             transition: transform 0.2s ease;
         }
@@ -395,15 +395,20 @@
         }
 
         /* Form */
-        .form-group { margin-bottom: 16px; }
+        .form-group { margin-bottom: 12px; }
         .form-label {
             display: block;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: var(--muted);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+        }
+        .form-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
         }
         .form-input,
         .form-select {
@@ -503,6 +508,10 @@
                         <span class="menu-item-icon">🧑‍🔧</span>
                         <span>Gestione Operatori</span>
                     </a>
+                    <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📆</span>
+                        <span>Gestione Turni</span>
+                    </a>
                     <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
                         <span class="menu-item-icon">⚙️</span>
                         <span>Regole Timbrature</span>
@@ -594,24 +603,24 @@
                     <input type="hidden" id="formEditMode" value="create" />
                     <input type="hidden" id="formOriginalUsername" />
                     
-                    <div class="form-group">
-                        <label class="form-label" for="formUsername">Username *</label>
-                        <input type="text" class="form-input" id="formUsername" required placeholder="es. mario.rossi" />
-                        <p class="form-hint">Usato per il login. Solo lettere minuscole, numeri, punti e underscore.</p>
-                    </div>
-
-                    <div class="form-row">
+                    <!-- Riga 1: Username, Nome Visualizzato, Nome Completo -->
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label class="form-label" for="formUsername">Username *</label>
+                            <input type="text" class="form-input" id="formUsername" required placeholder="mario.rossi" />
+                        </div>
                         <div class="form-group">
                             <label class="form-label" for="formDisplayName">Nome Visualizzato *</label>
-                            <input type="text" class="form-input" id="formDisplayName" required placeholder="es. Mario" />
+                            <input type="text" class="form-input" id="formDisplayName" required placeholder="Mario" />
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="formFullName">Nome Completo</label>
-                            <input type="text" class="form-input" id="formFullName" placeholder="es. Mario Rossi" />
+                            <input type="text" class="form-input" id="formFullName" placeholder="Mario Rossi" />
                         </div>
                     </div>
 
-                    <div class="form-row">
+                    <!-- Riga 2: Ruolo, Password, Account Attivo -->
+                    <div class="form-row-3">
                         <div class="form-group">
                             <label class="form-label" for="formRole">Ruolo *</label>
                             <select class="form-select" id="formRole" required>
@@ -624,24 +633,45 @@
                         <div class="form-group">
                             <label class="form-label" for="formPassword">Password</label>
                             <input type="password" class="form-input" id="formPassword" placeholder="••••••••" />
-                            <p class="form-hint" id="passwordHint">Richiesta per nuovi utenti</p>
+                            <p class="form-hint" id="passwordHint">Vuoto = mantieni attuale</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">&nbsp;</label>
+                            <label class="form-checkbox" style="height: 42px; padding: 0 14px; background: var(--bg-soft); border-radius: 10px; border: 1px solid var(--border);">
+                                <input type="checkbox" id="formIsActive" checked />
+                                <span>Account Attivo</span>
+                            </label>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-checkbox">
-                            <input type="checkbox" id="formIsActive" checked />
-                            <span>Account Attivo</span>
-                        </label>
-                    </div>
-
+                    <!-- Riga 3: Operatore Rentman -->
                     <div class="form-group">
                         <label class="form-label" for="formCrewId">Operatore Rentman (per turni)</label>
                         <select class="form-select" id="formCrewId">
                             <option value="">-- Nessun operatore associato --</option>
                         </select>
-                        <p class="form-hint">Collega l'utente a un operatore per mostrare il turno nella pagina timbratura</p>
                     </div>
+
+                    <!-- Sezione CedolinoWeb -->
+                    {% if cedolino_sync_enabled %}
+                    <div class="form-section cedolino-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                            <span style="color: var(--cyan);">📊</span>
+                            <span style="font-size: 13px; font-weight: 700; color: var(--muted);">CedolinoWeb</span>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label" for="formExternalId">ID Esterno</label>
+                                <input type="text" class="form-input" id="formExternalId" placeholder="12345" />
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label" for="formExternalGroupId">Gruppo ID</label>
+                                <input type="text" class="form-input" id="formExternalGroupId" placeholder="G01" />
+                            </div>
+                        </div>
+                        <p class="form-hint" id="externalIdStatus" style="font-size: 11px; margin-top: 6px;"></p>
+                    </div>
+                    {% endif %}
                 </form>
             </div>
             <div class="modal-footer">
@@ -676,6 +706,10 @@
     (function() {
         'use strict';
 
+        // Config - passato da Jinja
+        const cedolinoSyncEnabled = {% if cedolino_sync_enabled %}true{% else %}false{% endif %};
+        console.log('CedolinoSyncEnabled:', cedolinoSyncEnabled);
+
         // State
         let users = [];
         let deleteTarget = null;
@@ -706,6 +740,10 @@
         const formPassword = document.getElementById('formPassword');
         const formIsActive = document.getElementById('formIsActive');
         const formCrewId = document.getElementById('formCrewId');
+        // CedolinoWeb elements (potrebbero non esistere se sync disabilitato)
+        const formExternalId = document.getElementById('formExternalId');
+        const formExternalGroupId = document.getElementById('formExternalGroupId');
+        const externalIdStatus = document.getElementById('externalIdStatus');
         const passwordHint = document.getElementById('passwordHint');
 
         // Delete Modal elements
@@ -768,6 +806,7 @@
                 if (!response.ok) throw new Error('Errore nel caricamento utenti');
                 const data = await response.json();
                 users = data.users || [];
+                console.log('Utenti caricati:', users.length, users);
                 renderUsers();
             } catch (error) {
                 console.error('Errore:', error);
@@ -796,7 +835,9 @@
                 full_name: formFullName.value.trim() || null,
                 role: formRole.value,
                 is_active: formIsActive.checked,
-                rentman_crew_id: formCrewId.value ? parseInt(formCrewId.value) : null
+                rentman_crew_id: formCrewId.value ? parseInt(formCrewId.value) : null,
+                external_id: formExternalId ? (formExternalId.value.trim() || null) : null,
+                external_group_id: formExternalGroupId ? (formExternalGroupId.value.trim() || null) : null
             };
 
             console.log('Saving user payload:', payload);
@@ -873,7 +914,8 @@
             }
 
             emptyState.classList.add('hidden');
-            usersTableBody.innerHTML = filtered.map(user => `
+            usersTableBody.innerHTML = filtered.map(user => {
+                return `
                 <tr data-username="${user.username}">
                     <td>
                         <div class="user-info">
@@ -895,7 +937,7 @@
                         </div>
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
 
         function escapeHtml(text) {
@@ -920,6 +962,9 @@
             formPassword.required = true;
             formIsActive.checked = true;
             formCrewId.value = '';
+            if (formExternalId) formExternalId.value = '';
+            if (formExternalGroupId) formExternalGroupId.value = '';
+            if (externalIdStatus) externalIdStatus.innerHTML = '<span style="color: var(--muted);">ℹ L\'ID Esterno può essere impostato dopo la creazione dell\'utente.</span>';
             passwordHint.textContent = 'Richiesta per nuovi utenti';
             modalTitle.textContent = 'Nuovo Utente';
             userModal.classList.add('open');
@@ -942,10 +987,27 @@
             formPassword.required = false;
             formIsActive.checked = user.is_active;
             formCrewId.value = user.rentman_crew_id || '';
+            if (formExternalId) formExternalId.value = user.external_id || '';
+            if (formExternalGroupId) formExternalGroupId.value = user.external_group_id || '';
             console.log('Setting rentman_crew_id to:', user.rentman_crew_id, '- formCrewId.value:', formCrewId.value);
             passwordHint.textContent = 'Lascia vuoto per mantenere la password attuale';
             modalTitle.textContent = 'Modifica Utente';
+            
+            // Mostra status ID Esterno (solo se sezione presente)
+            if (cedolinoSyncEnabled) {
+                updateExternalIdStatus(user);
+            }
+            
             userModal.classList.add('open');
+        }
+        
+        function updateExternalIdStatus(user) {
+            if (!externalIdStatus) return;
+            if (user.external_id) {
+                externalIdStatus.innerHTML = `<span style="color: var(--success);">✓ ID Esterno configurato: ${user.external_id}</span>`;
+            } else {
+                externalIdStatus.innerHTML = `<span style="color: var(--muted);">ℹ Nessun ID Esterno. Le timbrature non saranno sincronizzate con CedolinoWeb.</span>`;
+            }
         }
 
         function closeUserModal() {

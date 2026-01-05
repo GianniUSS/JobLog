@@ -875,6 +875,10 @@
           <span class="menu-item-icon">🧑‍🔧</span>
           <span>Gestione Operatori</span>
         </a>
+        <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item">
+          <span class="menu-item-icon">📆</span>
+          <span>Gestione Turni</span>
+        </a>
         <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
           <span class="menu-item-icon">⚙️</span>
           <span>Regole Timbrature</span>
@@ -1429,9 +1433,20 @@ async function showRecipients(docIndex) {
         const name = r.display_name || r.username;
         const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
         const readClass = r.read ? 'read' : 'unread';
-        const readBadge = r.read 
-          ? `<span class="read-status read">✓ Letto</span>` 
-          : `<span class="read-status unread">○ Non letto</span>`;
+        let readBadge;
+        if (r.read && r.read_at) {
+          const readDate = new Date(r.read_at);
+          const dateStr = readDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+          const timeStr = readDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+          readBadge = `<span class="read-status read" style="flex-direction: column; align-items: flex-end;">
+            <span>✓ Letto</span>
+            <span style="font-size: 0.7rem; opacity: 0.8;">${dateStr} ${timeStr}</span>
+          </span>`;
+        } else if (r.read) {
+          readBadge = `<span class="read-status read">✓ Letto</span>`;
+        } else {
+          readBadge = `<span class="read-status unread">○ Non letto</span>`;
+        }
         return `
           <div class="recipient-item ${readClass}">
             <div class="recipient-avatar ${readClass}">${initials}</div>
@@ -1477,9 +1492,20 @@ async function showAllRecipients(docId) {
         const name = r.display_name || r.username;
         const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
         const readClass = r.read ? 'read' : 'unread';
-        const readBadge = r.read 
-          ? `<span class="read-status read">✓ Letto</span>` 
-          : `<span class="read-status unread">○ Non letto</span>`;
+        let readBadge;
+        if (r.read && r.read_at) {
+          const readDate = new Date(r.read_at);
+          const dateStr = readDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+          const timeStr = readDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+          readBadge = `<span class="read-status read" style="flex-direction: column; align-items: flex-end;">
+            <span>✓ Letto</span>
+            <span style="font-size: 0.7rem; opacity: 0.8;">${dateStr} ${timeStr}</span>
+          </span>`;
+        } else if (r.read) {
+          readBadge = `<span class="read-status read">✓ Letto</span>`;
+        } else {
+          readBadge = `<span class="read-status unread">○ Non letto</span>`;
+        }
         return `
           <div class="recipient-item ${readClass}">
             <div class="recipient-avatar ${readClass}">${initials}</div>

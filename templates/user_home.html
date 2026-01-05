@@ -529,22 +529,33 @@ header {
 }
 .history-item {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 12px;
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
+  min-height: 50px;
+}
+.history-item > *:not(.location-badge):not(.overtime-badge) {
+  display: flex;
+  align-items: center;
 }
 .history-item:last-child {
   border-bottom: none;
 }
 .history-item .time {
   font-weight: 600;
-  min-width: 50px;
+  min-width: 55px;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
 }
 .history-item .time .ora-originale {
   opacity: 0.6;
   font-weight: 400;
+  font-size: 12px;
+  text-decoration: line-through;
 }
 .history-item .time .ora-mod {
   color: var(--green);
@@ -561,12 +572,15 @@ header {
 }
 .history-item .type {
   color: var(--text-secondary);
+  align-self: center;
+  flex: 1;
 }
 .history-item .dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  align-self: center;
 }
 .history-item .dot.start { background: var(--green); }
 .history-item .dot.end { background: var(--red); }
@@ -576,6 +590,7 @@ header {
 .history-item .sync-status {
   margin-left: auto;
   font-size: 14px;
+  align-self: center;
 }
 .history-item .sync-status.synced {
   color: var(--green);
@@ -589,24 +604,72 @@ header {
   50% { opacity: 0.5; }
 }
 
-/* Location badge */
+/* Overtime badge (straordinario in attesa) - riga separata */
+.history-item.has-overtime {
+  border-left: 3px solid #f59e0b;
+  padding-left: 12px;
+  margin-left: -3px;
+}
+.overtime-info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 6px 15px;
+  margin-top: -8px;
+  font-size: 12px;
+  color: #92400e;
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.15), transparent);
+  border-bottom: 1px solid var(--border);
+}
+.overtime-info-row .overtime-icon {
+  font-size: 14px;
+}
+.overtime-info-row .overtime-text {
+  font-weight: 600;
+}
+.overtime-info-row .overtime-time {
+  background: #fbbf24;
+  color: #78350f;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* Location badge - chip grande con contenuto su 2 righe */
 .history-item .location-badge {
-  font-size: 10px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 500;
   background: linear-gradient(135deg, #3b82f6, #1d4ed8);
   color: white;
-  padding: 2px 6px;
-  border-radius: 10px;
-  margin-left: 6px;
+  border-radius: 12px;
+  margin-left: auto;
+  max-width: 130px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  line-height: 1.2;
+  text-align: center;
+}
+.history-item .location-badge .loc-icon {
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.history-item .location-badge .loc-text {
   white-space: nowrap;
-  max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: inline-block;
-  vertical-align: middle;
+  max-width: 100%;
 }
 .history-item .method-badge {
   font-size: 12px;
   margin-left: 6px;
+  align-self: center;
 }
 .history-item .method-badge.qr {
   opacity: 0.7;
@@ -673,12 +736,16 @@ header {
   box-shadow: 0 8px 32px var(--shadow);
   font-weight: 600;
   z-index: 1001;
-  transition: transform 0.3s ease;
+  transition: transform 0.3s ease, opacity 0.3s ease;
   max-width: calc(100vw - 40px);
   text-align: center;
+  opacity: 0;
+  pointer-events: none;
 }
 .toast.show {
   transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
 }
 .toast.success { border-left: 4px solid var(--green); }
 .toast.error { border-left: 4px solid var(--red); }
@@ -1483,9 +1550,17 @@ header {
             <span class="icon">🕐</span>
             <span id="turnoOrarioText">-</span>
           </div>
+          <div class="turno-detail" id="turnoPausa" style="display:none;">
+            <span class="icon">☕</span>
+            <span id="turnoPausaText">-</span>
+          </div>
           <div class="turno-detail" id="turnoFunzione">
             <span class="icon">👤</span>
             <span id="turnoFunzioneText">-</span>
+          </div>
+          <div class="turno-detail" id="turnoLocation" style="display:none;">
+            <span class="icon">📍</span>
+            <span id="turnoLocationText">-</span>
           </div>
         </div>
         <span class="turno-badge" id="turnoBadge" style="display:none;"></span>
@@ -1594,6 +1669,7 @@ const TIMBRATURA_TYPES = {
 };
 
 let todayTimbrature = [];
+let pendingOvertime = null;  // Straordinario in attesa di revisione
 let html5QrcodeScanner = null;
 let pendingTimbraturaType = null;  // Tipo di timbratura in attesa di conferma QR
 
@@ -1614,11 +1690,16 @@ function updateDate() {
 }
 
 // Toast notification
+let toastTimer = null;
 function showToast(message, type = 'success') {
   const toast = document.getElementById('toast');
+  if (toastTimer) clearTimeout(toastTimer);
   toast.textContent = message;
   toast.className = 'toast ' + type + ' show';
-  setTimeout(() => toast.classList.remove('show'), 3000);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+    toastTimer = null;
+  }, 2000);
 }
 
 // Configurazione timbratura (caricata dal server)
@@ -1718,10 +1799,15 @@ function selectMethod(method) {
 
 function openGpsModal(label) {
   document.getElementById('gpsTitle').textContent = '📍 ' + label;
-  document.getElementById('gpsSubtitle').textContent = 'Verifica posizione in corso...';
+  document.getElementById('gpsSubtitle').textContent = 'Avvicinati alla sede per timbrare';
   
-  // Mostra i nomi delle location configurate
-  const locationNames = timbraturaConfig.gps_locations.map(l => l.name).join(', ') || 'Sede';
+  // Mostra la sede specifica del turno se presente, altrimenti tutte le location
+  let locationNames;
+  if (currentShiftLocationName) {
+    locationNames = currentShiftLocationName;
+  } else {
+    locationNames = timbraturaConfig.gps_locations.map(l => l.name).join(', ') || 'Sede';
+  }
   document.getElementById('gpsLocationName').innerHTML = `<span class="location-label">🏢</span> <strong>${locationNames}</strong>`;
   
   document.getElementById('gpsIcon').textContent = '📍';
@@ -1776,6 +1862,30 @@ function onGpsSuccess(position) {
   const { latitude, longitude, accuracy } = position.coords;
   lastGpsPosition = { latitude, longitude, accuracy };
   
+  // Calcola distanza dalla sede più vicina
+  // Se il turno ha una sede specifica, usa solo quella
+  let minDistance = Infinity;
+  let nearestLocation = null;
+  let locations = timbraturaConfig.gps_locations || [];
+  
+  // Filtra per sede specifica del turno se presente
+  if (currentShiftLocationName && locations.length > 0) {
+    const filteredLocations = locations.filter(l => l.name === currentShiftLocationName);
+    if (filteredLocations.length > 0) {
+      locations = filteredLocations;
+    }
+  }
+  
+  for (const loc of locations) {
+    if (loc.latitude && loc.longitude) {
+      const dist = haversineDistance(latitude, longitude, loc.latitude, loc.longitude);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearestLocation = loc;
+      }
+    }
+  }
+  
   // Determina qualità del segnale
   let accuracyClass = 'poor';
   let accuracyText = 'Precisione bassa';
@@ -1797,23 +1907,63 @@ function onGpsSuccess(position) {
   
   const isAccuracyOk = accuracy <= timbraturaConfig.gps_max_accuracy_meters;
   
-  document.getElementById('gpsIcon').textContent = isAccuracyOk ? '✅' : '📍';
-  document.getElementById('gpsIcon').classList.toggle('loading', !isAccuracyOk);
-  document.getElementById('gpsMessage').textContent = isAccuracyOk 
-    ? 'Posizione rilevata!' 
-    : `In attesa di precisione migliore...`;
+  // Verifica anche la distanza dalla sede
+  const maxRadius = nearestLocation ? (nearestLocation.radius_meters || 100) : 100;
+  const isDistanceOk = minDistance <= (maxRadius + accuracy); // considera l'accuracy come margine
+  const isValid = isAccuracyOk && isDistanceOk;
   
+  document.getElementById('gpsIcon').textContent = isValid ? '✅' : (isAccuracyOk ? '⚠️' : '📍');
+  document.getElementById('gpsIcon').classList.toggle('loading', !isAccuracyOk);
+  
+  // Messaggio in base allo stato
+  if (!isAccuracyOk) {
+    document.getElementById('gpsMessage').textContent = 'In attesa di precisione migliore...';
+  } else if (!isDistanceOk) {
+    document.getElementById('gpsMessage').textContent = '⚠️ Troppo lontano dalla sede';
+  } else {
+    document.getElementById('gpsMessage').textContent = 'Posizione rilevata!';
+  }
+  
+  // Mostra precisione E distanza
   let accuracyDisplay = `${accuracyText} (±${Math.round(accuracy)}m)`;
+  if (nearestLocation && minDistance !== Infinity) {
+    const distText = minDistance >= 1000 
+      ? `${(minDistance/1000).toFixed(1)} km` 
+      : `${Math.round(minDistance)} m`;
+    const distColor = isDistanceOk ? 'var(--success)' : 'var(--danger, #dc3545)';
+    accuracyDisplay += `<br><span style="color: ${distColor}">📍 Distanza dalla sede: <strong>${distText}</strong></span>`;
+    if (!isDistanceOk) {
+      accuracyDisplay += `<br><span class="gps-tip">⚠️ Devi essere entro ${maxRadius}m dalla sede</span>`;
+    }
+  }
   if (accuracyTip) {
     accuracyDisplay += `<br><span class="gps-tip">${accuracyTip}</span>`;
   }
   document.getElementById('gpsAccuracy').innerHTML = accuracyDisplay;
-  document.getElementById('gpsAccuracy').className = 'gps-accuracy ' + accuracyClass;
-  document.getElementById('gpsConfirmBtn').disabled = !isAccuracyOk;
+  document.getElementById('gpsAccuracy').className = 'gps-accuracy ' + (isValid ? accuracyClass : 'poor');
+  document.getElementById('gpsConfirmBtn').disabled = !isAccuracyOk; // Permetti conferma, il server farà la validazione finale
   
   if (isAccuracyOk) {
-    document.getElementById('gpsSubtitle').textContent = 'Premi Conferma per timbrare';
+    document.getElementById('gpsSubtitle').textContent = isDistanceOk 
+      ? 'Premi Conferma per timbrare' 
+      : 'Avvicinati alla sede per timbrare';
   }
+}
+
+// Funzione per calcolare la distanza tra due coordinate (formula di Haversine)
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000; // Raggio della Terra in metri
+  const phi1 = lat1 * Math.PI / 180;
+  const phi2 = lat2 * Math.PI / 180;
+  const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+  
+  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  
+  return R * c;
 }
 
 function onGpsError(error) {
@@ -1876,14 +2026,20 @@ async function confirmGpsLocation() {
   
   try {
     // Valida posizione con il server
+    // Se il turno ha una sede specifica, passa il nome per validazione mirata
+    const validatePayload = {
+      latitude: lastGpsPosition.latitude,
+      longitude: lastGpsPosition.longitude,
+      accuracy: lastGpsPosition.accuracy
+    };
+    if (currentShiftLocationName) {
+      validatePayload.shift_location_name = currentShiftLocationName;
+    }
+    
     const validateRes = await fetch('/api/timbratura/validate-gps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        latitude: lastGpsPosition.latitude,
-        longitude: lastGpsPosition.longitude,
-        accuracy: lastGpsPosition.accuracy
-      })
+      body: JSON.stringify(validatePayload)
     });
     
     const validateData = await validateRes.json();
@@ -1916,6 +2072,10 @@ async function confirmGpsLocation() {
       const locationName = validateData.location || 'Sede';
       showToast(`${TIMBRATURA_TYPES[tipo]?.label} registrata (${locationName})! ✓`, 'success');
       loadTimbrature();
+      // Check straordinario dopo fine giornata
+      if (tipo === 'fine_giornata') {
+        setTimeout(() => checkOvertimeAfterCheckout(), 1500);
+      }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
     }
@@ -1960,6 +2120,10 @@ async function registerTimbraturaDirectly(tipo) {
     } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
       loadTimbrature();
+      // Check straordinario dopo fine giornata
+      if (tipo === 'fine_giornata') {
+        setTimeout(() => checkOvertimeAfterCheckout(), 1500);
+      }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
     }
@@ -2006,19 +2170,20 @@ async function syncOfflineTimbrature() {
       // Costruisci payload con dati opzionali (GPS, QR)
       const payload = { 
         tipo: item.tipo, 
-        bypass_qr: true,
         offline_ts: item.ts,
         offline_timestamp: item.timestamp
       };
       
       // Se ha dati GPS, aggiungi al payload per validazione server
+      // NON impostare bypass_qr quando c'è GPS - il server deve validare le coordinate
       if (item.gps) {
         payload.offline_gps = item.gps;
-      }
-      
-      // Se ha dati QR, aggiungi al payload
-      if (item.qr_code) {
+      } else if (item.qr_code) {
+        // Se ha dati QR, aggiungi al payload
         payload.offline_qr = item.qr_code;
+      } else {
+        // Solo se non ci sono né GPS né QR, usa bypass_qr (timbratura diretta)
+        payload.bypass_qr = true;
       }
       
       const res = await fetch('/api/timbratura', {
@@ -2152,6 +2317,10 @@ async function onScanSuccess(decodedText, decodedResult) {
     } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
       loadTimbrature();
+      // Check straordinario dopo fine giornata
+      if (tipo === 'fine_giornata') {
+        setTimeout(() => checkOvertimeAfterCheckout(), 1500);
+      }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
     }
@@ -2227,6 +2396,24 @@ function updateUI() {
         syncIcon = '<span class="sync-status synced" title="Sincronizzata">✓</span>';
       }
       
+      // Badge straordinario in attesa (solo per fine_giornata)
+      let overtimeRow = '';
+      let hasOvertimeClass = '';
+      if (t.tipo === 'fine_giornata' && pendingOvertime) {
+        const mins = pendingOvertime.minutes || 0;
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+        hasOvertimeClass = 'has-overtime';
+        overtimeRow = `
+          <div class="overtime-info-row">
+            <span class="overtime-icon">⏳</span>
+            <span class="overtime-text">Straordinario in attesa</span>
+            <span class="overtime-time">${timeStr}</span>
+          </div>
+        `;
+      }
+      
       if (t.tipo === 'fine_pausa') {
         // Per fine_pausa, trova l'inizio_pausa corrispondente e mostra durata
         const inizioPausa = [...allTimbrature].slice(0, idx).reverse().find(x => x.tipo === 'inizio_pausa');
@@ -2247,25 +2434,26 @@ function updateUI() {
           }
         }
       } else if (t.ora_mod && t.ora_mod !== t.ora) {
-        oraDisplay = `<span class="ora-originale">${t.ora}</span> → <span class="ora-mod">${t.ora_mod}</span>`;
+        oraDisplay = `<span class="ora-originale">${t.ora}</span><span class="ora-mod">${t.ora_mod}</span>`;
       }
       
       // Mostra location se presente (GPS)
       let locationInfo = '';
       if (t.location_name) {
-        locationInfo = `<span class="location-badge" title="📍 ${t.location_name}">📍 ${t.location_name}</span>`;
+        locationInfo = `<span class="location-badge" title="${t.location_name}">${t.location_name}</span>`;
       } else if (t.method === 'qr' || t.method === 'qr_offline') {
         locationInfo = '<span class="method-badge qr" title="QR Code">📱</span>';
       }
       
       return `
-        <li class="history-item ${t.offline ? 'offline-pending' : ''}">
+        <li class="history-item ${t.offline ? 'offline-pending' : ''} ${hasOvertimeClass}">
           <span class="dot ${info.dotClass}"></span>
           <span class="time">${oraDisplay}</span>
-          <span class="type">- ${info.label}${extraInfo}</span>
+          <span class="type">${info.label}${extraInfo}</span>
           ${locationInfo}
           ${syncIcon}
         </li>
+        ${overtimeRow}
       `;
     }).join('');
   }
@@ -2278,6 +2466,7 @@ async function loadTimbrature() {
     if (res.ok) {
       const data = await res.json();
       todayTimbrature = data.timbrature || [];
+      pendingOvertime = data.pending_overtime || null;
       updateUI();
     }
   } catch (err) {
@@ -2288,6 +2477,7 @@ async function loadTimbrature() {
 // Turni multipli - stato globale
 let allTurni = [];
 let currentTurnoIndex = 0;
+let currentShiftLocationName = null; // Sede GPS associata al turno corrente
 
 // Carica turno di oggi (da Rentman)
 async function loadTurno() {
@@ -2343,6 +2533,9 @@ function displayTurno(index) {
   
   const turno = allTurni[index];
   
+  // Memorizza la sede corrente per la validazione GPS
+  currentShiftLocationName = turno.location_name || null;
+  
   // Progetto
   const projectText = turno.project_name || turno.project_code || 'Progetto';
   document.getElementById('turnoProject').textContent = projectText;
@@ -2363,12 +2556,31 @@ function displayTurno(index) {
     document.getElementById('turnoOrario').style.display = 'none';
   }
   
+  // Pausa prevista
+  if (turno.break_start && turno.break_end) {
+    document.getElementById('turnoPausa').style.display = 'flex';
+    document.getElementById('turnoPausaText').textContent = `Pausa ${turno.break_start} - ${turno.break_end}`;
+  } else if (turno.break_minutes && turno.break_minutes > 0) {
+    document.getElementById('turnoPausa').style.display = 'flex';
+    document.getElementById('turnoPausaText').textContent = `Pausa: ${turno.break_minutes} min`;
+  } else {
+    document.getElementById('turnoPausa').style.display = 'none';
+  }
+  
   // Funzione/Ruolo
   if (turno.function) {
     document.getElementById('turnoFunzione').style.display = 'flex';
     document.getElementById('turnoFunzioneText').textContent = turno.function;
   } else {
     document.getElementById('turnoFunzione').style.display = 'none';
+  }
+  
+  // Sede GPS associata al turno
+  if (turno.location_name) {
+    document.getElementById('turnoLocation').style.display = 'flex';
+    document.getElementById('turnoLocationText').textContent = turno.location_name;
+  } else {
+    document.getElementById('turnoLocation').style.display = 'none';
   }
   
   // Badge (Leader / Trasporto)
@@ -3114,6 +3326,277 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// OVERTIME (STRAORDINARI) - Check automatico dopo checkout
+// ═══════════════════════════════════════════════════════════════════
+
+async function checkOvertimeAfterCheckout(sessionId) {
+    try {
+        // Prendi inizio e fine giornata dalla variabile globale todayTimbrature
+        const today = new Date().toISOString().split('T')[0];
+        
+        // todayTimbrature è già caricato dalla loadTimbrature()
+        if (!todayTimbrature || todayTimbrature.length === 0) return;
+        
+        // Trova orari inizio/fine giornata di oggi
+        const inizio = todayTimbrature.find(t => t.tipo === 'inizio_giornata');
+        const fine = todayTimbrature.find(t => t.tipo === 'fine_giornata');
+        
+        if (!inizio || !fine) return;
+        
+        // Estrai l'ora (può essere oggetto o stringa)
+        const getTimeStr = (t) => {
+            if (!t.ora) return null;
+            if (typeof t.ora === 'string') return t.ora.substring(0, 5);
+            if (t.ora.hour !== undefined) return `${String(t.ora.hour).padStart(2,'0')}:${String(t.ora.minute || 0).padStart(2,'0')}`;
+            return String(t.ora).substring(0, 5);
+        };
+        
+        const actualStart = getTimeStr(inizio);
+        const actualEnd = getTimeStr(fine);
+        
+        if (!actualStart || !actualEnd) return;
+        
+        const res = await fetch(`/api/user/check-overtime?date=${today}&actual_start=${actualStart}&actual_end=${actualEnd}&session_id=${sessionId || ''}`);
+        const data = await res.json();
+        
+        if (data.overtime_detected) {
+            showOvertimeModal(data);
+        }
+    } catch (err) {
+        console.error('Errore check overtime:', err);
+    }
+}
+
+function showOvertimeModal(overtimeData) {
+    // Rimuovi modal esistente se presente
+    const existingModal = document.getElementById('overtimeModal');
+    if (existingModal) existingModal.remove();
+    
+    const hours = Math.floor(overtimeData.total_extra_minutes / 60);
+    const mins = overtimeData.total_extra_minutes % 60;
+    const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} minuti`;
+    
+    const typeLabels = {
+        before_shift: 'Prima del turno',
+        after_shift: 'Dopo il turno',
+        both: 'Prima e dopo il turno',
+        extra_day: 'Giornata extra'
+    };
+    
+    const modal = document.createElement('div');
+    modal.id = 'overtimeModal';
+    modal.innerHTML = `
+        <style>
+            #overtimeModal {
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.6);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                padding: 20px;
+                animation: fadeIn 0.3s ease;
+            }
+            #overtimeModal .modal-content {
+                background: white;
+                border-radius: 20px;
+                max-width: 400px;
+                width: 100%;
+                padding: 28px;
+                text-align: center;
+                animation: slideUp 0.3s ease;
+            }
+            #overtimeModal .modal-icon {
+                width: 70px;
+                height: 70px;
+                background: linear-gradient(135deg, #f59e0b, #d97706);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 20px;
+                font-size: 2rem;
+            }
+            #overtimeModal h3 {
+                margin: 0 0 12px;
+                font-size: 1.3rem;
+            }
+            #overtimeModal .time-highlight {
+                background: #fef3c7;
+                padding: 16px;
+                border-radius: 12px;
+                margin: 16px 0;
+            }
+            #overtimeModal .time-highlight .value {
+                font-size: 2rem;
+                font-weight: 700;
+                color: #92400e;
+            }
+            #overtimeModal .time-highlight .label {
+                font-size: 0.85rem;
+                color: #78350f;
+            }
+            #overtimeModal .details {
+                text-align: left;
+                font-size: 0.9rem;
+                color: #64748b;
+                margin: 16px 0;
+            }
+            #overtimeModal .details .row {
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid #f1f5f9;
+            }
+            #overtimeModal textarea {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                font-size: 0.9rem;
+                resize: none;
+                margin-bottom: 16px;
+            }
+            #overtimeModal textarea:focus {
+                outline: none;
+                border-color: #4361ee;
+            }
+            #overtimeModal .btn-row {
+                display: flex;
+                gap: 12px;
+            }
+            #overtimeModal button {
+                flex: 1;
+                padding: 14px;
+                border-radius: 12px;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                border: none;
+            }
+            #overtimeModal .btn-cancel {
+                background: #f1f5f9;
+                color: #64748b;
+            }
+            #overtimeModal .btn-confirm {
+                background: linear-gradient(135deg, #4361ee, #7c3aed);
+                color: white;
+            }
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        </style>
+        <div class="modal-content">
+            <div class="modal-icon">⏱️</div>
+            <h3>Straordinario Rilevato</h3>
+            <p style="color:#64748b;margin:0 0 16px;">Hai lavorato oltre il turno pianificato</p>
+            
+            <div class="time-highlight">
+                <div class="value">${timeStr}</div>
+                <div class="label">${typeLabels[overtimeData.overtime_type] || 'Straordinario'}</div>
+            </div>
+            
+            <div class="details">
+                <div class="row">
+                    <span>Turno pianificato</span>
+                    <strong>${overtimeData.planned_start || '--'} - ${overtimeData.planned_end || '--'}</strong>
+                </div>
+                <div class="row">
+                    <span>Timbrate originali</span>
+                    <strong>${overtimeData.actual_start} - ${overtimeData.actual_end}</strong>
+                </div>
+                <div class="row" style="background:#fef3c7;margin:0 -8px;padding:8px;border-radius:6px;">
+                    <span>Timbrate arrotondate</span>
+                    <strong style="color:#92400e;">${overtimeData.rounded_start || overtimeData.actual_start} - ${overtimeData.rounded_end || overtimeData.actual_end}</strong>
+                </div>
+            </div>
+            
+            <textarea id="overtimeNotes" placeholder="Inserisci una motivazione..." rows="2" required></textarea>
+            <div style="font-size:0.75rem;color:#ef4444;margin:-8px 0 8px;" id="notesError" hidden>⚠️ La motivazione è obbligatoria</div>
+            
+            <div class="btn-row">
+                <button class="btn-confirm" onclick="submitOvertimeRequest()">Conferma</button>
+            </div>
+        </div>
+    `;
+    
+    // Salva dati per submit
+    modal.dataset.overtimeData = JSON.stringify(overtimeData);
+    
+    document.body.appendChild(modal);
+    
+    // Modal obbligatorio - non chiudibile cliccando fuori
+}
+
+function closeOvertimeModal() {
+    const modal = document.getElementById('overtimeModal');
+    if (modal) modal.remove();
+}
+
+async function submitOvertimeRequest() {
+    const modal = document.getElementById('overtimeModal');
+    if (!modal) return;
+    
+    const data = JSON.parse(modal.dataset.overtimeData || '{}');
+    const notes = document.getElementById('overtimeNotes')?.value.trim() || '';
+    const notesError = document.getElementById('notesError');
+    
+    // Validazione note obbligatorie
+    if (!notes) {
+        notesError.hidden = false;
+        document.getElementById('overtimeNotes').focus();
+        return;
+    }
+    notesError.hidden = true;
+    
+    const btn = modal.querySelector('.btn-confirm');
+    btn.disabled = true;
+    btn.textContent = 'Invio...';
+    
+    try {
+        const res = await fetch('/api/user/overtime', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                date: data.date,
+                session_id: data.session_id,
+                planning_id: data.planning_id,
+                shift_source: data.shift_source,
+                planned_start: data.planned_start,
+                planned_end: data.planned_end,
+                actual_start: data.actual_start,
+                actual_end: data.actual_end,
+                rounded_start: data.rounded_start,
+                rounded_end: data.rounded_end,
+                extra_minutes_before: data.extra_minutes_before || 0,
+                extra_minutes_after: data.extra_minutes_after || 0,
+                total_extra_minutes: data.total_extra_minutes,
+                overtime_type: data.overtime_type,
+                notes: notes
+            })
+        });
+        
+        const result = await res.json();
+        
+        if (result.ok) {
+            closeOvertimeModal();
+            showToast('✅ Richiesta straordinario inviata', 'success');
+            // Ricarica le timbrature per mostrare il badge "in attesa"
+            await loadTimbrature();
+        } else {
+            showToast(result.error || 'Errore invio richiesta', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Richiedi';
+        }
+    } catch (err) {
+        console.error('Errore submit overtime:', err);
+        showToast('Errore di connessione', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Richiedi';
+    }
+}
 </script>
 </body>
 </html>

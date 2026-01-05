@@ -276,10 +276,6 @@
             gap: 10px;
         }
 
-        .form-title::before {
-            content: '📝';
-        }
-
         .form-group {
             margin-bottom: 20px;
         }
@@ -726,10 +722,6 @@
             margin-bottom: 20px;
         }
 
-        .submit-btn::before {
-            content: '🚀';
-        }
-
         .submit-btn:hover {
             box-shadow: 0 12px 28px rgba(102, 126, 234, 0.45);
             transform: translateY(-2px);
@@ -746,12 +738,12 @@
             box-shadow: none;
         }
 
-        /* Filter Pills */
+        /* Filter Grid */
         .filter-pills {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 8px;
             margin-bottom: 20px;
-            flex-wrap: wrap;
         }
 
         .filter-pills::-webkit-scrollbar {
@@ -759,27 +751,46 @@
         }
 
         .filter-pill {
-            padding: 8px 14px;
-            background: var(--bg-card);
-            border: 2px solid var(--border);
-            border-radius: 24px;
+            padding: 12px 10px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
             font-size: 13px;
             font-weight: 600;
-            color: var(--text-secondary);
+            color: #64748b;
             cursor: pointer;
-            white-space: nowrap;
             transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .filter-pill:hover {
+            border-color: #cbd5e1;
+            background: #f8fafc;
         }
 
         .filter-pill:active {
-            transform: scale(0.95);
+            transform: scale(0.98);
         }
 
         .filter-pill.active {
             background: var(--brand);
             border-color: var(--brand);
             color: white;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .filter-pill[data-filter="pending"].active {
+            background: #f59e0b;
+            border-color: #f59e0b;
+        }
+
+        .filter-pill[data-filter="approved"].active {
+            background: #10b981;
+            border-color: #10b981;
+        }
+
+        .filter-pill[data-filter="rejected"].active {
+            background: #ef4444;
+            border-color: #ef4444;
         }
 
         /* Request Cards */
@@ -859,10 +870,6 @@
             gap: 8px;
         }
 
-        .request-dates::before {
-            content: '📅';
-        }
-
         .request-value {
             font-size: 14px;
             color: var(--text-secondary);
@@ -920,6 +927,40 @@
             font-weight: 600;
             color: var(--brand);
         }
+        
+        /* Overtime/Straordinario details */
+        .overtime-details {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+            border-left: 3px solid var(--brand);
+        }
+        
+        .overtime-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 13px;
+            border-bottom: 1px solid var(--border-light);
+        }
+        
+        .overtime-row:last-child {
+            border-bottom: none;
+        }
+        
+        .overtime-row-label {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        
+        .overtime-row-value {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+
 
         /* Empty State */
         .empty-state {
@@ -1388,10 +1429,10 @@
                         <div id="tratte-container">
                             <div class="tratta-row" data-index="0">
                                 <div class="tratta-inputs">
-                                    <input type="text" class="form-input tratta-da" placeholder="Da (es. Milano)" required>
+                                    <input type="text" class="form-input tratta-da" placeholder="Da (es. Milano)">
                                     <span class="tratta-arrow">→</span>
-                                    <input type="text" class="form-input tratta-a" placeholder="A (es. Roma)" required>
-                                    <input type="number" class="form-input tratta-km" placeholder="Km" step="0.1" min="0" required>
+                                    <input type="text" class="form-input tratta-a" placeholder="A (es. Roma)">
+                                    <input type="number" class="form-input tratta-km" placeholder="Km" step="0.1" min="0">
                                 </div>
                                 <button type="button" class="tratta-remove-btn" onclick="removeTratta(this)" style="display: none;">✕</button>
                             </div>
@@ -1415,12 +1456,11 @@
                                     📷 Scatta foto
                                 </button>
                                 <button type="button" class="file-upload-btn gallery-btn" onclick="document.getElementById('gallery-input').click()">
-                                    🖼️ Galleria
+                                    Galleria
                                 </button>
                             </div>
                             <div class="files-preview" id="files-preview"></div>
                         </div>
-                        <small style="color: var(--gray-500); margin-top: 4px; display: block;">Puoi scattare più foto o selezionare dalla galleria</small>
                     </div>
 
                     <!-- Modal Fotocamera -->
@@ -1607,6 +1647,7 @@
             // Reset required
             valueInput.removeAttribute('required');
             cdcInput.removeAttribute('required');
+            setTratteRequired(false);  // Rimuovi required dai campi tratta nascosti
             
             // Mostra counter residui in base al tipo selezionato
             if (typeName.includes('ferie')) {
@@ -1639,10 +1680,30 @@
                     cdcGroup.style.display = 'block';
                     cdcInput.setAttribute('required', 'required');
                     tratteGroup.style.display = 'block';
-                    // Reset tratte
+                    // Reset tratte e attiva required
                     resetTratte();
+                    setTratteRequired(true);
+                    break;
+                case 'minutes':
+                    // Straordinario - mostra campo minuti
+                    valueGroup.style.display = 'block';
+                    valueLabel.textContent = 'Minuti di straordinario';
+                    valueInput.setAttribute('required', 'required');
+                    valueInput.placeholder = 'Es: 60 per 1 ora';
                     break;
             }
+        }
+        
+        // Gestisce l'attributo required sui campi tratta
+        function setTratteRequired(isRequired) {
+            const tratteInputs = document.querySelectorAll('#tratte-container .tratta-da, #tratte-container .tratta-a, #tratte-container .tratta-km');
+            tratteInputs.forEach(input => {
+                if (isRequired) {
+                    input.setAttribute('required', 'required');
+                } else {
+                    input.removeAttribute('required');
+                }
+            });
         }
         
         // Gestione Tratte KM
@@ -1653,10 +1714,10 @@
             container.innerHTML = `
                 <div class="tratta-row" data-index="0">
                     <div class="tratta-inputs">
-                        <input type="text" class="form-input tratta-da" placeholder="Da (es. Milano)" required>
+                        <input type="text" class="form-input tratta-da" placeholder="Da (es. Milano)">
                         <span class="tratta-arrow">→</span>
-                        <input type="text" class="form-input tratta-a" placeholder="A (es. Roma)" required>
-                        <input type="number" class="form-input tratta-km" placeholder="Km" step="0.1" min="0" required oninput="updateTotaleKm()">
+                        <input type="text" class="form-input tratta-a" placeholder="A (es. Roma)">
+                        <input type="number" class="form-input tratta-km" placeholder="Km" step="0.1" min="0" oninput="updateTotaleKm()">
                     </div>
                     <button type="button" class="tratta-remove-btn" onclick="removeTratta(this)" style="display: none;">✕</button>
                 </div>
@@ -1842,7 +1903,6 @@
                             <button type="button" class="file-remove-single" onclick="removeFile(${index})">✕</button>
                         </div>`;
                 });
-                html += `<button type="button" class="file-remove-btn" onclick="removeAllFiles()">✕ Rimuovi tutti</button>`;
                 previewContainer.innerHTML = html;
             } else {
                 previewContainer.innerHTML = '';
@@ -1937,6 +1997,40 @@
                         </div>
                     `;
                 }
+                
+                // Render dettagli straordinario se presenti
+                let overtimeHtml = '';
+                if (req.value_type === 'minutes' && (req.planned_start || req.actual_start)) {
+                    const totalMinutes = req.value || 0;
+                    const hours = Math.floor(totalMinutes / 60);
+                    const mins = totalMinutes % 60;
+                    const totalFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                    
+                    // Orari arrotondati (se modificati dall'admin o calcolati)
+                    const roundedStart = req.rounded_start || req.actual_start || '—';
+                    const roundedEnd = req.rounded_end || req.actual_end || '—';
+                    
+                    overtimeHtml = `
+                        <div class="overtime-details">
+                            <div class="overtime-row">
+                                <span class="overtime-row-label">Turno pianificato</span>
+                                <span class="overtime-row-value">${req.planned_start || '—'} - ${req.planned_end || '—'}</span>
+                            </div>
+                            <div class="overtime-row">
+                                <span class="overtime-row-label">Timbrate originali</span>
+                                <span class="overtime-row-value">${req.actual_start || '—'} - ${req.actual_end || '—'}</span>
+                            </div>
+                            <div class="overtime-row">
+                                <span class="overtime-row-label">Timbrate confermate</span>
+                                <span class="overtime-row-value">${roundedStart} - ${roundedEnd}</span>
+                            </div>
+                            <div class="overtime-row">
+                                <span class="overtime-row-label">Totale straordinario</span>
+                                <span class="overtime-row-value" style="color: var(--brand); font-weight: 600;">${totalFormatted}</span>
+                            </div>
+                        </div>
+                    `;
+                }
 
                 return `
                     <div class="request-card ${statusClass}">
@@ -1949,7 +2043,8 @@
                         </div>
                         ${req.cdc ? `<div class="request-cdc">🏢 CDC: ${req.cdc}</div>` : ''}
                         ${tratteHtml}
-                        ${req.value ? `<div class="request-value">${req.value} ${req.value_unit || 'ore'}</div>` : ''}
+                        ${overtimeHtml}
+                        ${req.value && req.value_type !== 'minutes' ? `<div class="request-value">${req.value} ${req.value_unit || 'ore'}</div>` : ''}
                         ${req.notes ? `<div class="request-notes">${req.notes}</div>` : ''}
                         ${req.admin_notes ? `<div class="request-admin-notes">📝 ${req.admin_notes}</div>` : ''}
                     </div>

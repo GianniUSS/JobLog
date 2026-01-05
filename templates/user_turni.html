@@ -216,59 +216,40 @@ body {
 /* Filter Pills */
 .filter-pills {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 20px;
-  overflow-x: auto;
-  padding: 4px 4px 4px 0;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  /* Assicura che tutti i pulsanti siano visibili con scroll */
-  flex-wrap: nowrap;
-  min-width: 0;
+  padding: 4px 0;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .filter-pills::-webkit-scrollbar {
   display: none;
 }
 
-/* Aggiunge un fade per indicare lo scroll */
+/* Wrapper per i filtri */
 .filter-pills-wrapper {
   position: relative;
 }
 
-.filter-pills-wrapper::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 30px;
-  background: linear-gradient(to right, transparent, var(--bg));
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.filter-pills-wrapper.has-scroll::after {
-  opacity: 1;
-}
-
 .filter-pill {
-  padding: 8px 14px;
+  padding: 8px 12px;
   border-radius: 50px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 0.8rem;
-  font-weight: 500;
+  font-size: 0.75rem;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+  gap: 5px;
+}
+
+.filter-pill i {
+  font-size: 0.7rem;
 }
 
 .filter-pill:hover {
@@ -854,7 +835,7 @@ body {
   <!-- Filter Pills -->
   <div class="filter-pills-wrapper">
     <div class="filter-pills" id="filterPillsContainer">
-      <button class="filter-pill active" data-filter="all">
+      <button class="filter-pill" data-filter="all">
         <i class="fas fa-calendar-alt"></i>
         Tutti
       </button>
@@ -862,7 +843,7 @@ body {
         <i class="fas fa-arrow-right"></i>
         Prossimi
       </button>
-      <button class="filter-pill" data-filter="today">
+      <button class="filter-pill active" data-filter="today">
         <i class="fas fa-star"></i>
         Oggi
       </button>
@@ -870,9 +851,6 @@ body {
         <i class="fas fa-history"></i>
         Passati
       </button>
-    </div>
-    <div class="scroll-indicator">
-      <i class="fas fa-chevron-right"></i>
     </div>
   </div>
 
@@ -1103,7 +1081,7 @@ function showToastGlobal(message) {
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
   
   let allTurni = [];
-  let currentFilter = 'all';
+  let currentFilter = 'today';
   
   const container = document.getElementById('turniContainer');
   const filterPills = document.querySelectorAll('.filter-pill');
@@ -1271,6 +1249,12 @@ function showToastGlobal(message) {
                 <div class="turno-detail">
                   <span class="icon"><i class="fas fa-hourglass-half"></i></span>
                   <span class="value">${turno.hours.toFixed(1)}h</span>
+                </div>
+              ` : ''}
+              ${turno.break_minutes ? `
+                <div class="turno-detail">
+                  <span class="icon"><i class="fas fa-mug-hot"></i></span>
+                  <span class="value">Pausa ${turno.break_minutes} min</span>
                 </div>
               ` : ''}
               ${turno.function ? `

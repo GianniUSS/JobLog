@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gestione Straordinari - Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --bg-panel: #ffffff;
+            --bg-hover: #f1f5f9;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --brand: #8b5cf6;
+            --brand-light: #a78bfa;
+            --success: #10b981;
+            --success-bg: rgba(16, 185, 129, 0.1);
+            --warning: #f59e0b;
+            --warning-bg: rgba(245, 158, 11, 0.1);
+            --danger: #ef4444;
+            --danger-bg: rgba(239, 68, 68, 0.1);
+            --info: #3b82f6;
+            --info-bg: rgba(59, 130, 246, 0.1);
+            --shadow: 0 1px 3px rgba(0,0,0,0.08);
+            --shadow-lg: 0 4px 20px rgba(0,0,0,0.12);
+            --radius: 16px;
+            --radius-sm: 10px;
+        }
+
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --bg-panel: #1e293b;
+            --bg-hover: #334155;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --shadow: 0 1px 3px rgba(0,0,0,0.3);
+            --shadow-lg: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            backdrop-filter: blur(12px);
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .menu-toggle {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .menu-toggle:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .menu-toggle svg {
+            width: 24px;
+            height: 24px;
+            stroke: white;
+        }
+
+        .logo {
+            height: 40px;
+            display: none;
+        }
+
+        @media (min-width: 768px) {
+            .logo {
+                display: block;
+            }
+        }
+
+        .page-title {
+            color: white;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-icon-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            color: white;
+        }
+
+        .header-icon-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .header-icon-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--brand);
+            color: white;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        /* Hamburger Menu */
+        .menu-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 199;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+
+        .menu-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .menu-container {
+            position: fixed;
+            top: 0;
+            left: -300px;
+            width: 300px;
+            height: 100vh;
+            background: var(--bg-panel);
+            z-index: 200;
+            transition: left 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .menu-container.active {
+            left: 0;
+        }
+
+        .menu-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .menu-logo {
+            height: 36px;
+        }
+
+        .menu-close {
+            background: var(--bg-hover);
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .menu-close svg {
+            width: 20px;
+            height: 20px;
+            stroke: var(--text);
+        }
+
+        .menu-nav {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .menu-section {
+            margin-bottom: 24px;
+        }
+
+        .menu-section-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            padding: 0 12px;
+            margin-bottom: 8px;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 12px;
+            color: var(--text);
+            text-decoration: none;
+            transition: all 0.2s;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .menu-item:hover {
+            background: var(--bg-hover);
+        }
+
+        .menu-item.active {
+            background: var(--brand);
+            color: white;
+        }
+
+        .menu-item svg {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        .menu-item.active svg {
+            stroke: white;
+        }
+
+        .menu-item-icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .menu-footer {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .menu-footer a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 12px;
+            color: var(--danger);
+            text-decoration: none;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .menu-footer a:hover {
+            background: var(--danger-bg);
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Filter Tabs */
+        .filter-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .filter-tab {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .filter-tab:hover {
+            border-color: var(--brand);
+            color: var(--brand);
+        }
+
+        .filter-tab.active {
+            background: var(--brand);
+            border-color: var(--brand);
+            color: white;
+        }
+
+        .filter-tab .badge {
+            background: rgba(0,0,0,0.1);
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+
+        .filter-tab.active .badge {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Cards */
+        .cards-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .overtime-card {
+            background: var(--bg-panel);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: all 0.2s;
+        }
+
+        .overtime-card:hover {
+            box-shadow: var(--shadow-lg);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .user-avatar-card {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--brand);
+            color: white;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .user-details h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .user-details .date {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-badge.pending {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+
+        .status-badge.approved {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+
+        .status-badge.rejected {
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+
+        .overtime-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .detail-item {
+            background: var(--bg);
+            padding: 12px;
+            border-radius: var(--radius-sm);
+        }
+
+        .detail-item .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .detail-item .value {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .detail-item .value.highlight {
+            color: var(--brand);
+            font-size: 18px;
+        }
+
+        .overtime-notes {
+            background: var(--bg);
+            padding: 12px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 16px;
+        }
+
+        .overtime-notes .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .overtime-notes .text {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-approve {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-approve:hover {
+            background: #059669;
+        }
+
+        .btn-reject {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-reject:hover {
+            background: #dc2626;
+        }
+
+        .btn-secondary {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-hover);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            stroke: var(--text-muted);
+            margin-bottom: 20px;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            color: var(--text-muted);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+            padding: 20px;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: var(--bg-panel);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: scale(0.9);
+            transition: transform 0.3s;
+        }
+
+        .modal-overlay.active .modal {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-header h2 {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .modal-close {
+            background: var(--bg-hover);
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close svg {
+            width: 20px;
+            height: 20px;
+            stroke: var(--text);
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 100px;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+
+        .modal-footer {
+            padding: 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--bg-panel);
+            padding: 16px 24px;
+            border-radius: var(--radius-sm);
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 400;
+            transition: transform 0.3s;
+            border: 1px solid var(--border);
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--danger);
+        }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--brand);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .overtime-details {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .card-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <button class="menu-toggle" onclick="toggleMenu()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+            <img src="/uploads/logo/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'">
+            <h1 class="page-title">Gestione Straordinari</h1>
+        </div>
+        <div class="header-right">
+            <button class="header-icon-btn" onclick="toggleTheme()" title="Cambia tema">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                </svg>
+            </button>
+            <button class="header-icon-btn" onclick="loadOvertime()" title="Aggiorna">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+            </button>
+            <div class="user-avatar" id="userAvatar">A</div>
+        </div>
+    </header>
+
+    <!-- Hamburger Menu -->
+    <div class="menu-overlay" onclick="toggleMenu()"></div>
+    <nav class="menu-container">
+        <div class="menu-header">
+            <img src="/uploads/logo/logo.png" alt="Logo" class="menu-logo" onerror="this.style.display='none'">
+            <button class="menu-close" onclick="toggleMenu()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="menu-nav">
+            <div class="menu-section">
+                <div class="menu-section-title">Dashboard</div>
+                <a href="/admin/dashboard" class="menu-item">
+                    <span class="menu-item-icon">📊</span>
+                    Dashboard
+                </a>
+                <a href="/admin/activity-analysis" class="menu-item">
+                    <span class="menu-item-icon">📈</span>
+                    Analisi Attività
+                </a>
+            </div>
+            <div class="menu-section">
+                <div class="menu-section-title">Gestione</div>
+                <a href="/admin/users" class="menu-item">
+                    <span class="menu-item-icon">👥</span>
+                    Gestione Utenti
+                </a>
+                <a href="/admin/operators" class="menu-item">
+                    <span class="menu-item-icon">🔧</span>
+                    Gestione Operatori
+                </a>
+                <a href="/admin/user-requests" class="menu-item">
+                    <span class="menu-item-icon">📝</span>
+                    Richieste Utenti
+                </a>
+                <a href="/admin/overtime" class="menu-item active">
+                    <span class="menu-item-icon">⏱️</span>
+                    Straordinari
+                </a>
+                <a href="/admin/sessions" class="menu-item">
+                    <span class="menu-item-icon">📋</span>
+                    Sessioni Lavoro
+                </a>
+            </div>
+            <div class="menu-section">
+                <div class="menu-section-title">Configurazione</div>
+                <a href="/admin/timbratura-rules" class="menu-item">
+                    <span class="menu-item-icon">⚙️</span>
+                    Regole Timbratura
+                </a>
+                <a href="/admin/request-types" class="menu-item">
+                    <span class="menu-item-icon">📑</span>
+                    Tipi Richiesta
+                </a>
+                <a href="/admin/company-settings" class="menu-item">
+                    <span class="menu-item-icon">🏢</span>
+                    Impostazioni Azienda
+                </a>
+            </div>
+            <div class="menu-section">
+                <div class="menu-section-title">Integrazioni</div>
+                <a href="/admin/rentman-planning" class="menu-item">
+                    <span class="menu-item-icon">📅</span>
+                    Rentman Planning
+                </a>
+                <a href="/magazzino" class="menu-item">
+                    <span class="menu-item-icon">📦</span>
+                    Magazzino
+                </a>
+            </div>
+        </div>
+        <div class="menu-footer">
+            <a href="/logout">
+                <span class="menu-item-icon">🚪</span>
+                Logout
+            </a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Filter Tabs -->
+        <div class="filter-tabs">
+            <button class="filter-tab active" data-status="all" onclick="filterOvertime('all')">
+                Tutti <span class="badge" id="badge-all">0</span>
+            </button>
+            <button class="filter-tab" data-status="pending" onclick="filterOvertime('pending')">
+                In Attesa <span class="badge" id="badge-pending">0</span>
+            </button>
+            <button class="filter-tab" data-status="approved" onclick="filterOvertime('approved')">
+                Approvati <span class="badge" id="badge-approved">0</span>
+            </button>
+            <button class="filter-tab" data-status="rejected" onclick="filterOvertime('rejected')">
+                Rifiutati <span class="badge" id="badge-rejected">0</span>
+            </button>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState" style="display: none;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <h3>Nessuna richiesta</h3>
+            <p>Non ci sono richieste di straordinario per questa categoria</p>
+        </div>
+
+        <!-- Cards Grid -->
+        <div class="cards-grid" id="cardsContainer"></div>
+    </main>
+
+    <!-- Review Modal -->
+    <div class="modal-overlay" id="reviewModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">Revisione Straordinario</h2>
+                <button class="modal-close" onclick="closeModal()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="reviewNotes">Note di revisione (opzionale)</label>
+                    <textarea id="reviewNotes" placeholder="Aggiungi una nota per l'utente..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Annulla</button>
+                <button class="btn" id="modalConfirmBtn">Conferma</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">
+        <span id="toastMessage"></span>
+    </div>
+
+    <script>
+        let allOvertime = [];
+        let currentFilter = 'all';
+        let pendingReview = null;
+
+        // Theme
+        function initTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        }
+
+        function toggleTheme() {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+            localStorage.setItem('theme', isDark ? 'light' : 'dark');
+        }
+
+        // Menu
+        function toggleMenu() {
+            document.querySelector('.menu-container').classList.toggle('active');
+            document.querySelector('.menu-overlay').classList.toggle('active');
+        }
+
+        // Init user avatar
+        function initUserAvatar() {
+            const username = '{{ session.get("username", "Admin") }}';
+            const avatar = document.getElementById('userAvatar');
+            avatar.textContent = username.charAt(0).toUpperCase();
+        }
+
+        // Load overtime requests
+        async function loadOvertime() {
+            const loading = document.getElementById('loading');
+            const container = document.getElementById('cardsContainer');
+            const emptyState = document.getElementById('emptyState');
+
+            loading.style.display = 'flex';
+            container.innerHTML = '';
+            emptyState.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/admin/overtime');
+                if (!res.ok) throw new Error('Errore nel caricamento');
+                
+                allOvertime = await res.json();
+                updateBadges();
+                renderOvertime();
+            } catch (err) {
+                showToast('Errore nel caricamento: ' + err.message, 'error');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Update badges
+        function updateBadges() {
+            const counts = {
+                all: allOvertime.length,
+                pending: allOvertime.filter(o => o.status === 'pending').length,
+                approved: allOvertime.filter(o => o.status === 'approved').length,
+                rejected: allOvertime.filter(o => o.status === 'rejected').length
+            };
+
+            Object.keys(counts).forEach(key => {
+                document.getElementById('badge-' + key).textContent = counts[key];
+            });
+        }
+
+        // Filter
+        function filterOvertime(status) {
+            currentFilter = status;
+            document.querySelectorAll('.filter-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.status === status);
+            });
+            renderOvertime();
+        }
+
+        // Render overtime cards
+        function renderOvertime() {
+            const container = document.getElementById('cardsContainer');
+            const emptyState = document.getElementById('emptyState');
+
+            let filtered = allOvertime;
+            if (currentFilter !== 'all') {
+                filtered = allOvertime.filter(o => o.status === currentFilter);
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            container.innerHTML = filtered.map(o => createOvertimeCard(o)).join('');
+        }
+
+        // Create card HTML
+        function createOvertimeCard(overtime) {
+            const initials = overtime.display_name ? overtime.display_name.split(' ').map(n => n[0]).join('').toUpperCase() : overtime.username[0].toUpperCase();
+            const dateStr = new Date(overtime.request_date).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            
+            const statusLabels = {
+                'pending': 'In Attesa',
+                'approved': 'Approvato',
+                'rejected': 'Rifiutato'
+            };
+
+            let actionsHtml = '';
+            if (overtime.status === 'pending') {
+                actionsHtml = `
+                    <button class="btn btn-approve" onclick="reviewOvertime(${overtime.id}, 'approved')">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Approva
+                    </button>
+                    <button class="btn btn-reject" onclick="reviewOvertime(${overtime.id}, 'rejected')">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        Rifiuta
+                    </button>
+                `;
+            }
+
+            let reviewInfoHtml = '';
+            if (overtime.status !== 'pending' && overtime.reviewed_by) {
+                const reviewDate = overtime.reviewed_at ? new Date(overtime.reviewed_at).toLocaleString('it-IT') : '';
+                reviewInfoHtml = `
+                    <div class="overtime-notes">
+                        <div class="label">Revisione</div>
+                        <div class="text">
+                            <strong>${overtime.reviewed_by}</strong> - ${reviewDate}
+                            ${overtime.review_notes ? '<br>' + overtime.review_notes : ''}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="overtime-card">
+                    <div class="card-header">
+                        <div class="user-info">
+                            <div class="user-avatar-card">${initials}</div>
+                            <div class="user-details">
+                                <h3>${overtime.display_name || overtime.username}</h3>
+                                <div class="date">${dateStr}</div>
+                            </div>
+                        </div>
+                        <span class="status-badge ${overtime.status}">${statusLabels[overtime.status]}</span>
+                    </div>
+                    <div class="overtime-details">
+                        <div class="detail-item">
+                            <div class="label">Orario Previsto</div>
+                            <div class="value">${overtime.scheduled_end || '-'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Orario Effettivo</div>
+                            <div class="value">${overtime.actual_end || '-'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Straordinario</div>
+                            <div class="value highlight">${overtime.overtime_minutes} min</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Tipo</div>
+                            <div class="value">${overtime.request_type === 'auto' ? '🤖 Automatico' : '✋ Manuale'}</div>
+                        </div>
+                    </div>
+                    ${overtime.notes ? `
+                        <div class="overtime-notes">
+                            <div class="label">Note</div>
+                            <div class="text">${overtime.notes}</div>
+                        </div>
+                    ` : ''}
+                    ${reviewInfoHtml}
+                    ${actionsHtml ? `<div class="card-actions">${actionsHtml}</div>` : ''}
+                </div>
+            `;
+        }
+
+        // Review overtime
+        function reviewOvertime(id, action) {
+            pendingReview = { id, action };
+            const modal = document.getElementById('reviewModal');
+            const title = document.getElementById('modalTitle');
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+            
+            if (action === 'approved') {
+                title.textContent = 'Approva Straordinario';
+                confirmBtn.textContent = 'Approva';
+                confirmBtn.className = 'btn btn-approve';
+            } else {
+                title.textContent = 'Rifiuta Straordinario';
+                confirmBtn.textContent = 'Rifiuta';
+                confirmBtn.className = 'btn btn-reject';
+            }
+            
+            document.getElementById('reviewNotes').value = '';
+            modal.classList.add('active');
+        }
+
+        // Confirm review
+        async function confirmReview() {
+            if (!pendingReview) return;
+
+            const { id, action } = pendingReview;
+            const notes = document.getElementById('reviewNotes').value;
+            
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Elaborazione...';
+
+            try {
+                const res = await fetch(`/api/admin/overtime/${id}/review`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, notes })
+                });
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || 'Errore nella revisione');
+                }
+
+                showToast(action === 'approved' ? 'Straordinario approvato' : 'Straordinario rifiutato', 'success');
+                closeModal();
+                loadOvertime();
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                confirmBtn.disabled = false;
+            }
+        }
+
+        // Close modal
+        function closeModal() {
+            document.getElementById('reviewModal').classList.remove('active');
+            pendingReview = null;
+        }
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            toast.className = 'toast ' + type;
+            toastMessage.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Event listeners
+        document.getElementById('modalConfirmBtn').addEventListener('click', confirmReview);
+
+        // Close modal on overlay click
+        document.getElementById('reviewModal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+
+        // Init
+        initTheme();
+        initUserAvatar();
+        loadOvertime();
+    </script>
+</body>
+</html>

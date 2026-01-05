@@ -543,6 +543,10 @@
                         <span class="menu-item-icon">🧑‍🔧</span>
                         <span>Gestione Operatori</span>
                     </a>
+                    <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📆</span>
+                        <span>Gestione Turni</span>
+                    </a>
                     <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
                         <span class="menu-item-icon">⚙️</span>
                         <span>Regole Timbrature</span>
@@ -714,7 +718,39 @@
                     </div>
                     <div class="module-toggle"></div>
                 </div>
+                <div class="module-card enabled" data-module="straordinari">
+                    <span class="module-icon">⏰</span>
+                    <div class="module-info">
+                        <div class="module-name">Straordinari</div>
+                        <div class="module-desc">Gestione ore extra</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
             </div>
+        </div>
+
+        <!-- Integrazioni Esterne -->
+        <div class="card">
+            <h2 class="card-title">
+                <span class="card-title-icon">🔄</span>
+                Integrazioni Esterne
+            </h2>
+            <p style="color: var(--muted); margin-bottom: 16px; font-size: 14px;">
+                Configura la sincronizzazione con servizi esterni
+            </p>
+            <div class="modules-grid">
+                <div class="module-card" data-integration="cedolino_sync" id="cedolinoSyncCard">
+                    <span class="module-icon">📤</span>
+                    <div class="module-info">
+                        <div class="module-name">CedolinoWeb Sync</div>
+                        <div class="module-desc">Invia timbrature a CedolinoWeb</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+            </div>
+            <p id="cedolinoConfigNote" style="color: var(--muted); margin-top: 12px; font-size: 13px; display: none;">
+                ⚠️ Per utilizzare la sincronizzazione CedolinoWeb, assicurati di avere configurato le credenziali nel file <code>config.json</code> (sezione cedolino_web).
+            </p>
         </div>
 
         <!-- Configurazione Timbratura -->
@@ -774,6 +810,53 @@
             </div>
         </div>
 
+        <!-- Configurazione Straordinari -->
+        <div class="card" id="overtimeSettingsCard">
+            <h2 class="card-title">
+                <span class="card-title-icon">⏰</span>
+                Gestione Straordinari
+            </h2>
+            <p style="color: var(--muted); margin-bottom: 16px; font-size: 14px;">
+                Configura le regole per il rilevamento e la gestione degli straordinari
+            </p>
+            
+            <div class="form-group" style="margin-bottom: 16px;">
+                <label class="form-label">Soglia Minima Straordinario (minuti)</label>
+                <input type="number" class="form-input" id="overtimeThreshold" value="15" min="5" max="120" style="max-width: 150px;">
+                <span class="form-hint">Differenza minima tra orario pianificato e effettivo per considerare lo straordinario</span>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 16px;">
+                <label class="form-label">Arrotondamento Straordinari</label>
+                <select class="form-input" id="overtimeRounding" style="max-width: 200px;">
+                    <option value="1">Al minuto</option>
+                    <option value="5">Ogni 5 minuti</option>
+                    <option value="15" selected>Ogni 15 minuti</option>
+                    <option value="30">Ogni 30 minuti</option>
+                </select>
+                <span class="form-hint">Come arrotondare i minuti di straordinario</span>
+            </div>
+
+            <div class="modules-grid">
+                <div class="module-card enabled" id="overtimeAutoDetect">
+                    <span class="module-icon">🔍</span>
+                    <div class="module-info">
+                        <div class="module-name">Rilevamento Automatico</div>
+                        <div class="module-desc">Rileva straordinari al checkout</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+                <div class="module-card enabled" id="overtimeRequireApproval">
+                    <span class="module-icon">✅</span>
+                    <div class="module-info">
+                        <div class="module-name">Richiede Approvazione</div>
+                        <div class="module-desc">Admin deve approvare</div>
+                    </div>
+                    <div class="module-toggle"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Actions -->
         <div class="actions-bar">
             <button type="button" class="btn secondary" onclick="loadSettings()">↺ Annulla modifiche</button>
@@ -809,6 +892,10 @@
         const btnAddLocation = document.getElementById('btnAddLocation');
         const timbraturaQrCard = document.getElementById('timbraturaQr');
         const timbraturaGpsCard = document.getElementById('timbraturaGps');
+        const overtimeAutoDetectCard = document.getElementById('overtimeAutoDetect');
+        const overtimeRequireApprovalCard = document.getElementById('overtimeRequireApproval');
+        const cedolinoSyncCard = document.getElementById('cedolinoSyncCard');
+        const cedolinoConfigNote = document.getElementById('cedolinoConfigNote');
 
         // Menu toggle
         menuToggle.addEventListener('click', (e) => {
@@ -926,11 +1013,24 @@
         // Modules toggle
         modulesGrid.addEventListener('click', (e) => {
             const card = e.target.closest('.module-card');
-            if (card) {
+            if (card && card.dataset.module) {
                 card.classList.toggle('enabled');
                 hasChanges = true;
+                
+                // Se è il modulo straordinari, mostra/nascondi la sezione di configurazione
+                if (card.dataset.module === 'straordinari') {
+                    updateOvertimeSettingsVisibility();
+                }
             }
         });
+        
+        function updateOvertimeSettingsVisibility() {
+            const straordinariModule = document.querySelector('.module-card[data-module="straordinari"]');
+            const overtimeCard = document.getElementById('overtimeSettingsCard');
+            if (straordinariModule && overtimeCard) {
+                overtimeCard.style.display = straordinariModule.classList.contains('enabled') ? 'block' : 'none';
+            }
+        }
 
         // Timbratura toggles
         timbraturaQrCard.addEventListener('click', () => {
@@ -941,6 +1041,23 @@
         timbraturaGpsCard.addEventListener('click', () => {
             timbraturaGpsCard.classList.toggle('enabled');
             updateGpsSettingsVisibility();
+            hasChanges = true;
+        });
+
+        // Overtime toggles
+        overtimeAutoDetectCard.addEventListener('click', () => {
+            overtimeAutoDetectCard.classList.toggle('enabled');
+            hasChanges = true;
+        });
+
+        overtimeRequireApprovalCard.addEventListener('click', () => {
+            overtimeRequireApprovalCard.classList.toggle('enabled');
+            hasChanges = true;
+        });
+
+        // CedolinoWeb Sync toggle
+        cedolinoSyncCard.addEventListener('click', () => {
+            cedolinoSyncCard.classList.toggle('enabled');
             hasChanges = true;
         });
 
@@ -973,12 +1090,12 @@
                 <div class="gps-location-coords">
                     <div class="form-group">
                         <label class="form-label">Latitudine</label>
-                        <input type="number" step="any" class="form-input" placeholder="45.4642" 
+                        <input type="text" inputmode="decimal" class="form-input" placeholder="45.4642" 
                                value="${loc.latitude || ''}" data-field="latitude">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Longitudine</label>
-                        <input type="number" step="any" class="form-input" placeholder="9.1900" 
+                        <input type="text" inputmode="decimal" class="form-input" placeholder="9.1900" 
                                value="${loc.longitude || ''}" data-field="longitude">
                     </div>
                     <div class="form-group">
@@ -1064,7 +1181,8 @@
                     const field = input.dataset.field;
                     let value = input.value;
                     if (field === 'latitude' || field === 'longitude') {
-                        value = parseFloat(value) || '';
+                        // Gestisce sia virgola che punto come separatore decimale
+                        value = parseFloat(value.replace(',', '.')) || '';
                     } else if (field === 'radius_meters') {
                         value = parseInt(value) || 100;
                     }
@@ -1125,11 +1243,27 @@
                 timbraturaQrCard.classList.toggle('enabled', timbratura.qr_enabled !== false);
                 timbraturaGpsCard.classList.toggle('enabled', timbratura.gps_enabled === true);
                 
+                // Set CedolinoWeb sync
+                const cedolinoEnabled = data.custom_settings?.cedolino_sync_enabled === true;
+                cedolinoSyncCard.classList.toggle('enabled', cedolinoEnabled);
+                // Mostra nota se config.json non è configurato (lo verifichiamo via flag dal server)
+                cedolinoConfigNote.style.display = data.cedolino_configured ? 'none' : 'block';
+                
                 // GPS Settings
                 document.getElementById('gpsMaxAccuracy').value = timbratura.gps_max_accuracy_meters || 50;
                 gpsLocations = timbratura.gps_locations || [];
                 renderGpsLocations();
                 updateGpsSettingsVisibility();
+                
+                // Overtime Settings
+                const overtime = data.custom_settings?.overtime || {};
+                document.getElementById('overtimeThreshold').value = overtime.threshold_minutes || 15;
+                document.getElementById('overtimeRounding').value = overtime.rounding_minutes || 15;
+                overtimeAutoDetectCard.classList.toggle('enabled', overtime.auto_detect !== false);
+                overtimeRequireApprovalCard.classList.toggle('enabled', overtime.require_approval !== false);
+                
+                // Mostra/nascondi sezione straordinari in base al modulo
+                updateOvertimeSettingsVisibility();
                 
                 hasChanges = false;
             } catch (err) {
@@ -1174,6 +1308,17 @@
                     longitude: parseFloat(loc.longitude),
                     radius_meters: parseInt(loc.radius_meters) || 100
                 }))
+            };
+
+            // CedolinoWeb sync setting
+            data.custom_settings.cedolino_sync_enabled = cedolinoSyncCard.classList.contains('enabled');
+
+            // Overtime settings
+            data.custom_settings.overtime = {
+                threshold_minutes: parseInt(document.getElementById('overtimeThreshold').value) || 15,
+                rounding_minutes: parseInt(document.getElementById('overtimeRounding').value) || 15,
+                auto_detect: overtimeAutoDetectCard.classList.contains('enabled'),
+                require_approval: overtimeRequireApprovalCard.classList.contains('enabled')
             };
 
             showLoading();

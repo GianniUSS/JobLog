@@ -349,6 +349,96 @@
             padding-top: 8px;
             border-top: 1px solid var(--border);
         }
+        
+        /* Overtime details */
+        .request-overtime-details {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.08), rgba(139, 92, 246, 0.03));
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+        .overtime-header {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--purple);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .overtime-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+        }
+        .overtime-box {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+        }
+        .overtime-box-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .overtime-box-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .overtime-box.highlight {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.1));
+            border-color: rgba(251, 191, 36, 0.3);
+        }
+        .overtime-box.highlight .overtime-box-value {
+            color: var(--warning);
+        }
+        .overtime-diff {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--border);
+        }
+        .overtime-diff-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+        }
+        .overtime-diff-badge {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .overtime-source {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+        .overtime-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            padding: 3px 0;
+        }
+        .overtime-label {
+            color: var(--text-muted);
+        }
+        .overtime-value {
+            font-weight: 600;
+            color: var(--text);
+        }
+        
         .btn {
             padding: 10px 20px;
             border: none;
@@ -524,6 +614,10 @@
                         <span class="menu-item-icon">🧑‍🔧</span>
                         <span>Gestione Operatori</span>
                     </a>
+                    <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📆</span>
+                        <span>Gestione Turni</span>
+                    </a>
                     <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
                         <span class="menu-item-icon">⚙️</span>
                         <span>Regole Timbrature</span>
@@ -531,6 +625,10 @@
                     <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
                         <span class="menu-item-icon">📝</span>
                         <span>Tipologie Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_documents_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📄</span>
+                        <span>Gestione Documenti</span>
                     </a>
                     <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item active">
                         <span class="menu-item-icon">📥</span>
@@ -603,6 +701,26 @@
             </div>
             <div class="modal-body">
                 <div class="summary-box" id="reviewSummary"></div>
+                <!-- Campi modifica orari arrotondati per straordinario -->
+                <div class="form-group" id="overtimeTimesGroup" style="display: none;">
+                    <label class="form-label">⏱️ Orario Arrotondato</label>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <input type="time" class="form-input" id="overtimeRoundedStart" style="width: 120px; font-size: 16px; font-weight: 600; text-align: center;">
+                        <span style="color: var(--text-muted);">-</span>
+                        <input type="time" class="form-input" id="overtimeRoundedEnd" style="width: 120px; font-size: 16px; font-weight: 600; text-align: center;">
+                    </div>
+                    <small style="color: var(--text-muted); margin-top: 4px; display: block;">Puoi modificare gli orari - i minuti si aggiorneranno automaticamente</small>
+                </div>
+                <!-- Campo modifica minuti per straordinario -->
+                <div class="form-group" id="overtimeEditGroup" style="display: none;">
+                    <label class="form-label">⏱️ Minuti da confermare</label>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <input type="number" class="form-input" id="overtimeMinutes" min="0" step="15" style="width: 120px; font-size: 18px; font-weight: 600; text-align: center;">
+                        <span style="color: var(--text-muted);">minuti</span>
+                        <span id="overtimeFormatted" style="color: var(--brand); font-weight: 600;"></span>
+                    </div>
+                    <small style="color: var(--text-muted); margin-top: 4px; display: block;">Puoi modificare il valore prima di approvare</small>
+                </div>
                 <div class="form-group">
                     <label class="form-label">Note di revisione (opzionale)</label>
                     <textarea class="form-textarea" id="reviewNotes" placeholder="Aggiungi note per l'utente..."></textarea>
@@ -622,6 +740,24 @@
         let allRequests = [];
         let currentFilter = 'all';
         let currentRequestId = null;
+
+        // Funzione globale per calcolare orari arrotondati
+        function roundTime(timeStr, direction, rounding = 15) {
+            if (!timeStr || timeStr === '--:--') return '--:--';
+            const parts = timeStr.split(':');
+            const totalMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            let roundedMin;
+            if (direction === 'up') {
+                // Arrotonda per eccesso (inizio giornata)
+                roundedMin = Math.ceil(totalMin / rounding) * rounding;
+            } else {
+                // Arrotonda per difetto (fine giornata)
+                roundedMin = Math.floor(totalMin / rounding) * rounding;
+            }
+            const h = Math.floor(roundedMin / 60);
+            const m = roundedMin % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             loadRequests();
@@ -749,7 +885,7 @@
             console.log('Rendering request:', r.id, 'cdc:', r.cdc, 'attachment:', r.attachment_path);
             const statusClass = `status-${r.status}`;
             const statusLabels = { pending: 'In attesa', approved: 'Approvata', rejected: 'Respinta' };
-            const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km' };
+            const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km', minutes: 'min' };
             const valueUnit = valueUnits[r.value_type] || '';
             
             const dateFrom = formatDate(r.date_from);
@@ -794,6 +930,52 @@
                         <div class="tratte-header">📍 Dettaglio tratte:</div>
                         ${tratteItems}
                         <div class="tratte-totale">Totale: <strong>${totaleKm} km</strong></div>
+                    </div>`;
+            }
+            
+            // Dettagli straordinario (extra_data)
+            let overtimeHtml = '';
+            if (r.value_type === 'minutes' && r.extra_data) {
+                const ed = r.extra_data;
+                const sourceLabels = {
+                    'rentman': '📅 Da pianificazione Rentman',
+                    'manual': '✏️ Turno manuale',
+                    'employee_shift': '🏢 Turno impiegato'
+                };
+                const source = sourceLabels[ed.shift_source] || '📝 Inserito manualmente';
+                
+                // Formatta i minuti totali
+                const totalMins = r.value || 0;
+                const hours = Math.floor(totalMins / 60);
+                const mins = totalMins % 60;
+                const totalFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                
+                // Usa orari arrotondati salvati o calcolali al volo
+                const roundedStart = ed.rounded_start || roundTime(ed.actual_start, 'up');
+                const roundedEnd = ed.rounded_end || roundTime(ed.actual_end, 'down');
+                
+                overtimeHtml = `
+                    <div class="request-overtime-details">
+                        <div class="overtime-header">⏱️ Riepilogo Straordinario</div>
+                        <div class="overtime-grid">
+                            <div class="overtime-box">
+                                <div class="overtime-box-label">🗓️ Turno Pianificato</div>
+                                <div class="overtime-box-value">${ed.planned_start || '--:--'} - ${ed.planned_end || '--:--'}</div>
+                            </div>
+                            <div class="overtime-box">
+                                <div class="overtime-box-label">📝 Timbrate Originali</div>
+                                <div class="overtime-box-value">${ed.actual_start || '--:--'} - ${ed.actual_end || '--:--'}</div>
+                            </div>
+                            <div class="overtime-box">
+                                <div class="overtime-box-label">⏰ Timbrate Arrotondate</div>
+                                <div class="overtime-box-value">${roundedStart} - ${roundedEnd}</div>
+                            </div>
+                        </div>
+                        <div class="overtime-diff">
+                            ${ed.extra_minutes_before > 0 ? `<div class="overtime-diff-item">⬆️ Ingresso anticipato: <span class="overtime-diff-badge">+${ed.extra_minutes_before} min</span></div>` : ''}
+                            ${ed.extra_minutes_after > 0 ? `<div class="overtime-diff-item">⬇️ Uscita posticipata: <span class="overtime-diff-badge">+${ed.extra_minutes_after} min</span></div>` : ''}
+                        </div>
+                        <div class="overtime-source">${source}${ed.auto_detected ? ' • Rilevato automaticamente' : ''}</div>
                     </div>`;
             }
             
@@ -847,6 +1029,7 @@
                     ${actionBtn}
                     ${cdcHtml}
                     ${tratteHtml}
+                    ${overtimeHtml}
                     ${attachmentHtml}
                     ${notesHtml}
                     ${reviewInfo}
@@ -875,21 +1058,103 @@
             currentRequestId = id;
             document.getElementById('reviewNotes').value = '';
 
-            const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km' };
+            const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km', minutes: 'min' };
             const valueUnit = valueUnits[r.value_type] || '';
             const dateFrom = formatDate(r.date_from);
-            const dateTo = r.date_to ? ` → ${formatDate(r.date_to)}` : '';
+            const dateTo = r.date_to && r.date_to !== r.date_from ? ` → ${formatDate(r.date_to)}` : '';
+
+            // Se è straordinario, mostra anche i dettagli del turno
+            let extraInfo = '';
+            const overtimeTimesGroup = document.getElementById('overtimeTimesGroup');
+            const overtimeEditGroup = document.getElementById('overtimeEditGroup');
+            const overtimeMinutesInput = document.getElementById('overtimeMinutes');
+            const overtimeRoundedStart = document.getElementById('overtimeRoundedStart');
+            const overtimeRoundedEnd = document.getElementById('overtimeRoundedEnd');
+            
+            if (r.value_type === 'minutes' && r.extra_data) {
+                const ed = r.extra_data;
+                
+                // Calcola orari arrotondati se non presenti nel database
+                const roundedStart = ed.rounded_start || roundTime(ed.actual_start, 'up');
+                const roundedEnd = ed.rounded_end || roundTime(ed.actual_end, 'down');
+                
+                extraInfo = `
+                    <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${ed.planned_start || '--:--'} - ${ed.planned_end || '--:--'}</span></div>
+                    <div class="summary-row"><span class="summary-label">Effettivo</span><span class="summary-value">${ed.actual_start || '--:--'} - ${ed.actual_end || '--:--'}</span></div>
+                    <div class="summary-row"><span class="summary-label">Arrotondato</span><span class="summary-value">${roundedStart} - ${roundedEnd}</span></div>
+                `;
+                
+                // Popola i campi orari arrotondati modificabili
+                overtimeRoundedStart.value = roundedStart || '';
+                overtimeRoundedEnd.value = roundedEnd || '';
+                
+                // Salva i dati del turno pianificato per il ricalcolo
+                overtimeTimesGroup.dataset.plannedStart = ed.planned_start || '';
+                overtimeTimesGroup.dataset.plannedEnd = ed.planned_end || '';
+                
+                // Mostra campi orari e minuti
+                overtimeTimesGroup.style.display = 'block';
+                overtimeEditGroup.style.display = 'block';
+                overtimeMinutesInput.value = r.value || 0;
+                updateOvertimeFormatted();
+            } else {
+                overtimeTimesGroup.style.display = 'none';
+                overtimeEditGroup.style.display = 'none';
+            }
 
             document.getElementById('reviewSummary').innerHTML = `
                 <div class="summary-row"><span class="summary-label">Utente</span><span class="summary-value">${r.username}</span></div>
                 <div class="summary-row"><span class="summary-label">Tipo</span><span class="summary-value">${r.type_name}</span></div>
                 <div class="summary-row"><span class="summary-label">Data</span><span class="summary-value">${dateFrom}${dateTo}</span></div>
-                ${r.value ? `<div class="summary-row"><span class="summary-label">Valore</span><span class="summary-value">${r.value} ${valueUnit}</span></div>` : ''}
+                ${extraInfo}
+                ${r.value && r.value_type !== 'minutes' ? `<div class="summary-row"><span class="summary-label">Valore</span><span class="summary-value">${r.value} ${valueUnit}</span></div>` : ''}
                 ${r.notes ? `<div class="summary-row"><span class="summary-label">Note</span><span class="summary-value">${r.notes}</span></div>` : ''}
             `;
 
             document.getElementById('reviewModal').classList.add('open');
         }
+        
+        function updateOvertimeFormatted() {
+            const mins = parseInt(document.getElementById('overtimeMinutes').value) || 0;
+            const hours = Math.floor(mins / 60);
+            const m = mins % 60;
+            const formatted = hours > 0 ? `= ${hours}h ${m}m` : `= ${m} min`;
+            document.getElementById('overtimeFormatted').textContent = formatted;
+        }
+        
+        function recalculateOvertimeMinutes() {
+            const timesGroup = document.getElementById('overtimeTimesGroup');
+            const plannedStart = timesGroup.dataset.plannedStart;
+            const plannedEnd = timesGroup.dataset.plannedEnd;
+            const roundedStart = document.getElementById('overtimeRoundedStart').value;
+            const roundedEnd = document.getElementById('overtimeRoundedEnd').value;
+            
+            if (!plannedStart || !plannedEnd || !roundedStart || !roundedEnd) return;
+            
+            // Converti in minuti
+            const timeToMinutes = (t) => {
+                const [h, m] = t.split(':').map(Number);
+                return h * 60 + m;
+            };
+            
+            const plannedStartMin = timeToMinutes(plannedStart);
+            const plannedEndMin = timeToMinutes(plannedEnd);
+            const roundedStartMin = timeToMinutes(roundedStart);
+            const roundedEndMin = timeToMinutes(roundedEnd);
+            
+            // Calcola straordinari
+            const extraBefore = Math.max(0, plannedStartMin - roundedStartMin); // Arrivato prima
+            const extraAfter = Math.max(0, roundedEndMin - plannedEndMin); // Uscito dopo
+            const totalExtra = extraBefore + extraAfter;
+            
+            document.getElementById('overtimeMinutes').value = totalExtra;
+            updateOvertimeFormatted();
+        }
+        
+        // Event listener per aggiornamento live
+        document.getElementById('overtimeMinutes')?.addEventListener('input', updateOvertimeFormatted);
+        document.getElementById('overtimeRoundedStart')?.addEventListener('change', recalculateOvertimeMinutes);
+        document.getElementById('overtimeRoundedEnd')?.addEventListener('change', recalculateOvertimeMinutes);
 
         function closeModal() {
             document.getElementById('reviewModal').classList.remove('open');
@@ -900,12 +1165,33 @@
             if (!currentRequestId) return;
 
             const notes = document.getElementById('reviewNotes').value.trim();
+            const overtimeEditGroup = document.getElementById('overtimeEditGroup');
+            const overtimeTimesGroup = document.getElementById('overtimeTimesGroup');
+            
+            // Prepara payload
+            const payload = { status, review_notes: notes };
+            
+            // Se è straordinario, includi i minuti modificati e gli orari arrotondati
+            if (overtimeEditGroup.style.display !== 'none') {
+                const confirmedMinutes = parseInt(document.getElementById('overtimeMinutes').value) || 0;
+                payload.confirmed_value = confirmedMinutes;
+                
+                // Includi anche gli orari arrotondati modificati
+                console.log('DEBUG: overtimeTimesGroup=', overtimeTimesGroup, 'display=', overtimeTimesGroup?.style?.display);
+                if (overtimeTimesGroup && overtimeTimesGroup.style.display !== 'none') {
+                    payload.rounded_start = document.getElementById('overtimeRoundedStart').value;
+                    payload.rounded_end = document.getElementById('overtimeRoundedEnd').value;
+                    console.log('DEBUG: Adding rounded times to payload:', payload.rounded_start, payload.rounded_end);
+                }
+            }
+            
+            console.log('DEBUG: Final payload:', JSON.stringify(payload));
             
             try {
                 const res = await fetch(`/api/admin/user-requests/${currentRequestId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status, review_notes: notes })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!res.ok) {

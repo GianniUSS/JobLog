@@ -213,12 +213,12 @@
             letter-spacing: 0.5px;
         }
         
-        /* Filter Pills */
+        /* Filter Grid */
         .filter-pills {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 8px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
+            margin-bottom: 16px;
         }
         
         .filter-pills::-webkit-scrollbar {
@@ -226,34 +226,53 @@
         }
         
         .filter-pill {
-            padding: 8px 12px;
-            border-radius: 50px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            font-weight: 500;
+            padding: 12px 10px;
+            border-radius: 12px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
-            white-space: nowrap;
             display: flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
+            gap: 8px;
         }
         
         .filter-pill i {
-            font-size: 0.75rem;
+            font-size: 14px;
         }
         
         .filter-pill:hover {
-            border-color: var(--brand);
-            color: var(--brand);
+            border-color: #cbd5e1;
+            background: #f8fafc;
+        }
+        
+        .filter-pill:active {
+            transform: scale(0.98);
         }
         
         .filter-pill.active {
             background: var(--brand);
             border-color: var(--brand);
             color: white;
+        }
+
+        .filter-pill[data-filter="turni"].active {
+            background: #8b5cf6;
+            border-color: #8b5cf6;
+        }
+
+        .filter-pill[data-filter="request"].active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .filter-pill[data-filter="other"].active {
+            background: #f59e0b;
+            border-color: #f59e0b;
         }
         
         .filter-pill .count {
@@ -265,6 +284,33 @@
         
         .filter-pill.active .count {
             background: rgba(255,255,255,0.3);
+        }
+
+        /* Mark all read button */
+        .mark-all-read-btn {
+            grid-column: 1 / -1;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background: #f0fdf4;
+            border: 2px solid #86efac;
+            color: #16a34a;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .mark-all-read-btn:hover {
+            background: #dcfce7;
+            border-color: #4ade80;
+        }
+
+        .mark-all-read-btn:active {
+            transform: scale(0.98);
         }
         
         /* Notifications List */
@@ -292,9 +338,42 @@
             transform: translateY(-2px);
         }
         
+        /* Non letta - molto evidente */
         .notification-card.unread {
             border-left: 4px solid var(--brand);
-            background: var(--bg-card-hover);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(102, 126, 234, 0.03) 100%);
+            box-shadow: var(--shadow), 0 0 0 1px rgba(102, 126, 234, 0.2);
+        }
+        
+        .notification-card.unread .notification-title {
+            font-weight: 700;
+        }
+        
+        .notification-card.unread::before {
+            content: 'NUOVA';
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--brand);
+            color: white;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            letter-spacing: 0.5px;
+        }
+        
+        .notification-card {
+            position: relative;
+        }
+        
+        /* Letta - più sbiadita */
+        .notification-card:not(.unread) {
+            opacity: 0.7;
+        }
+        
+        .notification-card:not(.unread):hover {
+            opacity: 1;
         }
         
         @keyframes slideIn {
@@ -423,10 +502,30 @@
         
         /* Unread dot */
         .unread-dot {
-            color: var(--brand);
-            font-size: 0.6rem;
-            margin-left: 4px;
+            color: white;
+            background: var(--brand);
+            font-size: 8px;
+            margin-left: 6px;
+            padding: 2px 6px;
+            border-radius: 10px;
             animation: pulse 2s infinite;
+            display: inline-block;
+        }
+        
+        .unread-dot::before {
+            content: 'NON LETTA';
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+        
+        /* Read badge */
+        .read-badge {
+            color: var(--success);
+            font-size: 10px;
+            font-weight: 600;
+            margin-left: 6px;
+            opacity: 0.7;
         }
         
         @keyframes pulse {
@@ -859,10 +958,6 @@
                 <i class="fas fa-bell"></i>
                 Altro
             </button>
-            <button class="mark-all-read-btn" onclick="markAllAsRead()" id="markAllReadBtn">
-                <i class="fas fa-check-double"></i>
-                Segna tutte lette
-            </button>
         </div>
         
         <!-- Notifications List -->
@@ -1241,6 +1336,11 @@
                     // Update UI
                     if (cardElement) {
                         cardElement.classList.remove('unread');
+                        // Sostituisci il badge "NON LETTA" con "✓ letta"
+                        const unreadDot = cardElement.querySelector('.unread-dot');
+                        if (unreadDot) {
+                            unreadDot.outerHTML = '<span class="read-badge">✓ letta</span>';
+                        }
                     }
                     updateStats();
                 }
@@ -1318,7 +1418,7 @@
                                 <div class="notification-time">
                                     <i class="far fa-clock"></i>
                                     ${timeAgo(ts)}
-                                    ${isUnread ? '<span class="unread-dot">●</span>' : ''}
+                                    ${isUnread ? '<span class="unread-dot"></span>' : '<span class="read-badge">✓ letta</span>'}
                                 </div>
                             </div>
                         </div>

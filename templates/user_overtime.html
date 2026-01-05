@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>I Miei Straordinari</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-radius: 16px;
+        }
+        
+        * { 
+            box-sizing: border-box; 
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            padding-bottom: 120px;
+        }
+        
+        /* Top Bar */
+        .top-bar {
+            background: linear-gradient(135deg, var(--primary-color), #7c3aed);
+            color: white;
+            padding: 20px;
+            padding-top: calc(env(safe-area-inset-top, 20px) + 20px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .top-bar-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .back-arrow {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            text-decoration: none;
+            color: white;
+        }
+        
+        .top-bar h1 {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin: 0;
+            flex: 1;
+        }
+        
+        /* Container */
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* Summary Card */
+        .summary-card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            text-align: center;
+        }
+        
+        .summary-item .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        
+        .summary-item .label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .summary-item.pending .value { color: var(--warning-color); }
+        .summary-item.approved .value { color: var(--success-color); }
+        .summary-item.total .value { color: var(--primary-color); }
+        
+        /* Filter Pills */
+        .filter-pills-container {
+            padding: 0 0 20px 0;
+        }
+        
+        .filter-pills {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        
+        .filter-pill {
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 2px solid #e2e8f0;
+            background: white;
+            color: var(--text-secondary);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .filter-pill:active {
+            transform: scale(0.97);
+        }
+        
+        .filter-pill.active {
+            border-color: var(--primary-color);
+            background: var(--primary-color);
+            color: white;
+        }
+        
+        .filter-pill.active.pending {
+            background: var(--warning-color);
+            border-color: var(--warning-color);
+        }
+        
+        .filter-pill.active.approved {
+            background: var(--success-color);
+            border-color: var(--success-color);
+        }
+        
+        .filter-pill.active.rejected {
+            background: var(--danger-color);
+            border-color: var(--danger-color);
+        }
+        
+        .filter-pill .count {
+            display: inline-block;
+            background: rgba(0,0,0,0.1);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            margin-left: 6px;
+        }
+        
+        .filter-pill.active .count {
+            background: rgba(255,255,255,0.25);
+        }
+        
+        /* Overtime Cards */
+        .overtime-card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border-left: 4px solid var(--warning-color);
+        }
+        
+        .overtime-card.status-approved {
+            border-left-color: var(--success-color);
+        }
+        
+        .overtime-card.status-rejected {
+            border-left-color: var(--danger-color);
+        }
+        
+        .overtime-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .overtime-date {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-badge.pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .status-badge.approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .status-badge.rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .overtime-time {
+            text-align: center;
+            padding: 16px;
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .overtime-time .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+        
+        .overtime-time .label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+        
+        .overtime-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 0.85rem;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        
+        .detail-row .label {
+            color: var(--text-secondary);
+        }
+        
+        .detail-row .value {
+            font-weight: 600;
+        }
+        
+        .overtime-notes {
+            margin-top: 12px;
+            padding: 12px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .overtime-notes i {
+            margin-right: 8px;
+        }
+        
+        .review-info {
+            margin-top: 12px;
+            padding: 12px;
+            background: #f8fafc;
+            border-radius: 8px;
+            font-size: 0.8rem;
+        }
+        
+        .review-info .reviewer {
+            font-weight: 600;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .empty-state i {
+            font-size: 4rem;
+            color: #cbd5e1;
+            margin-bottom: 16px;
+        }
+        
+        .empty-state h3 {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        
+        .empty-state p {
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        
+        /* Loading */
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            padding: 60px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e2e8f0;
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* FAB - New Request Button */
+        .fab {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, var(--primary-color), #7c3aed);
+            color: white;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(67, 97, 238, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+        
+        .fab:active {
+            transform: scale(0.95);
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+        
+        .modal-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 24px 24px 0 0;
+            width: 100%;
+            max-width: 500px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 24px;
+            padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+            transform: translateY(100%);
+            transition: transform 0.3s;
+        }
+        
+        .modal-overlay.show .modal-content {
+            transform: translateY(0);
+        }
+        
+        .modal-handle {
+            width: 40px;
+            height: 4px;
+            background: #cbd5e1;
+            border-radius: 2px;
+            margin: 0 auto 20px;
+        }
+        
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .time-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        
+        .btn-submit {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, var(--primary-color), #7c3aed);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+        
+        .btn-submit:active {
+            transform: scale(0.98);
+        }
+        
+        .btn-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        /* Bottom Nav Placeholder */
+        .bottom-nav-placeholder {
+            height: 70px;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-content">
+            <a href="/user_home" class="back-arrow">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <h1>I Miei Straordinari</h1>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Summary -->
+        <div class="summary-card">
+            <div class="summary-grid">
+                <div class="summary-item pending">
+                    <div class="value" id="pendingHours">--</div>
+                    <div class="label">In Attesa</div>
+                </div>
+                <div class="summary-item approved">
+                    <div class="value" id="approvedHours">--</div>
+                    <div class="label">Approvate</div>
+                </div>
+                <div class="summary-item total">
+                    <div class="value" id="totalHours">--</div>
+                    <div class="label">Totale Ore</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Filter Pills -->
+        <div class="filter-pills-container">
+            <div class="filter-pills">
+                <button class="filter-pill active" data-filter="all">
+                    Tutti <span class="count" id="countAll">0</span>
+                </button>
+                <button class="filter-pill pending" data-filter="pending">
+                    In Attesa <span class="count" id="countPending">0</span>
+                </button>
+                <button class="filter-pill approved" data-filter="approved">
+                    Approvati <span class="count" id="countApproved">0</span>
+                </button>
+                <button class="filter-pill rejected" data-filter="rejected">
+                    Rifiutati <span class="count" id="countRejected">0</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Overtime List -->
+        <div id="overtimeList">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- FAB - New Request -->
+    <button class="fab" onclick="openNewRequestModal()" title="Nuova Richiesta">
+        <i class="bi bi-plus-lg"></i>
+    </button>
+    
+    <!-- New Request Modal -->
+    <div class="modal-overlay" id="newRequestModal">
+        <div class="modal-content">
+            <div class="modal-handle"></div>
+            <h3 class="modal-title"><i class="bi bi-clock-history me-2"></i>Richiedi Straordinario</h3>
+            
+            <form id="newOvertimeForm">
+                <div class="form-group">
+                    <label>Data</label>
+                    <input type="date" id="reqDate" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Orario Effettivo</label>
+                    <div class="time-inputs">
+                        <input type="time" id="reqActualStart" placeholder="Inizio" required>
+                        <input type="time" id="reqActualEnd" placeholder="Fine" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Minuti di Straordinario</label>
+                    <input type="number" id="reqMinutes" min="5" max="480" placeholder="es. 60" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Tipo</label>
+                    <select id="reqType">
+                        <option value="after_shift">Dopo il turno</option>
+                        <option value="before_shift">Prima del turno</option>
+                        <option value="both">Prima e dopo</option>
+                        <option value="extra_day">Giornata extra</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Note (opzionale)</label>
+                    <textarea id="reqNotes" placeholder="Descrivi il motivo dello straordinario..."></textarea>
+                </div>
+                
+                <button type="submit" class="btn-submit">
+                    <i class="bi bi-send me-2"></i>Invia Richiesta
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <div class="bottom-nav-placeholder"></div>
+    
+    <script>
+        let allOvertime = [];
+        let currentFilter = 'all';
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            loadOvertime();
+            
+            // Set default date to today
+            document.getElementById('reqDate').valueAsDate = new Date();
+        });
+        
+        // Filter pills
+        document.querySelectorAll('.filter-pill').forEach(pill => {
+            pill.addEventListener('click', () => {
+                document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                currentFilter = pill.dataset.filter;
+                renderOvertime();
+            });
+        });
+        
+        // Form submit
+        document.getElementById('newOvertimeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await submitNewRequest();
+        });
+        
+        // Modal close on overlay click
+        document.getElementById('newRequestModal').addEventListener('click', (e) => {
+            if (e.target.id === 'newRequestModal') closeNewRequestModal();
+        });
+        
+        async function loadOvertime() {
+            try {
+                const res = await fetch('/api/user/overtime');
+                const data = await res.json();
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                
+                allOvertime = data.overtime || [];
+                updateSummary();
+                updateCounts();
+                renderOvertime();
+            } catch (err) {
+                console.error('Errore caricamento:', err);
+                showError('Errore nel caricamento');
+            }
+        }
+        
+        function updateSummary() {
+            const pending = allOvertime.filter(o => o.status === 'pending');
+            const approved = allOvertime.filter(o => o.status === 'approved');
+            
+            const pendingMins = pending.reduce((sum, o) => sum + (o.total_extra_minutes || 0), 0);
+            const approvedMins = approved.reduce((sum, o) => sum + (o.total_extra_minutes || 0), 0);
+            const totalMins = allOvertime.reduce((sum, o) => sum + (o.total_extra_minutes || 0), 0);
+            
+            document.getElementById('pendingHours').textContent = formatHours(pendingMins);
+            document.getElementById('approvedHours').textContent = formatHours(approvedMins);
+            document.getElementById('totalHours').textContent = formatHours(totalMins);
+        }
+        
+        function updateCounts() {
+            const pending = allOvertime.filter(o => o.status === 'pending').length;
+            const approved = allOvertime.filter(o => o.status === 'approved').length;
+            const rejected = allOvertime.filter(o => o.status === 'rejected').length;
+            
+            document.getElementById('countAll').textContent = allOvertime.length;
+            document.getElementById('countPending').textContent = pending;
+            document.getElementById('countApproved').textContent = approved;
+            document.getElementById('countRejected').textContent = rejected;
+        }
+        
+        function formatHours(minutes) {
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            if (h > 0) {
+                return m > 0 ? `${h}h${m}m` : `${h}h`;
+            }
+            return `${m}m`;
+        }
+        
+        function renderOvertime() {
+            const container = document.getElementById('overtimeList');
+            
+            let filtered = allOvertime;
+            if (currentFilter !== 'all') {
+                filtered = allOvertime.filter(o => o.status === currentFilter);
+            }
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-clock"></i>
+                        <h3>Nessuno Straordinario</h3>
+                        <p>${currentFilter === 'all' ? 'Premi + per aggiungere una richiesta' : 'Nessuna richiesta con questo stato'}</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = filtered.map(renderOvertimeCard).join('');
+        }
+        
+        function renderOvertimeCard(overtime) {
+            const date = formatDate(overtime.date);
+            const mins = overtime.total_extra_minutes || 0;
+            const timeStr = formatHours(mins);
+            
+            const statusLabels = {
+                pending: 'In Attesa',
+                approved: 'Approvato',
+                rejected: 'Rifiutato'
+            };
+            
+            const typeLabels = {
+                before_shift: 'Prima del turno',
+                after_shift: 'Dopo il turno',
+                both: 'Prima e dopo',
+                extra_day: 'Giornata extra'
+            };
+            
+            let notesHtml = '';
+            if (overtime.notes) {
+                notesHtml = `
+                    <div class="overtime-notes">
+                        <i class="bi bi-chat-text"></i>${escapeHtml(overtime.notes)}
+                    </div>
+                `;
+            }
+            
+            let reviewHtml = '';
+            if (overtime.status !== 'pending' && overtime.reviewed_by) {
+                const reviewDate = overtime.reviewed_ts ? formatDateTime(overtime.reviewed_ts) : '';
+                reviewHtml = `
+                    <div class="review-info">
+                        <span class="reviewer">${escapeHtml(overtime.reviewed_by)}</span>
+                        ${reviewDate ? ` • ${reviewDate}` : ''}
+                        ${overtime.review_notes ? `<br><small>${escapeHtml(overtime.review_notes)}</small>` : ''}
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="overtime-card status-${overtime.status}">
+                    <div class="overtime-header">
+                        <span class="overtime-date">${date}</span>
+                        <span class="status-badge ${overtime.status}">${statusLabels[overtime.status]}</span>
+                    </div>
+                    
+                    <div class="overtime-time">
+                        <div class="value">${timeStr}</div>
+                        <div class="label">${typeLabels[overtime.overtime_type] || 'Straordinario'}</div>
+                    </div>
+                    
+                    <div class="overtime-details">
+                        <div class="detail-row">
+                            <span class="label">Turno</span>
+                            <span class="value">${overtime.planned_start || '--'} - ${overtime.planned_end || '--'}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">Effettivo</span>
+                            <span class="value">${overtime.actual_start || '--'} - ${overtime.actual_end || '--'}</span>
+                        </div>
+                    </div>
+                    
+                    ${notesHtml}
+                    ${reviewHtml}
+                </div>
+            `;
+        }
+        
+        function openNewRequestModal() {
+            document.getElementById('newRequestModal').classList.add('show');
+        }
+        
+        function closeNewRequestModal() {
+            document.getElementById('newRequestModal').classList.remove('show');
+        }
+        
+        async function submitNewRequest() {
+            const date = document.getElementById('reqDate').value;
+            const actualStart = document.getElementById('reqActualStart').value;
+            const actualEnd = document.getElementById('reqActualEnd').value;
+            const minutes = parseInt(document.getElementById('reqMinutes').value);
+            const type = document.getElementById('reqType').value;
+            const notes = document.getElementById('reqNotes').value.trim();
+            
+            if (!date || !actualStart || !actualEnd || !minutes) {
+                alert('Compila tutti i campi obbligatori');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/user/overtime', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date,
+                        actual_start: actualStart,
+                        actual_end: actualEnd,
+                        total_extra_minutes: minutes,
+                        overtime_type: type,
+                        notes,
+                        shift_source: 'none'
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                
+                closeNewRequestModal();
+                document.getElementById('newOvertimeForm').reset();
+                document.getElementById('reqDate').valueAsDate = new Date();
+                loadOvertime();
+                
+            } catch (err) {
+                console.error('Errore invio:', err);
+                alert('Errore nell\'invio della richiesta');
+            }
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '--';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+        }
+        
+        function formatDateTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function showError(msg) {
+            document.getElementById('overtimeList').innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <h3>Errore</h3>
+                    <p>${escapeHtml(msg)}</p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

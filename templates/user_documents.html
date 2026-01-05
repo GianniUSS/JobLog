@@ -385,43 +385,62 @@
             letter-spacing: 0.5px;
         }
         
-        /* Filter Pills */
+        /* Filter Grid */
         .filter-pills {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 8px;
             margin-bottom: 20px;
-            flex-wrap: wrap;
         }
         
         .filter-pill {
-            padding: 8px 16px;
-            border-radius: 50px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-            font-weight: 500;
+            padding: 12px 10px;
+            border-radius: 12px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
-            white-space: nowrap;
             display: flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
+            gap: 8px;
         }
         
         .filter-pill i {
-            font-size: 0.8rem;
+            font-size: 14px;
         }
         
         .filter-pill:hover {
-            border-color: var(--brand);
-            color: var(--brand);
+            border-color: #cbd5e1;
+            background: #f8fafc;
+        }
+        
+        .filter-pill:active {
+            transform: scale(0.98);
         }
         
         .filter-pill.active {
             background: var(--brand);
             border-color: var(--brand);
             color: white;
+        }
+
+        .filter-pill[data-filter="circolare"].active {
+            background: #ef4444;
+            border-color: #ef4444;
+        }
+
+        .filter-pill[data-filter="comunicazione"].active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .filter-pill[data-filter="busta_paga"].active {
+            background: #10b981;
+            border-color: #10b981;
         }
         
         /* Documents List */

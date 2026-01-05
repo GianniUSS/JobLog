@@ -353,6 +353,39 @@
             color: var(--cyan);
             font-weight: 600;
         }
+        .location-box {
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 3px solid var(--warning);
+            border-radius: 4px;
+        }
+        .location-label {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .location-name {
+            font-size: 13px;
+            color: var(--warning);
+            font-weight: 600;
+        }
+        .location-name a {
+            color: var(--warning);
+            text-decoration: none;
+        }
+        .location-name a:hover {
+            text-decoration: underline;
+        }
+        .location-address {
+            font-size: 12px;
+            color: var(--text);
+            margin-top: 4px;
+            opacity: 0.9;
+        }
         .time-info {
             display: flex;
             flex-direction: column;
@@ -434,6 +467,150 @@
         @keyframes slideIn {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Modal Modifica Pausa */
+        .break-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 400;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+        }
+        .break-modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .break-modal {
+            background: var(--bg-panel);
+            border-radius: 16px;
+            padding: 24px;
+            width: 90%;
+            max-width: 420px;
+            box-shadow: var(--shadow);
+            transform: scale(0.9);
+            transition: transform 0.2s ease;
+        }
+        .break-modal-overlay.open .break-modal {
+            transform: scale(1);
+        }
+        .break-modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .break-modal-subtitle {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 20px;
+        }
+        .break-form-group {
+            margin-bottom: 16px;
+        }
+        .break-form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--muted);
+        }
+        .break-form-row {
+            display: flex;
+            gap: 12px;
+        }
+        .break-form-row .break-form-group {
+            flex: 1;
+        }
+        .break-form-group input[type="time"],
+        .break-form-group input[type="number"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .break-form-group input:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .break-or-divider {
+            text-align: center;
+            color: var(--muted);
+            font-size: 12px;
+            margin: 16px 0;
+            position: relative;
+        }
+        .break-or-divider::before,
+        .break-or-divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 40%;
+            height: 1px;
+            background: var(--border);
+        }
+        .break-or-divider::before { left: 0; }
+        .break-or-divider::after { right: 0; }
+        .break-modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+        .break-modal-btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+        .break-modal-btn.cancel {
+            background: var(--bg-soft);
+            color: var(--text);
+        }
+        .break-modal-btn.cancel:hover {
+            background: var(--border);
+        }
+        .break-modal-btn.save {
+            background: var(--brand);
+            color: white;
+        }
+        .break-modal-btn.save:hover {
+            background: var(--brand-strong);
+        }
+        .break-modal-btn.clear {
+            background: var(--danger);
+            color: white;
+            margin-right: auto;
+        }
+        .break-edit-btn {
+            background: transparent;
+            border: 1px solid var(--warning);
+            color: var(--warning);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: 8px;
+            transition: all 0.15s ease;
+        }
+        .break-edit-btn:hover {
+            background: var(--warning);
+            color: white;
         }
 
         /* Back link */
@@ -554,6 +731,10 @@
                         <span class="menu-item-icon">🧑‍🔧</span>
                         <span>Gestione Operatori</span>
                     </a>
+                    <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📆</span>
+                        <span>Gestione Turni</span>
+                    </a>
                     <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
                         <span class="menu-item-icon">⚙️</span>
                         <span>Regole Timbrature</span>
@@ -565,6 +746,10 @@
                     <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
                         <span class="menu-item-icon">📥</span>
                         <span>Gestione Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_documents_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📄</span>
+                        <span>Gestione Documenti</span>
                     </a>
                     <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
                         <span class="menu-item-icon">🏢</span>
@@ -649,6 +834,40 @@
 
     <div class="loading-overlay hidden" id="loadingOverlay">
         <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Modal Modifica Pausa -->
+    <div class="break-modal-overlay" id="breakModalOverlay">
+        <div class="break-modal">
+            <div class="break-modal-title">☕ Modifica Pausa</div>
+            <div class="break-modal-subtitle" id="breakModalSubtitle">Operatore - Progetto</div>
+            
+            <div class="break-form-row">
+                <div class="break-form-group">
+                    <label>Inizio Pausa</label>
+                    <input type="time" id="breakStartInput" placeholder="--:--">
+                </div>
+                <div class="break-form-group">
+                    <label>Fine Pausa</label>
+                    <input type="time" id="breakEndInput" placeholder="--:--">
+                </div>
+            </div>
+            
+            <div class="break-or-divider">oppure</div>
+            
+            <div class="break-form-group">
+                <label>Durata Pausa (minuti)</label>
+                <input type="number" id="breakMinutesInput" min="0" max="480" placeholder="es: 30">
+            </div>
+            
+            <input type="hidden" id="breakPlanningIdx">
+            
+            <div class="break-modal-actions">
+                <button class="break-modal-btn clear" onclick="clearBreak()">🗑️ Rimuovi</button>
+                <button class="break-modal-btn cancel" onclick="closeBreakModal()">Annulla</button>
+                <button class="break-modal-btn save" onclick="saveBreak()">💾 Salva</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -869,9 +1088,25 @@
                         <div class="project-name">${escapeHtml(p.project_name || 'Progetto N/D')}</div>
                         <div class="project-code">${escapeHtml(p.project_code || '')}</div>
                         <div class="function-name">${escapeHtml(p.function_name || '')}</div>
+                        ${p.location_name ? `<div class="location-box">
+                            <div class="location-label"><i class="bi bi-geo-alt-fill"></i> Location</div>
+                            <div class="location-name">
+                                ${p.location_lat && p.location_lon ? 
+                                    `<a href="https://www.google.com/maps?q=${p.location_lat},${p.location_lon}" target="_blank" title="Apri in Google Maps">
+                                        ${escapeHtml(p.location_name)} <i class="bi bi-box-arrow-up-right" style="font-size:10px"></i>
+                                    </a>` : 
+                                    escapeHtml(p.location_name)
+                                }
+                            </div>
+                            ${p.location_address ? `<div class="location-address"><i class="bi bi-signpost-2"></i> ${escapeHtml(p.location_address)}</div>` : ''}
+                        </div>` : ''}
                     </div>
                     <div class="time-info">
                         <div class="time-range">${formatTimeRange(p.start, p.end)}</div>
+                        <div class="break-info" style="font-size: 12px; color: var(--warning);">
+                            ${p.break_minutes ? `☕ Pausa: ${p.break_minutes} min` : '<span style="color: var(--muted)">☕ Nessuna pausa</span>'}
+                            <button class="break-edit-btn" onclick="openBreakModal(${idx})">✏️ Modifica</button>
+                        </div>
                         <div class="hours-info">
                             ${p.hours_planned ? `Pianificate: ${formatHours(p.hours_planned)}` : ''}
                             ${p.hours_registered ? ` · <span class="joblog-hours" title="Ore registrate in JobLog${p.hours_rentman ? ' (Rentman: ' + formatHours(p.hours_rentman) + ')' : ''}">Registrate: ${formatHours(p.hours_registered)}</span>` : (p.hours_rentman ? ` · <span class="rentman-hours" title="Ore da Rentman (nessun dato JobLog)">Rentman: ${formatHours(p.hours_rentman)}</span>` : '')}
@@ -1229,6 +1464,116 @@
                     resolve(false);
                 };
             });
+        }
+
+        // ============ GESTIONE MODAL PAUSA ============
+        const breakModalOverlay = document.getElementById('breakModalOverlay');
+        const breakStartInput = document.getElementById('breakStartInput');
+        const breakEndInput = document.getElementById('breakEndInput');
+        const breakMinutesInput = document.getElementById('breakMinutesInput');
+        const breakPlanningIdx = document.getElementById('breakPlanningIdx');
+        const breakModalSubtitle = document.getElementById('breakModalSubtitle');
+
+        window.openBreakModal = function(idx) {
+            const p = currentPlannings[idx];
+            if (!p) return;
+            
+            breakPlanningIdx.value = idx;
+            breakModalSubtitle.textContent = `${p.crew_name || 'N/D'} - ${p.project_name || 'Progetto'}`;
+            
+            // Popola i campi con i valori esistenti
+            breakStartInput.value = p.break_start || '';
+            breakEndInput.value = p.break_end || '';
+            breakMinutesInput.value = p.break_minutes || '';
+            
+            breakModalOverlay.classList.add('open');
+        }
+
+        window.closeBreakModal = function() {
+            breakModalOverlay.classList.remove('open');
+        }
+
+        window.saveBreak = async function() {
+            const idx = parseInt(breakPlanningIdx.value);
+            const p = currentPlannings[idx];
+            if (!p) return;
+            
+            const breakStart = breakStartInput.value || null;
+            const breakEnd = breakEndInput.value || null;
+            let breakMinutes = parseInt(breakMinutesInput.value) || null;
+            
+            // Se sono specificati start e end, calcola automaticamente i minuti
+            if (breakStart && breakEnd && !breakMinutes) {
+                const [sh, sm] = breakStart.split(':').map(Number);
+                const [eh, em] = breakEnd.split(':').map(Number);
+                breakMinutes = (eh * 60 + em) - (sh * 60 + sm);
+                if (breakMinutes < 0) breakMinutes = null;
+            }
+            
+            try {
+                const res = await fetch('/api/admin/rentman/planning/update-break', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        rentman_id: p.id,
+                        date: dateInput.value,
+                        break_start: breakStart,
+                        break_end: breakEnd,
+                        break_minutes: breakMinutes
+                    })
+                });
+                
+                const data = await res.json();
+                if (data.success) {
+                    // Aggiorna i dati locali
+                    p.break_start = breakStart;
+                    p.break_end = breakEnd;
+                    p.break_minutes = breakMinutes;
+                    
+                    renderPlannings(currentPlannings);
+                    closeBreakModal();
+                    showMessage('Pausa aggiornata con successo', 'success');
+                } else {
+                    showMessage(data.error || 'Errore nel salvataggio', 'error');
+                }
+            } catch (err) {
+                console.error('Errore salvataggio pausa:', err);
+                showMessage('Errore di connessione', 'error');
+            }
+        }
+
+        window.clearBreak = async function() {
+            breakStartInput.value = '';
+            breakEndInput.value = '';
+            breakMinutesInput.value = '';
+            await saveBreak();
+        }
+
+        // Chiudi modal con click fuori o ESC
+        breakModalOverlay.addEventListener('click', (e) => {
+            if (e.target === breakModalOverlay) closeBreakModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && breakModalOverlay.classList.contains('open')) {
+                closeBreakModal();
+            }
+        });
+
+        // Auto-calcola minuti quando cambiano gli orari
+        breakStartInput.addEventListener('change', updateBreakMinutesFromTimes);
+        breakEndInput.addEventListener('change', updateBreakMinutesFromTimes);
+        
+        function updateBreakMinutesFromTimes() {
+            const start = breakStartInput.value;
+            const end = breakEndInput.value;
+            if (start && end) {
+                const [sh, sm] = start.split(':').map(Number);
+                const [eh, em] = end.split(':').map(Number);
+                const mins = (eh * 60 + em) - (sh * 60 + sm);
+                if (mins > 0) {
+                    breakMinutesInput.value = mins;
+                }
+            }
         }
 
         function showMessage(msg, type = 'info') {

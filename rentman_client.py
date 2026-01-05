@@ -726,3 +726,33 @@ class RentmanClient:
 
         data = payload.get("data") if isinstance(payload, dict) else None
         return data
+
+    def get_subproject(self, subproject_id: int) -> Optional[Dict[str, Any]]:
+        """Recupera i dettagli di un subproject."""
+        logger.info("Rentman: recupero dettaglio subproject %s", subproject_id)
+        try:
+            payload = self._request("GET", f"/subprojects/{subproject_id}")
+        except RentmanNotFound:
+            logger.info("Rentman: subproject %s non trovato", subproject_id)
+            return None
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo subproject %s", exc, subproject_id)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        return data
+
+    def get_contact(self, contact_id: int) -> Optional[Dict[str, Any]]:
+        """Recupera i dettagli di un contatto (location)."""
+        logger.info("Rentman: recupero dettaglio contact %s", contact_id)
+        try:
+            payload = self._request("GET", f"/contacts/{contact_id}")
+        except RentmanNotFound:
+            logger.info("Rentman: contact %s non trovato", contact_id)
+            return None
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo contact %s", exc, contact_id)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        return data

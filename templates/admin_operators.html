@@ -315,30 +315,6 @@
         .operator-name { font-weight: 700; font-size: 14px; }
         .operator-id { font-size: 12px; color: var(--muted); }
 
-        .external-id-cell {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .external-id-input {
-            width: 140px;
-            padding: 8px 12px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: var(--bg-soft);
-            color: var(--text);
-            font-size: 13px;
-            font-weight: 600;
-        }
-        .external-id-input:focus {
-            outline: none;
-            border-color: var(--orange);
-        }
-        .external-id-input.modified {
-            border-color: var(--warning);
-            background: rgba(249, 115, 22, 0.1);
-        }
-
         .status-badge {
             display: inline-flex;
             align-items: center;
@@ -356,21 +332,6 @@
             border-radius: 50%;
             background: currentColor;
         }
-
-        .save-btn {
-            padding: 6px 12px;
-            border-radius: 8px;
-            border: none;
-            background: var(--orange);
-            color: white;
-            font-size: 12px;
-            font-weight: 700;
-            cursor: pointer;
-            opacity: 0;
-            transition: all 0.15s ease;
-        }
-        .save-btn.visible { opacity: 1; }
-        .save-btn:hover { background: var(--warning); }
 
         .action-btn {
             width: 36px; height: 36px;
@@ -582,6 +543,10 @@
                         <span class="menu-item-icon">🧑‍🔧</span>
                         <span>Gestione Operatori</span>
                     </a>
+                    <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📆</span>
+                        <span>Gestione Turni</span>
+                    </a>
                     <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
                         <span class="menu-item-icon">⚙️</span>
                         <span>Regole Timbrature</span>
@@ -627,7 +592,7 @@
         <div class="page-header">
             <div>
                 <h1 class="page-title">Gestione Operatori</h1>
-                <p class="page-subtitle">Visualizza e configura gli ID esterni per gli operatori Rentman</p>
+                <p class="page-subtitle">Visualizza e configura gli operatori Rentman</p>
             </div>
         </div>
 
@@ -637,10 +602,6 @@
                 <div class="stat-label">Totale Operatori</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" id="statWithExternal">-</div>
-                <div class="stat-label">Con ID Esterno</div>
-            </div>
-            <div class="stat-card">
                 <div class="stat-value" id="statActive">-</div>
                 <div class="stat-label">Attivi</div>
             </div>
@@ -648,11 +609,6 @@
 
         <div class="filter-bar">
             <input type="search" class="search-input" id="searchInput" placeholder="Cerca per nome o ID..." />
-            <select class="filter-select" id="filterExternal">
-                <option value="all">Tutti</option>
-                <option value="with">Con ID Esterno</option>
-                <option value="without">Senza ID Esterno</option>
-            </select>
             <select class="filter-select" id="filterStatus">
                 <option value="all">Tutti gli stati</option>
                 <option value="active">Solo Attivi</option>
@@ -666,8 +622,6 @@
                     <tr>
                         <th>Operatore</th>
                         <th>ID Rentman</th>
-                        <th>ID Esterno</th>
-                        <th>Gruppo ID</th>
                         <th>Stato</th>
                         <th style="width: 80px;">Azioni</th>
                     </tr>
@@ -703,18 +657,6 @@
                     <div class="form-group">
                         <label class="form-label">ID Rentman</label>
                         <input type="text" class="form-input" id="formRentmanId" disabled />
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label" for="formExternalId">ID Esterno</label>
-                        <input type="text" class="form-input" id="formExternalId" placeholder="es. EMP001, ABC123..." />
-                        <p class="form-hint">Identificatore usato per sistemi esterni (es. software paghe, ERP)</p>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label" for="formExternalGroupId">Gruppo ID Esterno</label>
-                        <input type="text" class="form-input" id="formExternalGroupId" placeholder="es. GRP001, DIPA..." />
-                        <p class="form-hint">Identificatore del gruppo per CedolinoWeb</p>
                     </div>
 
                     <div class="form-group">
@@ -770,7 +712,6 @@
 
         // State
         let operators = [];
-        let pendingChanges = {}; // { id: { external_id: value } }
 
         // DOM Elements
         const menuToggle = document.getElementById('menuToggle');
@@ -779,13 +720,11 @@
         const refreshBtn = document.getElementById('refreshBtn');
         const syncBtn = document.getElementById('syncBtn');
         const searchInput = document.getElementById('searchInput');
-        const filterExternal = document.getElementById('filterExternal');
         const filterStatus = document.getElementById('filterStatus');
         const operatorsTableBody = document.getElementById('operatorsTableBody');
         const emptyState = document.getElementById('emptyState');
         
         const statTotal = document.getElementById('statTotal');
-        const statWithExternal = document.getElementById('statWithExternal');
         const statActive = document.getElementById('statActive');
 
         // Modal elements
@@ -796,8 +735,6 @@
         const formOperatorId = document.getElementById('formOperatorId');
         const formName = document.getElementById('formName');
         const formRentmanId = document.getElementById('formRentmanId');
-        const formExternalId = document.getElementById('formExternalId');
-        const formExternalGroupId = document.getElementById('formExternalGroupId');
         const formEmail = document.getElementById('formEmail');
         const formPhone = document.getElementById('formPhone');
         const formIsActive = document.getElementById('formIsActive');
@@ -834,7 +771,6 @@
                 if (!response.ok) throw new Error('Errore nel caricamento operatori');
                 const data = await response.json();
                 operators = data.operators || [];
-                pendingChanges = {};
                 updateStats();
                 renderOperators();
             } catch (error) {
@@ -880,8 +816,6 @@
             const hasOverride = timbraturaOverride.qr_disabled || timbraturaOverride.gps_disabled;
 
             const payload = {
-                external_id: formExternalId.value.trim() || null,
-                external_group_id: formExternalGroupId.value.trim() || null,
                 email: formEmail.value.trim() || null,
                 phone: formPhone.value.trim() || null,
                 is_active: formIsActive.checked,
@@ -910,48 +844,15 @@
             }
         }
 
-        async function saveInlineExternalId(operatorId, newValue) {
-            try {
-                const response = await fetch(`/api/admin/operators/${operatorId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ external_id: newValue || null })
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Errore nel salvataggio');
-                }
-
-                // Update local state
-                const op = operators.find(o => o.id === operatorId);
-                if (op) op.external_id = newValue || null;
-                
-                delete pendingChanges[operatorId];
-                updateStats();
-                
-                showToast('ID esterno salvato', 'success');
-                
-                // Re-render to update button visibility
-                renderOperators();
-            } catch (error) {
-                console.error('Errore:', error);
-                showToast(error.message, 'error');
-            }
-        }
-
         // ─── Stats Functions ───
         function updateStats() {
             statTotal.textContent = operators.length;
-            statWithExternal.textContent = operators.filter(o => o.external_id).length;
             statActive.textContent = operators.filter(o => o.is_active).length;
         }
 
         // ─── Render Functions ───
         function renderOperators() {
             const searchTerm = searchInput.value.toLowerCase().trim();
-            const externalFilter = filterExternal.value;
             const statusFilter = filterStatus.value;
 
             const filtered = operators.filter(op => {
@@ -959,13 +860,8 @@
                 if (searchTerm) {
                     const matchName = op.name.toLowerCase().includes(searchTerm);
                     const matchRentman = String(op.rentman_id).includes(searchTerm);
-                    const matchExternal = (op.external_id || '').toLowerCase().includes(searchTerm);
-                    if (!matchName && !matchRentman && !matchExternal) return false;
+                    if (!matchName && !matchRentman) return false;
                 }
-
-                // External ID filter
-                if (externalFilter === 'with' && !op.external_id) return false;
-                if (externalFilter === 'without' && op.external_id) return false;
 
                 // Status filter
                 if (statusFilter === 'active' && !op.is_active) return false;
@@ -982,9 +878,6 @@
 
             emptyState.classList.add('hidden');
             operatorsTableBody.innerHTML = filtered.map(op => {
-                const currentValue = pendingChanges[op.id]?.external_id ?? op.external_id ?? '';
-                const hasChange = pendingChanges[op.id] !== undefined;
-                
                 return `
                 <tr data-id="${op.id}">
                     <td>
@@ -996,24 +889,6 @@
                         </div>
                     </td>
                     <td><span class="operator-id">#${op.rentman_id}</span></td>
-                    <td>
-                        <div class="external-id-cell">
-                            <input 
-                                type="text" 
-                                class="external-id-input ${hasChange ? 'modified' : ''}" 
-                                value="${escapeHtml(currentValue)}"
-                                data-id="${op.id}"
-                                data-original="${escapeHtml(op.external_id || '')}"
-                                placeholder="Non impostato"
-                            />
-                            <button 
-                                class="save-btn ${hasChange ? 'visible' : ''}" 
-                                data-id="${op.id}"
-                                title="Salva ID Esterno"
-                            >💾</button>
-                        </div>
-                    </td>
-                    <td><span class="group-id-badge">${escapeHtml(op.external_group_id || '-')}</span></td>
                     <td><span class="status-badge ${op.is_active ? 'active' : 'inactive'}">${op.is_active ? 'Attivo' : 'Inattivo'}</span></td>
                     <td>
                         <button class="action-btn edit" title="Modifica dettagli" data-action="edit" data-id="${op.id}">✏️</button>
@@ -1030,8 +905,6 @@
             formOperatorId.value = op.id;
             formName.value = op.name;
             formRentmanId.value = op.rentman_id;
-            formExternalId.value = op.external_id || '';
-            formExternalGroupId.value = op.external_group_id || '';
             formEmail.value = op.email || '';
             formPhone.value = op.phone || '';
             formIsActive.checked = op.is_active;
@@ -1072,58 +945,16 @@
         syncBtn.addEventListener('click', syncFromRentman);
 
         searchInput.addEventListener('input', renderOperators);
-        filterExternal.addEventListener('change', renderOperators);
         filterStatus.addEventListener('change', renderOperators);
 
-        // Inline external_id editing
-        operatorsTableBody.addEventListener('input', (e) => {
-            if (!e.target.classList.contains('external-id-input')) return;
-            
-            const input = e.target;
-            const id = parseInt(input.dataset.id);
-            const original = input.dataset.original;
-            const newValue = input.value.trim();
-            
-            if (newValue !== original) {
-                pendingChanges[id] = { external_id: newValue };
-                input.classList.add('modified');
-                input.parentElement.querySelector('.save-btn').classList.add('visible');
-            } else {
-                delete pendingChanges[id];
-                input.classList.remove('modified');
-                input.parentElement.querySelector('.save-btn').classList.remove('visible');
-            }
-        });
-
-        // Save inline external_id
+        // Edit button handler
         operatorsTableBody.addEventListener('click', (e) => {
-            const saveBtn = e.target.closest('.save-btn');
-            if (saveBtn) {
-                const id = parseInt(saveBtn.dataset.id);
-                const input = operatorsTableBody.querySelector(`input[data-id="${id}"]`);
-                if (input && pendingChanges[id]) {
-                    saveInlineExternalId(id, pendingChanges[id].external_id);
-                }
-                return;
-            }
-
             const actionBtn = e.target.closest('[data-action]');
             if (actionBtn) {
                 const action = actionBtn.dataset.action;
                 const id = parseInt(actionBtn.dataset.id);
                 if (action === 'edit') {
                     openEditModal(id);
-                }
-            }
-        });
-
-        // Enter key to save inline
-        operatorsTableBody.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.target.classList.contains('external-id-input')) {
-                e.preventDefault();
-                const id = parseInt(e.target.dataset.id);
-                if (pendingChanges[id]) {
-                    saveInlineExternalId(id, pendingChanges[id].external_id);
                 }
             }
         });

@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gestione Turni · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --purple: #a855f7;
+            --orange: #f97316;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --purple: #9333ea;
+            --orange: #ea580c;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .hidden { display: none !important; }
+
+        /* Header */
+        header {
+            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            color: #f8fafc;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+            overflow: visible;
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; overflow: visible; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Hamburger Menu */
+        .menu-container { position: relative; z-index: 310; }
+        .hamburger-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 8px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            min-width: 220px;
+            z-index: 300;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+        }
+        .hamburger-menu.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 500;
+            transition: background 0.15s ease;
+        }
+        .menu-item:hover { background: var(--bg-soft); }
+        .menu-item.active {
+            background: var(--bg-soft);
+            color: var(--brand);
+        }
+        .menu-item-icon { font-size: 18px; }
+        .menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 4px 0;
+        }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+        .header-user {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 999px;
+        }
+        .header-user-avatar {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px;
+        }
+        .header-user-name { font-weight: 600; font-size: 14px; }
+
+        /* Main Content */
+        main {
+            flex: 1;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Page Header */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .page-title {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--purple), var(--brand));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0;
+        }
+        .page-subtitle { font-size: 14px; color: var(--muted); font-weight: 600; margin-top: 4px; }
+
+        /* Buttons */
+        .btn {
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn:hover { background: var(--bg-panel); }
+        .btn:active { transform: scale(0.97); }
+        .btn.primary { background: var(--brand); color: white; border-color: transparent; }
+        .btn.primary:hover { background: var(--brand-strong); }
+        .btn.danger { background: var(--danger); color: white; border-color: transparent; }
+        .btn.danger:hover { background: #dc2626; }
+        .btn.secondary { background: transparent; }
+        .btn.small { padding: 8px 14px; font-size: 13px; }
+
+        /* User Cards */
+        .users-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        .user-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+        .user-card-header {
+            padding: 16px 20px;
+            background: var(--bg-soft);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .user-info { display: flex; align-items: center; gap: 12px; }
+        .user-avatar {
+            width: 44px; height: 44px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--purple), var(--brand));
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800;
+            font-size: 16px;
+            color: white;
+        }
+        .user-details { display: flex; flex-direction: column; gap: 2px; }
+        .user-name { font-weight: 700; font-size: 15px; }
+        .user-username { font-size: 12px; color: var(--muted); }
+        .user-card-body { padding: 16px 20px; }
+        .user-card-actions {
+            padding: 12px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        /* Shifts Table */
+        .shifts-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .shifts-table th,
+        .shifts-table td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .shifts-table th {
+            font-weight: 700;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+        }
+        .shifts-table tbody tr:last-child td { border-bottom: none; }
+        .shift-time { font-weight: 600; color: var(--brand); }
+        .shift-break { font-size: 12px; color: var(--muted); }
+        .no-shift { color: var(--muted); font-style: italic; }
+
+        /* Status Badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .status-badge.configured { background: rgba(34,197,94,0.15); color: var(--success); }
+        .status-badge.not-configured { background: rgba(148,163,184,0.15); color: var(--muted); }
+
+        /* Empty State */
+        .empty-state {
+            padding: 60px 20px;
+            text-align: center;
+            color: var(--muted);
+        }
+        .empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state-text { font-size: 16px; font-weight: 600; }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(11,18,36,0.85);
+            backdrop-filter: blur(4px);
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+        }
+        .modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            box-shadow: var(--shadow);
+            width: 100%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transform: translateY(20px);
+            transition: transform 0.2s ease;
+        }
+        .modal-overlay.open .modal { transform: translateY(0); }
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .modal-title { font-size: 18px; font-weight: 800; margin: 0; }
+        .modal-close {
+            width: 36px; height: 36px;
+            border: none;
+            background: var(--bg-soft);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close:hover { background: var(--border); }
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
+
+        /* Form */
+        .form-group { margin-bottom: 16px; }
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+        .form-input,
+        .form-select {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+        }
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+
+        /* Day Shift Row - Layout compatto per PC */
+        .day-shift-row {
+            display: grid;
+            grid-template-columns: 90px repeat(4, 1fr) 36px;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .day-shift-row:last-child { border-bottom: none; }
+        .day-label {
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .day-shift-row input[type="time"] {
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            width: 100%;
+        }
+        .day-shift-row input[type="time"]:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .day-shift-row input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .time-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .time-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            color: var(--muted);
+            font-weight: 600;
+        }
+        
+        /* Compatto: nascondi labels dopo la prima riga */
+        .day-shift-row:not(:first-child) .time-label {
+            display: none;
+        }
+        .days-header {
+            display: grid;
+            grid-template-columns: 90px repeat(4, 1fr) 36px;
+            gap: 8px;
+            padding: 0 0 8px 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 4px;
+        }
+        .days-header span {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--muted);
+            font-weight: 700;
+            text-align: center;
+        }
+        .days-header span:first-child {
+            text-align: left;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 24px;
+            box-shadow: var(--shadow);
+            z-index: 400;
+            font-weight: 600;
+            transition: transform 0.3s ease;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast.success { border-color: var(--success); color: var(--success); }
+        .toast.error { border-color: var(--danger); color: var(--danger); }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 4px solid var(--border);
+            border-top-color: var(--brand);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .users-grid { grid-template-columns: 1fr; }
+            .day-shift-row {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            .day-label {
+                grid-column: 1 / -1;
+                padding-bottom: 8px;
+                border-bottom: 1px dashed var(--border);
+                margin-bottom: 4px;
+            }
+            .page-header { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <div class="menu-container">
+                <button id="menuToggle" class="header-icon-btn" type="button" aria-label="Menu">☰</button>
+                <nav id="hamburgerMenu" class="hamburger-menu">
+                    <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📊</span>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🕐</span>
+                        <span>Gestione Sessioni</span>
+                    </a>
+                    <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🔬</span>
+                        <span>Analisi Attività</span>
+                    </a>
+                    <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📅</span>
+                        <span>Pianificazioni Rentman</span>
+                    </a>
+                    {% if is_admin %}
+                    <a href="{{ url_for('admin_users_page') }}" class="menu-item">
+                        <span class="menu-item-icon">👥</span>
+                        <span>Gestione Utenti</span>
+                    </a>
+                    <a href="{{ url_for('admin_operators') }}" class="menu-item">
+                        <span class="menu-item-icon">🧑‍🔧</span>
+                        <span>Gestione Operatori</span>
+                    </a>
+                    <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item active">
+                        <span class="menu-item-icon">📆</span>
+                        <span>Gestione Turni</span>
+                    </a>
+                    <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
+                        <span class="menu-item-icon">⚙️</span>
+                        <span>Regole Timbrature</span>
+                    </a>
+                    <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📝</span>
+                        <span>Tipologie Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📥</span>
+                        <span>Gestione Richieste</span>
+                    </a>
+                    <a href="{{ url_for('admin_documents_page') }}" class="menu-item">
+                        <span class="menu-item-icon">📄</span>
+                        <span>Gestione Documenti</span>
+                    </a>
+                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
+                        <span class="menu-item-icon">🏢</span>
+                        <span>Configurazione Azienda</span>
+                    </a>
+                    {% endif %}
+                    <div class="menu-divider"></div>
+                    <a href="{{ url_for('logout') }}" class="menu-item danger">
+                        <span class="menu-item-icon">🚪</span>
+                        <span>Logout</span>
+                    </a>
+                </nav>
+            </div>
+            <span class="logo-title">Gestione Turni</span>
+        </div>
+        <div class="header-actions">
+            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <div class="header-user">
+                <div class="header-user-avatar">{{ user_initials }}</div>
+                <span class="header-user-name">{{ user_name }}</span>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Gestione Turni</h1>
+                <p class="page-subtitle">Configura gli orari settimanali per gli impiegati non-Rentman</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button class="btn primary" id="bulkAssignBtn">
+                    <span>➕</span>
+                    <span>Nuovo Turno</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="loading">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Modifica Turni (singolo utente) -->
+    <div class="modal-overlay" id="shiftModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Configura Turni</h2>
+                <button class="modal-close" id="closeModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group" id="userSelectGroup">
+                    <label class="form-label">👤 Dipendente</label>
+                    <select class="form-select" id="userSelect">
+                        <option value="">-- Seleziona --</option>
+                    </select>
+                </div>
+                
+                <div id="shiftsForm" class="hidden">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">🏷️ Nome Turno</label>
+                            <input type="text" class="form-input" id="shiftNameInput" placeholder="es. Ufficio, Part Time...">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;" id="locationSelectGroup">
+                            <label class="form-label">🏢 Sede GPS</label>
+                            <select class="form-select" id="locationSelect">
+                                <option value="">-- Nessuna --</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="days-header">
+                        <span>Giorno</span>
+                        <span>Inizio</span>
+                        <span>Fine</span>
+                        <span>Pausa In</span>
+                        <span>Pausa Out</span>
+                        <span></span>
+                    </div>
+                    
+                    <div id="daysContainer"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" id="cancelBtn">Annulla</button>
+                <button class="btn secondary hidden" id="copyToOthersBtn" style="margin-right:auto;">👥 Copia ad Altri</button>
+                <button class="btn danger hidden" id="deleteBtn">🗑️ Elimina</button>
+                <button class="btn primary" id="saveBtn">💾 Salva</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Copia Turno ad Altri Utenti -->
+    <div class="modal-overlay" id="copyModal">
+        <div class="modal" style="max-width:500px;">
+            <div class="modal-header">
+                <h2 class="modal-title">👥 Copia Turno ad Altri Utenti</h2>
+                <button class="modal-close" id="closeCopyModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom:16px;">
+                    <label class="form-label">📋 Turno da copiare</label>
+                    <div id="copyShiftsSummary" style="background:var(--bg-soft);border-radius:10px;padding:12px;"></div>
+                </div>
+                
+                <div style="margin-bottom:16px;">
+                    <label class="form-label">👥 Seleziona Dipendenti</label>
+                    <p style="color:var(--muted); margin-bottom:12px; font-size:12px;">
+                        Gli utenti già configurati verranno sovrascritti.
+                    </p>
+                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                        <button type="button" class="btn small secondary" onclick="selectAllCopyUsers()">Seleziona Tutti</button>
+                        <button type="button" class="btn small secondary" onclick="deselectAllCopyUsers()">Deseleziona</button>
+                    </div>
+                    <div id="copyUsersContainer" style="max-height:300px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; padding:12px;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" id="cancelCopyBtn">Annulla</button>
+                <button class="btn primary" id="confirmCopyBtn">👥 Copia Turno</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Assegnazione Multipla -->
+    <div class="modal-overlay" id="bulkModal">
+        <div class="modal" style="max-width:700px;">
+            <div class="modal-header">
+                <h2 class="modal-title">👥 Nuovo Turno per Più Utenti</h2>
+                <button class="modal-close" id="closeBulkModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">🏷️ Nome Turno</label>
+                        <input type="text" class="form-input" id="bulkShiftName" placeholder="es. Turno Ufficio">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;" id="bulkLocationGroup">
+                        <label class="form-label">🏢 Sede GPS</label>
+                        <select class="form-select" id="bulkLocationSelect">
+                            <option value="">-- Nessuna --</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="days-header">
+                    <span>Giorno</span>
+                    <span>Inizio</span>
+                    <span>Fine</span>
+                    <span>Pausa In</span>
+                    <span>Pausa Out</span>
+                    <span></span>
+                </div>
+                <div id="bulkDaysContainer"></div>
+                
+                <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                    <label class="form-label">👥 Seleziona Dipendenti</label>
+                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                        <button type="button" class="btn small secondary" onclick="selectAllUsers()">Tutti</button>
+                        <button type="button" class="btn small secondary" onclick="deselectAllUsers()">Nessuno</button>
+                    </div>
+                    <div id="bulkUsersContainer" style="max-height:180px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; padding:10px;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" id="cancelBulkBtn">Annulla</button>
+                <button class="btn primary" id="saveBulkBtn">💾 Assegna</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const DAYS = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+        const DAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+        
+        let allUsers = [];
+        let usersWithShifts = [];
+        let currentUsername = null;
+        let currentShiftsData = null; // Per la copia
+        let isEditing = false;
+        let gpsLocations = []; // Sedi GPS disponibili
+        
+        // ─── Init ───
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+            setupEventListeners();
+        });
+        
+        function setupEventListeners() {
+            // Menu
+            document.getElementById('menuToggle').addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.getElementById('hamburgerMenu').classList.toggle('open');
+            });
+            document.addEventListener('click', (e) => {
+                const menu = document.getElementById('hamburgerMenu');
+                if (!e.target.closest('.menu-container')) {
+                    menu.classList.remove('open');
+                }
+            });
+            
+            // Theme
+            document.getElementById('themeToggle').addEventListener('click', () => {
+                const html = document.documentElement;
+                const current = html.dataset.theme;
+                const next = current === 'dark' ? 'light' : 'dark';
+                html.dataset.theme = next;
+                localStorage.setItem('joblog-theme', next);
+            });
+            
+            // Modal singolo utente (rimosso - ora si usa solo bulk)
+            document.getElementById('closeModal').addEventListener('click', () => closeModal());
+            document.getElementById('cancelBtn').addEventListener('click', () => closeModal());
+            document.getElementById('shiftModal').addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) closeModal();
+            });
+            
+            // User select change
+            document.getElementById('userSelect').addEventListener('change', (e) => {
+                const username = e.target.value;
+                if (username) {
+                    loadUserShifts(username);
+                } else {
+                    document.getElementById('shiftsForm').classList.add('hidden');
+                    document.getElementById('deleteBtn').classList.add('hidden');
+                    document.getElementById('copyToOthersBtn').classList.add('hidden');
+                }
+            });
+            
+            // Save & Delete
+            document.getElementById('saveBtn').addEventListener('click', saveShifts);
+            document.getElementById('deleteBtn').addEventListener('click', deleteShifts);
+            
+            // Copia ad altri - pulsante nel modal singolo
+            document.getElementById('copyToOthersBtn').addEventListener('click', () => openCopyModal());
+            
+            // Copy Modal
+            document.getElementById('closeCopyModal').addEventListener('click', () => closeCopyModal());
+            document.getElementById('cancelCopyBtn').addEventListener('click', () => closeCopyModal());
+            document.getElementById('copyModal').addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) closeCopyModal();
+            });
+            document.getElementById('confirmCopyBtn').addEventListener('click', () => confirmCopyShifts());
+            
+            // Bulk Modal
+            document.getElementById('bulkAssignBtn').addEventListener('click', () => openBulkModal());
+            document.getElementById('closeBulkModal').addEventListener('click', () => closeBulkModal());
+            document.getElementById('cancelBulkBtn').addEventListener('click', () => closeBulkModal());
+            document.getElementById('bulkModal').addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) closeBulkModal();
+            });
+            document.getElementById('saveBulkBtn').addEventListener('click', saveBulkShifts);
+        }
+        
+        async function loadData() {
+            try {
+                const [usersRes, shiftsRes, settingsRes] = await Promise.all([
+                    fetch('/api/admin/employee-shifts/users'),
+                    fetch('/api/admin/employee-shifts'),
+                    fetch('/api/admin/company-settings')
+                ]);
+                
+                const usersData = await usersRes.json();
+                const shiftsData = await shiftsRes.json();
+                const settingsData = await settingsRes.json();
+                
+                allUsers = usersData.users || [];
+                usersWithShifts = shiftsData.users || [];
+                
+                // Carica sedi GPS
+                const timbratura = settingsData.custom_settings?.timbratura || {};
+                gpsLocations = timbratura.gps_locations || [];
+                
+                renderContent();
+            } catch (err) {
+                console.error('Errore caricamento:', err);
+                showToast('Errore nel caricamento dei dati', 'error');
+            }
+        }
+        
+        function renderContent() {
+            const container = document.getElementById('content');
+            
+            if (usersWithShifts.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📆</div>
+                        <div class="empty-state-text">Nessun turno configurato</div>
+                        <p style="color:var(--muted); margin-top:8px;">
+                            Clicca "Nuovo Turno" per configurare gli orari di un dipendente
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '<div class="users-grid">';
+            
+            for (const user of usersWithShifts) {
+                const initials = getInitials(user.full_name || user.display_name);
+                const shiftCount = user.shifts.filter(s => s.is_active).length;
+                // Prende la sede e il nome turno dal primo turno
+                const shiftName = user.shifts.length > 0 ? user.shifts[0].shift_name : null;
+                const locationName = user.shifts.length > 0 ? user.shifts[0].location_name : null;
+                
+                const shiftNameBadge = shiftName 
+                    ? `<span class="status-badge" style="background:var(--brand);color:#fff;">🏷️ ${escapeHtml(shiftName)}</span>` 
+                    : '';
+                const locationBadge = locationName 
+                    ? `<span class="status-badge" style="background:var(--purple);color:#fff;">📍 ${escapeHtml(locationName)}</span>` 
+                    : '';
+                
+                html += `
+                    <div class="user-card">
+                        <div class="user-card-header">
+                            <div class="user-info">
+                                <div class="user-avatar">${initials}</div>
+                                <div class="user-details">
+                                    <span class="user-name">${escapeHtml(user.full_name || user.display_name)}</span>
+                                    <span class="user-username">@${escapeHtml(user.username)}</span>
+                                </div>
+                            </div>
+                            <span class="status-badge configured">${shiftCount} giorni</span>
+                        </div>
+                        ${(shiftNameBadge || locationBadge) ? `
+                        <div style="padding:0 16px 8px; display:flex; flex-wrap:wrap; gap:6px;">
+                            ${shiftNameBadge}
+                            ${locationBadge}
+                        </div>
+                        ` : ''}
+                        <div class="user-card-body">
+                            <table class="shifts-table">
+                                <thead>
+                                    <tr>
+                                        <th>Giorno</th>
+                                        <th>Orario</th>
+                                        <th>Pausa</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${renderShiftsRows(user.shifts)}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="user-card-actions">
+                            <button class="btn small" onclick="editUser('${user.username}')">✏️ Modifica</button>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        function renderShiftsRows(shifts) {
+            let html = '';
+            for (let i = 0; i < 7; i++) {
+                const shift = shifts.find(s => s.day_of_week === i);
+                if (shift && shift.is_active) {
+                    const breakText = shift.break_start && shift.break_end 
+                        ? `${shift.break_start} - ${shift.break_end}` 
+                        : '-';
+                    html += `
+                        <tr>
+                            <td>${DAYS[i]}</td>
+                            <td class="shift-time">${shift.start_time} - ${shift.end_time}</td>
+                            <td class="shift-break">${breakText}</td>
+                        </tr>
+                    `;
+                }
+            }
+            if (!html) {
+                html = '<tr><td colspan="3" class="no-shift">Nessun turno configurato</td></tr>';
+            }
+            return html;
+        }
+        
+        function openModal(username = null) {
+            currentUsername = username;
+            isEditing = !!username;
+            
+            // Popola select utenti
+            const select = document.getElementById('userSelect');
+            select.innerHTML = '<option value="">-- Seleziona --</option>';
+            
+            // Popola select sedi GPS
+            const locationSelect = document.getElementById('locationSelect');
+            locationSelect.innerHTML = '<option value="">-- Nessuna sede (qualsiasi posizione) --</option>';
+            for (const loc of gpsLocations) {
+                const opt = document.createElement('option');
+                opt.value = loc.name;
+                opt.textContent = `${loc.name} (raggio: ${loc.radius_meters || 100}m)`;
+                locationSelect.appendChild(opt);
+            }
+            
+            // Mostra/nascondi gruppo sede in base alla configurazione GPS
+            const locationGroup = document.getElementById('locationSelectGroup');
+            if (gpsLocations.length > 0) {
+                locationGroup.classList.remove('hidden');
+            } else {
+                locationGroup.classList.add('hidden');
+            }
+            
+            // Filtra utenti che non hanno già turni (se non stiamo editando)
+            const usersWithShiftsUsernames = usersWithShifts.map(u => u.username);
+            const availableUsers = isEditing 
+                ? allUsers 
+                : allUsers.filter(u => !usersWithShiftsUsernames.includes(u.username));
+            
+            for (const user of availableUsers) {
+                const opt = document.createElement('option');
+                opt.value = user.username;
+                opt.textContent = user.full_name || user.display_name;
+                select.appendChild(opt);
+            }
+            
+            if (isEditing) {
+                select.value = username;
+                document.getElementById('userSelectGroup').classList.add('hidden');
+                document.getElementById('modalTitle').textContent = 'Modifica Turni';
+                loadUserShifts(username);
+            } else {
+                document.getElementById('userSelectGroup').classList.remove('hidden');
+                document.getElementById('modalTitle').textContent = 'Nuovo Turno';
+                document.getElementById('shiftsForm').classList.add('hidden');
+                document.getElementById('deleteBtn').classList.add('hidden');
+                document.getElementById('shiftNameInput').value = ''; // Reset nome turno
+                locationSelect.value = ''; // Reset sede
+            }
+            
+            document.getElementById('shiftModal').classList.add('open');
+        }
+        
+        function closeModal() {
+            document.getElementById('shiftModal').classList.remove('open');
+            currentUsername = null;
+            isEditing = false;
+        }
+        
+        async function loadUserShifts(username) {
+            currentUsername = username;
+            
+            try {
+                const res = await fetch(`/api/admin/employee-shifts/${username}`);
+                const data = await res.json();
+                
+                const shifts = data.shifts || [];
+                currentShiftsData = shifts; // Salva per copia
+                
+                // Imposta il nome turno (prende dal primo turno)
+                const shiftName = shifts.length > 0 ? shifts[0].shift_name : null;
+                document.getElementById('shiftNameInput').value = shiftName || '';
+                
+                // Imposta la sede (prende dal primo turno)
+                const locationName = shifts.length > 0 ? shifts[0].location_name : null;
+                document.getElementById('locationSelect').value = locationName || '';
+                
+                renderShiftsForm(shifts);
+                document.getElementById('shiftsForm').classList.remove('hidden');
+                document.getElementById('deleteBtn').classList.remove('hidden');
+                
+                // Mostra pulsante copia solo se ci sono turni
+                if (shifts.length > 0) {
+                    document.getElementById('copyToOthersBtn').classList.remove('hidden');
+                } else {
+                    document.getElementById('copyToOthersBtn').classList.add('hidden');
+                }
+            } catch (err) {
+                console.error('Errore caricamento turni:', err);
+                renderShiftsForm([]);
+                document.getElementById('shiftsForm').classList.remove('hidden');
+            }
+        }
+        
+        function renderShiftsForm(existingShifts) {
+            const container = document.getElementById('daysContainer');
+            let html = '';
+            
+            for (let i = 0; i < 7; i++) {
+                const existing = existingShifts.find(s => s.day_of_week === i);
+                const isActive = existing ? existing.is_active : false;
+                
+                html += `
+                    <div class="day-shift-row" data-day="${i}">
+                        <div class="day-label">${DAYS_SHORT[i]}</div>
+                        <input type="time" class="shift-start" value="${existing?.start_time || ''}" />
+                        <input type="time" class="shift-end" value="${existing?.end_time || ''}" />
+                        <input type="time" class="break-start" value="${existing?.break_start || ''}" />
+                        <input type="time" class="break-end" value="${existing?.break_end || ''}" />
+                        <input type="checkbox" class="shift-active" ${isActive || existing?.start_time ? 'checked' : ''} title="Attivo" />
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+            
+            // Auto-check quando si inserisce un orario
+            container.querySelectorAll('.shift-start, .shift-end').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const row = e.target.closest('.day-shift-row');
+                    const start = row.querySelector('.shift-start').value;
+                    const end = row.querySelector('.shift-end').value;
+                    row.querySelector('.shift-active').checked = !!(start && end);
+                });
+            });
+        }
+        
+        async function saveShifts() {
+            if (!currentUsername) {
+                const select = document.getElementById('userSelect');
+                if (!select.value) {
+                    showToast('Seleziona un dipendente', 'error');
+                    return;
+                }
+                currentUsername = select.value;
+            }
+            
+            // Recupera nome turno e sede
+            const shiftName = document.getElementById('shiftNameInput').value.trim() || null;
+            const locationName = document.getElementById('locationSelect').value || null;
+            
+            const shifts = [];
+            document.querySelectorAll('.day-shift-row').forEach(row => {
+                const day = parseInt(row.dataset.day);
+                const start = row.querySelector('.shift-start').value;
+                const end = row.querySelector('.shift-end').value;
+                const breakStart = row.querySelector('.break-start').value;
+                const breakEnd = row.querySelector('.break-end').value;
+                const isActive = row.querySelector('.shift-active').checked;
+                
+                if (start && end) {
+                    shifts.push({
+                        day_of_week: day,
+                        start_time: start,
+                        end_time: end,
+                        shift_name: shiftName,
+                        break_start: breakStart || null,
+                        break_end: breakEnd || null,
+                        location_name: locationName,
+                        is_active: isActive
+                    });
+                }
+            });
+            
+            try {
+                const res = await fetch(`/api/admin/employee-shifts/${currentUsername}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shifts })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast('Turni salvati con successo', 'success');
+                    closeModal();
+                    loadData();
+                } else {
+                    showToast(data.error || 'Errore nel salvataggio', 'error');
+                }
+            } catch (err) {
+                console.error('Errore salvataggio:', err);
+                showToast('Errore nel salvataggio', 'error');
+            }
+        }
+        
+        async function deleteShifts() {
+            if (!currentUsername) return;
+            
+            if (!confirm('Sei sicuro di voler eliminare tutti i turni di questo dipendente?')) {
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/api/admin/employee-shifts/${currentUsername}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast('Turni eliminati', 'success');
+                    closeModal();
+                    loadData();
+                } else {
+                    showToast(data.error || 'Errore nell\'eliminazione', 'error');
+                }
+            } catch (err) {
+                console.error('Errore eliminazione:', err);
+                showToast('Errore nell\'eliminazione', 'error');
+            }
+        }
+        
+        function editUser(username) {
+            openModal(username);
+        }
+        
+        // ─── Bulk Assignment Modal ───
+        function openBulkModal() {
+            // Popola sedi GPS
+            const locationSelect = document.getElementById('bulkLocationSelect');
+            locationSelect.innerHTML = '<option value="">-- Nessuna sede --</option>';
+            for (const loc of gpsLocations) {
+                const opt = document.createElement('option');
+                opt.value = loc.name;
+                opt.textContent = `${loc.name} (raggio: ${loc.radius_meters || 100}m)`;
+                locationSelect.appendChild(opt);
+            }
+            
+            // Mostra/nascondi gruppo sede
+            const locationGroup = document.getElementById('bulkLocationGroup');
+            if (gpsLocations.length > 0) {
+                locationGroup.classList.remove('hidden');
+            } else {
+                locationGroup.classList.add('hidden');
+            }
+            
+            // Reset form
+            document.getElementById('bulkShiftName').value = '';
+            locationSelect.value = '';
+            
+            // Render giorni
+            renderBulkDaysForm();
+            
+            // Render utenti con checkbox
+            renderBulkUsersCheckboxes();
+            
+            document.getElementById('bulkModal').classList.add('open');
+        }
+        
+        function closeBulkModal() {
+            document.getElementById('bulkModal').classList.remove('open');
+        }
+        
+        function renderBulkDaysForm() {
+            const container = document.getElementById('bulkDaysContainer');
+            let html = '';
+            
+            for (let i = 0; i < 7; i++) {
+                html += `
+                    <div class="day-shift-row" data-day="${i}">
+                        <div class="day-label">${DAYS_SHORT[i]}</div>
+                        <input type="time" class="shift-start" />
+                        <input type="time" class="shift-end" />
+                        <input type="time" class="break-start" />
+                        <input type="time" class="break-end" />
+                        <input type="checkbox" class="shift-active" title="Attivo" />
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+            
+            // Auto-check quando si inserisce un orario
+            container.querySelectorAll('.shift-start, .shift-end').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const row = e.target.closest('.day-shift-row');
+                    const start = row.querySelector('.shift-start').value;
+                    const end = row.querySelector('.shift-end').value;
+                    row.querySelector('.shift-active').checked = !!(start && end);
+                });
+            });
+        }
+        
+        // =========== COPY MODAL FUNCTIONS ===========
+        function openCopyModal() {
+            if (!currentShiftsData || currentShiftsData.length === 0) {
+                showToast('Nessun turno da copiare. Salva prima i turni correnti.', 'error');
+                return;
+            }
+            
+            // Popola la lista utenti (escludi l'utente corrente)
+            const container = document.getElementById('copyUsersContainer');
+            let html = '';
+            
+            for (const user of allUsers) {
+                if (user.username === currentUsername) continue; // Escludi l'utente corrente
+                
+                const hasShifts = usersWithShifts.some(u => u.username === user.username);
+                const badge = hasShifts ? '<span style="color:var(--warning);font-size:11px;margin-left:6px;">⚠️ già configurato</span>' : '';
+                
+                html += `
+                    <label style="display:flex; align-items:center; gap:10px; padding:8px; cursor:pointer; border-radius:8px; transition:background 0.2s;" onmouseover="this.style.background='var(--bg-soft)'" onmouseout="this.style.background=''">
+                        <input type="checkbox" class="copy-user-checkbox" value="${user.username}" style="width:18px;height:18px;">
+                        <span style="font-weight:600;">${escapeHtml(user.full_name || user.display_name)}</span>
+                        <span style="color:var(--muted);font-size:12px;">@${escapeHtml(user.username)}</span>
+                        ${badge}
+                    </label>
+                `;
+            }
+            
+            if (!html) {
+                html = '<p style="color:var(--muted);text-align:center;padding:20px;">Nessun altro dipendente disponibile</p>';
+            }
+            
+            container.innerHTML = html;
+            
+            // Mostra riepilogo turni da copiare
+            const summaryContainer = document.getElementById('copyShiftsSummary');
+            let summaryHtml = '<div style="display:grid;gap:4px;">';
+            for (const shift of currentShiftsData) {
+                if (shift.start_time && shift.end_time) {
+                    summaryHtml += `<div style="display:flex;gap:10px;padding:4px 8px;background:var(--bg-soft);border-radius:4px;">
+                        <span style="font-weight:600;min-width:30px;">${DAYS_SHORT[shift.day_of_week]}</span>
+                        <span>${shift.start_time} - ${shift.end_time}</span>
+                        ${shift.break_start ? `<span style="color:var(--muted);">Pausa: ${shift.break_start}-${shift.break_end}</span>` : ''}
+                    </div>`;
+                }
+            }
+            summaryHtml += '</div>';
+            summaryContainer.innerHTML = summaryHtml;
+            
+            document.getElementById('copyModal').classList.add('open');
+        }
+        
+        function closeCopyModal() {
+            document.getElementById('copyModal').classList.remove('open');
+        }
+        
+        function selectAllCopyUsers() {
+            document.querySelectorAll('.copy-user-checkbox').forEach(cb => cb.checked = true);
+        }
+        
+        function deselectAllCopyUsers() {
+            document.querySelectorAll('.copy-user-checkbox').forEach(cb => cb.checked = false);
+        }
+        
+        async function confirmCopyShifts() {
+            // Raccogli utenti selezionati
+            const selectedUsernames = [];
+            document.querySelectorAll('.copy-user-checkbox:checked').forEach(cb => {
+                selectedUsernames.push(cb.value);
+            });
+            
+            if (selectedUsernames.length === 0) {
+                showToast('Seleziona almeno un dipendente', 'error');
+                return;
+            }
+            
+            // Usa i turni correnti
+            const shifts = currentShiftsData.filter(s => s.start_time && s.end_time).map(s => ({
+                day_of_week: s.day_of_week,
+                start_time: s.start_time,
+                end_time: s.end_time,
+                break_start: s.break_start || null,
+                break_end: s.break_end || null,
+                shift_name: s.shift_name || null,
+                location_name: s.location_name || null,
+                is_active: s.is_active !== false
+            }));
+            
+            if (shifts.length === 0) {
+                showToast('Nessun turno valido da copiare', 'error');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/admin/employee-shifts/bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        usernames: selectedUsernames,
+                        shifts: shifts
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast(`Turni copiati a ${selectedUsernames.length} utenti`, 'success');
+                    closeCopyModal();
+                    loadData();
+                } else {
+                    showToast(data.error || 'Errore nella copia', 'error');
+                }
+            } catch (err) {
+                console.error('Errore copia turni:', err);
+                showToast('Errore nella copia dei turni', 'error');
+            }
+        }
+        
+        function renderBulkUsersCheckboxes() {
+            const container = document.getElementById('bulkUsersContainer');
+            
+            // Mostra tutti gli utenti
+            let html = '';
+            for (const user of allUsers) {
+                const hasShifts = usersWithShifts.some(u => u.username === user.username);
+                const badge = hasShifts ? '<span style="color:var(--warning);font-size:11px;margin-left:6px;">⚠️ già configurato</span>' : '';
+                
+                html += `
+                    <label style="display:flex; align-items:center; gap:10px; padding:8px; cursor:pointer; border-radius:8px; transition:background 0.2s;" onmouseover="this.style.background='var(--bg-soft)'" onmouseout="this.style.background=''">
+                        <input type="checkbox" class="bulk-user-checkbox" value="${user.username}" style="width:18px;height:18px;">
+                        <span style="font-weight:600;">${escapeHtml(user.full_name || user.display_name)}</span>
+                        <span style="color:var(--muted);font-size:12px;">@${escapeHtml(user.username)}</span>
+                        ${badge}
+                    </label>
+                `;
+            }
+            
+            if (!html) {
+                html = '<p style="color:var(--muted);text-align:center;padding:20px;">Nessun dipendente disponibile</p>';
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function selectAllUsers() {
+            document.querySelectorAll('.bulk-user-checkbox').forEach(cb => cb.checked = true);
+        }
+        
+        function deselectAllUsers() {
+            document.querySelectorAll('.bulk-user-checkbox').forEach(cb => cb.checked = false);
+        }
+        
+        async function saveBulkShifts() {
+            // Raccogli utenti selezionati
+            const selectedUsernames = [];
+            document.querySelectorAll('.bulk-user-checkbox:checked').forEach(cb => {
+                selectedUsernames.push(cb.value);
+            });
+            
+            if (selectedUsernames.length === 0) {
+                showToast('Seleziona almeno un dipendente', 'error');
+                return;
+            }
+            
+            // Raccogli dati turno
+            const shiftName = document.getElementById('bulkShiftName').value.trim() || null;
+            const locationName = document.getElementById('bulkLocationSelect').value || null;
+            
+            const shifts = [];
+            document.querySelectorAll('#bulkDaysContainer .day-shift-row').forEach(row => {
+                const day = parseInt(row.dataset.day);
+                const start = row.querySelector('.shift-start').value;
+                const end = row.querySelector('.shift-end').value;
+                const breakStart = row.querySelector('.break-start').value;
+                const breakEnd = row.querySelector('.break-end').value;
+                const isActive = row.querySelector('.shift-active').checked;
+                
+                if (start && end) {
+                    shifts.push({
+                        day_of_week: day,
+                        start_time: start,
+                        end_time: end,
+                        break_start: breakStart || null,
+                        break_end: breakEnd || null,
+                        shift_name: shiftName,
+                        location_name: locationName,
+                        is_active: isActive
+                    });
+                }
+            });
+            
+            if (shifts.length === 0) {
+                showToast('Configura almeno un giorno lavorativo', 'error');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/admin/employee-shifts/bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        usernames: selectedUsernames,
+                        shifts: shifts
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast(data.message || `Turni assegnati a ${selectedUsernames.length} utenti`, 'success');
+                    closeBulkModal();
+                    loadData();
+                } else {
+                    showToast(data.error || 'Errore nel salvataggio', 'error');
+                }
+            } catch (err) {
+                console.error('Errore salvataggio bulk:', err);
+                showToast('Errore nel salvataggio', 'error');
+            }
+        }
+        
+        // ─── Helpers ───
+        function getInitials(name) {
+            if (!name) return '?';
+            return name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
