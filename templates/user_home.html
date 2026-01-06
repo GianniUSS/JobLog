@@ -113,6 +113,11 @@ body {
   color: rgba(255,255,255,0.8);
   font-size: 0.875rem;
 }
+.main-header-spacer {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
 
 .container {
   max-width: 420px;
@@ -940,6 +945,7 @@ header {
   gap: 5px;
   transition: all 0.2s ease;
   touch-action: manipulation;
+  flex-shrink: 0;
 }
 .hamburger-btn:hover {
   background: rgba(255,255,255,0.3);
@@ -1417,7 +1423,7 @@ header {
 <body>
 
 <!-- Main Header -->
-<header class="main-header">
+<div class="main-header">
   <div class="main-header-content">
     <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMenu()">
       <span></span>
@@ -1428,9 +1434,9 @@ header {
       <h1>Timbratura</h1>
       <p id="currentDate">Caricamento...</p>
     </div>
-    <div style="width: 44px;"></div>
+    <div class="main-header-spacer"></div>
   </div>
-</header>
+</div>
 
 <!-- Side Menu Overlay -->
 <div class="side-menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
