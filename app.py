@@ -1239,6 +1239,7 @@ CREATE TABLE IF NOT EXISTS user_groups (
     name VARCHAR(255) NOT NULL,
     description TEXT DEFAULT NULL,
     cedolino_group_id VARCHAR(255) DEFAULT NULL,
+    gps_location_name VARCHAR(255) DEFAULT NULL COMMENT 'Nome sede GPS associata al gruppo',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_ts BIGINT NOT NULL,
     updated_ts BIGINT NOT NULL,
@@ -1252,6 +1253,7 @@ CREATE TABLE IF NOT EXISTS user_groups (
     name TEXT NOT NULL UNIQUE,
     description TEXT DEFAULT NULL,
     cedolino_group_id TEXT DEFAULT NULL,
+    gps_location_name TEXT DEFAULT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_ts INTEGER NOT NULL,
     updated_ts INTEGER NOT NULL
@@ -2845,6 +2847,16 @@ def ensure_user_groups_table(db: DatabaseLike) -> None:
         cursor.close()
     except AttributeError:
         pass
+    
+    # Migrazione: aggiunge colonna gps_location_name se non esiste
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute("ALTER TABLE user_groups ADD COLUMN gps_location_name VARCHAR(255) DEFAULT NULL COMMENT 'Nome sede GPS associata al gruppo'")
+        else:
+            db.execute("ALTER TABLE user_groups ADD COLUMN gps_location_name TEXT DEFAULT NULL")
+        db.commit()
+    except Exception:
+        pass  # Colonna già esistente
 
 
 def ensure_session_override_table(db: DatabaseLike) -> None:
@@ -12843,6 +12855,10 @@ def admin_groups_page() -> ResponseReturnValue:
     cedolino_sync_enabled = get_cedolino_settings() is not None
     app.logger.info(f"admin_groups_page: cedolino_sync_enabled={cedolino_sync_enabled}")
 
+    # Recupera le location GPS configurate
+    timbratura_config = get_timbratura_config()
+    gps_locations = timbratura_config.get("gps_locations", [])
+
     return render_template(
         "admin_groups.html",
         user_name=primary_name,
@@ -12850,6 +12866,7 @@ def admin_groups_page() -> ResponseReturnValue:
         user_initials=initials,
         is_admin=True,
         cedolino_sync_enabled=cedolino_sync_enabled,
+        gps_locations=gps_locations,
     )
 
 
@@ -12864,7 +12881,7 @@ def api_admin_groups_list() -> ResponseReturnValue:
     ensure_user_groups_table(db)
     
     rows = db.execute("""
-        SELECT id, name, description, cedolino_group_id, is_active, created_ts, updated_ts
+        SELECT id, name, description, cedolino_group_id, gps_location_name, is_active, created_ts, updated_ts
         FROM user_groups
         ORDER BY name ASC
     """).fetchall()
@@ -12876,9 +12893,10 @@ def api_admin_groups_list() -> ResponseReturnValue:
             "name": row["name"] if isinstance(row, dict) else row[1],
             "description": row["description"] if isinstance(row, dict) else row[2],
             "cedolino_group_id": row["cedolino_group_id"] if isinstance(row, dict) else row[3],
-            "is_active": bool(row["is_active"] if isinstance(row, dict) else row[4]),
-            "created_ts": row["created_ts"] if isinstance(row, dict) else row[5],
-            "updated_ts": row["updated_ts"] if isinstance(row, dict) else row[6],
+            "gps_location_name": row["gps_location_name"] if isinstance(row, dict) else row[4],
+            "is_active": bool(row["is_active"] if isinstance(row, dict) else row[5]),
+            "created_ts": row["created_ts"] if isinstance(row, dict) else row[6],
+            "updated_ts": row["updated_ts"] if isinstance(row, dict) else row[7],
         })
 
     return jsonify({"groups": groups})
@@ -12898,6 +12916,7 @@ def api_admin_groups_create() -> ResponseReturnValue:
     name = (data.get("name") or "").strip()
     description = (data.get("description") or "").strip() or None
     cedolino_group_id = (data.get("cedolino_group_id") or "").strip() or None
+    gps_location_name = (data.get("gps_location_name") or "").strip() or None
     is_active = data.get("is_active", True)
 
     if not name:
@@ -12917,14 +12936,14 @@ def api_admin_groups_create() -> ResponseReturnValue:
 
     if DB_VENDOR == "mysql":
         db.execute("""
-            INSERT INTO user_groups (name, description, cedolino_group_id, is_active, created_ts, updated_ts)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (name, description, cedolino_group_id, 1 if is_active else 0, now, now))
+            INSERT INTO user_groups (name, description, cedolino_group_id, gps_location_name, is_active, created_ts, updated_ts)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (name, description, cedolino_group_id, gps_location_name, 1 if is_active else 0, now, now))
     else:
         db.execute("""
-            INSERT INTO user_groups (name, description, cedolino_group_id, is_active, created_ts, updated_ts)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (name, description, cedolino_group_id, 1 if is_active else 0, now, now))
+            INSERT INTO user_groups (name, description, cedolino_group_id, gps_location_name, is_active, created_ts, updated_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (name, description, cedolino_group_id, gps_location_name, 1 if is_active else 0, now, now))
     
     new_id = _last_insert_id(db)
     db.commit()
@@ -12980,6 +12999,11 @@ def api_admin_groups_update(group_id: int) -> ResponseReturnValue:
         cedolino_group_id = (data["cedolino_group_id"] or "").strip() or None
         updates.append("cedolino_group_id = " + placeholder)
         params.append(cedolino_group_id)
+
+    if "gps_location_name" in data:
+        gps_location_name = (data["gps_location_name"] or "").strip() or None
+        updates.append("gps_location_name = " + placeholder)
+        params.append(gps_location_name)
 
     if "is_active" in data:
         is_active = data["is_active"]

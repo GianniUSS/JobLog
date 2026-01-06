@@ -596,6 +596,24 @@ tr:hover {
     gap: 8px;
 }
 
+/* GPS Section */
+.gps-section {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.gps-section h4 {
+    color: var(--success);
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 /* Empty State */
 .empty-state {
     text-align: center;
@@ -749,6 +767,7 @@ tr:hover {
                 <tr>
                     <th>Nome Gruppo</th>
                     <th>Descrizione</th>
+                    {% if gps_locations %}<th>Sede GPS</th>{% endif %}
                     {% if cedolino_sync_enabled %}<th>ID CedolinoWeb</th>{% endif %}
                     <th>Stato</th>
                     <th>Azioni</th>
@@ -756,7 +775,7 @@ tr:hover {
             </thead>
             <tbody id="groupsTable">
                 <tr>
-                    <td colspan="{% if cedolino_sync_enabled %}5{% else %}4{% endif %}">
+                    <td colspan="{% if cedolino_sync_enabled and gps_locations %}6{% elif cedolino_sync_enabled or gps_locations %}5{% else %}4{% endif %}">
                         <div class="empty-state">
                             <div class="empty-state-icon">⏳</div>
                             <h3>Caricamento...</h3>
@@ -800,6 +819,22 @@ tr:hover {
                 </div>
                 {% endif %}
                 
+                {% if gps_locations %}
+                <div class="gps-section" id="gpsSection">
+                    <h4>📍 Sede GPS Timbratura</h4>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Sede GPS predefinita</label>
+                        <select id="gpsLocationName">
+                            <option value="">-- Nessuna sede specifica --</option>
+                            {% for loc in gps_locations %}
+                            <option value="{{ loc.name }}">{{ loc.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small>Gli utenti di questo gruppo potranno timbrare solo dalla sede selezionata</small>
+                    </div>
+                </div>
+                {% endif %}
+                
                 <div class="form-group">
                     <div class="form-check">
                         <input type="checkbox" id="groupActive" checked>
@@ -822,6 +857,7 @@ tr:hover {
 // Stato
 let groups = [];
 const cedolinoEnabled = {{ 'true' if cedolino_sync_enabled else 'false' }};
+const gpsLocationsEnabled = {{ 'true' if gps_locations else 'false' }};
 
 // Init
 document.addEventListener('DOMContentLoaded', () => {
@@ -893,10 +929,15 @@ function renderGroups() {
         (g.description || '').toLowerCase().includes(search)
     );
     
+    // Calcola il colspan dinamico
+    let colCount = 4; // Nome, Descrizione, Stato, Azioni
+    if (gpsLocationsEnabled) colCount++;
+    if (cedolinoEnabled) colCount++;
+    
     if (filtered.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="${cedolinoEnabled ? 5 : 4}">
+                <td colspan="${colCount}">
                     <div class="empty-state">
                         <div class="empty-state-icon">📭</div>
                         <h3>Nessun gruppo trovato</h3>
@@ -914,6 +955,7 @@ function renderGroups() {
                 <strong>${escapeHtml(g.name)}</strong>
             </td>
             <td>${escapeHtml(g.description || '-')}</td>
+            ${gpsLocationsEnabled ? `<td>${g.gps_location_name ? `<span class="badge badge-success">📍 ${escapeHtml(g.gps_location_name)}</span>` : '-'}</td>` : ''}
             ${cedolinoEnabled ? `<td>${g.cedolino_group_id ? `<span class="badge badge-info">${escapeHtml(g.cedolino_group_id)}</span>` : '-'}</td>` : ''}
             <td>
                 <span class="badge ${g.is_active ? 'badge-success' : 'badge-warning'}">
@@ -942,6 +984,8 @@ function openModal(group = null) {
     document.getElementById('groupDescription').value = group ? (group.description || '') : '';
     const cedolinoInput = document.getElementById('cedolinoGroupId');
     if (cedolinoInput) cedolinoInput.value = group ? (group.cedolino_group_id || '') : '';
+    const gpsLocationSelect = document.getElementById('gpsLocationName');
+    if (gpsLocationSelect) gpsLocationSelect.value = group ? (group.gps_location_name || '') : '';
     document.getElementById('groupActive').checked = group ? group.is_active : true;
     
     document.getElementById('modalOverlay').classList.add('open');
@@ -967,6 +1011,7 @@ async function saveGroup(e) {
         name: document.getElementById('groupName').value.trim(),
         description: document.getElementById('groupDescription').value.trim() || null,
         cedolino_group_id: document.getElementById('cedolinoGroupId')?.value.trim() || null,
+        gps_location_name: document.getElementById('gpsLocationName')?.value || null,
         is_active: document.getElementById('groupActive').checked
     };
     

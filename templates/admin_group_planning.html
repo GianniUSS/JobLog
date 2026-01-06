@@ -287,15 +287,19 @@
             color: white;
         }
 
-        /* Navigation */
-        .week-nav {
+        /* Navigation & Group Selector Combined */
+        .nav-bar {
             background: var(--bg-card);
             padding: 12px 20px;
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 16px;
+            justify-content: space-between;
             border-bottom: 1px solid var(--border);
+        }
+        .week-nav {
+            display: flex;
+            align-items: center;
+            gap: 16px;
         }
         .week-nav button {
             background: var(--bg-soft);
@@ -324,9 +328,6 @@
 
         /* Group Selector */
         .group-selector {
-            background: var(--bg-card);
-            padding: 12px 20px;
-            border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
             gap: 12px;
@@ -640,20 +641,22 @@
         </div>
     </header>
 
-    <div class="group-selector">
-        <label>Gruppo:</label>
-        <select id="groupSelect" onchange="changeGroup()">
-            {% for g in groups %}
-            <option value="{{ g.id }}" {% if g.id == group_id %}selected{% endif %}>{{ g.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
+    <div class="nav-bar">
+        <div class="group-selector">
+            <label>Gruppo:</label>
+            <select id="groupSelect" onchange="changeGroup()">
+                {% for g in groups %}
+                <option value="{{ g.id }}" {% if g.id == group_id %}selected{% endif %}>{{ g.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
 
-    <div class="week-nav">
-        <button onclick="prevWeek()">‹</button>
-        <button class="today-btn" onclick="goToday()">Oggi</button>
-        <span class="week-label" id="weekLabel">-</span>
-        <button onclick="nextWeek()">›</button>
+        <div class="week-nav">
+            <button onclick="prevWeek()">‹</button>
+            <button class="today-btn" onclick="goToday()">Oggi</button>
+            <span class="week-label" id="weekLabel">-</span>
+            <button onclick="nextWeek()">›</button>
+        </div>
     </div>
 
     <div class="planning-container">
