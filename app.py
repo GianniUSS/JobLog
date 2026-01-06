@@ -10618,8 +10618,8 @@ CREATE TABLE IF NOT EXISTS user_requests (
     reviewed_by VARCHAR(100),
     reviewed_ts BIGINT,
     review_notes TEXT,
-    created_ts BIGINT NOT NULL,
-    updated_ts BIGINT NOT NULL,
+    created_ts BIGINT NOT NULL DEFAULT 0,
+    updated_ts BIGINT NOT NULL DEFAULT 0,
     INDEX idx_request_user (user_id),
     INDEX idx_request_username (username),
     INDEX idx_request_status (status),
@@ -10889,6 +10889,19 @@ def ensure_user_requests_table(db: DatabaseLike) -> None:
         try:
             cursor.close()
         except AttributeError:
+            pass
+    
+    # Migrazione MySQL: aggiungi DEFAULT alle colonne timestamp se mancante
+    if DB_VENDOR == "mysql":
+        try:
+            db.execute("ALTER TABLE user_requests MODIFY COLUMN created_ts BIGINT NOT NULL DEFAULT 0")
+            db.commit()
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE user_requests MODIFY COLUMN updated_ts BIGINT NOT NULL DEFAULT 0")
+            db.commit()
+        except Exception:
             pass
     
     # Aggiungi colonne mancanti se la tabella esisteva già
