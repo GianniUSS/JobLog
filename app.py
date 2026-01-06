@@ -120,6 +120,25 @@ def static_version(filename: str) -> str:
 
 app.jinja_env.globals["static_version"] = static_version
 
+
+@app.context_processor
+def inject_company_logo():
+    """Inietta il logo aziendale in tutti i template."""
+    logo_path = None
+    try:
+        db = get_db()
+        cursor = db.execute("SELECT logo_path FROM company_settings WHERE id = 1")
+        row = cursor.fetchone()
+        if row:
+            if isinstance(row, dict):
+                logo_path = row.get('logo_path')
+            else:
+                logo_path = row[0]
+    except Exception:
+        pass
+    return {'company_logo': logo_path}
+
+
 MOCK_PROJECTS: Dict[str, Dict[str, Any]] = {
     "1001": {
         "project_code": "1001",
@@ -1206,6 +1225,34 @@ CREATE TABLE IF NOT EXISTS app_users (
     is_active INTEGER NOT NULL DEFAULT 1,
     external_id TEXT DEFAULT NULL,
     external_group_id TEXT DEFAULT NULL,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+)
+"""
+
+# ═══════════════════════════════════════════════════════════════════
+# TABELLA GRUPPI UTENTI
+# ═══════════════════════════════════════════════════════════════════
+USER_GROUPS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS user_groups (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT DEFAULT NULL,
+    cedolino_group_id VARCHAR(255) DEFAULT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    UNIQUE KEY uk_group_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+USER_GROUPS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS user_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT DEFAULT NULL,
+    cedolino_group_id TEXT DEFAULT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
     created_ts INTEGER NOT NULL,
     updated_ts INTEGER NOT NULL
 )
@@ -2774,6 +2821,30 @@ def ensure_app_users_table(db: DatabaseLike) -> None:
             db.commit()
         except Exception:
             pass
+    
+    # Migrazione: aggiungi colonna group_id per collegamento a user_groups
+    if DB_VENDOR == "mysql":
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN group_id INT DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass
+    else:
+        try:
+            db.execute("ALTER TABLE app_users ADD COLUMN group_id INTEGER DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass
+
+
+def ensure_user_groups_table(db: DatabaseLike) -> None:
+    """Crea la tabella user_groups se non esiste."""
+    statement = USER_GROUPS_TABLE_MYSQL if DB_VENDOR == "mysql" else USER_GROUPS_TABLE_SQLITE
+    cursor = db.execute(statement)
+    try:
+        cursor.close()
+    except AttributeError:
+        pass
 
 
 def ensure_session_override_table(db: DatabaseLike) -> None:
@@ -2965,6 +3036,7 @@ def init_db() -> None:
             ensure_equipment_checks_table(db)
             ensure_project_materials_cache_table(db)
             ensure_employee_shifts_table(db)
+            ensure_user_groups_table(db)
             bootstrap_user_store(db)
             db.commit()
         finally:
@@ -3086,6 +3158,7 @@ def init_db() -> None:
         ensure_equipment_checks_table(db)
         ensure_project_materials_cache_table(db)
         ensure_employee_shifts_table(db)
+        ensure_user_groups_table(db)
         bootstrap_user_store(db)
         db.commit()
     finally:
@@ -11648,12 +11721,40 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                 ))
             saved += 1
 
+    # Raccogli tutti i rentman_id ricevuti dalla sincronizzazione
+    synced_rentman_ids = [p.get("id") for p in plannings if p.get("id")]
+    
+    # Rimuovi i turni NON PIÙ INVIATI (sent_to_webservice = 0) che non sono nella sincronizzazione
+    # I turni già inviati (sent_to_webservice = 1) ma non più in Rentman verranno marcati come obsoleti
+    removed = 0
+    if synced_rentman_ids:
+        if DB_VENDOR == "mysql":
+            placeholders = ",".join(["%s"] * len(synced_rentman_ids))
+            # Rimuovi turni non più presenti che NON sono stati ancora inviati
+            result = db.execute(f"""
+                DELETE FROM rentman_plannings 
+                WHERE planning_date = %s 
+                  AND sent_to_webservice = 0
+                  AND rentman_id NOT IN ({placeholders})
+            """, (target_date, *synced_rentman_ids))
+            removed = result.rowcount if hasattr(result, 'rowcount') else 0
+        else:
+            placeholders = ",".join(["?"] * len(synced_rentman_ids))
+            result = db.execute(f"""
+                DELETE FROM rentman_plannings 
+                WHERE planning_date = ? 
+                  AND sent_to_webservice = 0
+                  AND rentman_id NOT IN ({placeholders})
+            """, (target_date, *synced_rentman_ids))
+            removed = result.rowcount if hasattr(result, 'rowcount') else 0
+    
     db.commit()
 
     return jsonify({
         "ok": True,
         "saved": saved,
         "updated": updated,
+        "removed": removed,
         "total": saved + updated,
     })
 
@@ -12523,6 +12624,383 @@ def api_timbratura_validate_gps():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  PLANNING GRUPPO - VISTA SETTIMANALE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/group-planning")
+@app.get("/admin/group-planning/<int:group_id>")
+@login_required
+def admin_group_planning_page(group_id: Optional[int] = None) -> ResponseReturnValue:
+    """Pagina planning settimanale per gruppo."""
+    if not session.get("is_admin") and session.get("role") != "supervisor":
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    db = get_db()
+    ensure_user_groups_table(db)
+
+    # Recupera tutti i gruppi attivi
+    groups = db.execute("SELECT id, name FROM user_groups WHERE is_active = 1 ORDER BY name").fetchall()
+    groups_list = [{"id": g["id"] if isinstance(g, dict) else g[0], 
+                    "name": g["name"] if isinstance(g, dict) else g[1]} for g in groups]
+
+    # Se non specificato, usa il primo gruppo
+    if group_id is None and groups_list:
+        group_id = groups_list[0]["id"]
+    
+    group_name = "Nessun Gruppo"
+    for g in groups_list:
+        if g["id"] == group_id:
+            group_name = g["name"]
+            break
+
+    return render_template(
+        "admin_group_planning.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+        is_admin=session.get("is_admin"),
+        groups=groups_list,
+        group_id=group_id,
+        group_name=group_name,
+    )
+
+
+@app.get("/api/admin/group-planning/<int:group_id>")
+@login_required
+def api_admin_group_planning(group_id: int) -> ResponseReturnValue:
+    """API per recuperare il planning settimanale di un gruppo."""
+    if not session.get("is_admin") and session.get("role") != "supervisor":
+        return jsonify({"error": "forbidden"}), 403
+
+    start_date = request.args.get("start")
+    end_date = request.args.get("end")
+
+    if not start_date or not end_date:
+        return jsonify({"error": "Date start e end richieste"}), 400
+
+    db = get_db()
+    ensure_user_groups_table(db)
+    ensure_rentman_plannings_table(db)
+
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    # Recupera gli utenti del gruppo
+    users = db.execute(f"""
+        SELECT u.username, u.display_name, u.full_name, u.rentman_crew_id
+        FROM app_users u
+        WHERE u.group_id = {placeholder} AND u.is_active = 1
+        ORDER BY u.display_name, u.username
+    """, (group_id,)).fetchall()
+
+    users_list = []
+    crew_ids = []
+    username_by_crew = {}
+
+    for u in users:
+        username = u["username"] if isinstance(u, dict) else u[0]
+        display_name = u["display_name"] if isinstance(u, dict) else u[1]
+        crew_id = u["rentman_crew_id"] if isinstance(u, dict) else u[3]
+        
+        users_list.append({
+            "username": username,
+            "display_name": display_name,
+            "crew_id": crew_id
+        })
+        
+        if crew_id:
+            crew_ids.append(crew_id)
+            username_by_crew[crew_id] = username
+
+    shifts_list = []
+
+    # Se ci sono crew_id, recupera i turni Rentman
+    if crew_ids:
+        placeholders = ",".join([placeholder] * len(crew_ids))
+        
+        plannings = db.execute(f"""
+            SELECT crew_id, planning_date, project_code, project_name, function_name,
+                   plan_start, plan_end, hours_planned, remark, is_leader, transport,
+                   break_start, break_end, break_minutes
+            FROM rentman_plannings
+            WHERE crew_id IN ({placeholders})
+              AND sent_to_webservice = 1
+              AND planning_date >= {placeholder}
+              AND planning_date <= {placeholder}
+            ORDER BY planning_date, plan_start
+        """, (*crew_ids, start_date, end_date)).fetchall()
+
+        for p in plannings:
+            crew_id = p["crew_id"] if isinstance(p, dict) else p[0]
+            username = username_by_crew.get(crew_id)
+            if not username:
+                continue
+
+            planning_date = p["planning_date"] if isinstance(p, dict) else p[1]
+            plan_start = p["plan_start"] if isinstance(p, dict) else p[5]
+            plan_end = p["plan_end"] if isinstance(p, dict) else p[6]
+            hours_planned = p["hours_planned"] if isinstance(p, dict) else p[7]
+
+            # Normalizza data
+            if hasattr(planning_date, 'isoformat'):
+                date_str = planning_date.isoformat()
+            else:
+                date_str = str(planning_date)[:10]
+
+            # Formatta orari
+            start_str = ""
+            end_str = ""
+            if plan_start:
+                if hasattr(plan_start, 'strftime'):
+                    start_str = plan_start.strftime("%H:%M")
+                else:
+                    s = str(plan_start)
+                    start_str = s[11:16] if len(s) > 11 else s[:5]
+            if plan_end:
+                if hasattr(plan_end, 'strftime'):
+                    end_str = plan_end.strftime("%H:%M")
+                else:
+                    s = str(plan_end)
+                    end_str = s[11:16] if len(s) > 11 else s[:5]
+
+            shifts_list.append({
+                "username": username,
+                "date": date_str,
+                "type": "shift",
+                "project_code": p["project_code"] if isinstance(p, dict) else p[2],
+                "project_name": p["project_name"] if isinstance(p, dict) else p[3],
+                "function": p["function_name"] if isinstance(p, dict) else p[4],
+                "start": start_str,
+                "end": end_str,
+                "hours": float(hours_planned or 0),
+                "note": p["remark"] if isinstance(p, dict) else p[8],
+                "is_leader": bool(p["is_leader"] if isinstance(p, dict) else p[9]),
+            })
+
+    # TODO: Aggiungere anche le assenze/ferie dai request approvati
+
+    return jsonify({
+        "users": users_list,
+        "shifts": shifts_list
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GESTIONE GRUPPI UTENTI - ADMIN UI
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/groups")
+@login_required
+def admin_groups_page() -> ResponseReturnValue:
+    """Pagina gestione gruppi utenti (solo admin)."""
+    if not session.get("is_admin"):
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    # Verifica se CedolinoWeb è attivo (config.json + database settings)
+    cedolino_sync_enabled = get_cedolino_settings() is not None
+    app.logger.info(f"admin_groups_page: cedolino_sync_enabled={cedolino_sync_enabled}")
+
+    return render_template(
+        "admin_groups.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+        is_admin=True,
+        cedolino_sync_enabled=cedolino_sync_enabled,
+    )
+
+
+@app.get("/api/admin/groups")
+@login_required
+def api_admin_groups_list() -> ResponseReturnValue:
+    """Lista tutti i gruppi."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    ensure_user_groups_table(db)
+    
+    rows = db.execute("""
+        SELECT id, name, description, cedolino_group_id, is_active, created_ts, updated_ts
+        FROM user_groups
+        ORDER BY name ASC
+    """).fetchall()
+
+    groups = []
+    for row in rows:
+        groups.append({
+            "id": row["id"] if isinstance(row, dict) else row[0],
+            "name": row["name"] if isinstance(row, dict) else row[1],
+            "description": row["description"] if isinstance(row, dict) else row[2],
+            "cedolino_group_id": row["cedolino_group_id"] if isinstance(row, dict) else row[3],
+            "is_active": bool(row["is_active"] if isinstance(row, dict) else row[4]),
+            "created_ts": row["created_ts"] if isinstance(row, dict) else row[5],
+            "updated_ts": row["updated_ts"] if isinstance(row, dict) else row[6],
+        })
+
+    return jsonify({"groups": groups})
+
+
+@app.post("/api/admin/groups")
+@login_required
+def api_admin_groups_create() -> ResponseReturnValue:
+    """Crea un nuovo gruppo."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati non validi"}), 400
+
+    name = (data.get("name") or "").strip()
+    description = (data.get("description") or "").strip() or None
+    cedolino_group_id = (data.get("cedolino_group_id") or "").strip() or None
+    is_active = data.get("is_active", True)
+
+    if not name:
+        return jsonify({"error": "Nome gruppo richiesto"}), 400
+
+    db = get_db()
+    ensure_user_groups_table(db)
+
+    # Verifica se esiste già
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    existing = db.execute(f"SELECT id FROM user_groups WHERE name = {placeholder}", (name,)).fetchone()
+
+    if existing:
+        return jsonify({"error": f"Il gruppo '{name}' esiste già"}), 409
+
+    now = now_ms()
+
+    if DB_VENDOR == "mysql":
+        db.execute("""
+            INSERT INTO user_groups (name, description, cedolino_group_id, is_active, created_ts, updated_ts)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (name, description, cedolino_group_id, 1 if is_active else 0, now, now))
+    else:
+        db.execute("""
+            INSERT INTO user_groups (name, description, cedolino_group_id, is_active, created_ts, updated_ts)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, description, cedolino_group_id, 1 if is_active else 0, now, now))
+    
+    new_id = _last_insert_id(db)
+    db.commit()
+
+    app.logger.info("Admin %s ha creato gruppo '%s' (id=%s)", session.get("user"), name, new_id)
+    return jsonify({"ok": True, "id": new_id, "name": name}), 201
+
+
+@app.put("/api/admin/groups/<int:group_id>")
+@login_required
+def api_admin_groups_update(group_id: int) -> ResponseReturnValue:
+    """Modifica un gruppo esistente."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati non validi"}), 400
+
+    db = get_db()
+    ensure_user_groups_table(db)
+
+    # Verifica che il gruppo esista
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    existing = db.execute(f"SELECT id FROM user_groups WHERE id = {placeholder}", (group_id,)).fetchone()
+
+    if not existing:
+        return jsonify({"error": f"Gruppo con id={group_id} non trovato"}), 404
+
+    # Prepara i campi da aggiornare
+    updates = []
+    params = []
+
+    if "name" in data:
+        name = (data["name"] or "").strip()
+        if name:
+            # Verifica unicità nome
+            check = db.execute(
+                f"SELECT id FROM user_groups WHERE name = {placeholder} AND id != {placeholder}",
+                (name, group_id)
+            ).fetchone()
+            if check:
+                return jsonify({"error": f"Il nome '{name}' è già utilizzato da un altro gruppo"}), 409
+            updates.append("name = " + placeholder)
+            params.append(name)
+
+    if "description" in data:
+        description = (data["description"] or "").strip() or None
+        updates.append("description = " + placeholder)
+        params.append(description)
+
+    if "cedolino_group_id" in data:
+        cedolino_group_id = (data["cedolino_group_id"] or "").strip() or None
+        updates.append("cedolino_group_id = " + placeholder)
+        params.append(cedolino_group_id)
+
+    if "is_active" in data:
+        is_active = data["is_active"]
+        updates.append("is_active = " + placeholder)
+        params.append(1 if is_active else 0)
+
+    if not updates:
+        return jsonify({"error": "Nessun campo da aggiornare"}), 400
+
+    updates.append("updated_ts = " + placeholder)
+    params.append(now_ms())
+    params.append(group_id)
+
+    sql = f"UPDATE user_groups SET {', '.join(updates)} WHERE id = {placeholder}"
+    db.execute(sql, tuple(params))
+    db.commit()
+
+    app.logger.info("Admin %s ha modificato gruppo id=%s", session.get("user"), group_id)
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/admin/groups/<int:group_id>")
+@login_required
+def api_admin_groups_delete(group_id: int) -> ResponseReturnValue:
+    """Elimina un gruppo."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    ensure_user_groups_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    # Verifica che il gruppo esista
+    existing = db.execute(f"SELECT id, name FROM user_groups WHERE id = {placeholder}", (group_id,)).fetchone()
+    if not existing:
+        return jsonify({"error": f"Gruppo con id={group_id} non trovato"}), 404
+
+    group_name = existing["name"] if isinstance(existing, dict) else existing[1]
+
+    # Verifica se ci sono utenti associati
+    users_count = db.execute(
+        f"SELECT COUNT(*) as cnt FROM app_users WHERE group_id = {placeholder}",
+        (group_id,)
+    ).fetchone()
+    count = users_count["cnt"] if isinstance(users_count, dict) else users_count[0]
+    
+    if count > 0:
+        return jsonify({"error": f"Impossibile eliminare: {count} utente/i ancora associato/i a questo gruppo"}), 400
+
+    db.execute(f"DELETE FROM user_groups WHERE id = {placeholder}", (group_id,))
+    db.commit()
+
+    app.logger.info("Admin %s ha eliminato gruppo '%s' (id=%s)", session.get("user"), group_name, group_id)
+    return jsonify({"ok": True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  GESTIONE UTENTI - ADMIN UI
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -12540,15 +13018,8 @@ def admin_users_page() -> ResponseReturnValue:
     primary_name = session.get("user_name") or display_name or session.get("user")
     initials = session.get("user_initials") or compute_initials(primary_name or "")
 
-    # Verifica se CedolinoWeb è configurato (mostra UI se presente nel config.json)
-    # Questo è indipendente dal flag cedolino_sync_enabled nel database che controlla
-    # solo se la sincronizzazione attiva è abilitata
-    try:
-        config = load_config()
-        cedolino_section = config.get("cedolino_web", {})
-        cedolino_sync_enabled = bool(cedolino_section.get("enabled", False))
-    except Exception:
-        cedolino_sync_enabled = False
+    # Verifica se CedolinoWeb è attivo (config.json + database settings)
+    cedolino_sync_enabled = get_cedolino_settings() is not None
 
     return render_template(
         "admin_users.html",
@@ -12568,12 +13039,16 @@ def api_admin_users_list() -> ResponseReturnValue:
         return jsonify({"error": "forbidden"}), 403
 
     db = get_db()
+    ensure_user_groups_table(db)
+    
     rows = db.execute("""
         SELECT u.username, u.display_name, u.full_name, u.role, u.is_active, 
                u.created_ts, u.updated_ts, u.rentman_crew_id, c.name as crew_name,
-               u.external_id, u.external_group_id
+               u.external_id, u.external_group_id, u.group_id, g.name as group_name,
+               g.cedolino_group_id as group_cedolino_id
         FROM app_users u
         LEFT JOIN crew_members c ON u.rentman_crew_id = c.rentman_id
+        LEFT JOIN user_groups g ON u.group_id = g.id
         ORDER BY u.username ASC
     """).fetchall()
 
@@ -12593,6 +13068,9 @@ def api_admin_users_list() -> ResponseReturnValue:
             "crew_name": row["crew_name"] if isinstance(row, dict) else row[8],
             "external_id": external_id,
             "external_group_id": row["external_group_id"] if isinstance(row, dict) else row[10],
+            "group_id": row["group_id"] if isinstance(row, dict) else row[11],
+            "group_name": row["group_name"] if isinstance(row, dict) else row[12],
+            "group_cedolino_id": row["group_cedolino_id"] if isinstance(row, dict) else row[13],
         })
 
     return jsonify({"users": users})
@@ -12743,7 +13221,7 @@ def api_admin_users_update(username: str) -> ResponseReturnValue:
         updates.append("external_id = " + ("%s" if DB_VENDOR == "mysql" else "?"))
         params.append(external_id)
 
-    # Gestione external_group_id per CedolinoWeb (Gruppo ID diretto utente)
+    # Gestione external_group_id per CedolinoWeb (Gruppo ID diretto utente - deprecato, usare group_id)
     if "external_group_id" in data:
         external_group_id = data.get("external_group_id")
         # Può essere None/vuoto per rimuovere l'ID, o una stringa
@@ -12753,6 +13231,17 @@ def api_admin_users_update(username: str) -> ResponseReturnValue:
             external_group_id = None
         updates.append("external_group_id = " + ("%s" if DB_VENDOR == "mysql" else "?"))
         params.append(external_group_id)
+
+    # Gestione group_id per collegamento a user_groups
+    if "group_id" in data:
+        group_id = data.get("group_id")
+        # Può essere None/vuoto per rimuovere l'associazione, o un intero
+        if group_id is not None and group_id != "":
+            group_id = int(group_id)
+        else:
+            group_id = None
+        updates.append("group_id = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(group_id)
 
     if not updates:
         return jsonify({"error": "Nessun campo da aggiornare"}), 400

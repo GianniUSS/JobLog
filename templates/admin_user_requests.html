@@ -17,37 +17,35 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
         :root {
-            color-scheme: light dark;
             --bg: #0b1224;
-            --bg-panel: #0f172a;
             --bg-soft: #111a30;
-            --card: #10182f;
+            --bg-card: #0f172a;
+            --bg-panel: #0f172a;
+            --border: rgba(148, 163, 184, 0.18);
             --text: #e2e8f0;
-            --text-muted: #94a3b8;
             --muted: #94a3b8;
+            --text-muted: #94a3b8;
             --brand: #38bdf8;
             --brand-strong: #0ea5e9;
-            --border: rgba(148, 163, 184, 0.18);
-            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --brand-soft: rgba(56, 189, 248, 0.15);
             --success: #22c55e;
-            --danger: #ef4444;
             --warning: #f59e0b;
+            --danger: #ef4444;
+            --cyan: #06b6d4;
             --purple: #a855f7;
             --pink: #ec4899;
-            --cyan: #06b6d4;
         }
         [data-theme="light"] {
             --bg: #f6f8fc;
-            --bg-panel: #ffffff;
             --bg-soft: #eef2ff;
-            --card: #ffffff;
+            --bg-card: #ffffff;
+            --bg-panel: #ffffff;
+            --border: rgba(15, 23, 42, 0.1);
             --text: #0f172a;
-            --text-muted: #475569;
             --muted: #475569;
+            --text-muted: #475569;
             --brand: #2563eb;
             --brand-strong: #1d4ed8;
-            --border: rgba(15, 23, 42, 0.1);
-            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
             --success: #16a34a;
             --danger: #dc2626;
             --warning: #d97706;
@@ -68,20 +66,23 @@
 
         /* Header */
         header {
-            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
             color: #f8fafc;
-            padding: 12px 20px;
+            padding: 14px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             position: sticky;
             top: 0;
-            z-index: 220;
-            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
             overflow: visible;
         }
         .header-left { display: flex; align-items: center; gap: 16px; overflow: visible; }
-        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-title { color: white; }
+        .header-title h1 { font-size: 20px; font-weight: 700; margin: 0; }
+        .header-title p { font-size: 13px; opacity: 0.85; margin: 0; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; color: white; }
         .header-actions { display: flex; align-items: center; gap: 10px; }
         .header-icon-btn {
             width: 40px; height: 40px;
@@ -94,47 +95,143 @@
         }
         .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
 
-        /* Hamburger Menu */
-        .menu-container { position: relative; z-index: 310; }
-        .hamburger-menu {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            margin-top: 8px;
-            background: var(--bg-panel);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            box-shadow: var(--shadow);
-            min-width: 220px;
-            z-index: 300;
-            overflow: hidden;
+        /* Menu Overlay */
+        .menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 210;
             opacity: 0;
             visibility: hidden;
-            transform: translateY(-10px);
-            transition: all 0.2s ease;
+            transition: opacity 0.24s ease, visibility 0.24s ease;
         }
-        .hamburger-menu.open {
+        .menu-overlay.open {
             opacity: 1;
             visibility: visible;
-            transform: translateY(0);
+        }
+
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 320px;
+            max-width: 92vw;
+            height: 100vh;
+            height: 100dvh;
+            background: var(--bg-card, #0f172a);
+            z-index: 220;
+            box-shadow: 2px 0 24px rgba(0,0,0,0.5);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transform: translateX(-105%);
+            transition: transform 0.24s ease;
+            overflow: hidden;
+        }
+        .side-menu.open {
+            transform: translateX(0);
+        }
+        .side-menu-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .side-menu-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .side-menu-avatar {
+            width: 72px;
+            height: 72px;
+            min-width: 72px;
+            min-height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 700;
+            text-transform: uppercase;
+            overflow: hidden;
+        }
+        .side-menu-avatar:has(img) {
+            background: transparent;
+            border-radius: 8px;
+        }
+        .side-menu-avatar img {
+            width: 72px;
+            height: 72px;
+            max-width: 72px;
+            max-height: 72px;
+            object-fit: contain;
+        }
+        .side-menu-brand-text {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .side-menu-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text, #e2e8f0);
+        }
+        .side-menu-subtitle {
+            font-size: 12px;
+            color: var(--muted, #94a3b8);
+            font-weight: 600;
+        }
+        .side-menu-close {
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--muted, #94a3b8);
+            width: 36px;
+            height: 36px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .side-menu-close:hover {
+            background: rgba(102, 126, 234, 0.12);
+            color: var(--brand, #667eea);
+        }
+        .menu-items {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 0;
         }
         .menu-item {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            color: var(--text);
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            color: var(--text, #e2e8f0);
             text-decoration: none;
             font-weight: 600;
             font-size: 14px;
-            transition: background 0.15s ease;
+            transition: background 0.2s ease;
         }
-        .menu-item:hover { background: var(--bg-soft); }
-        .menu-item.active { background: var(--bg-soft); color: var(--brand); }
-        .menu-item-icon { font-size: 18px; }
-        .menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+        .menu-item:hover { background: rgba(102, 126, 234, 0.1); }
+        .menu-item.active { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #fff; }
+        .menu-divider {
+            height: 1px;
+            background: rgba(148, 163, 184, 0.4);
+            margin: 8px 16px;
+        }
         .menu-item.danger { color: var(--danger); }
-        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+        .menu-item.danger:hover { background: rgba(102, 126, 234, 0.1); }
 
         .header-user {
             display: flex; align-items: center; gap: 8px;
@@ -584,80 +681,64 @@
     </style>
 </head>
 <body>
+    <!-- Menu Overlay -->
+    <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+    <!-- Side Menu -->
+    <nav class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-brand">
+                <span class="side-menu-avatar">
+                    {% if company_logo %}
+                        <img src="{{ company_logo }}" alt="Logo">
+                    {% else %}
+                        {{ session.get('user', 'U')[0]|upper }}
+                    {% endif %}
+                </span>
+                <div class="side-menu-brand-text">
+                    <span class="side-menu-title">JobLog Admin</span>
+                    <span class="side-menu-subtitle">Pannello Amministrazione</span>
+                </div>
+            </div>
+            <button class="side-menu-close" onclick="closeMenu()">✕</button>
+        </div>
+        <div class="menu-items">
+            <a href="/admin" class="menu-item">📊 Dashboard</a>
+            <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/group-planning" class="menu-item">📆 Planning Gruppo</a>
+            <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
+            <a href="/admin/rentman-planning" class="menu-item">📋 Pianificazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
+            <a href="/admin/documents" class="menu-item">📄 Documenti</a>
+            <a href="/admin/user-requests" class="menu-item active">📥 Richieste</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
+            <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
+            <a href="/admin/users" class="menu-item">👥 Utenti</a>
+            <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
+            <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+            <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/logout" class="menu-item danger">🚪 Logout</a>
+        </div>
+    </nav>
+
     <header>
         <div class="header-left">
-            <div class="menu-container">
-                <button id="menuToggle" class="header-icon-btn" aria-label="Menu">☰</button>
-                <nav class="hamburger-menu" id="hamburgerMenu">
-                    <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📊</span>
-                        <span>Dashboard</span>
-                    </a>
-                    <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
-                        <span class="menu-item-icon">🗓️</span>
-                        <span>Gestione Sessioni</span>
-                    </a>
-                    <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
-                        <span class="menu-item-icon">🔬</span>
-                        <span>Analisi Attività</span>
-                    </a>
-                    <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📅</span>
-                        <span>Pianificazioni Rentman</span>
-                    </a>
-                    {% if is_admin %}
-                    <a href="{{ url_for('admin_users_page') }}" class="menu-item">
-                        <span class="menu-item-icon">👥</span>
-                        <span>Gestione Utenti</span>
-                    </a>
-                    <a href="{{ url_for('admin_operators') }}" class="menu-item">
-                        <span class="menu-item-icon">🧑‍🔧</span>
-                        <span>Gestione Operatori</span>
-                    </a>
-                    <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📆</span>
-                        <span>Gestione Turni</span>
-                    </a>
-                    <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
-                        <span class="menu-item-icon">⚙️</span>
-                        <span>Regole Timbrature</span>
-                    </a>
-                    <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📝</span>
-                        <span>Tipologie Richieste</span>
-                    </a>
-                    <a href="{{ url_for('admin_documents_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📄</span>
-                        <span>Gestione Documenti</span>
-                    </a>
-                    <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item active">
-                        <span class="menu-item-icon">📥</span>
-                        <span>Gestione Richieste</span>
-                    </a>
-                    <a href="{{ url_for('admin_documents_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📄</span>
-                        <span>Documenti</span>
-                    </a>
-                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
-                        <span class="menu-item-icon">🏢</span>
-                        <span>Configurazione Azienda</span>
-                    </a>
-                    {% endif %}
-                    <div class="menu-divider"></div>
-                    <a href="{{ url_for('logout') }}" class="menu-item danger">
-                        <span class="menu-item-icon">🚪</span>
-                        <span>Logout</span>
-                    </a>
-                </nav>
+            <button class="header-icon-btn" onclick="toggleMenu()" title="Menu">☰</button>
+            <div class="header-title">
+                <h1>📥 Gestione Richieste</h1>
+                <p>Richieste utenti</p>
             </div>
-            <span class="logo-title">📥 Gestione Richieste</span>
         </div>
         <div class="header-actions">
-            <button class="header-icon-btn" id="refreshBtn" title="Aggiorna">↻</button>
-            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <button class="header-icon-btn" onclick="refreshData()" title="Aggiorna">↻</button>
+            <button class="header-icon-btn" onclick="toggleTheme()" title="Tema">🌓</button>
             <div class="header-user">
-                <span class="header-user-avatar">{{ user_initials or '?' }}</span>
-                <span class="header-user-name">{{ user_name or 'Admin' }}</span>
+                <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
+                <span class="header-user-name">{{ session.get('user', 'Utente') }}</span>
             </div>
         </div>
     </header>
@@ -741,6 +822,16 @@
         let currentFilter = 'all';
         let currentRequestId = null;
 
+        // Menu functions
+        function toggleMenu() {
+            document.getElementById('sideMenu').classList.toggle('open');
+            document.getElementById('menuOverlay').classList.toggle('open');
+        }
+        function closeMenu() {
+            document.getElementById('sideMenu').classList.remove('open');
+            document.getElementById('menuOverlay').classList.remove('open');
+        }
+
         // Funzione globale per calcolare orari arrotondati
         function roundTime(timeStr, direction, rounding = 15) {
             if (!timeStr || timeStr === '--:--') return '--:--';
@@ -767,22 +858,7 @@
         });
 
         function setupEventListeners() {
-            // Menu toggle
-            document.getElementById('menuToggle').addEventListener('click', (e) => {
-                e.stopPropagation();
-                document.getElementById('hamburgerMenu').classList.toggle('open');
-            });
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.menu-container')) {
-                    document.getElementById('hamburgerMenu').classList.remove('open');
-                }
-            });
-
-            // Theme toggle
-            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
-
-            // Refresh
-            document.getElementById('refreshBtn').addEventListener('click', loadRequests);
+            // Side menu: il bottone ha già onclick="toggleMenu()"
 
             // Filter tabs
             document.querySelectorAll('.filter-tab').forEach(tab => {
@@ -795,8 +871,10 @@
             });
 
             // Filter type & search
-            document.getElementById('filterType').addEventListener('change', renderRequests);
-            document.getElementById('searchUser').addEventListener('input', renderRequests);
+            const filterType = document.getElementById('filterType');
+            const searchUser = document.getElementById('searchUser');
+            if (filterType) filterType.addEventListener('change', renderRequests);
+            if (searchUser) searchUser.addEventListener('input', renderRequests);
         }
 
         function loadTheme() {

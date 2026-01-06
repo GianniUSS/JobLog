@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Planning Gruppo - {{ group_name }}</title>
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icons/icon-192x192.svg') }}">
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            --bg: #0b1224;
+            --bg-soft: #111a30;
+            --bg-card: #0f172a;
+            --bg-panel: #0f172a;
+            --border: rgba(148, 163, 184, 0.18);
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --brand-soft: rgba(56, 189, 248, 0.15);
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --cyan: #06b6d4;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-soft: #eef2ff;
+            --bg-card: #ffffff;
+            --bg-panel: #ffffff;
+            --border: rgba(15, 23, 42, 0.1);
+            --text: #0f172a;
+            --text-muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        
+        /* Menu Overlay */
+        .menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 210;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.24s ease;
+        }
+        .menu-overlay.open { opacity: 1; visibility: visible; }
+
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            height: 100dvh;
+            width: 320px;
+            max-width: 92vw;
+            background: var(--bg-card, #0f172a);
+            z-index: 220;
+            box-shadow: 2px 0 24px rgba(0,0,0,0.5);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transform: translateX(-105%);
+            transition: transform 0.24s ease;
+            overflow: hidden;
+        }
+        .side-menu.open { transform: translateX(0); }
+        .side-menu-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .side-menu-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .side-menu-avatar {
+            width: 72px;
+            height: 72px;
+            min-width: 72px;
+            min-height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 700;
+            text-transform: uppercase;
+            overflow: hidden;
+        }
+        .side-menu-avatar:has(img) {
+            background: transparent;
+            border-radius: 8px;
+        }
+        .side-menu-avatar img {
+            width: 72px;
+            height: 72px;
+            max-width: 72px;
+            max-height: 72px;
+            object-fit: contain;
+        }
+        .side-menu-brand-text {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .side-menu-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text, #e2e8f0);
+        }
+        .side-menu-subtitle {
+            font-size: 12px;
+            color: var(--muted, #94a3b8);
+            font-weight: 600;
+        }
+        .side-menu-close {
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--muted, #94a3b8);
+            width: 36px;
+            height: 36px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .side-menu-close:hover {
+            background: rgba(102, 126, 234, 0.12);
+            color: var(--brand, #667eea);
+        }
+        .menu-items {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 0;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            color: var(--text, #e2e8f0);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        }
+        .menu-item:hover { background: rgba(102, 126, 234, 0.1); }
+        .menu-item.active { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #fff; }
+        .menu-divider {
+            height: 1px;
+            background: rgba(148, 163, 184, 0.4);
+            margin: 8px 16px;
+        }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(102, 126, 234, 0.1); }
+        
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .back-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .back-btn:hover { background: rgba(255,255,255,0.3); }
+        .header-title {
+            color: white;
+        }
+        .header-title h1 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .header-title p {
+            font-size: 13px;
+            opacity: 0.85;
+        }
+        .header-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .header-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .header-btn:hover { background: rgba(255,255,255,0.3); }
+        .header-icon-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 999px;
+        }
+        .header-user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            color: white;
+        }
+        .header-user-name {
+            font-weight: 600;
+            font-size: 14px;
+            color: white;
+        }
+
+        /* Navigation */
+        .week-nav {
+            background: var(--bg-card);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .week-nav button {
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            color: var(--text);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .week-nav button:hover { background: var(--brand-soft); border-color: var(--brand); }
+        .week-label {
+            font-size: 16px;
+            font-weight: 600;
+            min-width: 200px;
+            text-align: center;
+        }
+        .today-btn {
+            background: var(--brand) !important;
+            color: white !important;
+            border: none !important;
+            width: auto !important;
+            padding: 0 16px;
+        }
+
+        /* Group Selector */
+        .group-selector {
+            background: var(--bg-card);
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .group-selector label {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+        .group-selector select {
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            min-width: 200px;
+        }
+
+        /* Planning Grid */
+        .planning-container {
+            overflow-x: auto;
+            padding: 20px;
+        }
+        .planning-grid {
+            display: grid;
+            grid-template-columns: 180px repeat(7, 1fr);
+            min-width: 1200px;
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        
+        /* Header Row */
+        .grid-header {
+            display: contents;
+        }
+        .grid-header-cell {
+            background: var(--bg-soft);
+            padding: 12px 8px;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+        }
+        .grid-header-cell:last-child { border-right: none; }
+        .grid-header-cell .day-name {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        .grid-header-cell .day-date {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+        .grid-header-cell.today {
+            background: var(--brand-soft);
+        }
+        .grid-header-cell.today .day-date {
+            color: var(--brand);
+        }
+        .day-stats {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        /* User Row */
+        .user-row {
+            display: contents;
+        }
+        .user-cell {
+            background: var(--bg-card);
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 80px;
+        }
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--brand), var(--cyan));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            flex-shrink: 0;
+        }
+        .user-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .user-name {
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .user-stats {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* Day Cell */
+        .day-cell {
+            background: var(--bg-card);
+            padding: 6px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .day-cell:last-child { border-right: none; }
+        .day-cell.today {
+            background: var(--brand-soft);
+        }
+
+        /* Shift Block */
+        .shift-block {
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .shift-block:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .shift-block .shift-time {
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        .shift-block .shift-project {
+            opacity: 0.9;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .shift-block .shift-activity {
+            opacity: 0.7;
+            font-size: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Shift Colors */
+        .shift-block.color-blue { background: #3b82f6; color: white; }
+        .shift-block.color-green { background: #22c55e; color: white; }
+        .shift-block.color-orange { background: #f59e0b; color: white; }
+        .shift-block.color-red { background: #ef4444; color: white; }
+        .shift-block.color-purple { background: #8b5cf6; color: white; }
+        .shift-block.color-cyan { background: #06b6d4; color: white; }
+        .shift-block.color-pink { background: #ec4899; color: white; }
+        .shift-block.color-gray { background: #6b7280; color: white; }
+        .shift-block.color-teal { background: #14b8a6; color: white; }
+        .shift-block.color-yellow { background: #eab308; color: #1a1a1a; }
+
+        /* Absence */
+        .absence-block {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px dashed var(--danger);
+            color: var(--danger);
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        /* Summary Footer */
+        .summary-bar {
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            padding: 16px 20px;
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+        }
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .summary-item .icon {
+            font-size: 18px;
+        }
+        .summary-item .label {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .summary-item .value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        /* Empty State */
+        .empty-cell {
+            color: var(--text-muted);
+            font-size: 11px;
+            text-align: center;
+            padding: 8px;
+        }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+            color: var(--text-muted);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 1000;
+            transition: transform 0.3s;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast.success { border-color: var(--success); color: var(--success); }
+        .toast.error { border-color: var(--danger); color: var(--danger); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .planning-grid { min-width: 900px; }
+            .summary-bar { flex-wrap: wrap; gap: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Menu Overlay -->
+    <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+    
+    <!-- Side Menu -->
+    <nav class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-brand">
+                <span class="side-menu-avatar">
+                    {% if company_logo %}
+                        <img src="{{ company_logo }}" alt="Logo">
+                    {% else %}
+                        {{ session.get('user', 'U')[0]|upper }}
+                    {% endif %}
+                </span>
+                <div class="side-menu-brand-text">
+                    <span class="side-menu-title">JobLog Admin</span>
+                    <span class="side-menu-subtitle">Pannello Amministrazione</span>
+                </div>
+            </div>
+            <button class="side-menu-close" onclick="closeMenu()">✕</button>
+        </div>
+        <div class="menu-items">
+            <a href="/admin" class="menu-item">📊 Dashboard</a>
+            <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/group-planning" class="menu-item active">📆 Planning Gruppo</a>
+            <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
+            <a href="/admin/rentman-planning" class="menu-item">📋 Pianificazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
+            <a href="/admin/documents" class="menu-item">📄 Documenti</a>
+            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
+            <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
+            <a href="/admin/users" class="menu-item">👥 Utenti</a>
+            <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
+            <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+            <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/logout" class="menu-item danger">🚪 Logout</a>
+        </div>
+    </nav>
+
+    <header>
+        <div class="header-left">
+            <button class="header-icon-btn" onclick="toggleMenu()" title="Menu">☰</button>
+            <div class="header-title">
+                <h1 id="groupTitle">{{ group_name }}</h1>
+                <p>Planning settimanale del gruppo</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="header-icon-btn" onclick="refreshData()" title="Aggiorna">↻</button>
+            <button class="header-icon-btn" onclick="toggleTheme()" title="Tema">🌓</button>
+            <div class="header-user">
+                <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
+                <span class="header-user-name">{{ session.get('user', 'Utente') }}</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="group-selector">
+        <label>Gruppo:</label>
+        <select id="groupSelect" onchange="changeGroup()">
+            {% for g in groups %}
+            <option value="{{ g.id }}" {% if g.id == group_id %}selected{% endif %}>{{ g.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="week-nav">
+        <button onclick="prevWeek()">‹</button>
+        <button class="today-btn" onclick="goToday()">Oggi</button>
+        <span class="week-label" id="weekLabel">-</span>
+        <button onclick="nextWeek()">›</button>
+    </div>
+
+    <div class="planning-container">
+        <div class="planning-grid" id="planningGrid">
+            <div class="loading">⏳ Caricamento planning...</div>
+        </div>
+    </div>
+
+    <div class="summary-bar" id="summaryBar">
+        <div class="summary-item">
+            <span class="icon">⏱</span>
+            <span class="label">Ore</span>
+            <span class="value" id="totalHours">0:00</span>
+        </div>
+        <div class="summary-item">
+            <span class="icon">📋</span>
+            <span class="label">Turni</span>
+            <span class="value" id="totalShifts">0</span>
+        </div>
+        <div class="summary-item">
+            <span class="icon">👥</span>
+            <span class="label">Utenti</span>
+            <span class="value" id="totalUsers">0</span>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // State
+        let currentWeekStart = getWeekStart(new Date());
+        let planningData = { users: [], shifts: [] };
+        const colors = ['color-blue', 'color-green', 'color-orange', 'color-purple', 'color-cyan', 'color-pink', 'color-teal'];
+        const projectColors = {};
+        let colorIndex = 0;
+
+        // Utilities
+        function getWeekStart(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(d.setDate(diff));
+        }
+
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        function addDays(date, days) {
+            const d = new Date(date);
+            d.setDate(d.getDate() + days);
+            return d;
+        }
+
+        function getProjectColor(projectCode) {
+            if (!projectColors[projectCode]) {
+                projectColors[projectCode] = colors[colorIndex % colors.length];
+                colorIndex++;
+            }
+            return projectColors[projectCode];
+        }
+
+        function formatHours(totalMinutes) {
+            const hours = Math.floor(totalMinutes / 60);
+            const mins = totalMinutes % 60;
+            return `${hours}:${mins.toString().padStart(2, '0')}`;
+        }
+
+        // Navigation
+        function prevWeek() {
+            currentWeekStart = addDays(currentWeekStart, -7);
+            loadPlanning();
+        }
+
+        function nextWeek() {
+            currentWeekStart = addDays(currentWeekStart, 7);
+            loadPlanning();
+        }
+
+        function goToday() {
+            currentWeekStart = getWeekStart(new Date());
+            loadPlanning();
+        }
+
+        function changeGroup() {
+            const groupId = document.getElementById('groupSelect').value;
+            window.location.href = `/admin/group-planning/${groupId}`;
+        }
+
+        function updateWeekLabel() {
+            const weekEnd = addDays(currentWeekStart, 6);
+            const options = { day: 'numeric', month: 'short' };
+            const startStr = currentWeekStart.toLocaleDateString('it-IT', options);
+            const endStr = weekEnd.toLocaleDateString('it-IT', options);
+            const year = weekEnd.getFullYear();
+            document.getElementById('weekLabel').textContent = `${startStr} - ${endStr} ${year}`;
+        }
+
+        // Render
+        function renderPlanning() {
+            const grid = document.getElementById('planningGrid');
+            const today = formatDate(new Date());
+            const dayNames = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+            
+            let html = '<div class="grid-header">';
+            html += '<div class="grid-header-cell"><span class="day-name">Operatore</span></div>';
+            
+            // Header giorni
+            for (let i = 0; i < 7; i++) {
+                const dayDate = addDays(currentWeekStart, i);
+                const dateStr = formatDate(dayDate);
+                const isToday = dateStr === today;
+                const dayStats = getDayStats(dateStr);
+                
+                html += `
+                    <div class="grid-header-cell ${isToday ? 'today' : ''}">
+                        <div class="day-name">${dayNames[i]}</div>
+                        <div class="day-date">${dayDate.getDate()}/${dayDate.getMonth() + 1}</div>
+                        <div class="day-stats">
+                            <span>⏱ ${formatHours(dayStats.hours)}</span>
+                            <span>👤 ${dayStats.users}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            html += '</div>';
+
+            // Righe utenti
+            for (const user of planningData.users) {
+                const userStats = getUserStats(user.username);
+                html += `<div class="user-row">`;
+                html += `
+                    <div class="user-cell">
+                        <div class="user-avatar">${getInitials(user.display_name || user.username)}</div>
+                        <div class="user-info">
+                            <div class="user-name">${escapeHtml(user.display_name || user.username)}</div>
+                            <div class="user-stats">⏱ ${formatHours(userStats.hours)} · 📋 ${userStats.shifts}</div>
+                        </div>
+                    </div>
+                `;
+
+                for (let i = 0; i < 7; i++) {
+                    const dayDate = addDays(currentWeekStart, i);
+                    const dateStr = formatDate(dayDate);
+                    const isToday = dateStr === today;
+                    const dayShifts = getUserShiftsForDay(user.username, dateStr);
+                    
+                    html += `<div class="day-cell ${isToday ? 'today' : ''}">`;
+                    
+                    if (dayShifts.length === 0) {
+                        html += '<div class="empty-cell">-</div>';
+                    } else {
+                        for (const shift of dayShifts) {
+                            if (shift.type === 'absence') {
+                                html += `
+                                    <div class="absence-block">
+                                        ${escapeHtml(shift.reason || 'Assente')}
+                                    </div>
+                                `;
+                            } else {
+                                const colorClass = getProjectColor(shift.project_code);
+                                html += `
+                                    <div class="shift-block ${colorClass}" title="${escapeHtml(shift.project_name || '')}">
+                                        <div class="shift-time">${shift.start || ''} - ${shift.end || ''}</div>
+                                        <div class="shift-project">${escapeHtml(shift.project_code || '')}</div>
+                                        <div class="shift-activity">${escapeHtml(shift.function || shift.activity || '')}</div>
+                                    </div>
+                                `;
+                            }
+                        }
+                    }
+                    
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+
+            grid.innerHTML = html;
+            updateSummary();
+        }
+
+        function getUserShiftsForDay(username, dateStr) {
+            return planningData.shifts.filter(s => 
+                s.username === username && s.date === dateStr
+            );
+        }
+
+        function getUserStats(username) {
+            const userShifts = planningData.shifts.filter(s => s.username === username && s.type !== 'absence');
+            let totalMinutes = 0;
+            for (const shift of userShifts) {
+                totalMinutes += (shift.hours || 0) * 60;
+            }
+            return {
+                hours: totalMinutes,
+                shifts: userShifts.length
+            };
+        }
+
+        function getDayStats(dateStr) {
+            const dayShifts = planningData.shifts.filter(s => s.date === dateStr && s.type !== 'absence');
+            let totalMinutes = 0;
+            const users = new Set();
+            for (const shift of dayShifts) {
+                totalMinutes += (shift.hours || 0) * 60;
+                users.add(shift.username);
+            }
+            return {
+                hours: totalMinutes,
+                users: users.size
+            };
+        }
+
+        function updateSummary() {
+            const allShifts = planningData.shifts.filter(s => s.type !== 'absence');
+            let totalMinutes = 0;
+            const users = new Set();
+            
+            for (const shift of allShifts) {
+                totalMinutes += (shift.hours || 0) * 60;
+                users.add(shift.username);
+            }
+
+            document.getElementById('totalHours').textContent = formatHours(totalMinutes);
+            document.getElementById('totalShifts').textContent = allShifts.length;
+            document.getElementById('totalUsers').textContent = users.size;
+        }
+
+        function getInitials(name) {
+            if (!name) return '?';
+            const parts = name.split(' ');
+            if (parts.length === 1) return name.slice(0, 2).toUpperCase();
+            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // API
+        async function loadPlanning() {
+            updateWeekLabel();
+            const grid = document.getElementById('planningGrid');
+            grid.innerHTML = '<div class="loading">⏳ Caricamento planning...</div>';
+
+            const groupId = document.getElementById('groupSelect').value;
+            const startDate = formatDate(currentWeekStart);
+            const endDate = formatDate(addDays(currentWeekStart, 6));
+
+            try {
+                const res = await fetch(`/api/admin/group-planning/${groupId}?start=${startDate}&end=${endDate}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    showToast(data.error, 'error');
+                    return;
+                }
+
+                planningData = data;
+                renderPlanning();
+            } catch (err) {
+                console.error('Errore:', err);
+                showToast('Errore nel caricamento', 'error');
+            }
+        }
+
+        function refreshData() {
+            loadPlanning();
+        }
+
+        // Theme
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.dataset.theme || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+        }
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Menu functions
+        function toggleMenu() {
+            document.getElementById('sideMenu').classList.toggle('open');
+            document.getElementById('menuOverlay').classList.toggle('open');
+        }
+        function closeMenu() {
+            document.getElementById('sideMenu').classList.remove('open');
+            document.getElementById('menuOverlay').classList.remove('open');
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('joblog-theme');
+            if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+            loadPlanning();
+        });
+    </script>
+</body>
+</html>

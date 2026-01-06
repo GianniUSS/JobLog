@@ -1,0 +1,140 @@
+{# Menu laterale comune per tutte le pagine admin #}
+
+<!-- Overlay Menu -->
+<div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+<!-- Side Menu -->
+<nav class="side-menu" id="sideMenu">
+    <div class="menu-header">
+        <h2>📋 JobLog Admin</h2>
+    </div>
+    <div class="menu-items">
+        <a href="/" class="menu-item {% if active_page == 'home' %}active{% endif %}">🏠 Home</a>
+        <a href="/admin/dashboard" class="menu-item {% if active_page == 'dashboard' %}active{% endif %}">📊 Dashboard</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/users" class="menu-item {% if active_page == 'users' %}active{% endif %}">👥 Utenti</a>
+        <a href="/admin/groups" class="menu-item {% if active_page == 'groups' %}active{% endif %}">🏷️ Gruppi</a>
+        <a href="/admin/group-planning" class="menu-item {% if active_page == 'group-planning' %}active{% endif %}">📆 Planning Gruppo</a>
+        <a href="/admin/operators" class="menu-item {% if active_page == 'operators' %}active{% endif %}">👷 Operatori Rentman</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/rentman-planning" class="menu-item {% if active_page == 'rentman-planning' %}active{% endif %}">📅 Pianificazioni</a>
+        <a href="/admin/employee-shifts" class="menu-item {% if active_page == 'employee-shifts' %}active{% endif %}">🗓️ Turni Dipendenti</a>
+        <a href="/admin/sessions" class="menu-item {% if active_page == 'sessions' %}active{% endif %}">⏱️ Sessioni</a>
+        <a href="/admin/activity-analysis" class="menu-item {% if active_page == 'activity-analysis' %}active{% endif %}">📈 Analisi Attività</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/timbratura-rules" class="menu-item {% if active_page == 'timbratura-rules' %}active{% endif %}">⚙️ Regole Timbrature</a>
+        <a href="/admin/request-types" class="menu-item {% if active_page == 'request-types' %}active{% endif %}">📝 Tipi Richieste</a>
+        <a href="/admin/user-requests" class="menu-item {% if active_page == 'user-requests' %}active{% endif %}">📥 Richieste Utenti</a>
+        <a href="/admin/overtime" class="menu-item {% if active_page == 'overtime' %}active{% endif %}">⏰ Straordinari</a>
+        <a href="/admin/documents" class="menu-item {% if active_page == 'documents' %}active{% endif %}">📄 Documenti</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/company-settings" class="menu-item {% if active_page == 'company-settings' %}active{% endif %}">🏢 Impostazioni</a>
+        <div class="menu-divider"></div>
+        <a href="/logout" class="menu-item danger">🚪 Logout</a>
+    </div>
+</nav>
+
+<style>
+/* Menu Laterale - Stile Comune */
+.menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 200;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.menu-overlay.open {
+    opacity: 1;
+    visibility: visible;
+}
+
+.side-menu {
+    position: fixed;
+    top: 0;
+    left: -300px;
+    width: 280px;
+    height: 100vh;
+    background: var(--bg-card, #ffffff);
+    z-index: 210;
+    transition: left 0.3s ease;
+    overflow-y: auto;
+    box-shadow: 4px 0 20px rgba(0,0,0,0.1);
+}
+
+.side-menu.open {
+    left: 0;
+}
+
+.menu-header {
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.menu-header h2 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.menu-items {
+    padding: 12px 0;
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    color: var(--text, #1e293b);
+    text-decoration: none;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.menu-item:hover {
+    background: var(--bg, #f8fafc);
+}
+
+.menu-item.active {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--brand, #3b82f6);
+}
+
+.menu-divider {
+    height: 1px;
+    background: var(--border, #e2e8f0);
+    margin: 8px 16px;
+}
+
+.menu-item.danger {
+    color: var(--danger, #ef4444);
+}
+
+.menu-item.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+</style>
+
+<script>
+// Funzioni menu laterale
+function toggleMenu() {
+    document.getElementById('sideMenu').classList.toggle('open');
+    document.getElementById('menuOverlay').classList.toggle('open');
+}
+
+function closeMenu() {
+    document.getElementById('sideMenu').classList.remove('open');
+    document.getElementById('menuOverlay').classList.remove('open');
+}
+
+// Chiudi menu con ESC
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeMenu();
+    }
+});
+</script>

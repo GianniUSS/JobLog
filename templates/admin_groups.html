@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gruppi Utenti - JobLog Admin</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/svg+xml" href="/static/icons/icon-192x192.svg" />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script>
+    (function applyStoredTheme() {
+        const stored = localStorage.getItem('joblog-theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = stored || (prefersDark ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+    })();
+</script>
+<style>
+:root {
+    --bg: #0b1224;
+    --bg-panel: #0f172a;
+    --bg-soft: #111a30;
+    --bg-card: #0f172a;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --brand: #38bdf8;
+    --brand-strong: #0ea5e9;
+    --border: rgba(148, 163, 184, 0.18);
+    --success: #22c55e;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+}
+
+[data-theme="light"] {
+    --bg: #f6f8fc;
+    --bg-panel: #ffffff;
+    --bg-soft: #eef2ff;
+    --bg-card: #ffffff;
+    --text: #0f172a;
+    --text-muted: #475569;
+    --brand: #2563eb;
+    --brand-strong: #1d4ed8;
+    --border: rgba(15, 23, 42, 0.1);
+    --success: #16a34a;
+    --danger: #dc2626;
+    --warning: #d97706;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+}
+
+/* Header */
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+    color: white;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.menu-btn {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.menu-btn:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+.header-title h1 {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.header-title p {
+    font-size: 13px;
+    opacity: 0.9;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.header-icon-btn {
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.15);
+    color: white;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.header-icon-btn:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+.header-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 999px;
+}
+
+.header-user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.header-user-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+/* Menu Overlay */
+.menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 210;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.24s ease;
+}
+.menu-overlay.open { opacity: 1; visibility: visible; }
+
+/* Side Menu */
+.side-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    height: 100dvh;
+    width: 320px;
+    max-width: 92vw;
+    background: var(--bg-card, #0f172a);
+    z-index: 220;
+    box-shadow: 2px 0 24px rgba(0,0,0,0.5);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transform: translateX(-105%);
+    transition: transform 0.24s ease;
+    overflow: hidden;
+}
+.side-menu.open { transform: translateX(0); }
+.side-menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+.side-menu-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.side-menu-avatar {
+    width: 72px;
+    height: 72px;
+    min-width: 72px;
+    min-height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    text-transform: uppercase;
+    overflow: hidden;
+}
+.side-menu-avatar:has(img) {
+    background: transparent;
+    border-radius: 8px;
+}
+.side-menu-avatar img {
+    width: 72px;
+    height: 72px;
+    max-width: 72px;
+    max-height: 72px;
+    object-fit: contain;
+}
+.side-menu-brand-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.side-menu-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text, #e2e8f0);
+}
+.side-menu-subtitle {
+    font-size: 12px;
+    color: var(--muted, #94a3b8);
+    font-weight: 600;
+}
+.side-menu-close {
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted, #94a3b8);
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+.side-menu-close:hover {
+    background: rgba(102, 126, 234, 0.12);
+    color: #667eea;
+}
+.menu-items {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 0;
+}
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    color: var(--text, #e2e8f0);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    transition: background 0.2s ease;
+}
+.menu-item:hover { background: rgba(102, 126, 234, 0.1); }
+.menu-item.active { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #fff; }
+.menu-divider {
+    height: 1px;
+    background: rgba(148, 163, 184, 0.4);
+    margin: 8px 16px;
+}
+.menu-item.danger { color: var(--danger); }
+.menu-item.danger:hover { background: rgba(102, 126, 234, 0.1); }
+
+/* Container */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+/* Toolbar */
+.toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    flex: 1;
+    max-width: 400px;
+}
+
+.search-box input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 14px;
+    color: var(--text);
+    width: 100%;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: var(--brand);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--brand-hover);
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-secondary {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+/* Table */
+.table-container {
+    background: var(--bg-card);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+th {
+    background: var(--bg);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+td {
+    font-size: 14px;
+}
+
+tr:hover {
+    background: var(--bg);
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-success {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+}
+
+.badge-warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning);
+}
+
+.badge-info {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--brand);
+}
+
+.action-btns {
+    display: flex;
+    gap: 8px;
+}
+
+.icon-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.icon-btn.edit {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--brand);
+}
+
+.icon-btn.edit:hover {
+    background: var(--brand);
+    color: white;
+}
+
+.icon-btn.delete {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+}
+
+.icon-btn.delete:hover {
+    background: var(--danger);
+    color: white;
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.modal-overlay.open {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal {
+    background: var(--bg-card);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+
+.modal-overlay.open .modal {
+    transform: scale(1);
+}
+
+.modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 14px;
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    border-color: var(--brand);
+}
+
+.form-group textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.form-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.form-check input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--brand);
+}
+
+.modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Cedolino Section */
+.cedolino-section {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.cedolino-section h4 {
+    color: var(--warning);
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    font-size: 18px;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* Toast */
+.toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 14px 20px;
+    border-radius: 10px;
+    color: white;
+    font-weight: 500;
+    z-index: 400;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.toast.show {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.toast.success {
+    background: var(--success);
+}
+
+.toast.error {
+    background: var(--danger);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .search-box {
+        max-width: none;
+    }
+    
+    th, td {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+    
+    .action-btns {
+        flex-direction: column;
+    }
+}
+</style>
+</head>
+<body>
+<!-- Overlay Menu -->
+<div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+<!-- Side Menu -->
+<nav class="side-menu" id="sideMenu">
+    <div class="side-menu-header">
+        <div class="side-menu-brand">
+            <span class="side-menu-avatar">
+                {% if company_logo %}
+                    <img src="{{ company_logo }}" alt="Logo">
+                {% else %}
+                    {{ session.get('user', 'U')[0]|upper }}
+                {% endif %}
+            </span>
+            <div class="side-menu-brand-text">
+                <span class="side-menu-title">JobLog Admin</span>
+                <span class="side-menu-subtitle">Pannello Amministrazione</span>
+            </div>
+        </div>
+        <button class="side-menu-close" onclick="closeMenu()">✕</button>
+    </div>
+    <div class="menu-items">
+        <a href="/admin" class="menu-item">📊 Dashboard</a>
+        <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/group-planning" class="menu-item">📆 Planning Gruppo</a>
+        <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
+        <a href="/admin/rentman-planning" class="menu-item">📋 Pianificazioni</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
+        <a href="/admin/documents" class="menu-item">📄 Documenti</a>
+        <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
+        <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
+        <a href="/admin/users" class="menu-item">👥 Utenti</a>
+        <a href="/admin/groups" class="menu-item active">🏷️ Gruppi</a>
+        <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+        <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
+        <div class="menu-divider"></div>
+        <a href="/logout" class="menu-item danger">🚪 Logout</a>
+    </div>
+</nav>
+
+<!-- Header -->
+<header class="header">
+    <div class="header-left">
+        <button class="header-icon-btn" onclick="toggleMenu()">☰</button>
+        <div class="header-title">
+            <h1>🏷️ Gruppi Utenti</h1>
+            <p>Gestione anagrafica gruppi</p>
+        </div>
+    </div>
+    <div class="header-actions">
+        <button class="header-icon-btn" onclick="loadGroups()" title="Aggiorna">↻</button>
+        <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+        <div class="header-user">
+            <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
+            <span class="header-user-name">{{ session.get('user', 'Utente') }}</span>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="container">
+    <div class="toolbar">
+        <div class="search-box">
+            <span>🔍</span>
+            <input type="text" id="searchInput" placeholder="Cerca gruppo..." oninput="filterGroups()">
+        </div>
+        <button class="btn btn-primary" onclick="openModal()">
+            ➕ Nuovo Gruppo
+        </button>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome Gruppo</th>
+                    <th>Descrizione</th>
+                    {% if cedolino_sync_enabled %}<th>ID CedolinoWeb</th>{% endif %}
+                    <th>Stato</th>
+                    <th>Azioni</th>
+                </tr>
+            </thead>
+            <tbody id="groupsTable">
+                <tr>
+                    <td colspan="{% if cedolino_sync_enabled %}5{% else %}4{% endif %}">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⏳</div>
+                            <h3>Caricamento...</h3>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</main>
+
+<!-- Modal Gruppo -->
+<div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="modalTitle">Nuovo Gruppo</h2>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="groupForm" onsubmit="saveGroup(event)">
+                <input type="hidden" id="groupId">
+                
+                <div class="form-group">
+                    <label>Nome Gruppo *</label>
+                    <input type="text" id="groupName" required placeholder="Es: Tecnici, Amministrazione...">
+                </div>
+                
+                <div class="form-group">
+                    <label>Descrizione</label>
+                    <textarea id="groupDescription" placeholder="Descrizione opzionale del gruppo"></textarea>
+                </div>
+                
+                {% if cedolino_sync_enabled %}
+                <div class="cedolino-section" id="cedolinoSection">
+                    <h4>⚡ Integrazione CedolinoWeb</h4>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>ID Gruppo CedolinoWeb</label>
+                        <input type="text" id="cedolinoGroupId" placeholder="Es: GRP001">
+                        <small>Questo ID verrà usato per sincronizzare le timbrature degli utenti di questo gruppo</small>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="form-group">
+                    <div class="form-check">
+                        <input type="checkbox" id="groupActive" checked>
+                        <label for="groupActive">Gruppo attivo</label>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Annulla</button>
+            <button type="submit" form="groupForm" class="btn btn-primary">💾 Salva</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// Stato
+let groups = [];
+const cedolinoEnabled = {{ 'true' if cedolino_sync_enabled else 'false' }};
+
+// Init
+document.addEventListener('DOMContentLoaded', () => {
+    loadGroups();
+});
+
+// Menu
+function toggleMenu() {
+    document.getElementById('sideMenu').classList.toggle('open');
+    document.getElementById('menuOverlay').classList.toggle('open');
+}
+
+function closeMenu() {
+    document.getElementById('sideMenu').classList.remove('open');
+    document.getElementById('menuOverlay').classList.remove('open');
+}
+
+// Theme Toggle
+document.getElementById('themeToggle')?.addEventListener('click', () => {
+    const html = document.documentElement;
+    const current = html.dataset.theme || 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    localStorage.setItem('joblog-theme', next);
+});
+
+// Apply stored theme on load
+(function() {
+    const stored = localStorage.getItem('joblog-theme');
+    if (stored) {
+        document.documentElement.dataset.theme = stored;
+    }
+})();
+
+// Toast
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast ${type} show`;
+    setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// Carica gruppi
+async function loadGroups() {
+    try {
+        const res = await fetch('/api/admin/groups');
+        const data = await res.json();
+        
+        if (data.error) {
+            showToast(data.error, 'error');
+            return;
+        }
+        
+        groups = data.groups || [];
+        renderGroups();
+    } catch (err) {
+        console.error('Errore caricamento gruppi:', err);
+        showToast('Errore nel caricamento dei gruppi', 'error');
+    }
+}
+
+// Renderizza tabella
+function renderGroups() {
+    const tbody = document.getElementById('groupsTable');
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    
+    const filtered = groups.filter(g => 
+        g.name.toLowerCase().includes(search) ||
+        (g.description || '').toLowerCase().includes(search)
+    );
+    
+    if (filtered.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="${cedolinoEnabled ? 5 : 4}">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <h3>Nessun gruppo trovato</h3>
+                        <p>Crea un nuovo gruppo per iniziare</p>
+                    </div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = filtered.map(g => `
+        <tr>
+            <td>
+                <strong>${escapeHtml(g.name)}</strong>
+            </td>
+            <td>${escapeHtml(g.description || '-')}</td>
+            ${cedolinoEnabled ? `<td>${g.cedolino_group_id ? `<span class="badge badge-info">${escapeHtml(g.cedolino_group_id)}</span>` : '-'}</td>` : ''}
+            <td>
+                <span class="badge ${g.is_active ? 'badge-success' : 'badge-warning'}">
+                    ${g.is_active ? '✓ Attivo' : '⏸ Inattivo'}
+                </span>
+            </td>
+            <td>
+                <div class="action-btns">
+                    <button class="icon-btn edit" onclick="editGroup(${g.id})" title="Modifica">✏️</button>
+                    <button class="icon-btn delete" onclick="deleteGroup(${g.id})" title="Elimina">🗑️</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function filterGroups() {
+    renderGroups();
+}
+
+// Modal
+function openModal(group = null) {
+    document.getElementById('modalTitle').textContent = group ? 'Modifica Gruppo' : 'Nuovo Gruppo';
+    document.getElementById('groupId').value = group ? group.id : '';
+    document.getElementById('groupName').value = group ? group.name : '';
+    document.getElementById('groupDescription').value = group ? (group.description || '') : '';
+    const cedolinoInput = document.getElementById('cedolinoGroupId');
+    if (cedolinoInput) cedolinoInput.value = group ? (group.cedolino_group_id || '') : '';
+    document.getElementById('groupActive').checked = group ? group.is_active : true;
+    
+    document.getElementById('modalOverlay').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+}
+
+function editGroup(id) {
+    const group = groups.find(g => g.id === id);
+    if (group) openModal(group);
+}
+
+// Salva gruppo
+async function saveGroup(e) {
+    e.preventDefault();
+    
+    const id = document.getElementById('groupId').value;
+    const isCreate = !id;
+    
+    const payload = {
+        name: document.getElementById('groupName').value.trim(),
+        description: document.getElementById('groupDescription').value.trim() || null,
+        cedolino_group_id: document.getElementById('cedolinoGroupId')?.value.trim() || null,
+        is_active: document.getElementById('groupActive').checked
+    };
+    
+    if (!payload.name) {
+        showToast('Il nome del gruppo è obbligatorio', 'error');
+        return;
+    }
+    
+    try {
+        const url = isCreate ? '/api/admin/groups' : `/api/admin/groups/${id}`;
+        const method = isCreate ? 'POST' : 'PUT';
+        
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await res.json();
+        
+        if (data.error) {
+            showToast(data.error, 'error');
+            return;
+        }
+        
+        showToast(isCreate ? 'Gruppo creato!' : 'Gruppo aggiornato!', 'success');
+        closeModal();
+        loadGroups();
+    } catch (err) {
+        console.error('Errore salvataggio:', err);
+        showToast('Errore nel salvataggio', 'error');
+    }
+}
+
+// Elimina gruppo
+async function deleteGroup(id) {
+    const group = groups.find(g => g.id === id);
+    if (!group) return;
+    
+    if (!confirm(`Vuoi eliminare il gruppo "${group.name}"?\n\nNota: gli utenti associati perderanno l'appartenenza a questo gruppo.`)) {
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/api/admin/groups/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        
+        if (data.error) {
+            showToast(data.error, 'error');
+            return;
+        }
+        
+        showToast('Gruppo eliminato!', 'success');
+        loadGroups();
+    } catch (err) {
+        console.error('Errore eliminazione:', err);
+        showToast('Errore nell\'eliminazione', 'error');
+    }
+}
+
+// Utility
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// Chiudi modal con ESC
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+});
+</script>
+</body>
+</html>

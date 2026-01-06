@@ -56,15 +56,16 @@
 
         /* Header */
         .header {
-            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%);
             backdrop-filter: blur(12px);
-            padding: 16px 20px;
+            padding: 14px 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             position: sticky;
             top: 0;
             z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
         }
 
         .header-left {
@@ -72,46 +73,9 @@
             align-items: center;
             gap: 16px;
         }
-
-        .menu-toggle {
-            background: rgba(255,255,255,0.1);
-            border: none;
-            width: 44px;
-            height: 44px;
-            border-radius: 12px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-
-        .menu-toggle:hover {
-            background: rgba(255,255,255,0.2);
-        }
-
-        .menu-toggle svg {
-            width: 24px;
-            height: 24px;
-            stroke: white;
-        }
-
-        .logo {
-            height: 40px;
-            display: none;
-        }
-
-        @media (min-width: 768px) {
-            .logo {
-                display: block;
-            }
-        }
-
-        .page-title {
-            color: white;
-            font-size: 18px;
-            font-weight: 700;
-        }
+        .header-title { color: white; }
+        .header-title h1 { font-size: 20px; font-weight: 700; margin: 0; }
+        .header-title p { font-size: 13px; opacity: 0.85; margin: 0; }
 
         .header-right {
             display: flex;
@@ -120,7 +84,7 @@
         }
 
         .header-icon-btn {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.15);
             border: none;
             width: 40px;
             height: 40px;
@@ -131,7 +95,31 @@
             justify-content: center;
             transition: all 0.2s;
             color: white;
+            font-size: 18px;
         }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.25); }
+
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 999px;
+        }
+        .header-user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            color: white;
+        }
+        .header-user-name { font-weight: 600; font-size: 14px; color: white; }
 
         .header-icon-btn:hover {
             background: rgba(255,255,255,0.2);
@@ -155,150 +143,145 @@
             font-size: 14px;
         }
 
-        /* Hamburger Menu */
+        /* Menu Overlay */
         .menu-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 199;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 299;
             opacity: 0;
             visibility: hidden;
-            transition: all 0.3s;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
         }
-
-        .menu-overlay.active {
+        .menu-overlay.open {
             opacity: 1;
             visibility: visible;
         }
 
-        .menu-container {
+        /* Side Menu */
+        .side-menu {
             position: fixed;
             top: 0;
-            left: -300px;
-            width: 300px;
+            left: 0;
+            width: 320px;
+            max-width: 92vw;
             height: 100vh;
-            background: var(--bg-panel);
-            z-index: 200;
-            transition: left 0.3s ease;
+            height: 100dvh;
+            background: var(--bg-card, #0f172a);
+            z-index: 220;
+            box-shadow: 2px 0 24px rgba(0,0,0,0.5);
+            padding: 16px;
             display: flex;
             flex-direction: column;
+            gap: 12px;
+            transform: translateX(-105%);
+            transition: transform 0.24s ease;
+            overflow: hidden;
         }
-
-        .menu-container.active {
-            left: 0;
+        .side-menu.open {
+            transform: translateX(0);
         }
-
-        .menu-header {
+        .side-menu-header {
             padding: 20px;
             border-bottom: 1px solid var(--border);
             display: flex;
-            align-items: center;
             justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.1), transparent);
         }
-
-        .menu-logo {
-            height: 36px;
+        .side-menu-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
-
-        .menu-close {
-            background: var(--bg-hover);
-            border: none;
+        .side-menu-avatar {
+            width: 72px;
+            height: 72px;
+            min-width: 72px;
+            min-height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 700;
+            text-transform: uppercase;
+            overflow: hidden;
+        }
+        .side-menu-avatar:has(img) {
+            background: transparent;
+            border-radius: 8px;
+        }
+        .side-menu-avatar img {
+            width: 72px;
+            height: 72px;
+            max-width: 72px;
+            max-height: 72px;
+            object-fit: contain;
+        }
+        .side-menu-brand-text {
+            display: flex;
+            flex-direction: column;
+        }
+        .side-menu-title {
+            font-weight: 700;
+            font-size: 16px;
+            color: var(--text);
+        }
+        .side-menu-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .side-menu-close {
             width: 36px;
             height: 36px;
+            border: none;
             border-radius: 10px;
+            background: var(--bg-hover);
+            color: var(--text);
+            font-size: 18px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: background 0.2s ease;
         }
-
-        .menu-close svg {
-            width: 20px;
-            height: 20px;
-            stroke: var(--text);
+        .side-menu-close:hover {
+            background: var(--border);
         }
-
-        .menu-nav {
+        .menu-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
             flex: 1;
             overflow-y: auto;
-            padding: 16px;
+            padding: 8px 0;
         }
-
-        .menu-section {
-            margin-bottom: 24px;
-        }
-
-        .menu-section-title {
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-muted);
-            padding: 0 12px;
-            margin-bottom: 8px;
-        }
-
         .menu-item {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px;
+            gap: 10px;
+            padding: 12px 14px;
             border-radius: 12px;
-            color: var(--text);
+            color: var(--text, #e2e8f0);
             text-decoration: none;
-            transition: all 0.2s;
-            font-weight: 500;
+            font-weight: 600;
             font-size: 14px;
+            transition: background 0.2s ease;
         }
-
-        .menu-item:hover {
-            background: var(--bg-hover);
+        .menu-item:hover { background: rgba(239, 68, 68, 0.1); }
+        .menu-item.active { background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%); color: #fff; }
+        .menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 8px 16px;
         }
-
-        .menu-item.active {
-            background: var(--brand);
-            color: white;
-        }
-
-        .menu-item svg {
-            width: 20px;
-            height: 20px;
-            flex-shrink: 0;
-        }
-
-        .menu-item.active svg {
-            stroke: white;
-        }
-
-        .menu-item-icon {
-            font-size: 18px;
-            width: 24px;
-            text-align: center;
-        }
-
-        .menu-footer {
-            padding: 16px;
-            border-top: 1px solid var(--border);
-        }
-
-        .menu-footer a {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px;
-            border-radius: 12px;
-            color: var(--danger);
-            text-decoration: none;
-            transition: all 0.2s;
-            font-weight: 500;
-        }
-
-        .menu-footer a:hover {
-            background: var(--danger-bg);
-        }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+        .menu-divider { height: 1px; background: var(--border, rgba(148, 163, 184, 0.18)); margin: 8px 0; }
 
         /* Main Content */
         .main-content {
@@ -734,107 +717,63 @@
     <!-- Header -->
     <header class="header">
         <div class="header-left">
-            <button class="menu-toggle" onclick="toggleMenu()">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-                </svg>
-            </button>
-            <img src="/uploads/logo/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'">
-            <h1 class="page-title">Gestione Straordinari</h1>
+            <button class="header-icon-btn" onclick="toggleMenu()" title="Menu">☰</button>
+            <div class="header-title">
+                <h1>Gestione Straordinari</h1>
+                <p>Richieste straordinario</p>
+            </div>
         </div>
         <div class="header-right">
-            <button class="header-icon-btn" onclick="toggleTheme()" title="Cambia tema">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-                </svg>
-            </button>
-            <button class="header-icon-btn" onclick="loadOvertime()" title="Aggiorna">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-            </button>
-            <div class="user-avatar" id="userAvatar">A</div>
+            <button class="header-icon-btn" onclick="toggleTheme()" title="Cambia tema">🌓</button>
+            <button class="header-icon-btn" onclick="loadOvertime()" title="Aggiorna">↻</button>
+            <div class="header-user">
+                <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
+                <span class="header-user-name">{{ session.get('user', 'Utente') }}</span>
+            </div>
         </div>
     </header>
 
-    <!-- Hamburger Menu -->
-    <div class="menu-overlay" onclick="toggleMenu()"></div>
-    <nav class="menu-container">
-        <div class="menu-header">
-            <img src="/uploads/logo/logo.png" alt="Logo" class="menu-logo" onerror="this.style.display='none'">
-            <button class="menu-close" onclick="toggleMenu()">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
+    <!-- Menu Overlay -->
+    <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+    <!-- Side Menu -->
+    <nav class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-brand">
+                <span class="side-menu-avatar">
+                    {% if company_logo %}
+                        <img src="{{ company_logo }}" alt="Logo">
+                    {% else %}
+                        {{ session.get('user', 'U')[0]|upper }}
+                    {% endif %}
+                </span>
+                <div class="side-menu-brand-text">
+                    <span class="side-menu-title">JobLog Admin</span>
+                    <span class="side-menu-subtitle">Pannello Amministrazione</span>
+                </div>
+            </div>
+            <button class="side-menu-close" onclick="closeMenu()">✕</button>
         </div>
-        <div class="menu-nav">
-            <div class="menu-section">
-                <div class="menu-section-title">Dashboard</div>
-                <a href="/admin/dashboard" class="menu-item">
-                    <span class="menu-item-icon">📊</span>
-                    Dashboard
-                </a>
-                <a href="/admin/activity-analysis" class="menu-item">
-                    <span class="menu-item-icon">📈</span>
-                    Analisi Attività
-                </a>
-            </div>
-            <div class="menu-section">
-                <div class="menu-section-title">Gestione</div>
-                <a href="/admin/users" class="menu-item">
-                    <span class="menu-item-icon">👥</span>
-                    Gestione Utenti
-                </a>
-                <a href="/admin/operators" class="menu-item">
-                    <span class="menu-item-icon">🔧</span>
-                    Gestione Operatori
-                </a>
-                <a href="/admin/user-requests" class="menu-item">
-                    <span class="menu-item-icon">📝</span>
-                    Richieste Utenti
-                </a>
-                <a href="/admin/overtime" class="menu-item active">
-                    <span class="menu-item-icon">⏱️</span>
-                    Straordinari
-                </a>
-                <a href="/admin/sessions" class="menu-item">
-                    <span class="menu-item-icon">📋</span>
-                    Sessioni Lavoro
-                </a>
-            </div>
-            <div class="menu-section">
-                <div class="menu-section-title">Configurazione</div>
-                <a href="/admin/timbratura-rules" class="menu-item">
-                    <span class="menu-item-icon">⚙️</span>
-                    Regole Timbratura
-                </a>
-                <a href="/admin/request-types" class="menu-item">
-                    <span class="menu-item-icon">📑</span>
-                    Tipi Richiesta
-                </a>
-                <a href="/admin/company-settings" class="menu-item">
-                    <span class="menu-item-icon">🏢</span>
-                    Impostazioni Azienda
-                </a>
-            </div>
-            <div class="menu-section">
-                <div class="menu-section-title">Integrazioni</div>
-                <a href="/admin/rentman-planning" class="menu-item">
-                    <span class="menu-item-icon">📅</span>
-                    Rentman Planning
-                </a>
-                <a href="/magazzino" class="menu-item">
-                    <span class="menu-item-icon">📦</span>
-                    Magazzino
-                </a>
-            </div>
-        </div>
-        <div class="menu-footer">
-            <a href="/logout">
-                <span class="menu-item-icon">🚪</span>
-                Logout
-            </a>
+        <div class="menu-items">
+            <a href="/admin" class="menu-item">📊 Dashboard</a>
+            <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/group-planning" class="menu-item">📆 Planning Gruppo</a>
+            <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
+            <a href="/admin/rentman-planning" class="menu-item">📋 Pianificazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
+            <a href="/admin/documents" class="menu-item">📄 Documenti</a>
+            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
+            <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
+            <a href="/admin/users" class="menu-item">👥 Utenti</a>
+            <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
+            <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+            <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/logout" class="menu-item danger">🚪 Logout</a>
         </div>
     </nav>
 
@@ -924,8 +863,12 @@
 
         // Menu
         function toggleMenu() {
-            document.querySelector('.menu-container').classList.toggle('active');
-            document.querySelector('.menu-overlay').classList.toggle('active');
+            document.getElementById('sideMenu').classList.toggle('open');
+            document.getElementById('menuOverlay').classList.toggle('open');
+        }
+        function closeMenu() {
+            document.getElementById('sideMenu').classList.remove('open');
+            document.getElementById('menuOverlay').classList.remove('open');
         }
 
         // Init user avatar

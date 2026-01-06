@@ -21,6 +21,7 @@
             --bg: #0b1224;
             --bg-panel: #0f172a;
             --bg-soft: #111a30;
+            --bg-card: #0f172a;
             --card: #10182f;
             --text: #e2e8f0;
             --muted: #94a3b8;
@@ -39,6 +40,7 @@
             --bg: #f6f8fc;
             --bg-panel: #ffffff;
             --bg-soft: #eef2ff;
+            --bg-card: #ffffff;
             --card: #ffffff;
             --text: #0f172a;
             --muted: #475569;
@@ -67,20 +69,23 @@
 
         /* Header */
         header {
-            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
             color: #f8fafc;
-            padding: 12px 20px;
+            padding: 14px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             position: sticky;
             top: 0;
-            z-index: 220;
-            box-shadow: 0 4px 20px rgba(3,7,18,0.35);
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
             overflow: visible;
         }
         .header-left { display: flex; align-items: center; gap: 16px; }
-        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; }
+        .header-title { color: white; }
+        .header-title h1 { font-size: 20px; font-weight: 700; margin: 0; }
+        .header-title p { font-size: 13px; opacity: 0.85; margin: 0; }
+        .logo-title { font-weight: 700; font-size: 20px; letter-spacing: 0.4px; color: white; }
         .header-actions { display: flex; align-items: center; gap: 10px; }
         .header-icon-btn {
             width: 40px; height: 40px;
@@ -94,53 +99,143 @@
         }
         .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
 
-        /* ─── Hamburger Menu ─── */
-        .menu-container { position: relative; z-index: 310; }
-        .hamburger-menu {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            margin-top: 8px;
-            background: var(--bg-panel);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            box-shadow: var(--shadow);
-            min-width: 220px;
-            z-index: 300;
-            overflow: hidden;
+        /* Menu Overlay */
+        .menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 210;
             opacity: 0;
             visibility: hidden;
-            transform: translateY(-10px);
-            transition: all 0.2s ease;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
         }
-        .hamburger-menu.open {
+        .menu-overlay.open {
             opacity: 1;
             visibility: visible;
-            transform: translateY(0);
+        }
+
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 320px;
+            max-width: 92vw;
+            height: 100vh;
+            height: 100dvh;
+            background: var(--bg-card, #0f172a);
+            z-index: 220;
+            box-shadow: 2px 0 24px rgba(0,0,0,0.5);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transform: translateX(-105%);
+            transition: transform 0.24s ease;
+            overflow: hidden;
+        }
+        .side-menu.open {
+            transform: translateX(0);
+        }
+        .side-menu-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .side-menu-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .side-menu-avatar {
+            width: 72px;
+            height: 72px;
+            min-width: 72px;
+            min-height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 700;
+            text-transform: uppercase;
+            overflow: hidden;
+        }
+        .side-menu-avatar:has(img) {
+            background: transparent;
+            border-radius: 8px;
+        }
+        .side-menu-avatar img {
+            width: 72px;
+            height: 72px;
+            max-width: 72px;
+            max-height: 72px;
+            object-fit: contain;
+        }
+        .side-menu-brand-text {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .side-menu-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text, #e2e8f0);
+        }
+        .side-menu-subtitle {
+            font-size: 12px;
+            color: var(--muted, #94a3b8);
+            font-weight: 600;
+        }
+        .side-menu-close {
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--muted, #94a3b8);
+            width: 36px;
+            height: 36px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .side-menu-close:hover {
+            background: rgba(102, 126, 234, 0.12);
+            color: var(--brand, #667eea);
+        }
+        .menu-items {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 0;
         }
         .menu-item {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            color: var(--text);
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            color: var(--text, #e2e8f0);
             text-decoration: none;
-            font-weight: 500;
-            transition: background 0.15s ease;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.2s ease;
         }
-        .menu-item:hover { background: var(--bg-soft); }
-        .menu-item.active {
-            background: var(--bg-soft);
-            color: var(--brand);
-        }
-        .menu-item-icon { font-size: 18px; }
+        .menu-item:hover { background: rgba(102, 126, 234, 0.1); }
+        .menu-item.active { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #fff; }
         .menu-divider {
             height: 1px;
-            background: var(--border);
-            margin: 4px 0;
+            background: rgba(148, 163, 184, 0.4);
+            margin: 8px 16px;
         }
         .menu-item.danger { color: var(--danger); }
-        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+        .menu-item.danger:hover { background: rgba(102, 126, 234, 0.1); }
 
         .header-user {
             display: flex; align-items: center; gap: 8px;
@@ -478,76 +573,64 @@
     </style>
 </head>
 <body>
+    <!-- Menu Overlay -->
+    <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+    <!-- Side Menu -->
+    <nav class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-brand">
+                <span class="side-menu-avatar">
+                    {% if company_logo %}
+                        <img src="{{ company_logo }}" alt="Logo">
+                    {% else %}
+                        {{ session.get('user', 'U')[0]|upper }}
+                    {% endif %}
+                </span>
+                <div class="side-menu-brand-text">
+                    <span class="side-menu-title">JobLog Admin</span>
+                    <span class="side-menu-subtitle">Pannello Amministrazione</span>
+                </div>
+            </div>
+            <button class="side-menu-close" onclick="closeMenu()">✕</button>
+        </div>
+        <div class="menu-items">
+            <a href="/admin" class="menu-item">📊 Dashboard</a>
+            <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/group-planning" class="menu-item">📆 Planning Gruppo</a>
+            <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
+            <a href="/admin/rentman-planning" class="menu-item">📋 Pianificazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
+            <a href="/admin/documents" class="menu-item">📄 Documenti</a>
+            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
+            <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
+            <a href="/admin/users" class="menu-item active">👥 Utenti</a>
+            <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
+            <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+            <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/logout" class="menu-item danger">🚪 Logout</a>
+        </div>
+    </nav>
+
     <header>
         <div class="header-left">
-            <div class="menu-container">
-                <button id="menuToggle" class="header-icon-btn" type="button" aria-label="Menu">☰</button>
-                <nav id="hamburgerMenu" class="hamburger-menu">
-                    <a href="{{ url_for('admin_dashboard_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📊</span>
-                        <span>Dashboard</span>
-                    </a>
-                    <a href="{{ url_for('admin_sessions_page') }}" class="menu-item">
-                        <span class="menu-item-icon">�️</span>
-                        <span>Gestione Sessioni</span>
-                    </a>
-                    <a href="{{ url_for('admin_activity_analysis_page') }}" class="menu-item">
-                        <span class="menu-item-icon">🔬</span>
-                        <span>Analisi Attività</span>
-                    </a>
-                    <a href="{{ url_for('admin_rentman_planning_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📅</span>
-                        <span>Pianificazioni Rentman</span>
-                    </a>
-                    {% if is_admin %}
-                    <a href="{{ url_for('admin_users_page') }}" class="menu-item active">
-                        <span class="menu-item-icon">👥</span>
-                        <span>Gestione Utenti</span>
-                    </a>
-                    <a href="{{ url_for('admin_operators') }}" class="menu-item">
-                        <span class="menu-item-icon">🧑‍🔧</span>
-                        <span>Gestione Operatori</span>
-                    </a>
-                    <a href="{{ url_for('admin_employee_shifts_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📆</span>
-                        <span>Gestione Turni</span>
-                    </a>
-                    <a href="{{ url_for('admin_timbratura_rules_page') }}" class="menu-item">
-                        <span class="menu-item-icon">⚙️</span>
-                        <span>Regole Timbrature</span>
-                    </a>
-                    <a href="{{ url_for('admin_request_types_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📝</span>
-                        <span>Tipologie Richieste</span>
-                    </a>
-                    <a href="{{ url_for('admin_user_requests_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📥</span>
-                        <span>Gestione Richieste</span>
-                    </a>
-                    <a href="{{ url_for('admin_documents_page') }}" class="menu-item">
-                        <span class="menu-item-icon">📄</span>
-                        <span>Documenti</span>
-                    </a>
-                    <a href="{{ url_for('admin_company_settings_page') }}" class="menu-item">
-                        <span class="menu-item-icon">🏢</span>
-                        <span>Configurazione Azienda</span>
-                    </a>
-                    {% endif %}
-                    <div class="menu-divider"></div>
-                    <a href="{{ url_for('logout') }}" class="menu-item danger">
-                        <span class="menu-item-icon">🚪</span>
-                        <span>Logout</span>
-                    </a>
-                </nav>
+            <button class="header-icon-btn" onclick="toggleMenu()" title="Menu">☰</button>
+            <div class="header-title">
+                <h1>Gestione Utenti</h1>
+                <p>Account utente</p>
             </div>
-            <span class="logo-title">Gestione Utenti</span>
         </div>
         <div class="header-actions">
-            <button class="header-icon-btn" id="refreshBtn" title="Aggiorna">↻</button>
-            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <button class="header-icon-btn" onclick="refreshData()" title="Aggiorna">↻</button>
+            <button class="header-icon-btn" onclick="toggleTheme()" title="Tema">🌓</button>
             <div class="header-user">
-                <div class="header-user-avatar">{{ session.get('username', 'U')[0]|upper }}</div>
-                <span class="header-user-name">{{ session.get('username', 'Utente') }}</span>
+                <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
+                <span class="header-user-name">{{ session.get('user', 'Utente') }}</span>
             </div>
         </div>
     </header>
@@ -644,12 +727,20 @@
                         </div>
                     </div>
 
-                    <!-- Riga 3: Operatore Rentman -->
-                    <div class="form-group">
-                        <label class="form-label" for="formCrewId">Operatore Rentman (per turni)</label>
-                        <select class="form-select" id="formCrewId">
-                            <option value="">-- Nessun operatore associato --</option>
-                        </select>
+                    <!-- Riga 3: Operatore Rentman e Gruppo -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="formCrewId">Operatore Rentman (per turni)</label>
+                            <select class="form-select" id="formCrewId">
+                                <option value="">-- Nessun operatore associato --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="formGroupId">Gruppo</label>
+                            <select class="form-select" id="formGroupId">
+                                <option value="">-- Nessun gruppo --</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Sezione CedolinoWeb -->
@@ -661,12 +752,12 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group" style="margin-bottom: 0;">
-                                <label class="form-label" for="formExternalId">ID Esterno</label>
+                                <label class="form-label" for="formExternalId">ID Esterno Utente</label>
                                 <input type="text" class="form-input" id="formExternalId" placeholder="12345" />
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
-                                <label class="form-label" for="formExternalGroupId">Gruppo ID</label>
-                                <input type="text" class="form-input" id="formExternalGroupId" placeholder="G01" />
+                                <label class="form-label">ID Gruppo (da Gruppo)</label>
+                                <input type="text" class="form-input" id="formGroupCedolinoId" disabled placeholder="Derivato dal gruppo" />
                             </div>
                         </div>
                         <p class="form-hint" id="externalIdStatus" style="font-size: 11px; margin-top: 6px;"></p>
@@ -703,6 +794,17 @@
     <div class="toast" id="toast"></div>
 
     <script>
+    // ─── Menu Functions (globali) ───
+    function toggleMenu() {
+        document.getElementById('sideMenu').classList.toggle('open');
+        document.getElementById('menuOverlay').classList.toggle('open');
+    }
+
+    function closeMenu() {
+        document.getElementById('sideMenu').classList.remove('open');
+        document.getElementById('menuOverlay').classList.remove('open');
+    }
+
     (function() {
         'use strict';
 
@@ -715,8 +817,6 @@
         let deleteTarget = null;
 
         // DOM Elements
-        const menuToggle = document.getElementById('menuToggle');
-        const hamburgerMenu = document.getElementById('hamburgerMenu');
         const themeToggle = document.getElementById('themeToggle');
         const refreshBtn = document.getElementById('refreshBtn');
         const searchInput = document.getElementById('searchInput');
@@ -740,9 +840,10 @@
         const formPassword = document.getElementById('formPassword');
         const formIsActive = document.getElementById('formIsActive');
         const formCrewId = document.getElementById('formCrewId');
+        const formGroupId = document.getElementById('formGroupId');
         // CedolinoWeb elements (potrebbero non esistere se sync disabilitato)
         const formExternalId = document.getElementById('formExternalId');
-        const formExternalGroupId = document.getElementById('formExternalGroupId');
+        const formGroupCedolinoId = document.getElementById('formGroupCedolinoId');
         const externalIdStatus = document.getElementById('externalIdStatus');
         const passwordHint = document.getElementById('passwordHint');
 
@@ -776,6 +877,8 @@
         // ─── API Functions ───
         let operators = [];
         let operatorsLoaded = false;
+        let groups = [];
+        let groupsLoaded = false;
 
         async function loadOperators() {
             try {
@@ -794,11 +897,49 @@
             }
         }
         
+        async function loadGroups() {
+            try {
+                const response = await fetch('/api/admin/groups');
+                if (!response.ok) return;
+                const data = await response.json();
+                groups = data.groups || [];
+                
+                // Popola la select
+                formGroupId.innerHTML = '<option value="">-- Nessun gruppo --</option>' +
+                    groups.filter(g => g.is_active).map(g => `<option value="${g.id}" data-cedolino-id="${g.cedolino_group_id || ''}">${escapeHtml(g.name)}</option>`).join('');
+                groupsLoaded = true;
+                console.log('Gruppi caricati:', groups.length);
+            } catch (error) {
+                console.error('Errore caricamento gruppi:', error);
+            }
+        }
+        
         async function ensureOperatorsLoaded() {
             if (!operatorsLoaded) {
                 await loadOperators();
             }
         }
+        
+        async function ensureGroupsLoaded() {
+            if (!groupsLoaded) {
+                await loadGroups();
+            }
+        }
+        
+        // Aggiorna campo cedolino ID quando cambia gruppo
+        function updateGroupCedolinoId() {
+            if (!formGroupCedolinoId) return;
+            const selectedOption = formGroupId.options[formGroupId.selectedIndex];
+            if (selectedOption && selectedOption.value) {
+                const cedolinoId = selectedOption.getAttribute('data-cedolino-id');
+                formGroupCedolinoId.value = cedolinoId || '(non configurato)';
+            } else {
+                formGroupCedolinoId.value = '';
+            }
+        }
+        
+        // Event listener per il cambio gruppo
+        formGroupId.addEventListener('change', updateGroupCedolinoId);
         
         async function loadUsers() {
             try {
@@ -836,8 +977,8 @@
                 role: formRole.value,
                 is_active: formIsActive.checked,
                 rentman_crew_id: formCrewId.value ? parseInt(formCrewId.value) : null,
-                external_id: formExternalId ? (formExternalId.value.trim() || null) : null,
-                external_group_id: formExternalGroupId ? (formExternalGroupId.value.trim() || null) : null
+                group_id: formGroupId.value ? parseInt(formGroupId.value) : null,
+                external_id: formExternalId ? (formExternalId.value.trim() || null) : null
             };
 
             console.log('Saving user payload:', payload);
@@ -950,6 +1091,7 @@
         // ─── Modal Functions ───
         async function openCreateModal() {
             await ensureOperatorsLoaded();
+            await ensureGroupsLoaded();
             
             formEditMode.value = 'create';
             formOriginalUsername.value = '';
@@ -962,8 +1104,9 @@
             formPassword.required = true;
             formIsActive.checked = true;
             formCrewId.value = '';
+            formGroupId.value = '';
             if (formExternalId) formExternalId.value = '';
-            if (formExternalGroupId) formExternalGroupId.value = '';
+            if (formGroupCedolinoId) formGroupCedolinoId.value = '';
             if (externalIdStatus) externalIdStatus.innerHTML = '<span style="color: var(--muted);">ℹ L\'ID Esterno può essere impostato dopo la creazione dell\'utente.</span>';
             passwordHint.textContent = 'Richiesta per nuovi utenti';
             modalTitle.textContent = 'Nuovo Utente';
@@ -972,6 +1115,7 @@
 
         async function openEditModal(username) {
             await ensureOperatorsLoaded();
+            await ensureGroupsLoaded();
             
             const user = users.find(u => u.username === username);
             if (!user) return;
@@ -987,9 +1131,12 @@
             formPassword.required = false;
             formIsActive.checked = user.is_active;
             formCrewId.value = user.rentman_crew_id || '';
+            formGroupId.value = user.group_id || '';
             if (formExternalId) formExternalId.value = user.external_id || '';
-            if (formExternalGroupId) formExternalGroupId.value = user.external_group_id || '';
+            // Aggiorna il campo cedolino ID dal gruppo selezionato
+            updateGroupCedolinoId();
             console.log('Setting rentman_crew_id to:', user.rentman_crew_id, '- formCrewId.value:', formCrewId.value);
+            console.log('Setting group_id to:', user.group_id, '- formGroupId.value:', formGroupId.value);
             passwordHint.textContent = 'Lascia vuoto per mantenere la password attuale';
             modalTitle.textContent = 'Modifica Utente';
             
@@ -1027,26 +1174,22 @@
         }
 
         // ─── Event Listeners ───
-        menuToggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            hamburgerMenu.classList.toggle('open');
-        });
+        
+        // Side menu: il bottone ha già onclick="toggleMenu()"
+        
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => {
+                const html = document.documentElement;
+                const current = html.dataset.theme || 'dark';
+                const next = current === 'dark' ? 'light' : 'dark';
+                html.dataset.theme = next;
+                localStorage.setItem('joblog-theme', next);
+            });
+        }
 
-        document.addEventListener('click', (e) => {
-            if (!hamburgerMenu.contains(e.target) && e.target !== menuToggle) {
-                hamburgerMenu.classList.remove('open');
-            }
-        });
-
-        themeToggle.addEventListener('click', () => {
-            const html = document.documentElement;
-            const current = html.dataset.theme || 'dark';
-            const next = current === 'dark' ? 'light' : 'dark';
-            html.dataset.theme = next;
-            localStorage.setItem('joblog-theme', next);
-        });
-
-        refreshBtn.addEventListener('click', loadUsers);
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', loadUsers);
+        }
 
         searchInput.addEventListener('input', () => {
             renderUsers();
@@ -1094,6 +1237,7 @@
 
         // ─── Init ───
         loadOperators();
+        loadGroups();
         loadUsers();
 
     })();

@@ -71,53 +71,158 @@
         body.menu-open { overflow: hidden; }
         .hidden { display: none !important; }
         header {
-            background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(139,92,246,0.85));
+            background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%);
             color: #f8fafc;
             padding: 14px 16px;
-            font-size: 18px;
             display: flex;
-            flex-direction: column;
-            gap: 8px;
+            align-items: center;
+            justify-content: space-between;
             position: sticky;
             top: 0;
             z-index: 220;
-            box-shadow: 0 10px 30px rgba(3,7,18,0.35);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
         }
-        .header-row-top { display: flex; justify-content: space-between; align-items: center; width: 100%; }
-        .header-row-bottom { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 12px; }
-        .header-left { display:flex; align-items:center; gap:12px; }
-        .logo-title { font-weight: 700; font-size: 22px; letter-spacing: 0.4px; }
-        .header-actions { display:flex; align-items:center; gap: 12px; }
-        .header-icon-btn { width:44px; height:44px; border:none; border-radius:12px; background:rgba(255,255,255,0.12); color:white; font-size:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.2s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-        .header-icon-btn:active { background:rgba(255,255,255,0.28); transform: scale(0.95); }
-        .header-user { display:flex; align-items:center; gap:8px; padding:6px 10px; background:rgba(255,255,255,0.15); border:none; border-radius:999px; color:white; }
+        .header-left { display:flex; align-items:center; gap:16px; }
+        .header-title { color: white; }
+        .header-title h1 { font-size: 20px; font-weight: 700; margin: 0; }
+        .header-title p { font-size: 13px; opacity: 0.85; margin: 0; }
+        .header-actions { display:flex; align-items:center; gap: 8px; }
+        .header-icon-btn { width:40px; height:40px; border:none; border-radius:10px; background:rgba(255,255,255,0.15); color:white; font-size:18px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.2s ease; }
+        .header-icon-btn:hover { background:rgba(255,255,255,0.25); }
+        .header-user { display:flex; align-items:center; gap:8px; padding:6px 12px; background:rgba(255,255,255,0.15); border:none; border-radius:999px; color:white; }
         .header-user:hover { background:rgba(255,255,255,0.25); }
         .header-user-avatar { width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,0.3); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; text-transform:uppercase; }
-        .header-user-name { font-weight:600; font-size:14px; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .header-user-name { font-weight:600; font-size:14px; }
 
-        .menu-overlay { position:fixed; inset:0; background:var(--overlay); z-index:210; }
-        .side-menu { position:fixed; top:0; left:0; height:100vh; height:100dvh; width:320px; max-width:92vw; background:var(--bg-card); z-index:220; box-shadow:2px 0 24px var(--shadow-lg); padding:16px 16px; display:flex; flex-direction:column; gap:12px; transform:translateX(-105%); transition:transform 0.24s ease, background-color 0.2s ease; overflow:hidden; }
-        .side-menu.open { transform:translateX(0); }
-        .side-menu-header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-        .side-menu-brand { display:flex; align-items:center; gap:12px; }
-        .side-menu-avatar { width:42px; height:42px; border-radius:50%; background:var(--brand-strong); color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; text-transform:uppercase; }
-        .side-menu-brand-text { display:flex; flex-direction:column; gap:1px; min-width: 0; }
-        .side-menu-title { font-size:16px; font-weight:700; color:var(--text-primary); max-width:190px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .side-menu-subtitle { font-size:12px; color:var(--text-secondary); font-weight:600; }
-        .side-menu-close { border:none; border-radius:50%; background:transparent; color:var(--text-secondary); width:36px; height:36px; font-size:18px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.2s ease, color 0.2s ease; flex-shrink:0; }
-        .side-menu-close:active { background:rgba(56,189,248,0.12); color:var(--brand-strong); }
-        .side-menu-body { flex:1; display:flex; flex-direction:column; gap:12px; overflow-y:auto; overflow-x:hidden; padding-right:4px; padding-bottom:20px; -webkit-overflow-scrolling:touch; }
-        .side-menu-section { display:flex; flex-direction:column; gap:6px; }
-        .side-menu-section-title { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-secondary); margin:0 0 2px 4px; }
-        .side-menu-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:2px; }
-        .side-menu-item { border:none; border-radius:12px; padding:10px 12px; background:transparent; color:var(--text-primary); font-size:14px; font-weight:700; text-align:left; cursor:pointer; transition:background 0.2s ease, color 0.2s ease; display:flex; align-items:center; gap:12px; text-decoration:none; }
-        .side-menu-item:visited { color:var(--text-primary); }
-        .side-menu-item:active, .side-menu-item:focus { background:rgba(56,189,248,0.12); color:var(--brand-strong); outline:none; }
-        .side-menu-item-icon { width:32px; height:32px; border-radius:50%; background:rgba(148,163,184,0.18); display:flex; align-items:center; justify-content:center; font-size:16px; color:var(--text-secondary); flex-shrink:0; }
-        .side-menu-item:active .side-menu-item-icon, .side-menu-item:focus .side-menu-item-icon { background:rgba(56,189,248,0.18); color:var(--brand-strong); }
-        .side-menu-item-label { flex:1; display:flex; flex-direction:column; gap:1px; min-width:0; }
-        .side-menu-item-text { font-weight:800; font-size:14px; }
-        .side-menu-item-hint { font-size:11px; color:var(--text-secondary); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        /* Menu Overlay */
+        .menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 210;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.24s ease;
+        }
+        .menu-overlay.open { opacity: 1; visibility: visible; }
+
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            height: 100dvh;
+            width: 320px;
+            max-width: 92vw;
+            background: var(--bg-card, #0f172a);
+            z-index: 220;
+            box-shadow: 2px 0 24px rgba(0,0,0,0.5);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transform: translateX(-105%);
+            transition: transform 0.24s ease;
+            overflow: hidden;
+        }
+        .side-menu.open { transform: translateX(0); }
+        .side-menu-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .side-menu-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .side-menu-avatar {
+            width: 72px;
+            height: 72px;
+            min-width: 72px;
+            min-height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 700;
+            text-transform: uppercase;
+            overflow: hidden;
+        }
+        .side-menu-avatar:has(img) {
+            background: transparent;
+            border-radius: 8px;
+        }
+        .side-menu-avatar img {
+            width: 72px;
+            height: 72px;
+            max-width: 72px;
+            max-height: 72px;
+            object-fit: contain;
+        }
+        .side-menu-brand-text {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .side-menu-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text, #e2e8f0);
+        }
+        .side-menu-subtitle {
+            font-size: 12px;
+            color: var(--muted, #94a3b8);
+            font-weight: 600;
+        }
+        .side-menu-close {
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--muted, #94a3b8);
+            width: 36px;
+            height: 36px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .side-menu-close:hover {
+            background: rgba(239, 68, 68, 0.12);
+            color: var(--brand, #38bdf8);
+        }
+        .menu-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            color: var(--text, #e2e8f0);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        }
+        .menu-item:hover { background: rgba(239, 68, 68, 0.1); }
+        .menu-item.active { background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%); color: #fff; }
+        .menu-item.danger { color: #ef4444; }
+        .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+        .menu-divider { height: 1px; background: var(--border, rgba(148, 163, 184, 0.18)); margin: 8px 0; }
         main { padding: 24px clamp(14px, 4vw, 32px) 60px; }
         .grid {
             display: grid;
@@ -209,147 +314,64 @@
 </head>
 <body>
     <header>
-        <div class="header-row-top">
-            <div class="header-left">
-                <button id="menuToggle" class="header-icon-btn" aria-label="Apri menu">☰</button>
-                <span class="logo-title">📊 Dashboard Admin</span>
+        <div class="header-left">
+            <button class="header-icon-btn" id="menuToggle" onclick="toggleMenu()" title="Menu">☰</button>
+            <div class="header-title">
+                <h1>📊 Dashboard Admin</h1>
+                <p>Pannello di controllo</p>
             </div>
         </div>
-        <div class="header-row-bottom">
-            <div class="header-actions">
-                <button class="header-icon-btn" id="refreshBtn" aria-label="Aggiorna">↻</button>
-            </div>
-            <div class="header-user" title="Accesso come {{ user_name or 'Admin' }}">
-                <span class="header-user-avatar">{{ user_initials or '?' }}</span>
-                <span class="header-user-name">{{ user_name or 'Admin' }}</span>
+        <div class="header-actions">
+            <button class="header-icon-btn" id="refreshBtn" title="Aggiorna">↻</button>
+            <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+            <div class="header-user">
+                <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
+                <span class="header-user-name">{{ session.get('user', 'Utente') }}</span>
             </div>
         </div>
     </header>
 
-    <div id="menuOverlay" class="menu-overlay hidden"></div>
-    <nav id="sideMenu" class="side-menu" aria-hidden="true">
+    <!-- Menu Overlay -->
+    <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+    <!-- Side Menu -->
+    <nav class="side-menu" id="sideMenu">
         <div class="side-menu-header">
             <div class="side-menu-brand">
-                <span class="side-menu-avatar">{{ user_initials or '?' }}</span>
+                <span class="side-menu-avatar">
+                    {% if company_logo %}
+                        <img src="{{ company_logo }}" alt="Logo">
+                    {% else %}
+                        {{ session.get('user', 'U')[0]|upper }}
+                    {% endif %}
+                </span>
                 <div class="side-menu-brand-text">
-                    <span class="side-menu-title">{{ user_name or 'Admin' }}</span>
-                    <span class="side-menu-subtitle">Verifica ed esportazione sessioni</span>
+                    <span class="side-menu-title">JobLog Admin</span>
+                    <span class="side-menu-subtitle">Pannello Amministrazione</span>
                 </div>
             </div>
-            <button id="menuCloseBtn" class="side-menu-close" aria-label="Chiudi menu">✕</button>
+            <button class="side-menu-close" onclick="closeMenu()">✕</button>
         </div>
-        <div class="side-menu-body">
-            <div class="side-menu-section">
-                <span class="side-menu-section-title">Navigazione</span>
-                <ul class="side-menu-list">
-                    <li>
-                        <a href="{{ url_for('home') }}" class="side-menu-item" data-menu-action>
-                            <span class="side-menu-item-icon">🏠</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Dashboard</span>
-                                <span class="side-menu-item-hint">Torna alla dashboard</span>
-                            </span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="{{ url_for('admin_sessions_page') }}" class="side-menu-item" data-menu-action>
-                            <span class="side-menu-item-icon">🗒</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Sessioni</span>
-                                <span class="side-menu-item-hint">Vista completa e filtri</span>
-                            </span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="{{ url_for('admin_request_types_page') }}" class="side-menu-item" data-menu-action>
-                            <span class="side-menu-item-icon">📝</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Tipologie Richieste</span>
-                                <span class="side-menu-item-hint">Configura ferie, permessi, rimborsi</span>
-                            </span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="{{ url_for('admin_user_requests_page') }}" class="side-menu-item" data-menu-action>
-                            <span class="side-menu-item-icon">📥</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Gestione Richieste</span>
-                                <span class="side-menu-item-hint">Approva ferie, permessi, rimborsi</span>
-                            </span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="{{ url_for('admin_documents_page') }}" class="side-menu-item" data-menu-action>
-                            <span class="side-menu-item-icon">📄</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Gestione Documenti</span>
-                                <span class="side-menu-item-hint">Carica circolari, comunicazioni, buste paga</span>
-                            </span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="{{ url_for('admin_employee_shifts_page') }}" class="side-menu-item" data-menu-action>
-                            <span class="side-menu-item-icon">📆</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Gestione Turni</span>
-                                <span class="side-menu-item-hint">Orari settimanali impiegati</span>
-                            </span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="{{ url_for('admin_company_settings_page') }}" class="side-menu-item" data-menu-action>
-                            <span class="side-menu-item-icon">🏢</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Configurazione Azienda</span>
-                                <span class="side-menu-item-hint">Logo, dati aziendali, moduli</span>
-                            </span>
-                        </a>
-                    </li>
-                </ul>
-            </div>
-
-            <div class="side-menu-section">
-                <span class="side-menu-section-title">Esportazione</span>
-                <ul class="side-menu-list">
-                    <li>
-                        <button id="exportExcelBtn" class="side-menu-item" type="button" data-menu-action>
-                            <span class="side-menu-item-icon">📥</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Esporta Excel</span>
-                                <span class="side-menu-item-hint">Scarica .xlsx (data selezionata)</span>
-                            </span>
-                        </button>
-                    </li>
-                </ul>
-            </div>
-            <div class="side-menu-section">
-                <span class="side-menu-section-title">Aspetto</span>
-                <ul class="side-menu-list">
-                    <li>
-                        <button id="themeToggle" class="side-menu-item" type="button" data-menu-action>
-                            <span class="side-menu-item-icon">🌓</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Tema</span>
-                                <span class="side-menu-item-hint">Chiaro / Scuro</span>
-                            </span>
-                        </button>
-                    </li>
-                </ul>
-            </div>
-            <div class="side-menu-section">
-                <span class="side-menu-section-title">Account</span>
-                <ul class="side-menu-list">
-                    <li>
-                        <a href="{{ url_for('logout') }}" class="side-menu-item" data-menu-action>
-                            <span class="side-menu-item-icon">⏻</span>
-                            <span class="side-menu-item-label">
-                                <span class="side-menu-item-text">Logout</span>
-                                <span class="side-menu-item-hint">Esci dall'app</span>
-                            </span>
-                        </a>
-                    </li>
-                </ul>
-            </div>
+        <div class="menu-items">
+            <a href="/admin" class="menu-item active">📊 Dashboard</a>
+            <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/group-planning" class="menu-item">📆 Planning Gruppo</a>
+            <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
+            <a href="/admin/rentman-planning" class="menu-item">📋 Pianificazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
+            <a href="/admin/documents" class="menu-item">📄 Documenti</a>
+            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
+            <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
+            <a href="/admin/users" class="menu-item">👥 Utenti</a>
+            <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
+            <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+            <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/logout" class="menu-item danger">🚪 Logout</a>
         </div>
     </nav>
 
@@ -418,39 +440,30 @@
         };
     </script>
     <script>
-        (function initAdminMenu() {
-            const body = document.body;
-            const overlay = document.getElementById('menuOverlay');
-            const menu = document.getElementById('sideMenu');
-            const openBtn = document.getElementById('menuToggle');
-            const closeBtn = document.getElementById('menuCloseBtn');
-
-            function openMenu() {
-                if (!overlay || !menu) return;
-                overlay.classList.remove('hidden');
-                menu.classList.add('open');
-                menu.setAttribute('aria-hidden', 'false');
-                body.classList.add('menu-open');
-            }
-
-            function closeMenu() {
-                if (!overlay || !menu) return;
-                overlay.classList.add('hidden');
-                menu.classList.remove('open');
-                menu.setAttribute('aria-hidden', 'true');
-                body.classList.remove('menu-open');
-            }
-
-            openBtn && openBtn.addEventListener('click', openMenu);
-            closeBtn && closeBtn.addEventListener('click', closeMenu);
-            overlay && overlay.addEventListener('click', closeMenu);
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') closeMenu();
-            });
-            document.querySelectorAll('[data-menu-action]').forEach((el) => {
-                el.addEventListener('click', closeMenu);
-            });
-        })();
+        // Menu functions
+        function toggleMenu() {
+            document.getElementById('sideMenu').classList.toggle('open');
+            document.getElementById('menuOverlay').classList.toggle('open');
+        }
+        function closeMenu() {
+            document.getElementById('sideMenu').classList.remove('open');
+            document.getElementById('menuOverlay').classList.remove('open');
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle')?.addEventListener('click', () => {
+            const html = document.documentElement;
+            const current = html.dataset.theme || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+        });
+        
+        // Menu toggle button
+        document.getElementById('menuToggle').addEventListener('click', toggleMenu);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeMenu();
+        });
     </script>
     <script type="module" src="{{ static_version('js/admin_dashboard.js') }}"></script>
 </body>
