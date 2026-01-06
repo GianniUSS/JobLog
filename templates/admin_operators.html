@@ -759,6 +759,19 @@
                     <div class="form-divider"></div>
                     
                     <div class="form-group">
+                        <label class="form-label" for="formGroup">📍 Gruppo / Sede GPS Timbratura</label>
+                        <select class="form-input" id="formGroup">
+                            <option value="">-- Nessun gruppo --</option>
+                            {% for g in groups %}
+                            <option value="{{ g.id }}" data-gps="{{ g.gps_location_name or '' }}">{{ g.name }}{% if g.gps_location_name %} (📍 {{ g.gps_location_name }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="form-hint" style="margin-top: 4px;">Se il gruppo ha una sede GPS, l'operatore potrà timbrare solo da quella sede</p>
+                    </div>
+
+                    <div class="form-divider"></div>
+                    
+                    <div class="form-group">
                         <label class="form-label">Eccezioni Timbratura</label>
                         <p class="form-hint" style="margin-bottom: 12px;">Disabilita metodi di timbratura per questo operatore. Se disabiliti tutti i metodi, l'operatore timbrerà in modalità diretta.</p>
                         
@@ -905,12 +918,17 @@
             
             // Se nessuna disabilitazione è attiva, invia null
             const hasOverride = timbraturaOverride.qr_disabled || timbraturaOverride.gps_disabled;
+            
+            // Recupera il gruppo selezionato
+            const formGroup = document.getElementById('formGroup');
+            const groupId = formGroup ? formGroup.value : null;
 
             const payload = {
                 email: formEmail.value.trim() || null,
                 phone: formPhone.value.trim() || null,
                 is_active: formIsActive.checked,
-                timbratura_override: hasOverride ? timbraturaOverride : null
+                timbratura_override: hasOverride ? timbraturaOverride : null,
+                group_id: groupId || null
             };
 
             try {
@@ -999,6 +1017,12 @@
             formEmail.value = op.email || '';
             formPhone.value = op.phone || '';
             formIsActive.checked = op.is_active;
+            
+            // Carica gruppo
+            const formGroup = document.getElementById('formGroup');
+            if (formGroup) {
+                formGroup.value = op.group_id || '';
+            }
             
             // Carica eccezioni timbratura (disabilitazioni)
             const override = op.timbratura_override || {};

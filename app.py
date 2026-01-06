@@ -9577,6 +9577,7 @@ CREATE TABLE IF NOT EXISTS crew_members (
     name VARCHAR(255) NOT NULL,
     external_id VARCHAR(255) DEFAULT NULL,
     external_group_id VARCHAR(255) DEFAULT NULL,
+    group_id INT DEFAULT NULL COMMENT 'FK a user_groups per sede GPS',
     email VARCHAR(255) DEFAULT NULL,
     phone VARCHAR(50) DEFAULT NULL,
     is_active TINYINT(1) DEFAULT 1,
@@ -9584,6 +9585,7 @@ CREATE TABLE IF NOT EXISTS crew_members (
     updated_ts BIGINT NOT NULL,
     INDEX idx_crew_external (external_id),
     INDEX idx_crew_external_group (external_group_id),
+    INDEX idx_crew_group (group_id),
     INDEX idx_crew_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
@@ -9595,6 +9597,7 @@ CREATE TABLE IF NOT EXISTS crew_members (
     name TEXT NOT NULL,
     external_id TEXT DEFAULT NULL,
     external_group_id TEXT DEFAULT NULL,
+    group_id INTEGER DEFAULT NULL,
     email TEXT DEFAULT NULL,
     phone TEXT DEFAULT NULL,
     is_active INTEGER DEFAULT 1,
@@ -9603,6 +9606,7 @@ CREATE TABLE IF NOT EXISTS crew_members (
 );
 CREATE INDEX IF NOT EXISTS idx_crew_external ON crew_members(external_id);
 CREATE INDEX IF NOT EXISTS idx_crew_external_group ON crew_members(external_group_id);
+CREATE INDEX IF NOT EXISTS idx_crew_group ON crew_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_crew_active ON crew_members(is_active);
 """
 
@@ -9668,6 +9672,29 @@ def ensure_crew_members_table(db: DatabaseLike) -> None:
                 app.logger.info("Colonna timbratura_override aggiunta a crew_members")
     except Exception as e:
         app.logger.warning("Migrazione timbratura_override: %s", e)
+    
+    # Migrazione: aggiunge colonna group_id per collegamento a user_groups (sede GPS)
+    try:
+        if DB_VENDOR == "mysql":
+            check = db.execute(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='crew_members' AND column_name='group_id'"
+            ).fetchone()
+            col_exists = (check[0] if check else 0) > 0
+            if not col_exists:
+                db.execute("ALTER TABLE crew_members ADD COLUMN group_id INT DEFAULT NULL COMMENT 'FK a user_groups per sede GPS'")
+                db.execute("CREATE INDEX idx_crew_group ON crew_members(group_id)")
+                db.commit()
+                app.logger.info("Colonna group_id aggiunta a crew_members")
+        else:
+            cols = db.execute("PRAGMA table_info(crew_members)").fetchall()
+            col_names = [c[1] for c in cols]
+            if "group_id" not in col_names:
+                db.execute("ALTER TABLE crew_members ADD COLUMN group_id INTEGER DEFAULT NULL")
+                db.execute("CREATE INDEX IF NOT EXISTS idx_crew_group ON crew_members(group_id)")
+                db.commit()
+                app.logger.info("Colonna group_id aggiunta a crew_members")
+    except Exception as e:
+        app.logger.warning("Migrazione group_id: %s", e)
 
 
 def sync_crew_member_from_rentman(db: DatabaseLike, rentman_id: int, name: str) -> None:
@@ -11238,6 +11265,34 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
     project_cache: Dict[int, Dict[str, Any]] = {}
     subproject_cache: Dict[int, Dict[str, Any]] = {}
     contact_cache: Dict[int, Dict[str, Any]] = {}
+    
+    # Pre-carica mapping crew_members -> group_id -> gps_location_name
+    ensure_crew_members_table(db)
+    ensure_user_groups_table(db)
+    
+    # Carica tutti i crew_members con il loro group_id
+    crew_group_map: Dict[int, int] = {}  # rentman_id -> group_id
+    if DB_VENDOR == "mysql":
+        crew_rows = db.execute("SELECT rentman_id, group_id FROM crew_members WHERE group_id IS NOT NULL").fetchall()
+    else:
+        crew_rows = db.execute("SELECT rentman_id, group_id FROM crew_members WHERE group_id IS NOT NULL").fetchall()
+    for row in crew_rows:
+        rentman_id = row["rentman_id"] if isinstance(row, Mapping) else row[0]
+        group_id = row["group_id"] if isinstance(row, Mapping) else row[1]
+        if rentman_id and group_id:
+            crew_group_map[rentman_id] = group_id
+    
+    # Carica tutti i gruppi con la loro sede GPS
+    group_gps_map: Dict[int, str] = {}  # group_id -> gps_location_name
+    if DB_VENDOR == "mysql":
+        group_rows = db.execute("SELECT id, gps_location_name FROM user_groups WHERE gps_location_name IS NOT NULL AND gps_location_name != ''").fetchall()
+    else:
+        group_rows = db.execute("SELECT id, gps_location_name FROM user_groups WHERE gps_location_name IS NOT NULL AND gps_location_name != ''").fetchall()
+    for row in group_rows:
+        group_id = row["id"] if isinstance(row, Mapping) else row[0]
+        gps_loc = row["gps_location_name"] if isinstance(row, Mapping) else row[1]
+        if group_id and gps_loc:
+            group_gps_map[group_id] = gps_loc
 
     results = []
     for planning in plannings:
@@ -11390,6 +11445,13 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
             except Exception as e:
                 app.logger.warning(f"Errore calcolo pausa: {e}")
         
+        # Recupera sede GPS di timbratura dal gruppo dell'operatore
+        gps_timbratura_location = None
+        if crew_id and crew_id in crew_group_map:
+            group_id = crew_group_map[crew_id]
+            if group_id in group_gps_map:
+                gps_timbratura_location = group_gps_map[group_id]
+        
         results.append({
             "id": planning.get("id"),
             "crew_id": crew_id,
@@ -11404,6 +11466,7 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
             "location_address": location_address,
             "location_lat": location_lat,
             "location_lon": location_lon,
+            "gps_timbratura_location": gps_timbratura_location,
             "start": planning.get("planperiod_start"),
             "end": planning.get("planperiod_end"),
             "break_minutes": break_minutes,
@@ -13375,7 +13438,14 @@ def admin_operators() -> ResponseReturnValue:
     if not session.get("is_admin"):
         flash("Accesso non autorizzato", "danger")
         return redirect(url_for("index"))
-    return render_template("admin_operators.html", is_admin=True)
+    
+    # Recupera i gruppi attivi per la selezione
+    db = get_db()
+    ensure_user_groups_table(db)
+    groups = db.execute("SELECT id, name, gps_location_name FROM user_groups WHERE is_active = 1 ORDER BY name").fetchall()
+    groups_list = [{"id": g[0], "name": g[1], "gps_location_name": g[2]} for g in groups]
+    
+    return render_template("admin_operators.html", is_admin=True, groups=groups_list)
 
 
 @app.get("/api/admin/operators")
@@ -13389,7 +13459,7 @@ def api_admin_operators_list() -> ResponseReturnValue:
     ensure_crew_members_table(db)
 
     cursor = db.execute(
-        "SELECT id, rentman_id, name, email, phone, is_active, created_ts, updated_ts, timbratura_override "
+        "SELECT id, rentman_id, name, email, phone, is_active, created_ts, updated_ts, timbratura_override, group_id "
         "FROM crew_members ORDER BY name"
     )
     rows = cursor.fetchall()
@@ -13412,7 +13482,8 @@ def api_admin_operators_list() -> ResponseReturnValue:
             "is_active": bool(row[5]),
             "created_ts": row[6],
             "updated_ts": row[7],
-            "timbratura_override": timbratura_override
+            "timbratura_override": timbratura_override,
+            "group_id": row[9] if len(row) > 9 else None
         })
 
     return jsonify({"ok": True, "operators": operators})
@@ -13482,6 +13553,20 @@ def api_admin_operators_update(operator_id: int) -> ResponseReturnValue:
             timbratura_override = None
         updates.append("timbratura_override = " + ("%s" if DB_VENDOR == "mysql" else "?"))
         params.append(timbratura_override)
+    
+    # Gestione gruppo (per sede GPS timbratura)
+    if "group_id" in data:
+        group_id = data.get("group_id")
+        # Se è stringa vuota o None, imposta a NULL
+        if group_id is None or group_id == "" or group_id == "null":
+            group_id = None
+        else:
+            try:
+                group_id = int(group_id)
+            except (ValueError, TypeError):
+                group_id = None
+        updates.append("group_id = " + ("%s" if DB_VENDOR == "mysql" else "?"))
+        params.append(group_id)
 
     if not updates:
         return jsonify({"error": "Nessun campo da aggiornare"}), 400
