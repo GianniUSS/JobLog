@@ -10573,7 +10573,7 @@ REQUEST_TYPES_TABLE_MYSQL = """
 CREATE TABLE IF NOT EXISTS request_types (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    value_type ENUM('hours', 'days', 'amount', 'km') NOT NULL,
+    value_type ENUM('hours', 'days', 'amount', 'km', 'minutes') NOT NULL,
     external_id VARCHAR(100),
     description TEXT,
     active TINYINT(1) DEFAULT 1,
@@ -10589,7 +10589,7 @@ REQUEST_TYPES_TABLE_SQLITE = """
 CREATE TABLE IF NOT EXISTS request_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    value_type TEXT NOT NULL CHECK(value_type IN ('hours', 'days', 'amount', 'km')),
+    value_type TEXT NOT NULL CHECK(value_type IN ('hours', 'days', 'amount', 'km', 'minutes')),
     external_id TEXT,
     description TEXT,
     active INTEGER DEFAULT 1,
@@ -10848,6 +10848,17 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
             cursor.close()
         except AttributeError:
             pass
+    
+    # Migrazione MySQL: aggiungi 'minutes' all'ENUM se non esiste
+    if DB_VENDOR == "mysql":
+        try:
+            db.execute("""
+                ALTER TABLE request_types 
+                MODIFY COLUMN value_type ENUM('hours', 'days', 'amount', 'km', 'minutes') NOT NULL
+            """)
+            db.commit()
+        except Exception:
+            pass  # Già aggiornato o errore ignorabile
     
     # Assicura che esista il tipo "Straordinario" per le richieste automatiche
     _ensure_overtime_request_type(db)
