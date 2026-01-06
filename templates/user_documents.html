@@ -114,24 +114,26 @@
         }
         
         .side-menu-header {
-            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
-            padding: calc(var(--safe-top) + 30px) 20px 25px;
+            padding: 20px;
+            padding-top: calc(20px + env(safe-area-inset-top, 0px));
+            border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 12px;
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
         }
         
         .side-menu-avatar {
-            width: 50px;
-            height: 50px;
+            width: 48px;
+            height: 48px;
             border-radius: 50%;
             background: rgba(255,255,255,0.2);
+            color: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
-            font-weight: 600;
-            font-size: 1.2rem;
+            font-size: 18px;
+            font-weight: 700;
         }
         
         .side-menu-user-info {
@@ -139,14 +141,14 @@
         }
         
         .side-menu-user-name {
+            font-size: 16px;
+            font-weight: 700;
             color: white;
-            font-weight: 600;
-            font-size: 1rem;
         }
         
         .side-menu-user-role {
             color: rgba(255,255,255,0.8);
-            font-size: 0.8rem;
+            font-size: 13px;
         }
         
         .side-menu-content {
@@ -244,7 +246,7 @@
         /* Header */
         .header {
             background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
-            padding: calc(var(--safe-top) + 20px) 20px 30px;
+            padding: calc(var(--safe-top) + 20px) 20px 20px;
             position: sticky;
             top: 0;
             z-index: 100;
@@ -283,6 +285,7 @@
         
         .hamburger-btn:hover {
             background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
         }
         
         .hamburger-btn span {
@@ -385,41 +388,48 @@
             letter-spacing: 0.5px;
         }
         
-        /* Filter Grid */
+        /* Filter Pills */
         .filter-pills {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
+            display: flex;
+            gap: 6px;
             margin-bottom: 20px;
+            padding: 4px 0;
+            flex-wrap: wrap;
+            justify-content: center;
         }
         
         .filter-pill {
-            padding: 12px 10px;
-            border-radius: 12px;
-            background: white;
-            border: 2px solid #e2e8f0;
-            color: #64748b;
-            font-size: 13px;
+            padding: 8px 12px;
+            border-radius: 50px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
+            white-space: nowrap;
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 8px;
+            gap: 5px;
         }
         
         .filter-pill i {
-            font-size: 14px;
+            font-size: 12px;
         }
         
         .filter-pill:hover {
-            border-color: #cbd5e1;
-            background: #f8fafc;
+            background: var(--bg-card-hover);
+            border-color: var(--brand-light);
         }
         
         .filter-pill:active {
             transform: scale(0.98);
+        }
+        
+        /* Wrapper per i filtri */
+        .filter-pills-wrapper {
+            position: relative;
         }
         
         .filter-pill.active {
@@ -963,8 +973,8 @@
                 <span></span>
             </button>
             <div class="header-title">
-                <h1>📄 Documenti</h1>
-                <p id="header-count">I tuoi documenti</p>
+                <h1>Documenti</h1>
+                <p id="header-count">Tutti i documenti letti</p>
             </div>
             <button class="refresh-btn" onclick="loadDocuments()">
                 <i class="fas fa-sync-alt"></i>
@@ -991,23 +1001,25 @@
         </div>
         
         <!-- Filters -->
-        <div class="filter-pills">
-            <button class="filter-pill active" data-filter="all">
-                <i class="fas fa-inbox"></i>
-                Tutti
-            </button>
-            <button class="filter-pill" data-filter="circolare">
-                <i class="fas fa-bullhorn"></i>
-                Circolari
-            </button>
-            <button class="filter-pill" data-filter="comunicazione">
-                <i class="fas fa-envelope"></i>
-                Comunicazioni
-            </button>
-            <button class="filter-pill" data-filter="busta_paga">
-                <i class="fas fa-file-invoice-dollar"></i>
-                Buste Paga
-            </button>
+        <div class="filter-pills-wrapper">
+            <div class="filter-pills">
+                <button class="filter-pill active" data-filter="all">
+                    <i class="fas fa-inbox"></i>
+                    Tutti
+                </button>
+                <button class="filter-pill" data-filter="circolare">
+                    <i class="fas fa-bullhorn"></i>
+                    Circolari
+                </button>
+                <button class="filter-pill" data-filter="comunicazione">
+                    <i class="fas fa-envelope"></i>
+                    Comunicazioni
+                </button>
+                <button class="filter-pill" data-filter="busta_paga">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    Buste Paga
+                </button>
+            </div>
         </div>
         
         <!-- Documents List -->
