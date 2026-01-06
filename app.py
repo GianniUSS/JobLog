@@ -10578,8 +10578,8 @@ CREATE TABLE IF NOT EXISTS request_types (
     description TEXT,
     active TINYINT(1) DEFAULT 1,
     sort_order INT DEFAULT 0,
-    created_ts BIGINT NOT NULL,
-    updated_ts BIGINT NOT NULL,
+    created_ts BIGINT NOT NULL DEFAULT 0,
+    updated_ts BIGINT NOT NULL DEFAULT 0,
     INDEX idx_request_type_active (active),
     INDEX idx_request_type_value (value_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -10849,8 +10849,19 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
         except AttributeError:
             pass
     
-    # Migrazione MySQL: aggiungi 'minutes' all'ENUM se non esiste
+    # Migrazione MySQL: aggiungi DEFAULT alle colonne timestamp se mancante
     if DB_VENDOR == "mysql":
+        try:
+            db.execute("ALTER TABLE request_types MODIFY COLUMN created_ts BIGINT NOT NULL DEFAULT 0")
+            db.commit()
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE request_types MODIFY COLUMN updated_ts BIGINT NOT NULL DEFAULT 0")
+            db.commit()
+        except Exception:
+            pass
+        # Poi aggiungi 'minutes' all'ENUM
         try:
             db.execute("""
                 ALTER TABLE request_types 
