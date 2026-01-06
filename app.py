@@ -10857,8 +10857,9 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
                 MODIFY COLUMN value_type ENUM('hours', 'days', 'amount', 'km', 'minutes') NOT NULL
             """)
             db.commit()
-        except Exception:
-            pass  # Già aggiornato o errore ignorabile
+            app.logger.info("Migrazione ENUM value_type completata con successo")
+        except Exception as e:
+            app.logger.warning(f"Migrazione ENUM value_type: {e}")
     
     # Assicura che esista il tipo "Straordinario" per le richieste automatiche
     _ensure_overtime_request_type(db)
@@ -14185,14 +14186,20 @@ def api_admin_request_types_list() -> ResponseReturnValue:
     if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
-    db = get_db()
-    ensure_request_types_table(db)
-    
-    rows = db.execute("""
-        SELECT id, name, value_type, external_id, description, active, sort_order, created_ts, updated_ts
-        FROM request_types
-        ORDER BY sort_order ASC, name ASC
-    """).fetchall()
+    try:
+        db = get_db()
+        ensure_request_types_table(db)
+        
+        rows = db.execute("""
+            SELECT id, name, value_type, external_id, description, active, sort_order, created_ts, updated_ts
+            FROM request_types
+            ORDER BY sort_order ASC, name ASC
+        """).fetchall()
+    except Exception as e:
+        app.logger.error(f"Errore in api_admin_request_types_list: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
     types = []
     for row in rows:
