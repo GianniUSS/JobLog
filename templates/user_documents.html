@@ -242,6 +242,28 @@
             transform: translateX(20px);
         }
         
+        /* Menu Footer con Logo */
+        .side-menu-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+        .side-menu-footer img {
+            max-width: 120px;
+            max-height: 40px;
+            object-fit: contain;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .side-menu-footer img:hover {
+            opacity: 1;
+        }
+        .side-menu-footer-text {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+        
         /* Header */
         .header {
             background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
@@ -961,6 +983,12 @@
                 </a>
             </div>
         </div>
+        
+        {% if company_logo %}
+        <div class="side-menu-footer">
+            <img src="{{ company_logo }}" alt="Logo Azienda">
+        </div>
+        {% endif %}
     </div>
 
     <!-- Header -->
