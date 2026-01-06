@@ -1,4 +1,4 @@
-const CACHE_NAME = 'joblog-v2026.01.06c';
+const CACHE_NAME = 'joblog-v2026.01.06d';
 const STATIC_CACHE = 'joblog-static-v29';
 const DYNAMIC_CACHE = 'joblog-dynamic-v29';
 const API_CACHE = 'joblog-api-v27';
