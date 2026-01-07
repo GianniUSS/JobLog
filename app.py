@@ -10785,6 +10785,8 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     location_address VARCHAR(500),
     location_lat DECIMAL(10,7),
     location_lon DECIMAL(10,7),
+    timbratura_gps_mode VARCHAR(20) DEFAULT 'group',
+    gps_timbratura_location VARCHAR(255),
     plan_start DATETIME,
     plan_end DATETIME,
     break_start TIME DEFAULT NULL COMMENT 'Inizio pausa',
