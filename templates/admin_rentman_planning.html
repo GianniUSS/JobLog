@@ -479,6 +479,168 @@
             margin-top: 4px;
             opacity: 0.9;
         }
+        
+        /* Pannello Laterale Location */
+        .locations-panel {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 400px;
+            max-width: 90vw;
+            height: 100vh;
+            background: var(--bg-card);
+            border-left: 1px solid var(--border);
+            z-index: 1001;
+            transition: right 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        .locations-panel.open {
+            right: 0;
+        }
+        .locations-panel-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .locations-panel-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .locations-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-soft);
+        }
+        .locations-panel-header h3 {
+            margin: 0;
+            font-size: 16px;
+            color: var(--text);
+        }
+        .locations-panel-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: var(--muted);
+            padding: 4px 8px;
+        }
+        .locations-panel-close:hover {
+            color: var(--text);
+        }
+        .locations-panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        .location-card {
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+        .location-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+        .location-card-name {
+            font-weight: 700;
+            color: var(--warning);
+            font-size: 14px;
+        }
+        .location-card-project {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+        .location-card-address {
+            font-size: 12px;
+            color: var(--text);
+            margin: 8px 0;
+            opacity: 0.9;
+        }
+        .location-card-coords {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .location-card-coords input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 12px;
+            font-family: monospace;
+        }
+        .location-card-coords input:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .location-card-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .location-card-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .location-card-btn.save {
+            background: var(--success);
+            color: white;
+        }
+        .location-card-btn.save:hover {
+            opacity: 0.9;
+        }
+        .location-card-btn.maps {
+            background: var(--brand);
+            color: white;
+        }
+        .location-card-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .location-card-status.ok {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+        }
+        .location-card-status.missing {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+        }
+        .location-card-operators {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+        }
+        
         .time-info {
             display: flex;
             flex-direction: column;
@@ -764,9 +926,33 @@
             border-radius: 999px;
             font-size: 11px;
             font-weight: 600;
+            margin-top: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .gps-timbratura-badge:hover {
+            transform: scale(1.05);
+        }
+        .gps-timbratura-badge.mode-group {
             background: rgba(34, 197, 94, 0.15);
             color: var(--success);
-            margin-top: 4px;
+        }
+        .gps-timbratura-badge.mode-location {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+        }
+        .gps-timbratura-badge.mode-location.no-coords {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+        }
+        .gps-timbratura-badge.mode-group.no-coords {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+        }
+        .gps-timbratura-badge.no-coords:not(.mode-group):not(.mode-location) {
+            background: rgba(100, 100, 100, 0.15);
+            color: var(--muted);
+            cursor: default;
         }
         .planning-item.modified {
             border-left: 3px solid var(--warning);
@@ -859,6 +1045,7 @@
             </div>
         </div>
         <div class="header-actions">
+            <button class="header-icon-btn" onclick="toggleLocationsPanel()" title="Gestisci Location">📍</button>
             <button class="header-icon-btn" onclick="refreshData()" title="Aggiorna">↻</button>
             <button class="header-icon-btn" onclick="toggleTheme()" title="Tema">🌓</button>
             <div class="header-user">
@@ -867,6 +1054,20 @@
             </div>
         </div>
     </header>
+
+    <!-- Pannello Laterale Location -->
+    <aside class="locations-panel" id="locationsPanel">
+        <div class="locations-panel-header">
+            <h3>📍 Location della Giornata</h3>
+            <button class="locations-panel-close" onclick="toggleLocationsPanel()">✕</button>
+        </div>
+        <div class="locations-panel-content" id="locationsPanelContent">
+            <p style="color: var(--muted); text-align: center; padding: 20px;">
+                Carica le pianificazioni per vedere le location
+            </p>
+        </div>
+    </aside>
+    <div class="locations-panel-overlay" id="locationsPanelOverlay" onclick="toggleLocationsPanel()"></div>
 
     <main>
         <div class="controls">
@@ -970,6 +1171,11 @@
     function toggleMenu() {
         document.getElementById('sideMenu').classList.toggle('open');
         document.getElementById('menuOverlay').classList.toggle('open');
+    }
+    
+    function toggleLocationsPanel() {
+        document.getElementById('locationsPanel').classList.toggle('open');
+        document.getElementById('locationsPanelOverlay').classList.toggle('open');
     }
     
     function closeMenu() {
@@ -1084,6 +1290,19 @@
             return num.toFixed(1) + 'h';
         }
 
+        function getEffectiveHours(planning) {
+            // Calcola le ore effettive sottraendo la pausa
+            let hoursPlanned = parseFloat(planning.hours_planned) || 0;
+            // Se > 100 è in secondi, convertilo in ore
+            if (hoursPlanned > 100) {
+                hoursPlanned = hoursPlanned / 3600;
+            }
+            // Sottrai la pausa (in minuti -> ore)
+            const breakMinutes = parseInt(planning.break_minutes) || 0;
+            const breakHours = breakMinutes / 60;
+            return Math.max(0, hoursPlanned - breakHours);
+        }
+
         function formatTransport(t) {
             const map = {
                 'no_transport': '🚫 Nessun trasporto',
@@ -1113,6 +1332,24 @@
             isFromDatabase = false;
 
             try {
+                // Prima carica i dati esistenti dal DB per preservare campi personalizzati
+                let savedDataMap = new Map();
+                try {
+                    const savedRes = await fetch(`/api/admin/rentman-planning/saved?date=${encodeURIComponent(date)}`);
+                    const savedData = await savedRes.json();
+                    if (savedRes.ok && savedData.plannings) {
+                        savedData.plannings.forEach(p => {
+                            // Usa rentman_id come chiave
+                            if (p.rentman_id) {
+                                savedDataMap.set(String(p.rentman_id), p);
+                            }
+                        });
+                        console.log('Dati salvati caricati per merge:', savedDataMap.size);
+                    }
+                } catch (e) {
+                    console.log('Nessun dato salvato da mergiare');
+                }
+
                 const resp = await fetch(`/api/admin/rentman-planning?date=${date}`);
                 const data = await resp.json();
 
@@ -1120,7 +1357,37 @@
                     throw new Error(data.error || data.details || 'Errore sconosciuto');
                 }
 
-                currentPlannings = data.plannings || [];
+                // Merge: prendi dati Rentman e aggiungi campi personalizzati dal DB
+                currentPlannings = (data.plannings || []).map(p => {
+                    const rentmanId = String(p.rentman_id || p.id);
+                    const saved = savedDataMap.get(rentmanId);
+                    if (saved) {
+                        // Preserva campi personalizzati dal DB
+                        // Le coordinate manuali hanno priorità su quelle di Rentman (che spesso sono 0,0 o null)
+                        const hasManualCoords = saved.location_lat && saved.location_lon && 
+                            (saved.location_lat != 0 || saved.location_lon != 0);
+                        const rentmanHasCoords = p.location_lat && p.location_lon && 
+                            (p.location_lat != 0 || p.location_lon != 0);
+                        
+                        return {
+                            ...p,
+                            id: saved.id,  // Usa l'ID del DB
+                            rentman_id: p.rentman_id || p.id,  // Preserva sempre il rentman_id originale
+                            timbratura_gps_mode: saved.timbratura_gps_mode || 'group',
+                            gps_timbratura_location: saved.gps_timbratura_location || p.gps_timbratura_location,
+                            // Preserva coordinate manuali se Rentman non le ha
+                            location_lat: rentmanHasCoords ? p.location_lat : (hasManualCoords ? saved.location_lat : p.location_lat),
+                            location_lon: rentmanHasCoords ? p.location_lon : (hasManualCoords ? saved.location_lon : p.location_lon),
+                            break_start: saved.break_start,
+                            break_end: saved.break_end,
+                            break_minutes: saved.break_minutes,
+                            sent_to_webservice: saved.sent_to_webservice,
+                            sent_ts: saved.sent_ts
+                        };
+                    }
+                    return p;
+                });
+
                 renderPlannings(currentPlannings);
                 updateSummary(currentPlannings);
                 updateSendButtonState();
@@ -1167,7 +1434,59 @@
                 : '⬜ Seleziona Tutto';
             btnSend.style.display = 'inline-flex';
 
-            planningList.innerHTML = plannings.map((p, idx) => `
+            planningList.innerHTML = plannings.map((p, idx) => {
+                const gpsMode = p.timbratura_gps_mode || 'group';
+                const hasLocationCoords = p.location_lat && p.location_lon;
+                const hasGroupLocation = p.gps_timbratura_location;
+                const hasLocation = p.location_name;
+                
+                // Costruisci il badge GPS cliccabile
+                let gpsBadgeHtml = '';
+                if (gpsMode === 'location') {
+                    // Modalità location progetto
+                    if (hasLocation) {
+                        gpsBadgeHtml = `<div class="gps-timbratura-badge mode-location ${!hasLocationCoords ? 'no-coords' : ''}" 
+                            onclick="toggleGpsMode(${idx})" 
+                            title="Timbratura presso location progetto${!hasLocationCoords ? ' - ⚠️ Coordinate mancanti!' : ''}\nClicca per passare a sede gruppo">
+                            🎯 Location ${!hasLocationCoords ? '⚠️' : '✓'}
+                        </div>`;
+                    } else {
+                        // Location mode ma senza location - mostra warning
+                        gpsBadgeHtml = `<div class="gps-timbratura-badge mode-location no-coords" 
+                            onclick="toggleGpsMode(${idx})" 
+                            title="Modalità location ma nessuna location associata!\nClicca per passare a sede gruppo">
+                            🎯 No Location ⚠️
+                        </div>`;
+                    }
+                } else {
+                    // Modalità sede gruppo (default)
+                    if (hasGroupLocation) {
+                        // Mostra il nome della sede del gruppo
+                        const sedeNome = p.gps_timbratura_location.length > 20 
+                            ? p.gps_timbratura_location.substring(0, 18) + '...' 
+                            : p.gps_timbratura_location;
+                        gpsBadgeHtml = `<div class="gps-timbratura-badge mode-group" 
+                            onclick="toggleGpsMode(${idx})" 
+                            title="Timbratura presso: ${escapeHtml(p.gps_timbratura_location)}\n${hasLocation ? 'Clicca per passare a location progetto' : 'Nessuna location alternativa'}">
+                            📍 ${escapeHtml(sedeNome)}
+                        </div>`;
+                    } else if (hasLocation) {
+                        // Nessuna sede gruppo ma c'è una location - suggerisci di usarla
+                        gpsBadgeHtml = `<div class="gps-timbratura-badge mode-group no-coords" 
+                            onclick="toggleGpsMode(${idx})" 
+                            title="Nessuna sede gruppo configurata\nClicca per usare la location progetto">
+                            📍 No Sede ⚠️
+                        </div>`;
+                    } else {
+                        // Nessuna sede e nessuna location
+                        gpsBadgeHtml = `<div class="gps-timbratura-badge no-coords" 
+                            title="Nessuna sede gruppo né location configurata">
+                            📍 GPS N/D
+                        </div>`;
+                    }
+                }
+                
+                return `
                 <div class="planning-item ${p.sent_to_webservice ? 'sent' : ''} ${p.is_modified ? 'modified' : ''}" data-idx="${idx}">
                     <div class="checkbox-col">
                         <input type="checkbox" class="planning-checkbox" data-idx="${idx}" ${selectedIds.has(idx) ? 'checked' : ''}>
@@ -1180,7 +1499,7 @@
                             ${p.sent_to_webservice && !p.is_modified ? '<span class="sent-badge">✓ INVIATO</span>' : ''}
                         </div>
                         ${p.sent_ts ? `<div class="sent-time">Inviato: ${p.sent_ts}</div>` : ''}
-                        ${p.gps_timbratura_location ? `<div class="gps-timbratura-badge" title="Sede GPS per timbratura">📍 ${escapeHtml(p.gps_timbratura_location)}</div>` : ''}
+                        ${gpsBadgeHtml}
                     </div>
                     <div class="project-info">
                         <div class="project-name">${escapeHtml(p.project_name || 'Progetto N/D')}</div>
@@ -1195,6 +1514,9 @@
                                     </a>` : 
                                     escapeHtml(p.location_name)
                                 }
+                                <span style="margin-left: 8px; font-size: 10px; color: ${p.location_lat && p.location_lon ? 'var(--success)' : 'var(--danger)'};">
+                                    ${p.location_lat && p.location_lon ? '✓ GPS' : '⚠ No GPS'}
+                                </span>
                             </div>
                             ${p.location_address ? `<div class="location-address"><i class="bi bi-signpost-2"></i> ${escapeHtml(p.location_address)}</div>` : ''}
                         </div>` : ''}
@@ -1206,7 +1528,7 @@
                             <button class="break-edit-btn" onclick="openBreakModal(${idx})">✏️ Modifica</button>
                         </div>
                         <div class="hours-info">
-                            ${p.hours_planned ? `Pianificate: ${formatHours(p.hours_planned)}` : ''}
+                            ${p.hours_planned ? `Pianificate: ${formatHours(getEffectiveHours(p))}` : ''}
                             ${p.hours_registered ? ` · <span class="joblog-hours" title="Ore registrate in JobLog${p.hours_rentman ? ' (Rentman: ' + formatHours(p.hours_rentman) + ')' : ''}">Registrate: ${formatHours(p.hours_registered)}</span>` : (p.hours_rentman ? ` · <span class="rentman-hours" title="Ore da Rentman (nessun dato JobLog)">Rentman: ${formatHours(p.hours_rentman)}</span>` : '')}
                         </div>
                     </div>
@@ -1215,7 +1537,7 @@
                         ${p.transport && p.transport !== 'no_transport' ? `<div class="transport-badge">${formatTransport(p.transport)}</div>` : ''}
                     </div>
                 </div>
-            `).join('');
+            `;}).join('');
 
             // Aggiungi event listener ai checkbox
             document.querySelectorAll('.planning-checkbox').forEach(cb => {
@@ -1229,6 +1551,9 @@
                     updateSendButtonState();
                 });
             });
+            
+            // Aggiorna pannello location
+            updateLocationsPanel();
         }
 
         function updateSummary(plannings) {
@@ -1241,9 +1566,9 @@
             summaryCrew.textContent = uniqueCrew.size;
 
             const totalSeconds = plannings.reduce((sum, p) => {
-                const val = parseFloat(p.hours_planned) || 0;
-                // Se > 100 è in secondi, altrimenti già in ore
-                return sum + (val > 100 ? val : val * 3600);
+                const effectiveHours = getEffectiveHours(p);
+                // Converti in secondi
+                return sum + (effectiveHours * 3600);
             }, 0);
             const totalHours = totalSeconds / 3600;
             summaryHours.textContent = totalHours.toFixed(1) + 'h';
@@ -1649,6 +1974,52 @@
             await saveBreak();
         }
 
+        // Toggle modalità GPS timbratura (sede gruppo vs location progetto)
+        window.toggleGpsMode = async function(idx) {
+            const planning = currentPlannings[idx];
+            if (!planning) return;
+            
+            // Verifica se la location ha coordinate
+            const hasLocationCoords = planning.location_lat && planning.location_lon;
+            const currentMode = planning.timbratura_gps_mode || 'group';
+            
+            // Se modalità attuale è 'group', passa a 'location' (e viceversa)
+            let newMode = currentMode === 'group' ? 'location' : 'group';
+            
+            // Se stiamo passando a 'location' ma non ci sono coordinate, avvisa
+            if (newMode === 'location' && !hasLocationCoords) {
+                if (!confirm('⚠️ La location non ha coordinate GPS impostate.\n\nVuoi comunque impostare la modalità Location?\n(Potrai aggiungere le coordinate dal pannello Location a sinistra)')) {
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch('/api/admin/rentman/planning/update-gps-mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: planning.id,
+                        timbratura_gps_mode: newMode
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    // Aggiorna lo stato locale
+                    currentPlannings[idx].timbratura_gps_mode = newMode;
+                    renderPlannings(currentPlannings);
+                    
+                    const modeLabel = newMode === 'location' ? 'Location Progetto' : 'Sede Gruppo';
+                    showMessage(`Modalità GPS cambiata a: ${modeLabel}`, 'success');
+                } else {
+                    showMessage(data.error || 'Errore nel cambio modalità', 'error');
+                }
+            } catch (err) {
+                console.error('Errore cambio modalità GPS:', err);
+                showMessage('Errore di connessione', 'error');
+            }
+        }
+
         // Chiudi modal con click fuori o ESC
         breakModalOverlay.addEventListener('click', (e) => {
             if (e.target === breakModalOverlay) closeBreakModal();
@@ -1697,6 +2068,187 @@
             setTimeout(() => toast.remove(), 3000);
         }
 
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // PANNELLO LOCATION LATERALE
+        // ═══════════════════════════════════════════════════════════════════════════════
+        const locationsPanelContent = document.getElementById('locationsPanelContent');
+        
+        function updateLocationsPanel() {
+            if (!currentPlannings || currentPlannings.length === 0) {
+                locationsPanelContent.innerHTML = `
+                    <p style="color: var(--muted); text-align: center; padding: 20px;">
+                        Carica le pianificazioni per vedere le location
+                    </p>
+                `;
+                return;
+            }
+            
+            // Raggruppa per location_id (location uniche)
+            const locationsMap = new Map();
+            
+            currentPlannings.forEach(p => {
+                if (!p.location_name) return;
+                
+                const key = p.location_id || p.location_name;
+                if (!locationsMap.has(key)) {
+                    locationsMap.set(key, {
+                        id: p.location_id,
+                        name: p.location_name,
+                        address: p.location_address,
+                        lat: p.location_lat,
+                        lon: p.location_lon,
+                        project: p.project_name,
+                        operators: [],
+                        planningIds: []
+                    });
+                }
+                const loc = locationsMap.get(key);
+                if (!loc.operators.includes(p.crew_name)) {
+                    loc.operators.push(p.crew_name);
+                }
+                loc.planningIds.push(p.id);
+            });
+            
+            if (locationsMap.size === 0) {
+                locationsPanelContent.innerHTML = `
+                    <p style="color: var(--muted); text-align: center; padding: 20px;">
+                        Nessuna location nelle pianificazioni
+                    </p>
+                `;
+                return;
+            }
+            
+            let html = '';
+            locationsMap.forEach((loc, key) => {
+                const hasCoords = loc.lat && loc.lon;
+                html += `
+                    <div class="location-card" data-location-key="${escapeHtml(String(key))}">
+                        <div class="location-card-header">
+                            <div>
+                                <div class="location-card-name">${escapeHtml(loc.name)}</div>
+                                <div class="location-card-project">${escapeHtml(loc.project || '')}</div>
+                            </div>
+                            <span class="location-card-status ${hasCoords ? 'ok' : 'missing'}">
+                                ${hasCoords ? '✓ GPS OK' : '⚠ No GPS'}
+                            </span>
+                        </div>
+                        ${loc.address ? `<div class="location-card-address">📍 ${escapeHtml(loc.address)}</div>` : ''}
+                        
+                        <div class="location-card-coords">
+                            <input type="text" placeholder="Lat" value="${loc.lat || ''}" 
+                                   data-field="lat" data-key="${escapeHtml(String(key))}"
+                                   style="width: 45%;">
+                            <input type="text" placeholder="Lon" value="${loc.lon || ''}" 
+                                   data-field="lon" data-key="${escapeHtml(String(key))}"
+                                   style="width: 45%;">
+                        </div>
+                        
+                        <div class="location-card-actions">
+                            ${loc.address ? `
+                                <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps/search/${encodeURIComponent(loc.address)}', '_blank')">
+                                    🗺️ Maps
+                                </button>
+                            ` : ''}
+                            <button class="location-card-btn save" onclick="saveLocationCoords('${escapeHtml(String(key))}')">
+                                💾 Salva
+                            </button>
+                        </div>
+                        
+                        <div class="location-card-operators">
+                            👥 ${loc.operators.join(', ')}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            locationsPanelContent.innerHTML = html;
+        }
+        
+        window.saveLocationCoords = async function(locationKey) {
+            const card = document.querySelector(`.location-card[data-location-key="${locationKey}"]`);
+            if (!card) return;
+            
+            const latInput = card.querySelector('input[data-field="lat"]');
+            const lonInput = card.querySelector('input[data-field="lon"]');
+            
+            const lat = parseFloat(latInput.value) || null;
+            const lon = parseFloat(lonInput.value) || null;
+            
+            // Valida coordinate
+            if ((lat && !lon) || (!lat && lon)) {
+                showMessage('Inserisci entrambe le coordinate', 'error');
+                return;
+            }
+            if (lat && (lat < -90 || lat > 90)) {
+                showMessage('Latitudine non valida', 'error');
+                return;
+            }
+            if (lon && (lon < -180 || lon > 180)) {
+                showMessage('Longitudine non valida', 'error');
+                return;
+            }
+            
+            // Trova tutti i planning con questa location
+            const planningsToUpdate = currentPlannings.filter(p => {
+                const key = p.location_id || p.location_name;
+                return String(key) === locationKey;
+            });
+            
+            if (planningsToUpdate.length === 0) {
+                showMessage('Nessuna pianificazione trovata', 'error');
+                return;
+            }
+            
+            // Aggiorna tutte le pianificazioni con questa location
+            let successCount = 0;
+            for (const p of planningsToUpdate) {
+                try {
+                    // Usa l'ID del DB se disponibile, altrimenti rentman_id
+                    const payload = {
+                        date: dateInput.value,
+                        location_lat: lat,
+                        location_lon: lon
+                    };
+                    
+                    // Priorità: id DB > rentman_id > id generico
+                    if (p.id && typeof p.id === 'number') {
+                        payload.id = p.id;
+                    } else if (p.rentman_id) {
+                        payload.rentman_id = p.rentman_id;
+                    } else if (p.id) {
+                        // p.id potrebbe essere il rentman_id
+                        payload.rentman_id = p.id;
+                    }
+                    
+                    console.log('Salvataggio coordinate per:', payload);
+                    
+                    const res = await fetch('/api/admin/rentman/planning/update-coords', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const data = await res.json();
+                    if (data.success) {
+                        // Aggiorna i dati locali
+                        p.location_lat = lat;
+                        p.location_lon = lon;
+                        successCount++;
+                    }
+                } catch (err) {
+                    console.error('Errore salvataggio coordinate:', err);
+                }
+            }
+            
+            if (successCount > 0) {
+                showMessage(`Coordinate aggiornate per ${successCount} pianificazioni`, 'success');
+                renderPlannings(currentPlannings);
+                updateLocationsPanel();
+            } else {
+                showMessage('Errore nel salvataggio', 'error');
+            }
+        }
+
         dateInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') loadPlannings();
         });
@@ -1713,6 +2265,14 @@
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
+            // Chiudi pannello location con ESC
+            if (e.key === 'Escape') {
+                const panel = document.getElementById('locationsPanel');
+                if (panel.classList.contains('open')) {
+                    toggleLocationsPanel();
+                    return;
+                }
+            }
             if (e.target.tagName === 'INPUT') return;
             if (e.key === 'r' || e.key === 'R') {
                 e.preventDefault();

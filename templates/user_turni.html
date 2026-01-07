@@ -398,32 +398,47 @@ body {
 
 .turno-details {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
 }
 
 .turno-detail {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 0.9rem;
+  gap: 8px;
+  font-size: 0.85rem;
   color: var(--text-secondary);
 }
 
 .turno-detail .icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
   background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .turno-detail .value {
   font-weight: 600;
   color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.turno-detail.full-width {
+  grid-column: 1 / -1;
+}
+
+.turno-detail.timbratura .icon {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.turno-detail.location .icon {
+  background: var(--info-bg);
+  color: var(--info);
 }
 
 .turno-note {
@@ -1119,6 +1134,14 @@ function showToastGlobal(message) {
   const statUpcoming = document.getElementById('statUpcoming');
   const statHours = document.getElementById('statHours');
 
+  // Calcola ore effettive sottraendo la pausa
+  function getEffectiveHours(turno) {
+    const hours = turno.hours || 0;
+    const breakMinutes = parseInt(turno.break_minutes) || 0;
+    const breakHours = breakMinutes / 60;
+    return Math.max(0, hours - breakHours);
+  }
+
   // Gestione indicatore scroll per i filtri
   function checkScrollIndicator() {
     if (filterPillsContainer && scrollIndicator) {
@@ -1205,7 +1228,7 @@ function showToastGlobal(message) {
     
     const turniOggi = allTurni.filter(t => t.date === today).length;
     const turniProssimi = allTurni.filter(t => t.date > today).length;
-    const oreTotali = allTurni.reduce((sum, t) => sum + (t.hours || 0), 0);
+    const oreTotali = allTurni.reduce((sum, t) => sum + getEffectiveHours(t), 0);
     
     statToday.textContent = turniOggi;
     statUpcoming.textContent = turniProssimi;
@@ -1276,25 +1299,37 @@ function showToastGlobal(message) {
               ${turno.hours ? `
                 <div class="turno-detail">
                   <span class="icon"><i class="fas fa-hourglass-half"></i></span>
-                  <span class="value">${turno.hours.toFixed(1)}h</span>
+                  <span class="value">${getEffectiveHours(turno).toFixed(1)}h</span>
                 </div>
               ` : ''}
               ${turno.break_minutes ? `
                 <div class="turno-detail">
                   <span class="icon"><i class="fas fa-mug-hot"></i></span>
-                  <span class="value">Pausa ${turno.break_minutes} min</span>
+                  <span class="value">${turno.break_minutes}min pausa</span>
                 </div>
               ` : ''}
               ${turno.function ? `
                 <div class="turno-detail">
-                  <span class="icon"><i class="fas fa-user-hard-hat"></i></span>
+                  <span class="icon"><i class="fas fa-user"></i></span>
                   <span class="value">${turno.function}</span>
                 </div>
               ` : ''}
-              ${turno.transport ? `
+              ${turno.transport && turno.transport !== 'no_transport' ? `
                 <div class="turno-detail">
                   <span class="icon"><i class="fas fa-car"></i></span>
                   <span class="value">${turno.transport}</span>
+                </div>
+              ` : ''}
+              ${turno.location_name ? `
+                <div class="turno-detail location full-width">
+                  <span class="icon"><i class="fas fa-map-marker-alt"></i></span>
+                  <span class="value">${turno.location_name}</span>
+                </div>
+              ` : ''}
+              ${turno.timbratura_location ? `
+                <div class="turno-detail timbratura full-width">
+                  <span class="icon"><i class="fas fa-fingerprint"></i></span>
+                  <span class="value">Timbra: ${turno.timbratura_location}</span>
                 </div>
               ` : ''}
             </div>

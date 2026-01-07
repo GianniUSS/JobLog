@@ -10,6 +10,7 @@
 <link rel="manifest" href="/static/manifest.json" />
 <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <title>Timbratura - JOBLog</title>
 <style>
 :root {
@@ -119,6 +120,36 @@ body {
   flex-shrink: 0;
 }
 
+.refresh-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1.1rem;
+}
+
+.refresh-btn:hover {
+  background: rgba(255,255,255,0.3);
+  transform: scale(1.05);
+}
+
+.refresh-btn.loading i {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .container {
   max-width: 420px;
   margin: 0 auto;
@@ -145,7 +176,7 @@ header {
 }
 .clock-section {
   text-align: center;
-  padding: 24px 0 32px;
+  padding: 6px 0 10px;
 }
 .clock {
   font-size: 64px;
@@ -886,6 +917,20 @@ header {
   background: #fbbf24;
   color: #92400e;
 }
+.turno-timbratura {
+  width: 100%;
+  background: rgba(255,255,255,0.15);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-top: 4px;
+  font-weight: 500;
+}
+.turno-timbratura .icon {
+  font-size: 16px;
+}
+.turno-timbratura.no-gps {
+  background: rgba(239, 68, 68, 0.3);
+}
 .turno-loading {
   text-align: center;
   padding: 12px;
@@ -1434,7 +1479,9 @@ header {
       <h1>Timbratura</h1>
       <p id="currentDate">Caricamento...</p>
     </div>
-    <div class="main-header-spacer"></div>
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshPage()">
+      <i class="fas fa-sync-alt"></i>
+    </button>
   </div>
 </div>
 
@@ -1583,21 +1630,16 @@ header {
       <div class="turno-content">
         <div class="turno-project" id="turnoProject">-</div>
         <div class="turno-details">
-          <div class="turno-detail" id="turnoOrario">
+          <div class="turno-detail turno-detail-row" id="turnoOrarioRow">
             <span class="icon">🕐</span>
             <span id="turnoOrarioText">-</span>
-          </div>
-          <div class="turno-detail" id="turnoPausa" style="display:none;">
-            <span class="icon">☕</span>
-            <span id="turnoPausaText">-</span>
-          </div>
-          <div class="turno-detail" id="turnoFunzione">
-            <span class="icon">👤</span>
+            <span id="turnoPausaInline" style="display:none; margin-left: 8px; opacity: 0.8;"></span>
+            <span class="icon" style="margin-left: 12px;">👤</span>
             <span id="turnoFunzioneText">-</span>
           </div>
-          <div class="turno-detail" id="turnoLocation" style="display:none;">
+          <div class="turno-detail turno-timbratura" id="turnoTimbratura" style="display:none;">
             <span class="icon">📍</span>
-            <span id="turnoLocationText">-</span>
+            <span id="turnoTimbraturaText">-</span>
           </div>
         </div>
         <span class="turno-badge" id="turnoBadge" style="display:none;"></span>
@@ -1840,7 +1882,10 @@ function openGpsModal(label) {
   
   // Mostra la sede specifica del turno se presente, altrimenti tutte le location
   let locationNames;
-  if (currentShiftLocationName) {
+  // Usa currentShiftGpsData se ha dati GPS configurati, altrimenti currentShiftLocationName
+  if (currentShiftGpsData && currentShiftGpsData.location) {
+    locationNames = currentShiftGpsData.location;
+  } else if (currentShiftLocationName) {
     locationNames = currentShiftLocationName;
   } else {
     locationNames = timbraturaConfig.gps_locations.map(l => l.name).join(', ') || 'Sede';
@@ -1905,8 +1950,18 @@ function onGpsSuccess(position) {
   let nearestLocation = null;
   let locations = timbraturaConfig.gps_locations || [];
   
-  // Filtra per sede specifica del turno se presente
-  if (currentShiftLocationName && locations.length > 0) {
+  // Priorità 1: Usa le coordinate dal turno Rentman (currentShiftGpsData)
+  if (currentShiftGpsData && currentShiftGpsData.lat && currentShiftGpsData.lon) {
+    // Crea una location temporanea con le coordinate del turno
+    locations = [{
+      name: currentShiftGpsData.location || 'Sede',
+      latitude: parseFloat(currentShiftGpsData.lat),
+      longitude: parseFloat(currentShiftGpsData.lon),
+      radius_meters: 100
+    }];
+  }
+  // Priorità 2: Filtra per sede specifica del turno se presente nelle gps_locations
+  else if (currentShiftLocationName && locations.length > 0) {
     const filteredLocations = locations.filter(l => l.name === currentShiftLocationName);
     if (filteredLocations.length > 0) {
       locations = filteredLocations;
@@ -2515,6 +2570,7 @@ async function loadTimbrature() {
 let allTurni = [];
 let currentTurnoIndex = 0;
 let currentShiftLocationName = null; // Sede GPS associata al turno corrente
+let currentShiftGpsData = null; // Dati GPS per la timbratura del turno corrente
 
 // Carica turno di oggi (da Rentman)
 async function loadTurno() {
@@ -2571,7 +2627,8 @@ function displayTurno(index) {
   const turno = allTurni[index];
   
   // Memorizza la sede corrente per la validazione GPS
-  currentShiftLocationName = turno.location_name || null;
+  // Priorità: timbratura_location (sede GPS configurata) > location_name (location progetto)
+  currentShiftLocationName = turno.timbratura_location || turno.location_name || null;
   
   // Progetto
   const projectText = turno.project_name || turno.project_code || 'Progetto';
@@ -2579,7 +2636,6 @@ function displayTurno(index) {
   
   // Orario
   if (turno.start || turno.end) {
-    document.getElementById('turnoOrario').style.display = 'flex';
     let orarioText = '';
     if (turno.start && turno.end) {
       orarioText = `${turno.start} - ${turno.end}`;
@@ -2589,35 +2645,59 @@ function displayTurno(index) {
       orarioText = `${turno.hours}h previste`;
     }
     document.getElementById('turnoOrarioText').textContent = orarioText;
-  } else {
-    document.getElementById('turnoOrario').style.display = 'none';
   }
   
-  // Pausa prevista
+  // Pausa prevista (inline)
+  const pausaInline = document.getElementById('turnoPausaInline');
   if (turno.break_start && turno.break_end) {
-    document.getElementById('turnoPausa').style.display = 'flex';
-    document.getElementById('turnoPausaText').textContent = `Pausa ${turno.break_start} - ${turno.break_end}`;
+    pausaInline.textContent = `☕ ${turno.break_start}-${turno.break_end}`;
+    pausaInline.style.display = 'inline';
   } else if (turno.break_minutes && turno.break_minutes > 0) {
-    document.getElementById('turnoPausa').style.display = 'flex';
-    document.getElementById('turnoPausaText').textContent = `Pausa: ${turno.break_minutes} min`;
+    pausaInline.textContent = `☕ ${turno.break_minutes}min`;
+    pausaInline.style.display = 'inline';
   } else {
-    document.getElementById('turnoPausa').style.display = 'none';
+    pausaInline.style.display = 'none';
   }
   
   // Funzione/Ruolo
   if (turno.function) {
-    document.getElementById('turnoFunzione').style.display = 'flex';
     document.getElementById('turnoFunzioneText').textContent = turno.function;
   } else {
-    document.getElementById('turnoFunzione').style.display = 'none';
+    document.getElementById('turnoFunzioneText').textContent = '-';
   }
   
-  // Sede GPS associata al turno
-  if (turno.location_name) {
-    document.getElementById('turnoLocation').style.display = 'flex';
-    document.getElementById('turnoLocationText').textContent = turno.location_name;
+  // Dove timbrare (GPS)
+  const timbraturaEl = document.getElementById('turnoTimbratura');
+  const timbraturaText = document.getElementById('turnoTimbraturaText');
+  
+  if (turno.timbratura_location) {
+    timbraturaEl.style.display = 'flex';
+    const hasCoords = turno.timbratura_lat && turno.timbratura_lon;
+    timbraturaText.textContent = `Timbra presso: ${turno.timbratura_location}`;
+    
+    if (!hasCoords) {
+      timbraturaEl.classList.add('no-gps');
+      timbraturaText.textContent += ' ⚠️ (GPS non configurato)';
+    } else {
+      timbraturaEl.classList.remove('no-gps');
+    }
+    
+    // Salva i dati GPS per la validazione della timbratura
+    currentShiftGpsData = {
+      location: turno.timbratura_location,
+      lat: turno.timbratura_lat,
+      lon: turno.timbratura_lon,
+      mode: turno.gps_mode
+    };
+  } else if (turno.location_name) {
+    // Fallback: mostra la location del progetto se non c'è timbratura_location
+    timbraturaEl.style.display = 'flex';
+    timbraturaEl.classList.remove('no-gps');
+    timbraturaText.textContent = `📍 Location: ${turno.location_name}`;
+    currentShiftGpsData = null;
   } else {
-    document.getElementById('turnoLocation').style.display = 'none';
+    timbraturaEl.style.display = 'none';
+    currentShiftGpsData = null;
   }
   
   // Badge (Leader / Trasporto)
@@ -2670,6 +2750,24 @@ function updateNavigation() {
   prevBtn.disabled = currentTurnoIndex === 0;
   nextBtn.disabled = currentTurnoIndex === allTurni.length - 1;
   counter.textContent = `${currentTurnoIndex + 1}/${allTurni.length}`;
+}
+
+// Refresh page function
+async function refreshPage() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('loading');
+  
+  try {
+    // Ricarica tutte le informazioni
+    await Promise.all([
+      loadTimbrature(),
+      loadTurno()
+    ]);
+  } catch (err) {
+    console.error('Errore refresh:', err);
+  } finally {
+    btn.classList.remove('loading');
+  }
 }
 
 // Menu functions
