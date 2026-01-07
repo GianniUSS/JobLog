@@ -12004,10 +12004,21 @@ def api_admin_rentman_planning_update_coords() -> ResponseReturnValue:
     planning_id = data.get("id")  # ID locale del DB
     rentman_id = data.get("rentman_id")  # ID Rentman
     target_date = data.get("date")
-    location_lat = data.get("location_lat")
-    location_lon = data.get("location_lon")
+    
+    # Parse delle coordinate come float (importante per DECIMAL(10,7) su MySQL)
+    try:
+        location_lat = float(data.get("location_lat")) if data.get("location_lat") is not None else None
+        location_lon = float(data.get("location_lon")) if data.get("location_lon") is not None else None
+    except (ValueError, TypeError):
+        return jsonify({"error": "Coordinate non valide. Devono essere numeri."}), 400
 
-    app.logger.info(f"update-coords ricevuto: id={planning_id}, rentman_id={rentman_id}, date={target_date}")
+    app.logger.info(f"update-coords ricevuto: id={planning_id}, rentman_id={rentman_id}, date={target_date}, lat={location_lat}, lon={location_lon}")
+
+    # Valida le coordinate
+    if location_lat is not None and (location_lat < -90 or location_lat > 90):
+        return jsonify({"error": "Latitudine non valida. Deve essere tra -90 e 90."}), 400
+    if location_lon is not None and (location_lon < -180 or location_lon > 180):
+        return jsonify({"error": "Longitudine non valida. Deve essere tra -180 e 180."}), 400
 
     db = get_db()
     ensure_rentman_plannings_table(db)
