@@ -11992,8 +11992,8 @@ def api_admin_rentman_planning_update_break() -> ResponseReturnValue:
     return jsonify({"success": True, "message": "Pausa aggiornata"})
 
 
-@app.post("/api/admin/rentman/planning/update-coords")
-@app.post("/api/admin/rentman/coords")  # Alias breve per evitare problemi di URL troncato
+@app.route("/api/admin/rentman/planning/update-coords", methods=["POST"])
+@app.route("/api/admin/rentman/coords", methods=["POST"])  # Alias breve per evitare problemi di URL troncato
 @login_required
 def api_admin_rentman_planning_update_coords() -> ResponseReturnValue:
     """Aggiorna le coordinate GPS di una pianificazione."""
