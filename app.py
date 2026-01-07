@@ -11991,6 +11991,7 @@ def api_admin_rentman_planning_update_break() -> ResponseReturnValue:
 
 
 @app.post("/api/admin/rentman/planning/update-coords")
+@app.post("/api/admin/rentman/coords")  # Alias breve per evitare problemi di URL troncato
 @login_required
 def api_admin_rentman_planning_update_coords() -> ResponseReturnValue:
     """Aggiorna le coordinate GPS di una pianificazione."""

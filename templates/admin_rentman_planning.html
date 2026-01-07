@@ -2222,7 +2222,7 @@
                     
                     console.log('Salvataggio coordinate per:', payload);
                     
-                    const res = await fetch('/api/admin/rentman/planning/update-coords', {
+                    const res = await fetch('/api/admin/rentman/coords', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
