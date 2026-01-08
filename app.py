@@ -5647,12 +5647,12 @@ def api_user_turno_oggi():
         
         return jsonify({"turno": None, "message": "Nessun turno configurato per oggi"})
     
-    # Recupera il turno di oggi dalla tabella rentman_plannings (solo se inviato) ss
+    # Recupera il turno di oggi dalla tabella rentman_plannings (solo se inviato)
     today = datetime.now().strftime("%Y-%m-%d")
     
     ensure_rentman_plannings_table(db)
     
-    vorrplanning = db.execute(
+    planning = db.execute(
         f"""
         SELECT project_code, project_name, function_name, plan_start, plan_end,
                hours_planned, remark, is_leader, transport, break_start, break_end, break_minutes,
