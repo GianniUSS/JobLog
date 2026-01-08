@@ -6,9 +6,10 @@
     const MANUAL_KEY = 'wh-projects-manual';
     const TIMER_KEY = 'wh-timer';
     const THEME_KEY = 'wh-theme';
-    const CACHE_TTL = 30 * 60 * 1000; // 30 min
+    const CACHE_TTL = 20 * 60 * 1000; // 20 min
     const LAST_PROJ_KEY = 'wh-last-proj';
     const SERVER_MANUAL_KEY = 'wh-server-manual';
+    const DEBOUNCE_MS = 300;
     
     // === DOM ===
     const $ = id => document.getElementById(id);
@@ -33,13 +34,19 @@
     const keypadEl = $('keypad');
     const cancelAdd = $('cancelAdd');
     const confirmAdd = $('confirmAdd');
+    const notesModal = $('notesModal');
+    const notesInput = $('notesInput');
+    const notesHint = $('notesHint');
+    const cancelNotes = $('cancelNotes');
+    const confirmNotes = $('confirmNotes');
     
     // === STATE ===
     let projects = [];
     let manualProjects = [];
     let selectedProj = null;
     let selectedAct = null;
-    let timer = { running: false, paused: false, start: 0, elapsed: 0, proj: null, act: null };
+    let selectedNotes = '';
+    let timer = { running: false, paused: false, start: 0, elapsed: 0, proj: null, act: null, notes: '' };
     let tickId = null;
     let toastTimeout = null;
     let darkMode = false;
@@ -178,7 +185,7 @@
     }
     
     function clearTimerState() {
-        timer = { running: false, paused: false, start: 0, elapsed: 0, proj: null, act: null };
+        timer = { running: false, paused: false, start: 0, elapsed: 0, proj: null, act: null, notes: '' };
         localStorage.removeItem(TIMER_KEY);
     }
 
@@ -384,19 +391,27 @@
             return;
         }
         try {
+            const payload = {
+                project_code: projCode,
+                activity_label: act,
+                elapsed_ms: elapsed
+            };
+            
+            // Aggiungi note se presenti (attività "Altro") - il backend vuole "note" singolare
+            if (timer.notes || selectedNotes) {
+                payload.note = timer.notes || selectedNotes;
+            }
+            
             const res = await fetch('/api/magazzino/sessions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    project_code: projCode,
-                    activity_label: act,
-                    elapsed_ms: elapsed
-                })
+                body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json().catch(() => ({}));
             if (data && data.ok === false) throw new Error(data.error || 'save_failed');
             toast('✓ Sessione salvata', 'ok');
+            selectedNotes = '';
             await fetchSessions();
         } catch (err) {
             console.error('saveSession error:', err);
@@ -408,16 +423,17 @@
     function renderProjects() {
         normalizeProjects();
         if (!projects.length) {
-            projList.innerHTML = '<div style="color:var(--muted);padding:10px;">Nessun progetto attivo</div>';
+            projList.innerHTML = '<div style="color:var(--text-light);padding:12px;font-size:13px;">Nessun progetto</div>';
             return;
         }
         
         projList.innerHTML = projects.map(p => {
-            const name = p.name || '';
-            return `<button class="proj-card${selectedProj?.code === p.code ? ' active' : ''}" 
+            const name = (p.name || p.displayname || p.reference || '').trim();
+            const isSelected = selectedProj?.code === p.code;
+            return `<button class="proj-item${isSelected ? ' selected' : ''}" 
                         data-code="${p.code}" ${timer.running ? 'disabled' : ''}>
                         <div class="proj-code">${p.code}</div>
-                        <div class="proj-name">${name}</div>
+                        ${name ? `<div class="proj-name">${name}</div>` : ''}
                     </button>`;
         }).join('');
 
@@ -433,9 +449,9 @@
             }
             if (toSelect) {
                 selectedProj = toSelect;
-                const btn = Array.from(projList.querySelectorAll('.proj-card'))
+                const btn = Array.from(projList.querySelectorAll('.proj-item'))
                     .find(el => el.dataset.code === toSelect.code);
-                if (btn) btn.classList.add('active');
+                if (btn) btn.classList.add('selected');
                 updateUI();
                 fetchSessions();
             }
@@ -444,7 +460,7 @@
     
     function renderSessions(items) {
         if (!items.length) {
-            sessionsList.innerHTML = '<div class="sessions-empty">Nessuna sessione</div>';
+            sessionsList.innerHTML = '<div class="sessions-empty"><div class="sessions-empty-icon">⏱️</div><div>Nessuna sessione</div></div>';
             totalTimeEl.textContent = '—';
             return;
         }
@@ -452,12 +468,14 @@
         let total = 0;
         sessionsList.innerHTML = items.map(s => {
             total += s.elapsed_ms || 0;
+            const hasNote = s.note && s.note.trim();
             return `<div class="session-item">
-                <div>
-                    <div class="session-info">${s.activity_label}</div>
+                <div class="session-details">
+                    <div class="session-act">${s.activity_label}</div>
                     <div class="session-proj">${s.project_code}</div>
+                    ${hasNote ? `<div class="session-note">📝 ${s.note}</div>` : ''}
                 </div>
-                <div class="session-time">${fmtTime(s.elapsed_ms || 0)}</div>
+                <div class="session-duration">${fmtTime(s.elapsed_ms || 0)}</div>
             </div>`;
         }).join('');
         
@@ -481,8 +499,7 @@
         const canStart = hasProj && hasAct && !timer.running;
         
         // Timer box state
-        timerBox.classList.toggle('running', timer.running && !timer.paused);
-        timerBox.classList.toggle('paused', timer.running && timer.paused);
+        timerBox.classList.toggle('active-session', timer.running || (hasProj && hasAct));
         
         // Context
         if (timer.running) {
@@ -490,7 +507,7 @@
         } else if (hasProj && hasAct) {
             renderTimerContext(selectedProj, selectedAct);
         } else if (hasProj) {
-            renderTimerContext(selectedProj, 'Scegli attività');
+            renderTimerContext(selectedProj, null);
         } else {
             timerContext.textContent = 'Seleziona progetto e attività';
         }
@@ -501,7 +518,7 @@
             timerStatus.className = 'timer-status running';
         } else if (timer.running && timer.paused) {
             timerStatus.textContent = '⏸ IN PAUSA';
-            timerStatus.className = 'timer-status paused';
+            timerStatus.className = 'timer-status';
         } else {
             timerStatus.textContent = '—';
             timerStatus.className = 'timer-status';
@@ -515,8 +532,8 @@
         btnStop.classList.toggle('hide', !timer.running);
         
         // Disable selectors while running
-        document.querySelectorAll('.proj-card').forEach(el => el.disabled = timer.running);
-        document.querySelectorAll('.act-btn').forEach(el => el.disabled = timer.running);
+        document.querySelectorAll('.proj-item').forEach(el => el.disabled = timer.running);
+        document.querySelectorAll('.activity-btn').forEach(el => el.disabled = timer.running);
         
         updateDisplay();
     }
@@ -532,12 +549,20 @@
     
     function startTimer() {
         if (!selectedProj || !selectedAct) return;
+        
+        // Se attività è "Altro", richiedi note obbligatorie
+        if (selectedAct === 'Altro') {
+            openNotesModal();
+            return;
+        }
+        
         timer.running = true;
         timer.paused = false;
         timer.start = Date.now();
         timer.elapsed = 0;
         timer.proj = selectedProj;
         timer.act = selectedAct;
+        timer.notes = '';
         saveTimerState();
         startTick();
         updateUI();
@@ -566,17 +591,56 @@
         updateUI();
     }
     
+    // === NOTES MODAL ===
+    function openNotesModal() {
+        notesInput.value = '';
+        notesHint.textContent = '';
+        notesModal.classList.remove('hide');
+        setTimeout(() => notesInput.focus(), 100);
+    }
+    
+    function closeNotesModal() {
+        notesModal.classList.add('hide');
+        notesInput.value = '';
+    }
+    
+    function submitNotes() {
+        const notes = (notesInput.value || '').trim();
+        if (!notes) {
+            notesHint.textContent = '⚠️ Le note sono obbligatorie per questa attività';
+            notesHint.style.color = 'var(--danger)';
+            notesInput.focus();
+            return;
+        }
+        
+        selectedNotes = notes;
+        timer.notes = notes;
+        closeNotesModal();
+        
+        // Ora avvia il timer
+        timer.running = true;
+        timer.paused = false;
+        timer.start = Date.now();
+        timer.elapsed = 0;
+        timer.proj = selectedProj;
+        timer.act = selectedAct;
+        saveTimerState();
+        startTick();
+        updateUI();
+        toast('✓ Note salvate', 'ok');
+    }
+    
     // === EVENTS ===
     projList.addEventListener('click', e => {
-        const card = e.target.closest('.proj-card');
+        const card = e.target.closest('.proj-item');
         if (!card || card.disabled) return;
 
         const code = card.dataset.code;
         selectedProj = projects.find(p => p.code === code) || null;
         rememberProject(code);
 
-        document.querySelectorAll('.proj-card').forEach(el => 
-            el.classList.toggle('active', el.dataset.code === code)
+        document.querySelectorAll('.proj-item').forEach(el => 
+            el.classList.toggle('selected', el.dataset.code === code)
         );
 
         updateUI();
@@ -584,13 +648,13 @@
     });
     
     actGrid.addEventListener('click', e => {
-        const btn = e.target.closest('.act-btn');
+        const btn = e.target.closest('.activity-btn');
         if (!btn || btn.disabled) return;
         
         selectedAct = btn.dataset.act;
         
-        document.querySelectorAll('.act-btn').forEach(el => 
-            el.classList.toggle('active', el.dataset.act === selectedAct)
+        document.querySelectorAll('.activity-btn').forEach(el => 
+            el.classList.toggle('selected', el.dataset.act === selectedAct)
         );
         
         updateUI();
@@ -603,6 +667,16 @@
     if (addBtn) addBtn.addEventListener('click', openAddModal);
     if (cancelAdd) cancelAdd.addEventListener('click', closeAddModal);
     if (confirmAdd) confirmAdd.addEventListener('click', addManualProject);
+    if (cancelNotes) cancelNotes.addEventListener('click', closeNotesModal);
+    if (confirmNotes) confirmNotes.addEventListener('click', submitNotes);
+    if (notesInput) {
+        notesInput.addEventListener('input', () => {
+            notesHint.textContent = `${notesInput.value.length}/500`;
+            if (notesInput.value.length > 0) {
+                notesHint.style.color = 'var(--text-light)';
+            }
+        });
+    }
     if (keypadEl) {
         keypadEl.addEventListener('click', e => {
             const k = e.target.getAttribute('data-k');

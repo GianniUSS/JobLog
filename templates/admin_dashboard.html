@@ -70,8 +70,47 @@
         }
         body.menu-open { overflow: hidden; }
         .hidden { display: none !important; }
+
+        /* Update Banner Styles */
+        .update-banner {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #ffffff;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            position: sticky;
+            top: 0;
+            z-index: 210;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+        }
+        .update-banner.hidden {
+            display: none !important;
+        }
+        .update-banner span {
+            font-weight: 700;
+            font-size: 14px;
+            flex: 1;
+        }
+        .update-banner button {
+            background: rgba(255,255,255,0.25);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: #ffffff;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            white-space: nowrap;
+        }
+        .update-banner button:hover {
+            background: rgba(255,255,255,0.35);
+        }
+
         header {
-            background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%);
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
             color: #f8fafc;
             padding: 14px 16px;
             display: flex;
@@ -180,6 +219,19 @@
             color: var(--muted, #94a3b8);
             font-weight: 600;
         }
+        .side-menu-version-chip {
+            margin-top: 8px;
+            padding: 4px 8px;
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--brand, #38bdf8);
+            font-family: 'Courier New', monospace;
+            letter-spacing: 0.4px;
+            width: fit-content;
+        }
         .side-menu-close {
             border: none;
             border-radius: 50%;
@@ -195,16 +247,15 @@
             transition: background 0.2s ease;
         }
         .side-menu-close:hover {
-            background: rgba(239, 68, 68, 0.12);
-            color: var(--brand, #38bdf8);
+            background: rgba(102, 126, 234, 0.12);
+            color: var(--brand, #667eea);
         }
         .menu-items {
             display: flex;
             flex-direction: column;
-            gap: 4px;
             flex: 1;
             overflow-y: auto;
-            padding: 8px 0;
+            padding: 12px 0;
         }
         .menu-item {
             display: flex;
@@ -218,15 +269,112 @@
             font-size: 14px;
             transition: background 0.2s ease;
         }
-        .menu-item:hover { background: rgba(239, 68, 68, 0.1); }
-        .menu-item.active { background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%); color: #fff; }
+        .menu-item:hover { background: rgba(102, 126, 234, 0.1); }
+        .menu-item.active { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #fff; }
         .menu-item.danger { color: #ef4444; }
         .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
-        .menu-divider { height: 1px; background: var(--border, rgba(148, 163, 184, 0.18)); margin: 8px 0; }
-        main { padding: 24px clamp(14px, 4vw, 32px) 60px; }
-        .grid {
+        .menu-divider {
+            height: 1px;
+            background: rgba(148, 163, 184, 0.4);
+            margin: 8px 16px;
+        }
+        main { 
+            display: flex;
+            gap: 24px;
+            padding: 24px 32px 60px 32px;
+            min-height: calc(100vh - 70px);
+        }
+        
+        /* SIDEBAR FILTRI */
+        .dashboard-sidebar {
+            width: 280px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .filter-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+        }
+        
+        .filter-card h3 {
+            margin: 0 0 14px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .filter-group label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--muted);
+        }
+        
+        .filter-group input[type="date"],
+        .filter-group select {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-panel);
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .filter-group input[type="date"]:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: var(--brand);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+        }
+        
+        .btn-apply {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.12s ease, box-shadow 0.2s ease;
+            margin-top: 8px;
+        }
+        
+        .btn-apply:hover {
+            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-apply:active {
+            transform: scale(0.98);
+        }
+        
+        /* CONTENUTO PRINCIPALE */
+        .dashboard-content {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        
+        .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 16px;
         }
         .card {
@@ -236,7 +384,38 @@
             padding: 16px;
             box-shadow: var(--shadow);
         }
-        .stat-value { font-size: 28px; font-weight: 700; }
+        
+        .stat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .stat-card h4 {
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin: 0;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value { 
+            font-size: 36px; 
+            font-weight: 800; 
+            color: var(--brand);
+        }
+        
+        .stat-unit {
+            font-size: 12px;
+            color: var(--muted);
+        }
+        
         .stat-label { color: var(--muted); font-weight: 600; font-size: 13px; }
         .stat-dual { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; align-items: center; }
         .stat-dual .muted { font-size: 13px; font-weight: 700; }
@@ -256,17 +435,66 @@
             font-weight: 700;
             font-size: 12px;
         }
+        
+        /* SEZIONE SESSIONI */
+        .sessions-section {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+        
+        .sessions-section h2 {
+            margin: 0 0 18px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        
+        .table-responsive {
+            overflow-x: auto;
+        }
+        
         table {
             width: 100%;
             border-collapse: collapse;
         }
-        th, td {
-            text-align: left;
-            padding: 10px 8px;
+        
+        table thead {
+            background: var(--bg-panel);
             border-bottom: 1px solid var(--border);
+        }
+        
+        table th {
+            padding: 14px 12px;
+            text-align: left;
+            font-weight: 700;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
             font-size: 14px;
         }
-        th { color: var(--muted); font-weight: 700; }
+        
+        table tbody tr:hover {
+            background: var(--bg-panel);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+        
         .badge {
             padding: 4px 10px;
             border-radius: 10px;
@@ -313,9 +541,12 @@
     </style>
 </head>
 <body>
+    <script>
+        window.APP_VERSION = 'v2026.01.07c';
+    </script>
     <header>
         <div class="header-left">
-            <button class="header-icon-btn" id="menuToggle" onclick="toggleMenu()" title="Menu">☰</button>
+            <button class="header-icon-btn" id="menuToggle" title="Menu">☰</button>
             <div class="header-title">
                 <h1>📊 Dashboard Admin</h1>
                 <p>Pannello di controllo</p>
@@ -330,6 +561,12 @@
             </div>
         </div>
     </header>
+
+    <!-- Update Banner -->
+    <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite" aria-hidden="true">
+        <span>🔄 Nuova versione disponibile <strong id="newVersionDisplay"></strong></span>
+        <button id="refreshAppBtn" type="button">Aggiorna</button>
+    </div>
 
     <!-- Menu Overlay -->
     <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
@@ -348,6 +585,7 @@
                 <div class="side-menu-brand-text">
                     <span class="side-menu-title">JobLog Admin</span>
                     <span class="side-menu-subtitle">Pannello Amministrazione</span>
+                    <span class="side-menu-version-chip" id="adminVersionBadge">v2026.01.07c</span>
                 </div>
             </div>
             <button class="side-menu-close" onclick="closeMenu()">✕</button>
@@ -376,58 +614,79 @@
     </nav>
 
     <main>
-        <div class="hero">
-            <div class="card">
-                <div class="stat-label" id="hoursLabel">Ore registrate</div>
-                <div class="stat-dual">
-                    <div>
-                        <div class="muted">Magazzino</div>
-                        <div class="stat-value" id="hoursTotal">-</div>
+        <!-- SIDEBAR FILTRI (SINISTRA) -->
+        <aside class="dashboard-sidebar">
+            <!-- Filtri Data -->
+            <div class="filter-card">
+                <h3>Periodo</h3>
+                <div class="filter-group">
+                    <label for="dateInputStart">Data inizio</label>
+                    <input id="dateInputStart" type="date" />
+                </div>
+                <div class="filter-group">
+                    <label for="dateInputEnd">Data fine</label>
+                    <input id="dateInputEnd" type="date" />
+                </div>
+                <button id="applyDate" class="btn-apply">Applica Filtri</button>
+            </div>
+            
+            <!-- Informazioni Utile -->
+            <div class="filter-card">
+                <h3>Statistiche Rapide</h3>
+                <div class="filter-group" style="gap: 16px;">
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span style="font-size: 12px; color: var(--muted); font-weight: 700;">Oggi</span>
+                        <span id="quickStatToday" style="font-size: 14px; font-weight: 600;">-</span>
                     </div>
-                    <div>
-                        <div class="muted">Squadra</div>
-                        <div class="stat-value" id="hoursTeam">-</div>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span style="font-size: 12px; color: var(--muted); font-weight: 700;">Questa settimana</span>
+                        <span id="quickStatWeek" style="font-size: 14px; font-weight: 600;">-</span>
                     </div>
                 </div>
-                <p class="status" id="hoursStatus">Caricamento...</p>
             </div>
-            <div class="card">
-                <div class="stat-label">Sessioni salvate</div>
-                <div class="stat-value" id="sessionsTotal">-</div>
-                <p class="status" id="sessionsStatus">Caricamento...</p>
-            </div>
-        </div>
+        </aside>
 
-        <div class="section-head" style="margin-top:22px;">
-            <h2>Sessioni per data</h2>
-            <span class="pill" id="summaryDate">Oggi</span>
-        </div>
-        <div class="card">
-            <div class="date-controls" style="margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-                <label for="dateInputStart">Da</label>
-                <input id="dateInputStart" type="date" />
-                <label for="dateInputEnd">A</label>
-                <input id="dateInputEnd" type="date" />
-                <button id="applyDate" class="btn primary">Applica</button>
+        <!-- CONTENUTO PRINCIPALE (DESTRA) -->
+        <section class="dashboard-content">
+            <!-- Stat Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h4>Ore Magazzino</h4>
+                    <div class="stat-value" id="hoursTotal">-</div>
+                    <span class="stat-unit">registro ore</span>
+                    <p class="status" id="hoursStatus" style="margin-top: 8px;">Caricamento...</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Ore Squadra</h4>
+                    <div class="stat-value" id="hoursTeam">-</div>
+                    <span class="stat-unit">registro ore</span>
+                    <p class="status" style="margin-top: 8px;">Team attuale</p>
+                </div>
             </div>
 
-            <div style="overflow-x:auto;">
-                <table id="sessionsTable">
-                    <thead>
-                        <tr>
-                            <th>Data</th>
-                            <th>Fonte</th>
-                            <th>Progetto</th>
-                            <th>Utente</th>
-                            <th>Attività</th>
-                            <th>Ore</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+            <!-- Sessioni Table -->
+            <div class="sessions-section">
+                <h2>📋 Sessioni Registrate</h2>
+                <div class="table-responsive">
+                    <table id="sessionsTable">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Fonte</th>
+                                <th>Progetto</th>
+                                <th>Utente</th>
+                                <th>Attività</th>
+                                <th>Ore</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div id="sessionsEmpty" class="empty-state" style="display:none;">
+                    <p>Nessuna sessione registrata per il periodo selezionato.</p>
+                </div>
             </div>
-            <div id="sessionsEmpty" class="empty" style="display:none;">Nessuna sessione per la data.</div>
-        </div>
+        </section>
     </main>
 
     <script>
@@ -460,11 +719,15 @@
         });
         
         // Menu toggle button
-        document.getElementById('menuToggle').addEventListener('click', toggleMenu);
+        const menuToggleBtn = document.getElementById('menuToggle');
+        if (menuToggleBtn) {
+            menuToggleBtn.addEventListener('click', toggleMenu);
+        }
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closeMenu();
         });
     </script>
+    <script src="{{ static_version('js/admin_update_system.js') }}"></script>
     <script type="module" src="{{ static_version('js/admin_dashboard.js') }}"></script>
 </body>
 </html>

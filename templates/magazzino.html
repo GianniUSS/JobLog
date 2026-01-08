@@ -2,359 +2,362 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#0ea5e9" />
     <title>Magazzino · JobLog</title>
     <link rel="manifest" href="{{ static_version('manifest.json') }}">
     <style>
         :root {
-            --bg: #f1f5f9;
+            --bg: #f8fafc;
             --card: #ffffff;
-            --text: #0f172a;
-            --muted: #64748b;
+            --text: #1e293b;
+            --text-light: #64748b;
             --accent: #0ea5e9;
-            --success: #16a34a;
-            --warning: #d97706;
-            --danger: #dc2626;
-            --border: rgba(15,23,42,0.12);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: #e2e8f0;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1);
+            --shadow-lg: 0 10px 25px rgba(0,0,0,0.1);
         }
         [data-theme="dark"] {
             --bg: #0f172a;
             --card: #1e293b;
             --text: #f1f5f9;
-            --muted: #94a3b8;
-            --accent: #38bdf8;
-            --success: #22c55e;
-            --warning: #eab308;
+            --text-light: #cbd5e1;
+            --accent: #06b6d4;
+            --success: #10b981;
+            --warning: #f59e0b;
             --danger: #ef4444;
-            --border: rgba(148,163,184,0.15);
+            --border: #334155;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { 
+        html { 
             height: 100%; 
-            overflow: hidden;
-            touch-action: manipulation;
-            -webkit-tap-highlight-color: transparent;
+            width: 100%;
         }
         body {
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
             font-family: -apple-system, system-ui, sans-serif;
             background: var(--bg);
             color: var(--text);
             display: flex;
             flex-direction: column;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-user-select: none;
+            user-select: none;
         }
         
-        /* Header compatto */
+        /* Header */
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 14px;
-            background: var(--card);
-            border-bottom: 1px solid var(--border);
+            padding: 12px 16px;
+            background: linear-gradient(135deg, var(--accent) 0%, #0284c7 100%);
+            color: white;
             flex-shrink: 0;
+            box-shadow: var(--shadow);
+            z-index: 50;
         }
-        .logo { font-size: 16px; font-weight: 700; }
-        .user-badge {
+        .logo {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        .header-right {
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 13px;
-            color: var(--muted);
         }
         .avatar {
-            width: 28px; height: 28px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
-            background: var(--accent);
-            color: var(--bg);
+            background: rgba(255,255,255,0.3);
+            color: white;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 12px;
+            font-size: 13px;
+            border: 1px solid rgba(255,255,255,0.5);
         }
-        .logout-btn {
+        .header-btn {
             background: none;
             border: none;
-            color: var(--muted);
-            font-size: 18px;
+            color: white;
+            font-size: 20px;
             padding: 6px;
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.9;
         }
-        .theme-btn {
-            background: none;
-            border: none;
-            color: var(--muted);
-            font-size: 18px;
-            padding: 6px;
-            cursor: pointer;
-        }
+        .header-btn:active { opacity: 0.7; }
 
         /* Main content */
         main {
             flex: 1;
             display: flex;
             flex-direction: column;
-            overflow: auto;
+            overflow-y: auto;
+            overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
             padding: 12px;
-            gap: 10px;
+            gap: 12px;
+            scroll-behavior: smooth;
         }
 
-        /* Timer grande */
-        .timer-box {
+        /* ===== TIMER SECTION ===== */
+        .timer-section {
             background: var(--card);
             border-radius: 16px;
-            padding: 16px;
+            padding: 20px;
+            box-shadow: var(--shadow);
             text-align: center;
+            flex-shrink: 0;
             border: 2px solid var(--border);
-            transition: border-color 0.15s, box-shadow 0.15s;
+            transition: all 0.3s ease;
         }
-        .timer-box.running { border-color: var(--success); box-shadow: 0 0 20px rgba(34,197,94,0.2); }
-        .timer-box.paused { border-color: var(--warning); box-shadow: 0 0 20px rgba(234,179,8,0.2); }
+        .timer-section.active-session {
+            border-color: var(--success);
+            box-shadow: 0 0 20px rgba(16,185,129,0.15);
+        }
         
-        .timer-context {
-            font-size: 12px;
-            color: var(--muted);
+        .timer-project {
+            font-size: 13px;
+            color: var(--text-light);
             margin-bottom: 6px;
-            min-height: 16px;
+            min-height: 18px;
+            font-weight: 600;
         }
-        .timer-context strong { color: var(--text); }
+        .timer-project strong {
+            color: var(--accent);
+            font-weight: 700;
+        }
         
         .timer-display {
-            font-family: "SF Mono", "Courier New", monospace;
-            font-size: 48px;
-            font-weight: 700;
+            font-family: "Menlo", "Monaco", monospace;
+            font-size: 52px;
+            font-weight: 800;
             letter-spacing: 2px;
+            color: var(--accent);
             line-height: 1;
-            margin: 8px 0;
+            margin: 12px 0;
+            font-variant-numeric: tabular-nums;
         }
         
         .timer-status {
-            font-size: 11px;
+            font-size: 12px;
+            font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: var(--muted);
-            margin-bottom: 12px;
+            color: var(--text-light);
+            margin-bottom: 16px;
         }
-        .timer-status.running { color: var(--success); }
-        .timer-status.paused { color: var(--warning); }
-
-        /* Pulsanti timer */
-        .timer-btns {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
+        .timer-status.running {
+            color: var(--success);
+            animation: pulse 2s ease-in-out infinite;
         }
-        .btn-timer {
-            flex: 1;
-            max-width: 140px;
-            padding: 14px;
-            border: none;
-            border-radius: 12px;
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: transform 0.1s, opacity 0.1s;
-        }
-        .btn-timer:active { transform: scale(0.95); }
-        .btn-timer:disabled { opacity: 0.4; }
-        .btn-start { background: var(--success); color: #fff; }
-        .btn-pause { background: var(--warning); color: #000; }
-        .btn-stop { background: var(--danger); color: #fff; }
-        .hide { display: none !important; }
-
-        /* Selettori veloci */
-        .quick-select {
-            background: var(--card);
-            border-radius: 14px;
-            padding: 12px;
-        }
-        .quick-label {
-            font-size: 11px;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
         }
         
-        /* Progetti - scroll orizzontale */
-        .proj-scroll {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 10px;
-            max-height: 180px;
-            overflow-y: auto;
-            padding-right: 2px;
-            -webkit-overflow-scrolling: touch;
-        }
-        .proj-card {
-            padding: 12px 12px;
-            border-radius: 12px;
-            background: rgba(148,163,184,0.08);
-            border: 1px solid var(--border);
-            color: var(--text);
-            text-align: left;
-            cursor: pointer;
-            transition: background 0.1s, border-color 0.1s, transform 0.08s;
+        .timer-actions {
             display: flex;
-            flex-direction: column;
-            gap: 4px;
+            gap: 8px;
+            justify-content: center;
         }
-        .proj-card:active { transform: scale(0.98); }
-        .proj-card.active {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: var(--bg);
-        }
-        .proj-card:disabled { opacity: 0.45; }
-        .proj-code { font-weight: 800; font-size: 15px; }
-        .proj-name { font-size: 12px; color: var(--muted); line-height: 1.3; }
-        .proj-card.active .proj-name { color: rgba(255,255,255,0.85); }
-
-        .add-btn {
-            background: var(--accent);
-            color: var(--bg);
+        .btn-action {
+            flex: 1;
+            max-width: 120px;
+            padding: 14px 12px;
             border: none;
-            border-radius: 10px;
-            padding: 8px 12px;
+            border-radius: 12px;
+            font-size: 14px;
             font-weight: 700;
-            font-size: 12px;
             cursor: pointer;
-        }
-
-        /* Modal */
-        .modal-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(15,23,42,0.4);
+            transition: all 0.15s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 300;
+            gap: 6px;
+            color: white;
         }
-        .modal-backdrop.hide { display: none; }
-        .modal {
-            width: min(340px, 92vw);
-            background: var(--card);
-            border-radius: 16px;
-            padding: 16px;
-            box-shadow: 0 10px 40px rgba(15,23,42,0.2);
-            border: 1px solid var(--border);
+        .btn-action:active { transform: scale(0.95); }
+        .btn-action:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
-        .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
-        .modal-label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
-        .input-display {
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px;
-            font-size: 18px;
-            font-weight: 700;
-            min-height: 42px;
-            background: rgba(148,163,184,0.08);
-        }
-        .text-input {
-            width: 100%;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px;
-            font-size: 14px;
-            background: var(--card);
-            color: var(--text);
-        }
-        .keypad {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            margin: 12px 0;
-        }
-        .keypad button {
-            padding: 12px;
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            background: rgba(148,163,184,0.12);
-            font-size: 16px;
-            font-weight: 700;
-            cursor: pointer;
-        }
-        .keypad button[data-k="ok"] { background: var(--success); color: #fff; }
-        .keypad button[data-k="clear"] { background: var(--danger); color: #fff; }
-        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-        .modal-btn {
-            padding: 10px 14px;
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            font-weight: 700;
-            cursor: pointer;
-        }
-        .modal-btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-        .modal-btn.ghost { background: transparent; color: var(--text); }
-
-        @media (max-width: 480px) {
-            header { padding: 8px 10px; }
-            .logo { font-size: 15px; }
-            .avatar { width: 26px; height: 26px; font-size: 11px; }
-            main { padding: 10px; gap: 8px; }
-            .timer-box { padding: 14px; }
-            .timer-display { font-size: 40px; letter-spacing: 1px; }
-            .timer-btns { gap: 8px; }
-            .btn-timer { max-width: none; padding: 12px; font-size: 14px; }
-            .quick-select { padding: 10px; }
-            .proj-scroll { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; max-height: 200px; }
-            .proj-card { padding: 12px; }
-            .proj-code { font-size: 14px; }
-            .proj-name { font-size: 12px; }
-            .act-grid { grid-template-columns: repeat(2, 1fr); }
-            .act-btn { padding: 12px; font-size: 13px; }
-            .sessions-box { min-height: 140px; }
-        }
+        .btn-start { background: var(--success); }
+        .btn-pause { background: var(--warning); color: var(--text); }
+        .btn-stop { background: var(--danger); }
         
-        /* Attività - griglia */
-        .act-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-        }
-        .act-btn {
-            padding: 12px 8px;
-            border-radius: 10px;
-            background: rgba(148,163,184,0.1);
-            border: 1px solid var(--border);
-            color: var(--text);
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.1s, border-color 0.1s;
-            text-align: center;
-        }
-        .act-btn.active {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: var(--bg);
-        }
-        .act-btn:disabled { opacity: 0.4; }
-        .act-btn .icon { font-size: 18px; display: block; margin-bottom: 4px; }
-
-        /* Lista sessioni */
-        .sessions-box {
-            flex: 1;
+        /* ===== QUICK SELECT ===== */
+        .select-section {
             background: var(--card);
             border-radius: 14px;
+            padding: 14px;
+            box-shadow: var(--shadow);
+            flex-shrink: 0;
+        }
+        .select-label {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-light);
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        /* Progetti scroll orizzontale */
+        .projects-grid {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scroll-snap-type: x mandatory;
+            padding-right: 4px;
+        }
+        .projects-grid::-webkit-scrollbar {
+            height: 4px;
+        }
+        .projects-grid::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .projects-grid::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+        
+        .proj-item {
+            flex-shrink: 0;
+            width: 130px;
+            padding: 12px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(226,232,240,0.5), rgba(248,250,252,0.8));
+            border: 1.5px solid var(--border);
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            scroll-snap-align: start;
+            user-select: none;
+        }
+        .proj-item:active {
+            transform: scale(0.95);
+        }
+        .proj-item.selected {
+            background: linear-gradient(135deg, var(--accent), #0284c7);
+            border-color: var(--accent);
+            color: white;
+            box-shadow: 0 4px 12px rgba(14,165,233,0.3);
+        }
+        .proj-code {
+            font-weight: 800;
+            font-size: 16px;
+            line-height: 1.2;
+        }
+        .proj-name {
+            font-size: 11px;
+            opacity: 0.75;
+            line-height: 1.3;
+            word-break: break-word;
+        }
+        .add-project-btn {
+            flex-shrink: 0;
+            width: 40px;
+            height: 100%;
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            background: transparent;
+            color: var(--accent);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }
+        .add-project-btn:active {
+            background: rgba(14,165,233,0.1);
+            border-color: var(--accent);
+        }
+        
+        /* Attività griglia */
+        .activities-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+        .activity-btn {
+            padding: 14px 8px;
+            border-radius: 12px;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+        }
+        .activity-btn:active { transform: scale(0.95); }
+        .activity-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        .activity-btn.selected {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+            box-shadow: 0 4px 12px rgba(14,165,233,0.3);
+        }
+        .activity-icon {
+            font-size: 20px;
+            line-height: 1;
+        }
+        
+        /* ===== SESSIONS LIST ===== */
+        .sessions-section {
+            background: var(--card);
+            border-radius: 14px;
+            box-shadow: var(--shadow);
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            min-height: 120px;
-            border: 1px solid var(--border);
+            flex: 1;
+            min-height: 150px;
         }
         .sessions-header {
-            padding: 10px 12px;
+            padding: 12px 14px;
             border-bottom: 1px solid var(--border);
             font-size: 12px;
-            font-weight: 600;
-            color: var(--muted);
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text-light);
             display: flex;
             justify-content: space-between;
+            align-items: center;
             flex-shrink: 0;
         }
         .sessions-list {
@@ -368,147 +371,426 @@
             align-items: center;
             padding: 12px 14px;
             border-bottom: 1px solid var(--border);
-            background: var(--card);
-        }
-        .session-item:nth-child(odd) {
-            background: color-mix(in srgb, var(--bg) 50%, var(--card));
+            transition: background 0.15s ease;
         }
         .session-item:last-child { border-bottom: none; }
-        .session-info { font-size: 13px; }
-        .session-proj { color: var(--muted); font-size: 11px; }
-        .session-time {
-            font-family: monospace;
+        .session-item:active {
+            background: var(--bg);
+        }
+        .session-details {
+            flex: 1;
+            min-width: 0;
+        }
+        .session-proj {
+            font-size: 12px;
+            color: var(--text-light);
+            margin-bottom: 2px;
+            font-weight: 600;
+        }
+        .session-act {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+            word-break: break-word;
+        }
+        .session-note {
+            font-size: 11px;
+            color: var(--text-light);
+            margin-top: 4px;
+            padding: 6px;
+            background: var(--bg);
+            border-left: 2px solid var(--accent);
+            border-radius: 4px;
+            word-break: break-word;
+            line-height: 1.4;
+        }
+        .session-duration {
+            font-family: "Menlo", monospace;
             font-size: 14px;
             font-weight: 700;
             color: var(--accent);
+            flex-shrink: 0;
+            margin-left: 12px;
+            min-width: 60px;
+            text-align: right;
         }
         .sessions-empty {
-            padding: 20px;
-            text-align: center;
-            color: var(--muted);
-            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-light);
+            font-size: 14px;
+            gap: 6px;
+        }
+        .sessions-empty-icon {
+            font-size: 32px;
+            opacity: 0.5;
+        }
+        
+        .total-time {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent);
+            font-family: monospace;
         }
 
-        /* Loading overlay */
+        /* ===== MODALS ===== */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15,23,42,0.5);
+            backdrop-filter: blur(2px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+            animation: fadeIn 0.15s ease;
+        }
+        .modal-backdrop.hide { display: none; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        .modal {
+            width: min(340px, 90vw);
+            background: var(--card);
+            border-radius: 16px;
+            padding: 18px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+            animation: slideUp 0.25s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .modal-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            color: var(--text);
+        }
+        .modal-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-light);
+            margin: 10px 0 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .input-field {
+            width: 100%;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 14px;
+            background: var(--bg);
+            color: var(--text);
+            margin-bottom: 12px;
+            transition: border-color 0.15s ease;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .input-display {
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            font-size: 20px;
+            font-weight: 700;
+            font-family: monospace;
+            min-height: 44px;
+            background: var(--bg);
+            color: var(--accent);
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin: 14px 0;
+        }
+        .keypad button {
+            padding: 12px 8px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .keypad button:active { transform: scale(0.95); }
+        .keypad button[data-k="0"] { grid-column: span 2; }
+        .keypad button[data-k="ok"] {
+            background: var(--success);
+            color: white;
+            border-color: var(--success);
+        }
+        .keypad button[data-k="clear"] {
+            background: var(--danger);
+            color: white;
+            border-color: var(--danger);
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
+        .modal-btn {
+            padding: 11px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .modal-btn:active { transform: scale(0.95); }
+        .modal-btn.primary {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+        .modal-btn.ghost {
+            background: transparent;
+            color: var(--text-light);
+        }
+        
+        /* ===== LOADING & TOAST ===== */
         .loading {
             position: fixed;
             inset: 0;
-            background: rgba(15,23,42,0.9);
+            background: rgba(15,23,42,0.95);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 100;
         }
         .loading.hide { display: none; }
+        
         .spinner {
-            width: 40px; height: 40px;
+            width: 44px;
+            height: 44px;
             border: 3px solid var(--border);
             border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Toast */
+        
         .toast {
             position: fixed;
-            bottom: 20px;
+            bottom: 24px;
             left: 50%;
             transform: translateX(-50%) translateY(100px);
             background: var(--card);
             border: 1px solid var(--border);
-            padding: 12px 20px;
+            padding: 12px 18px;
             border-radius: 10px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             opacity: 0;
-            transition: transform 0.2s, opacity 0.2s;
+            transition: all 0.2s ease;
             z-index: 200;
+            box-shadow: var(--shadow-lg);
+            max-width: 80vw;
         }
         .toast.show {
             transform: translateX(-50%) translateY(0);
             opacity: 1;
         }
-        .toast.ok { border-color: var(--success); color: var(--success); }
-        .toast.err { border-color: var(--danger); color: var(--danger); }
+        .toast.ok { color: var(--success); border-color: var(--success); }
+        .toast.err { color: var(--danger); border-color: var(--danger); }
+        
+        /* ===== UTILITIES ===== */
+        .hide { display: none !important; }
+        
+        /* ===== NOTES MODAL ===== */
+        .notes-textarea {
+            width: 100%;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 14px;
+            font-family: inherit;
+            background: var(--bg);
+            color: var(--text);
+            resize: vertical;
+            min-height: 100px;
+            max-height: 200px;
+            transition: border-color 0.15s ease;
+            margin-bottom: 12px;
+        }
+        .notes-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .notes-textarea::placeholder {
+            color: var(--text-light);
+        }
+        .notes-hint {
+            font-size: 12px;
+            color: var(--text-light);
+            margin-top: -8px;
+            margin-bottom: 12px;
+        }
+        .notes-required {
+            color: var(--danger);
+            font-weight: 700;
+        }
+        
+        /* Smooth scrolling per tutti i browser */
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        /* Prevent zoom on double tap */
+        input, button, select {
+            font-size: 16px;
+        }
     </style>
-</head>
 <body>
+    <!-- Header -->
     <header>
         <span class="logo">📦 Magazzino</span>
-        <div class="user-badge">
-            <button class="theme-btn" id="themeBtn" title="Cambia tema">🌓</button>
-            <span class="avatar">{{ user_initials or '?' }}</span>
-            <a href="{{ url_for('logout') }}" class="logout-btn">⏻</a>
+        <div class="header-right">
+            <button class="header-btn" id="themeBtn" title="Cambia tema">🌙</button>
+            <div class="avatar">{{ user_initials or '?' }}</div>
+            <a href="{{ url_for('logout') }}" class="header-btn" title="Esci">⏻</a>
         </div>
     </header>
 
+    <!-- Main content -->
     <main>
-        <!-- Timer -->
-        <div class="timer-box" id="timerBox">
-            <div class="timer-context" id="timerContext">Seleziona progetto e attività</div>
+        <!-- Timer section -->
+        <div class="timer-section" id="timerBox">
+            <div class="timer-project" id="timerContext">Seleziona progetto e attività</div>
             <div class="timer-display" id="timerDisplay">00:00:00</div>
             <div class="timer-status" id="timerStatus">—</div>
-            <div class="timer-btns">
-                <button class="btn-timer btn-start" id="btnStart" disabled>▶ AVVIA</button>
-                <button class="btn-timer btn-pause hide" id="btnPause">⏸ PAUSA</button>
-                <button class="btn-timer btn-stop hide" id="btnStop">✓ SALVA</button>
+            <div class="timer-actions">
+                <button class="btn-action btn-start" id="btnStart" disabled>▶ AVVIA</button>
+                <button class="btn-action btn-pause hide" id="btnPause">⏸ PAUSA</button>
+                <button class="btn-action btn-stop hide" id="btnStop">✓ SALVA</button>
             </div>
         </div>
 
-        <!-- Progetti -->
-        <div class="quick-select">
-            <div class="quick-label" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                <span>Progetto</span>
-                <button class="add-btn" id="addProjBtn">+ Aggiungi</button>
+        <!-- Projects section -->
+        <div class="select-section">
+            <div class="select-label">
+                <span>PROGETTO</span>
+                <button class="add-project-btn" id="addProjBtn" title="Aggiungi progetto manuale">+</button>
             </div>
-            <div class="proj-scroll" id="projList">
-                <div style="color:var(--muted);font-size:13px;padding:10px;">Caricamento...</div>
-            </div>
-        </div>
-
-        <!-- Attività -->
-        <div class="quick-select">
-            <div class="quick-label">Attività</div>
-            <div class="act-grid" id="actGrid">
-                <button class="act-btn" data-act="Preparazione"><span class="icon">📦</span>Preparazione</button>
-                <button class="act-btn" data-act="Carico"><span class="icon">🚚</span>Carico</button>
-                <button class="act-btn" data-act="Scarico"><span class="icon">📥</span>Scarico</button>
-                <button class="act-btn" data-act="Controllo"><span class="icon">🔍</span>Controllo</button>
-                <button class="act-btn" data-act="Manutenzione"><span class="icon">🔧</span>Manutenzione</button>
-                <button class="act-btn" data-act="Altro"><span class="icon">📝</span>Altro</button>
+            <div class="projects-grid" id="projList">
+                <div style="padding:12px;color:var(--text-light);font-size:13px;">Caricamento...</div>
             </div>
         </div>
 
-        <!-- Sessioni -->
-        <div class="sessions-box">
+        <!-- Activities section -->
+        <div class="select-section">
+            <div class="select-label">ATTIVITÀ</div>
+            <div class="activities-grid" id="actGrid">
+                <button class="activity-btn" data-act="Preparazione" title="Preparazione magazzino">
+                    <span class="activity-icon">📦</span>
+                    <span>Preparazione</span>
+                </button>
+                <button class="activity-btn" data-act="Carico" title="Carico merci">
+                    <span class="activity-icon">🚚</span>
+                    <span>Carico</span>
+                </button>
+                <button class="activity-btn" data-act="Scarico" title="Scarico merci">
+                    <span class="activity-icon">📥</span>
+                    <span>Scarico</span>
+                </button>
+                <button class="activity-btn" data-act="Controllo" title="Controllo qualità">
+                    <span class="activity-icon">🔍</span>
+                    <span>Controllo</span>
+                </button>
+                <button class="activity-btn" data-act="Manutenzione" title="Manutenzione attrezzature">
+                    <span class="activity-icon">🔧</span>
+                    <span>Manutenzione</span>
+                </button>
+                <button class="activity-btn" data-act="Altro" title="Altra attività">
+                    <span class="activity-icon">📝</span>
+                    <span>Altro</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Sessions section -->
+        <div class="sessions-section">
             <div class="sessions-header">
-                <span>Sessioni di oggi</span>
-                <span id="totalTime">—</span>
+                <span>SESSIONI DI OGGI</span>
+                <span class="total-time" id="totalTime">—</span>
             </div>
             <div class="sessions-list" id="sessionsList">
-                <div class="sessions-empty">Nessuna sessione</div>
+                <div class="sessions-empty">
+                    <div class="sessions-empty-icon">⏱️</div>
+                    <div>Nessuna sessione</div>
+                </div>
             </div>
         </div>
     </main>
 
-    <div class="loading hide" id="loading"><div class="spinner"></div></div>
+    <!-- Loading -->
+    <div class="loading hide" id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Toast notifications -->
     <div class="toast" id="toast"></div>
 
-    <!-- Modal aggiungi progetto -->
+    <!-- Modal: Note per attività Altro -->
+    <div class="modal-backdrop hide" id="notesModal">
+        <div class="modal">
+            <div class="modal-title">📝 Note per Attività</div>
+            <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">Descrivere brevemente l'attività "Altro" eseguita.</p>
+            
+            <label class="modal-label">Note <span class="notes-required">*</span></label>
+            <textarea class="notes-textarea" id="notesInput" placeholder="Es: Pulizia magazzino, riordino scaffali, ecc..." maxlength="500"></textarea>
+            <div class="notes-hint" id="notesHint"></div>
+            
+            <div class="modal-actions">
+                <button class="modal-btn ghost" id="cancelNotes">Annulla</button>
+                <button class="modal-btn primary" id="confirmNotes">Continua</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Aggiungi progetto -->
     <div class="modal-backdrop hide" id="addModal">
         <div class="modal">
-            <div class="modal-title">Aggiungi progetto</div>
-            <label class="modal-label">Numero</label>
+            <div class="modal-title">Aggiungi Progetto</div>
+            
+            <label class="modal-label">Codice Progetto</label>
             <div class="input-display" id="manualCode">—</div>
+            
             <label class="modal-label">Titolo (opzionale)</label>
-            <input class="text-input" id="manualName" maxlength="80" placeholder="Titolo progetto" />
+            <input class="input-field" id="manualName" maxlength="80" placeholder="Es: Progetto Cliente XYZ" />
+            
             <div class="keypad" id="keypad">
-                <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
-                <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
-                <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
-                <button data-k="clear">⌫</button><button data-k="0">0</button><button data-k="ok">OK</button>
+                <button data-k="1">1</button>
+                <button data-k="2">2</button>
+                <button data-k="3">3</button>
+                <button data-k="4">4</button>
+                <button data-k="5">5</button>
+                <button data-k="6">6</button>
+                <button data-k="7">7</button>
+                <button data-k="8">8</button>
+                <button data-k="9">9</button>
+                <button data-k="clear">⌫ Cancella</button>
+                <button data-k="0">0</button>
+                <button data-k="ok">✓ OK</button>
             </div>
+            
             <div class="modal-actions">
                 <button class="modal-btn ghost" id="cancelAdd">Annulla</button>
                 <button class="modal-btn primary" id="confirmAdd">Aggiungi</button>

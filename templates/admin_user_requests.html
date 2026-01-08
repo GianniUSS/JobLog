@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Gestione Richieste · JobLog</title>
+    <script>
+        window.APP_VERSION = 'v2026.01.07c';
+    </script>
     <link rel="manifest" href="{{ static_version('manifest.json') }}">
     <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
     <script>
@@ -63,6 +66,44 @@
             flex-direction: column;
         }
         .hidden { display: none !important; }
+
+        /* Update Banner Styles */
+        .update-banner {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #ffffff;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            position: sticky;
+            top: 0;
+            z-index: 210;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+        }
+        .update-banner.hidden {
+            display: none !important;
+        }
+        .update-banner span {
+            font-weight: 700;
+            font-size: 14px;
+            flex: 1;
+        }
+        .update-banner button {
+            background: rgba(255,255,255,0.25);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: #ffffff;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            white-space: nowrap;
+        }
+        .update-banner button:hover {
+            background: rgba(255,255,255,0.35);
+        }
 
         /* Header */
         header {
@@ -185,6 +226,19 @@
             font-size: 12px;
             color: var(--muted, #94a3b8);
             font-weight: 600;
+        }
+        .side-menu-version-chip {
+            margin-top: 8px;
+            padding: 4px 8px;
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--brand, #38bdf8);
+            font-family: 'Courier New', monospace;
+            letter-spacing: 0.4px;
+            width: fit-content;
         }
         .side-menu-close {
             border: none;
@@ -698,6 +752,7 @@
                 <div class="side-menu-brand-text">
                     <span class="side-menu-title">JobLog Admin</span>
                     <span class="side-menu-subtitle">Pannello Amministrazione</span>
+                <span class="side-menu-version-chip" id="adminVersionBadge">v2026.01.07c</span>
                 </div>
             </div>
             <button class="side-menu-close" onclick="closeMenu()">✕</button>
@@ -742,6 +797,12 @@
             </div>
         </div>
     </header>
+
+    <!-- Update Banner -->
+    <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite" aria-hidden="true">
+        <span>🔄 Nuova versione disponibile <strong id="newVersionDisplay"></strong></span>
+        <button id="refreshAppBtn" type="button">Aggiorna</button>
+    </div>
 
     <main>
         <div class="filter-bar">
@@ -1296,5 +1357,6 @@
             setTimeout(() => toast.remove(), 3000);
         }
     </script>
+    <script src="{{ static_version('js/admin_update_system.js') }}"></script>
 </body>
 </html>

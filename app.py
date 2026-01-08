@@ -5647,12 +5647,12 @@ def api_user_turno_oggi():
         
         return jsonify({"turno": None, "message": "Nessun turno configurato per oggi"})
     
-    # Recupera il turno di oggi dalla tabella rentman_plannings (solo se inviato)
+    # Recupera il turno di oggi dalla tabella rentman_plannings (solo se inviato) ss
     today = datetime.now().strftime("%Y-%m-%d")
     
     ensure_rentman_plannings_table(db)
     
-    planning = db.execute(
+    vorrplanning = db.execute(
         f"""
         SELECT project_code, project_name, function_name, plan_start, plan_end,
                hours_planned, remark, is_leader, transport, break_start, break_end, break_minutes,
@@ -8723,7 +8723,7 @@ def admin_dashboard_page() -> ResponseReturnValue:
     initials = session.get("user_initials") or compute_initials(primary_name or "")
 
     return render_template(
-        "admin_dashboard_new.html",
+        "admin_dashboard.html",
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,

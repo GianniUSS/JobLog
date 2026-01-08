@@ -4,18 +4,10 @@ const refreshBtn = document.getElementById('refreshBtn');
 const hoursTotalEl = document.getElementById('hoursTotal');
 const hoursTeamEl = document.getElementById('hoursTeam');
 const hoursStatusEl = document.getElementById('hoursStatus');
-const hoursLabelEl = document.getElementById('hoursLabel');
-const sessionsTotalEl = document.getElementById('sessionsTotal');
-const sessionsStatusEl = document.getElementById('sessionsStatus');
-const summaryTable = document.getElementById('summaryTable');
-const summaryBody = summaryTable ? summaryTable.querySelector('tbody') : null;
-const summaryEmptyEl = document.getElementById('summaryEmpty');
-const summaryDateEl = document.getElementById('summaryDate');
 const dateInputStart = document.getElementById('dateInputStart');
 const dateInputEnd = document.getElementById('dateInputEnd');
 const applyDateBtn = document.getElementById('applyDate');
 const themeToggle = document.getElementById('themeToggle');
-const exportExcelBtn = document.getElementById('exportExcelBtn');
 const sessionsTableBody = document.querySelector('#sessionsTable tbody');
 const sessionsEmptyEl = document.getElementById('sessionsEmpty');
 
@@ -37,29 +29,11 @@ function formatMs(ms) {
 
 function setLoading(text) {
     if (hoursStatusEl) hoursStatusEl.textContent = text;
-    if (sessionsStatusEl) sessionsStatusEl.textContent = text;
 }
 
 function renderSummary(items, dateLabel) {
-    summaryDateEl.textContent = dateLabel || 'Oggi';
-    if (!summaryBody) return;
-    summaryBody.innerHTML = '';
-    if (!items.length) {
-        summaryEmptyEl.style.display = '';
-        return;
-    }
-    summaryEmptyEl.style.display = 'none';
-    items.forEach((item) => {
-        const tr = document.createElement('tr');
-        const tdCode = document.createElement('td');
-        tdCode.textContent = item.project_code || '—';
-        const tdHours = document.createElement('td');
-        tdHours.textContent = formatMs(item.total_ms);
-        const tdSessions = document.createElement('td');
-        tdSessions.innerHTML = `<span class="badge">${item.sessions || 0}</span>`;
-        tr.append(tdCode, tdHours, tdSessions);
-        summaryBody.appendChild(tr);
-    });
+    // Nel nuovo layout non c'è una tabella riepilogo separata
+    return;
 }
 
 function setTotals(
@@ -68,14 +42,10 @@ function setTotals(
     sessionsFallbackCount = 0,
     dateLabel = 'di oggi',
 ) {
-    hoursTotalEl.textContent = formatMs(total_ms);
+    if (hoursTotalEl) hoursTotalEl.textContent = formatMs(total_ms);
     const teamValue = team_total_ms || teamFallbackMs || 0;
     if (hoursTeamEl) hoursTeamEl.textContent = formatMs(teamValue);
-    const sessionsValue = (total_sessions || 0) + (team_total_sessions || 0) || (sessionsFallbackCount || 0);
-    sessionsTotalEl.textContent = sessionsValue;
-    if (hoursLabelEl) hoursLabelEl.textContent = 'Ore registrate';
-    hoursStatusEl.textContent = `Totale ore ${dateLabel}`;
-    sessionsStatusEl.textContent = 'Sessioni registrate';
+    if (hoursStatusEl) hoursStatusEl.textContent = `Totale ore ${dateLabel}`;
 }
 
 function renderSessionsGrid(items) {
@@ -202,8 +172,6 @@ async function loadData(dateStart, dateEnd) {
         console.error(err);
         const msg = err && err.message ? err.message : 'Errore imprevisto';
         if (hoursStatusEl) hoursStatusEl.textContent = msg;
-        if (sessionsStatusEl) sessionsStatusEl.textContent = msg;
-        summaryEmptyEl.style.display = '';
         if (sessionsEmptyEl) sessionsEmptyEl.style.display = '';
     }
 }
@@ -237,22 +205,6 @@ function initEvents() {
         themeToggle.addEventListener('click', () => {
             const current = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
             applyTheme(current);
-        });
-    }
-
-    if (exportExcelBtn) {
-        exportExcelBtn.addEventListener('click', () => {
-            if (!ctx.exportUrl) {
-                console.warn('exportUrl non configurato');
-                return;
-            }
-            const start = dateInputStart?.value || todayIso();
-            const end = dateInputEnd?.value || todayIso();
-            const url = new URL(ctx.exportUrl, window.location.origin);
-            url.searchParams.set('date_start', start);
-            url.searchParams.set('date_end', end);
-            // Download diretto (server risponde con attachment)
-            window.location.href = url.toString();
         });
     }
 }
