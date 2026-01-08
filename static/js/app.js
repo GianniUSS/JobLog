@@ -3764,13 +3764,13 @@ function closeQrTimbraturaModal() {
 }
 
 async function loadQrTimbratura() {
-    const container = document.getElementById("qrTimbraturaContainer");
-    const loading = document.getElementById("qrTimbraturaLoading");
-    const image = document.getElementById("qrTimbraturaImage");
-    const timeEl = document.getElementById("qrTimbraturaTime");
-    const deviceIdEl = document.getElementById("qrDeviceId");
-    const refreshSecondsEl = document.getElementById("qrRefreshSeconds");
-    const progressBar = document.getElementById("qrRefreshProgress");
+    const container = document.getElementById("qrContainer");
+    const loading = document.getElementById("qrLoading");
+    const image = document.getElementById("qrImage");
+    const timeEl = document.getElementById("clock");
+    const deviceIdEl = document.getElementById("deviceId");
+    const refreshSecondsEl = document.getElementById("refreshSeconds");
+    const progressBar = document.getElementById("qrProgress");
     
     if (!container) return;
     

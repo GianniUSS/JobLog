@@ -431,6 +431,43 @@ body {
   grid-column: 1 / -1;
 }
 
+.turno-detail.inline-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.inline-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  flex: 0 1 auto;
+}
+
+.inline-item .icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.inline-item .value {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 .turno-detail.timbratura .icon {
   background: var(--success-bg);
   color: var(--success);
@@ -439,6 +476,49 @@ body {
 .turno-detail.location .icon {
   background: var(--info-bg);
   color: var(--info);
+}
+
+.turno-detail.location.inline-location {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  align-items: flex-start;
+}
+
+.location-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--info);
+  flex: 0 1 auto;
+  background: var(--info-bg);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.location-item .icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--info);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  flex-shrink: 0;
+}
+
+.location-item .value {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .turno-note {
@@ -1290,22 +1370,26 @@ function showToastGlobal(message) {
               ${turno.project_code ? `<span class="code">#${turno.project_code}</span>` : ''}
             </div>
             <div class="turno-details">
-              ${turno.start || turno.end ? `
-                <div class="turno-detail">
-                  <span class="icon"><i class="fas fa-clock"></i></span>
-                  <span class="value">${turno.start || '?'} - ${turno.end || '?'}</span>
-                </div>
-              ` : ''}
-              ${turno.hours ? `
-                <div class="turno-detail">
-                  <span class="icon"><i class="fas fa-hourglass-half"></i></span>
-                  <span class="value">${getEffectiveHours(turno).toFixed(1)}h</span>
-                </div>
-              ` : ''}
-              ${turno.break_minutes ? `
-                <div class="turno-detail">
-                  <span class="icon"><i class="fas fa-mug-hot"></i></span>
-                  <span class="value">${turno.break_minutes}min pausa</span>
+              ${turno.start || turno.end || turno.hours || turno.break_minutes ? `
+                <div class="turno-detail full-width inline-items">
+                  ${turno.start || turno.end ? `
+                    <div class="inline-item">
+                      <span class="icon"><i class="fas fa-clock"></i></span>
+                      <span class="value">${turno.start || '?'} - ${turno.end || '?'}</span>
+                    </div>
+                  ` : ''}
+                  ${turno.break_minutes ? `
+                    <div class="inline-item">
+                      <span class="icon"><i class="fas fa-mug-hot"></i></span>
+                      <span class="value">${turno.break_minutes}min</span>
+                    </div>
+                  ` : ''}
+                  ${turno.hours ? `
+                    <div class="inline-item">
+                      <span class="icon"><i class="fas fa-hourglass-half"></i></span>
+                      <span class="value">${getEffectiveHours(turno).toFixed(1)}h</span>
+                    </div>
+                  ` : ''}
                 </div>
               ` : ''}
               ${turno.function ? `
@@ -1320,16 +1404,20 @@ function showToastGlobal(message) {
                   <span class="value">${turno.transport}</span>
                 </div>
               ` : ''}
-              ${turno.location_name ? `
-                <div class="turno-detail location full-width">
-                  <span class="icon"><i class="fas fa-map-marker-alt"></i></span>
-                  <span class="value">${turno.location_name}</span>
-                </div>
-              ` : ''}
-              ${turno.timbratura_location ? `
-                <div class="turno-detail timbratura full-width">
-                  <span class="icon"><i class="fas fa-fingerprint"></i></span>
-                  <span class="value">Timbra: ${turno.timbratura_location}</span>
+              ${turno.location_name || turno.timbratura_location ? `
+                <div class="turno-detail location full-width inline-location">
+                  ${turno.location_name ? `
+                    <div class="location-item">
+                      <span class="icon"><i class="fas fa-map-marker-alt"></i></span>
+                      <span class="value">${turno.location_name}</span>
+                    </div>
+                  ` : ''}
+                  ${turno.timbratura_location ? `
+                    <div class="location-item">
+                      <span class="icon"><i class="fas fa-map-pin"></i></span>
+                      <span class="value">Timbra: ${turno.timbratura_location}</span>
+                    </div>
+                  ` : ''}
                 </div>
               ` : ''}
             </div>

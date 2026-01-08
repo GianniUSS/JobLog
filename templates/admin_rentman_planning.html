@@ -1338,13 +1338,37 @@
                     const savedRes = await fetch(`/api/admin/rentman-planning/saved?date=${encodeURIComponent(date)}`);
                     const savedData = await savedRes.json();
                     if (savedRes.ok && savedData.plannings) {
+                        // Normalizza gli orari dal DB al formato ISO
+                        function normalizeDbDateTime(dtStr) {
+                            if (!dtStr) return null;
+                            // Se è già in formato ISO, ritorna
+                            if (dtStr.includes('T')) return dtStr;
+                            // Se è in formato "2026-01-08 16:00:00", converte a ISO
+                            // Aggiunge il timezone +01:00
+                            return dtStr.replace(' ', 'T') + '+01:00';
+                        }
+                        
                         savedData.plannings.forEach(p => {
+                            // Normalizza orari al formato ISO
+                            if (p.plan_start) p.plan_start = normalizeDbDateTime(p.plan_start);
+                            if (p.plan_end) p.plan_end = normalizeDbDateTime(p.plan_end);
+                            
                             // Usa rentman_id come chiave
                             if (p.rentman_id) {
                                 savedDataMap.set(String(p.rentman_id), p);
                             }
                         });
                         console.log('Dati salvati caricati per merge:', savedDataMap.size);
+                        // DEBUG: Mostra il primo elemento salvato
+                        const first = savedData.plannings[0];
+                        if (first) {
+                            console.log("📥 Primo dato salvato nel DB:", {
+                                rentman_id: first.rentman_id,
+                                crew_name: first.crew_name,
+                                plan_start: first.plan_start,
+                                plan_end: first.plan_end
+                            });
+                        }
                     }
                 } catch (e) {
                     console.log('Nessun dato salvato da mergiare');
@@ -1361,6 +1385,15 @@
                 currentPlannings = (data.plannings || []).map(p => {
                     const rentmanId = String(p.rentman_id || p.id);
                     const saved = savedDataMap.get(rentmanId);
+                    
+                    // DEBUG: Log il primo elemento
+                    if (p.crew_name === "Angelo Ruggieri") {
+                        console.log("🔍 DEBUG MERGE Angelo Ruggieri:", {
+                            original_p: {plan_start: p.plan_start, plan_end: p.plan_end},
+                            saved: saved ? {plan_start: saved.plan_start, plan_end: saved.plan_end} : "non trovato"
+                        });
+                    }
+                    
                     if (saved) {
                         // Preserva campi personalizzati dal DB
                         // Le coordinate manuali hanno priorità su quelle di Rentman (che spesso sono 0,0 o null)
@@ -1378,6 +1411,9 @@
                             // Preserva coordinate manuali se Rentman non le ha
                             location_lat: rentmanHasCoords ? p.location_lat : (hasManualCoords ? saved.location_lat : p.location_lat),
                             location_lon: rentmanHasCoords ? p.location_lon : (hasManualCoords ? saved.location_lon : p.location_lon),
+                            // Sempre usa gli orari da Rentman - questi non devono mai venire dal DB
+                            plan_start: p.plan_start,
+                            plan_end: p.plan_end,
                             break_start: saved.break_start,
                             break_end: saved.break_end,
                             break_minutes: saved.break_minutes,
@@ -1495,7 +1531,6 @@
                         <div class="crew-name">
                             ${escapeHtml(p.crew_name || 'N/D')}
                             ${p.is_leader ? '<span class="leader-badge">LEADER</span>' : ''}
-                            ${p.is_modified ? '<span class="modified-badge">⚠️ MODIFICATO</span>' : ''}
                             ${p.sent_to_webservice && !p.is_modified ? '<span class="sent-badge">✓ INVIATO</span>' : ''}
                         </div>
                         ${p.sent_ts ? `<div class="sent-time">Inviato: ${p.sent_ts}</div>` : ''}
@@ -1522,7 +1557,7 @@
                         </div>` : ''}
                     </div>
                     <div class="time-info">
-                        <div class="time-range">${formatTimeRange(p.start, p.end)}</div>
+                        <div class="time-range">${formatTimeRange(p.plan_start, p.plan_end)}</div>
                         <div class="break-info" style="font-size: 12px; color: var(--warning);">
                             ${p.break_minutes ? `☕ Pausa: ${p.break_minutes} min` : '<span style="color: var(--muted)">☕ Nessuna pausa</span>'}
                             <button class="break-edit-btn" onclick="openBreakModal(${idx})">✏️ Modifica</button>
@@ -1760,12 +1795,23 @@
         async function autoSaveToDb(date, plannings) {
             // Salvataggio automatico silenzioso
             try {
+                // DEBUG: Log quello che stiamo inviando
+                console.log("💾 autoSaveToDb: Inviando", plannings.length, "pianificazioni");
+                console.log("  Sample:", plannings[0] ? {
+                    id: plannings[0].id,
+                    rentman_id: plannings[0].rentman_id,
+                    crew_name: plannings[0].crew_name,
+                    plan_start: plannings[0].plan_start,
+                    plan_end: plannings[0].plan_end
+                } : "empty");
+                
                 const res = await fetch('/api/admin/rentman-planning/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ date, plannings })
                 });
                 const data = await res.json();
+                console.log("✅ Risposta backend:", data);
                 if (!res.ok) {
                     console.error('Errore salvataggio automatico:', data.error);
                 } else {
