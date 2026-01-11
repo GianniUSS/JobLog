@@ -12495,7 +12495,8 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         plan_start = %s, plan_end = %s, 
                         break_start = %s, break_end = %s, break_minutes = %s,
                         hours_planned = %s, hours_registered = %s,
-                        remark = %s, is_leader = %s, transport = %s, updated_ts = %s
+                        remark = %s, is_leader = %s, transport = %s, updated_ts = %s,
+                        is_obsolete = 0
                     WHERE rentman_id = %s AND planning_date = %s
                 """, (
                     p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
@@ -12518,7 +12519,8 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         plan_start = ?, plan_end = ?,
                         break_start = ?, break_end = ?, break_minutes = ?,
                         hours_planned = ?, hours_registered = ?,
-                        remark = ?, is_leader = ?, transport = ?, updated_ts = ?
+                        remark = ?, is_leader = ?, transport = ?, updated_ts = ?,
+                        is_obsolete = 0
                     WHERE rentman_id = ? AND planning_date = ?
                 """, (
                     p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
