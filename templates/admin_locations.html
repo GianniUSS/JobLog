@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestione Location GPS - JobLog</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .locations-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 16px;
+            padding: 20px;
+        }
+
+        .location-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .location-card.has-cache {
+            border-color: var(--success);
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(34, 197, 94, 0.05) 100%);
+        }
+
+        .location-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .location-name.has-cache::before {
+            content: "✅";
+        }
+
+        .location-name.no-cache::before {
+            content: "⚠️";
+        }
+
+        .location-address {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .location-coords {
+            background: var(--bg);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+
+        .coord-input-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .coord-input-group input {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 12px;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .coord-input-group input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .coord-button-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-save-coords {
+            flex: 1;
+            padding: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .btn-save-coords:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-map {
+            padding: 8px 12px;
+            background: var(--secondary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .btn-map:hover {
+            background: var(--secondary-dark);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+        }
+
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-section h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            padding: 0 20px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <a href="/" class="sidebar-brand">JobLog</a>
+        <nav class="sidebar-nav">
+            <a href="/admin" class="nav-link">📊 Dashboard</a>
+            <a href="/admin/rentman-planning" class="nav-link">📅 Pianificazioni</a>
+            <a href="/admin/locations" class="nav-link active">📍 Location GPS</a>
+            <a href="/admin/users" class="nav-link">👥 Utenti</a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle">☰</button>
+                <h1>📍 Gestione Location GPS</h1>
+            </div>
+            <div class="top-bar-right">
+                <span class="user-name">{{ user_display }}</span>
+                <div class="user-avatar">{{ user_initials }}</div>
+            </div>
+        </header>
+
+        <div class="header-section">
+            <h2>Coordinate per le Location Rentman</h2>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="totalCount">0</div>
+                    <div class="stat-label">Totale Location</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="cachedCount">0</div>
+                    <div class="stat-label">Con Coordinate</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="locationsList" class="locations-container">
+            <div class="loading">⏳ Caricamento location...</div>
+        </div>
+    </div>
+
+    <script>
+        async function loadLocations() {
+            try {
+                const res = await fetch('/api/admin/locations');
+                const data = await res.json();
+
+                if (data.error) {
+                    document.getElementById('locationsList').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚠️</div>
+                            <div>${data.error}</div>
+                        </div>`;
+                    return;
+                }
+
+                const locations = data.locations || [];
+                
+                document.getElementById('totalCount').textContent = locations.length;
+                document.getElementById('cachedCount').textContent = locations.filter(l => l.has_cache).length;
+
+                if (locations.length === 0) {
+                    document.getElementById('locationsList').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📍</div>
+                            <div>Nessuna location trovata da Rentman</div>
+                        </div>`;
+                    return;
+                }
+
+                const html = locations.map(loc => `
+                    <div class="location-card ${loc.has_cache ? 'has-cache' : ''}">
+                        <div class="location-name ${loc.has_cache ? 'has-cache' : 'no-cache'}">
+                            ${escapeHtml(loc.name)}
+                        </div>
+                        ${loc.address ? `<div class="location-address">${escapeHtml(loc.address)}</div>` : ''}
+                        <div class="location-coords">
+                            ${loc.has_cache ? `
+                                <div>Lat: <strong>${loc.latitude.toFixed(6)}</strong></div>
+                                <div>Lon: <strong>${loc.longitude.toFixed(6)}</strong></div>
+                            ` : '<div style="color: var(--text-muted);">Nessuna coordinata salvata</div>'}
+                        </div>
+                        <div class="coord-input-group">
+                            <input type="number" class="lat-input" placeholder="Lat" step="0.000001" value="${loc.latitude || ''}" data-location="${escapeHtml(loc.name)}">
+                            <input type="number" class="lon-input" placeholder="Lon" step="0.000001" value="${loc.longitude || ''}" data-location="${escapeHtml(loc.name)}">
+                        </div>
+                        <div class="coord-button-group">
+                            <button class="btn-save-coords" onclick="saveCoordinates('${escapeHtml(loc.name)}')">💾 Salva</button>
+                            <button class="btn-map" onclick="openMap('${escapeHtml(loc.name)}', ${loc.latitude || 0}, ${loc.longitude || 0})">🗺️ Mappa</button>
+                        </div>
+                    </div>
+                `).join('');
+
+                document.getElementById('locationsList').innerHTML = html;
+            } catch (err) {
+                console.error('Errore:', err);
+                document.getElementById('locationsList').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">❌</div>
+                        <div>Errore nel caricamento</div>
+                    </div>`;
+            }
+        }
+
+        async function saveCoordinates(locationName) {
+            const card = event.target.closest('.location-card');
+            const latInput = card.querySelector('.lat-input');
+            const lonInput = card.querySelector('.lon-input');
+
+            const latitude = parseFloat(latInput.value);
+            const longitude = parseFloat(lonInput.value);
+
+            if (isNaN(latitude) || isNaN(longitude)) {
+                alert('Inserisci coordinate valide');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/admin/locations/${encodeURIComponent(locationName)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ latitude, longitude })
+                });
+
+                const data = await res.json();
+
+                if (data.ok) {
+                    card.classList.add('has-cache');
+                    alert('Coordinate salvate! ✅');
+                    loadLocations();
+                } else {
+                    alert(`Errore: ${data.error}`);
+                }
+            } catch (err) {
+                console.error('Errore:', err);
+                alert('Errore nel salvataggio');
+            }
+        }
+
+        function openMap(locationName, lat, lon) {
+            if (!lat || !lon) {
+                alert('Inserisci prima le coordinate');
+                return;
+            }
+            window.open(`https://maps.google.com/?q=${lat},${lon}`, '_blank');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Carica al caricamento della pagina
+        document.addEventListener('DOMContentLoaded', loadLocations);
+    </script>
+</body>
+</html>

@@ -1,8 +1,8 @@
-// Service Worker Version: v2026.01.08a - Updated: 2026-01-08T10:00:00Z
-const CACHE_NAME = 'joblog-v2026.01.08a';
-const STATIC_CACHE = 'joblog-static-v33';
-const DYNAMIC_CACHE = 'joblog-dynamic-v33';
-const API_CACHE = 'joblog-api-v31';
+// Service Worker Version: v2026.01.10 - Updated: 2026-01-09T16:30:00Z
+const CACHE_NAME = 'joblog-v2026.01.10';
+const STATIC_CACHE = 'joblog-static-v40';
+const DYNAMIC_CACHE = 'joblog-dynamic-v40';
+const API_CACHE = 'joblog-api-v35';
 const BG_SYNC_TAG = 'joblog-sync-queue';
 const QUEUE_DB = 'joblog-sync-db';
 const QUEUE_STORE = 'requests';
@@ -447,11 +447,19 @@ self.addEventListener('notificationclick', (event) => {
     let targetUrl = '/';
     const notificationData = event.notification.data || {};
     
-    if (notificationData.url) {
+    console.log('[ServiceWorker] Notification clicked!');
+    console.log('[ServiceWorker] notificationData:', notificationData);
+    console.log('[ServiceWorker] notificationData.url:', notificationData.url);
+    console.log('[ServiceWorker] notificationData.type:', notificationData.type);
+    
+    // IMPORTANTE: Controlla il type PRIMA dell'URL, per gestire turni_published
+    if (notificationData.type === 'turni_published') {
+        targetUrl = '/user/turni';
+    } else if (notificationData.url) {
         targetUrl = notificationData.url;
-    } else if (notificationData.type === 'turni_published') {
-        targetUrl = '/turni';
     }
+    
+    console.log('[ServiceWorker] targetUrl:', targetUrl);
     
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {

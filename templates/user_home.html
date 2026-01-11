@@ -3172,7 +3172,7 @@ async function subscribeToPush() {
     // Registra service worker se non già fatto
     let registration = await navigator.serviceWorker.getRegistration();
     if (!registration) {
-      registration = await navigator.serviceWorker.register('/sw.js');
+      registration = await navigator.serviceWorker.register('/sw.js?v=2026.01.08e');
       await navigator.serviceWorker.ready;
     }
     
@@ -3259,7 +3259,7 @@ if (localStorage.getItem('theme') === 'dark') {
 
 // Registra service worker per PWA
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js')
+  navigator.serviceWorker.register('/sw.js?v=2026.01.08e')
     .then(reg => console.log('Service Worker registrato'))
     .catch(err => console.warn('Service Worker fallito:', err));
     

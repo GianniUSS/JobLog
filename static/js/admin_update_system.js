@@ -106,7 +106,7 @@
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js')
+            navigator.serviceWorker.register('/sw.js?v=2026.01.08e')
                 .then((registration) => {
                     console.log('✓ Service Worker registrato:', registration.scope);
                     if (registration.active && navigator.serviceWorker.controller === null) {

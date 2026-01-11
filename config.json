@@ -28,6 +28,12 @@
         "latitude": 45.4642,
         "longitude": 9.1900,
         "radius_meters": 100
+      },
+      {
+        "name": "Magazzino di fasano",
+        "latitude": 40.8575396110475585,
+        "longitude": 17.3497049037734,
+        "radius_meters": 100
       }
     ],
     "gps_max_accuracy_meters": 50

@@ -1443,6 +1443,22 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Orari per permessi -->
+                    <div class="form-group" id="time-group" style="display: none;">
+                        <div class="date-row">
+                            <div>
+                                <label class="form-label">Ora Inizio</label>
+                                <input type="time" class="form-input" id="time-start">
+                            </div>
+                            <div>
+                                <label class="form-label">Ora Fine</label>
+                                <input type="time" class="form-input" id="time-end">
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; color: #666; margin-top: 8px;">
+                            <span id="hours-calculated">Ore: 0</span>
+                        </div>
+                    </div>
                     <div class="form-group" id="value-group">
                         <label class="form-label" id="value-label">Valore (ore)</label>
                         <input type="number" class="form-input" id="request-value" step="0.5" min="0.5">
@@ -1654,11 +1670,13 @@
             const selected = select.options[select.selectedIndex];
             const valueType = selected.dataset.unit || 'hours';
             const typeName = selected.text.toLowerCase();
+            const typeId = parseInt(selected.value);
             
             const valueGroup = document.getElementById('value-group');
             const cdcGroup = document.getElementById('cdc-group');
             const attachmentGroup = document.getElementById('attachment-group');
             const tratteGroup = document.getElementById('tratte-group');
+            const timeGroup = document.getElementById('time-group');
             const valueLabel = document.getElementById('value-label');
             const valueInput = document.getElementById('request-value');
             const cdcInput = document.getElementById('request-cdc');
@@ -1670,6 +1688,7 @@
             cdcGroup.style.display = 'none';
             attachmentGroup.style.display = 'none';
             tratteGroup.style.display = 'none';
+            timeGroup.style.display = 'none';
             ferieCounter.style.display = 'none';
             permessiCounter.style.display = 'none';
             
@@ -1683,6 +1702,8 @@
                 ferieCounter.style.display = 'block';
             } else if (typeName.includes('permess')) {
                 permessiCounter.style.display = 'block';
+                // Per i permessi, mostra i campi orario
+                timeGroup.style.display = 'block';
             }
             
             switch(valueType) {
@@ -1690,9 +1711,12 @@
                     // Nascondi tutto, solo date
                     break;
                 case 'hours':
-                    valueGroup.style.display = 'block';
-                    valueLabel.textContent = 'Valore (ore)';
-                    valueInput.setAttribute('required', 'required');
+                    // Se è un permesso (ID 3), non mostrar il campo valore manuale
+                    if (typeId !== 3) {
+                        valueGroup.style.display = 'block';
+                        valueLabel.textContent = 'Valore (ore)';
+                        valueInput.setAttribute('required', 'required');
+                    }
                     break;
                 case 'amount':
                     valueGroup.style.display = 'block';
@@ -2086,6 +2110,31 @@
             updateFormFields();
         });
 
+        // Calcola ore dal permesso
+        function calculatePermissionHours() {
+            const timeStart = document.getElementById('time-start').value;
+            const timeEnd = document.getElementById('time-end').value;
+            const hoursDisplay = document.getElementById('hours-calculated');
+            
+            if (timeStart && timeEnd) {
+                const [startH, startM] = timeStart.split(':').map(Number);
+                const [endH, endM] = timeEnd.split(':').map(Number);
+                
+                const startMinutes = startH * 60 + startM;
+                const endMinutes = endH * 60 + endM;
+                
+                let diffMinutes = endMinutes - startMinutes;
+                if (diffMinutes < 0) diffMinutes += 24 * 60; // Se attraversa mezzanotte
+                
+                const hours = (diffMinutes / 60).toFixed(2);
+                hoursDisplay.textContent = `Ore: ${hours}`;
+            }
+        }
+
+        // Event listeners per orari
+        document.getElementById('time-start').addEventListener('change', calculatePermissionHours);
+        document.getElementById('time-end').addEventListener('change', calculatePermissionHours);
+
         // Set default dates
         function setDefaultDates() {
             const today = new Date().toISOString().split('T')[0];
@@ -2176,6 +2225,18 @@
                         notes: notes || null,
                         cdc: cdc || null
                     };
+                    
+                    // Per i permessi, aggiungi gli orari in extra_data
+                    if (parseInt(typeId) === 3) {  // Permesso (ID 3)
+                        const timeStart = document.getElementById('time-start').value;
+                        const timeEnd = document.getElementById('time-end').value;
+                        if (timeStart && timeEnd) {
+                            payload.extra_data = JSON.stringify({
+                                time_start: timeStart,
+                                time_end: timeEnd
+                            });
+                        }
+                    }
                     
                     // Aggiungi tratte se presenti
                     if (tratte) {
@@ -2358,7 +2419,7 @@
             try {
                 let registration = await navigator.serviceWorker.getRegistration();
                 if (!registration) {
-                    registration = await navigator.serviceWorker.register('/sw.js');
+                    registration = await navigator.serviceWorker.register('/sw.js?v=2026.01.08e');
                     await navigator.serviceWorker.ready;
                 }
                 

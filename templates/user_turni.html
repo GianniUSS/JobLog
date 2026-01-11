@@ -78,9 +78,6 @@ body {
 .header {
   background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
   padding: calc(var(--safe-top) + 20px) 20px 20px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
 }
 
 .header::before {
@@ -103,7 +100,6 @@ body {
   height: 44px;
   border-radius: 14px;
   background: rgba(255,255,255,0.2);
-  backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,0.1);
   color: white;
   display: flex;
@@ -141,7 +137,6 @@ body {
   height: 44px;
   border-radius: 14px;
   background: rgba(255,255,255,0.2);
-  backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,0.1);
   color: white;
   display: flex;
@@ -244,21 +239,31 @@ body {
 .weekly-chart {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 8px;
+  gap: 4px;
+  width: 100%;
+  overflow: visible;
+  margin-top: 4px;
+  padding: 4px 2px;
 }
 
 .week-day {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 10px 6px;
+  gap: 4px;
+  padding: 8px 2px;
   background: var(--bg);
   border-radius: 8px;
   text-align: center;
   transition: all 0.2s ease;
   cursor: pointer;
   border: 2px solid transparent;
+  min-width: 0;
+}
+
+.week-day.selected {
+  border-color: var(--brand);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(129, 140, 248, 0.1));
 }
 
 .week-day:hover {
@@ -341,7 +346,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .week-nav-btn {
@@ -1268,27 +1273,6 @@ body {
     </div>
   </div>
 
-  <!-- Filter Pills -->
-  <div class="filter-pills-wrapper">
-    <div class="filter-pills" id="filterPillsContainer">
-      <button class="filter-pill active" data-filter="today">
-        <i class="fas fa-star"></i>
-        Oggi
-      </button>
-      <button class="filter-pill" data-filter="upcoming">
-        <i class="fas fa-arrow-right"></i>
-        Prossimi
-      </button>
-      <button class="filter-pill" data-filter="past">
-        <i class="fas fa-history"></i>
-        Passati
-      </button>
-    </div>
-    <div class="scroll-indicator" style="display: none;">
-      <i class="fas fa-chevron-right"></i>
-    </div>
-  </div>
-
   <!-- Turni List -->
   <div id="turniContainer">
     <div class="loading-spinner"></div>
@@ -1520,9 +1504,6 @@ function showToastGlobal(message) {
   let currentWeekOffset = 0; // Offset per navigare tra le settimane
   
   const container = document.getElementById('turniContainer');
-  const filterPills = document.querySelectorAll('.filter-pill');
-  const filterPillsContainer = document.getElementById('filterPillsContainer');
-  const scrollIndicator = document.querySelector('.scroll-indicator');
   const weeklyChart = document.getElementById('weeklyChart');
   const weekLabel = document.getElementById('weekLabel');
   const weeklyTotalHours = document.getElementById('weeklyTotalHours');
@@ -1533,19 +1514,6 @@ function showToastGlobal(message) {
     const breakMinutes = parseInt(turno.break_minutes) || 0;
     const breakHours = breakMinutes / 60;
     return Math.max(0, hours - breakHours);
-  }
-
-  // Gestione indicatore scroll per i filtri
-  function checkScrollIndicator() {
-    if (filterPillsContainer && scrollIndicator) {
-      const isAtEnd = filterPillsContainer.scrollLeft + filterPillsContainer.clientWidth >= filterPillsContainer.scrollWidth - 5;
-      scrollIndicator.classList.toggle('hidden', isAtEnd);
-    }
-  }
-  
-  if (filterPillsContainer) {
-    filterPillsContainer.addEventListener('scroll', checkScrollIndicator);
-    setTimeout(checkScrollIndicator, 100);
   }
   
   // Giorni della settimana
@@ -1658,13 +1626,19 @@ function showToastGlobal(message) {
     weekLabel.textContent = getWeekLabel(currentWeekOffset);
   }
 
+  let selectedDate = null;
+
   function selectDate(dateStr) {
-    currentFilter = 'today';
-    filterPills.forEach(p => {
-      p.classList.toggle('active', p.dataset.filter === 'today');
+    selectedDate = dateStr;
+    currentFilter = 'selected';
+    
+    // Aggiorna visual selezione giorni
+    document.querySelectorAll('.week-day').forEach(el => {
+      el.classList.remove('selected');
     });
+    event.currentTarget.classList.add('selected');
+    
     renderTurni();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function navigateWeek(direction) {
@@ -1749,6 +1723,8 @@ function showToastGlobal(message) {
         return allTurni.filter(t => t.date >= today);
       case 'past':
         return allTurni.filter(t => t.date < today);
+      case 'selected':
+        return allTurni.filter(t => t.date === selectedDate);
       case 'today':
       default:
         return allTurni.filter(t => t.date === today);
@@ -1762,7 +1738,8 @@ function showToastGlobal(message) {
       let message = 'Nessun turno disponibile';
       if (currentFilter === 'upcoming') message = 'Nessun turno previsto';
       else if (currentFilter === 'past') message = 'Nessun turno passato';
-      else if (currentFilter === 'today') message = 'Nessun turno per questa data';
+      else if (currentFilter === 'today') message = 'Nessun turno per oggi';
+      else if (currentFilter === 'selected') message = 'Nessun turno per questa data';
       
       container.innerHTML = `
         <div class="empty-state">
@@ -1859,36 +1836,6 @@ function showToastGlobal(message) {
     container.innerHTML = `<div class="turni-list">${html}</div>`;
   }
   
-  // Event listeners
-  filterPills.forEach(pill => {
-    pill.addEventListener('click', () => {
-      filterPills.forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      currentFilter = pill.dataset.filter;
-      renderTurni();
-    });
-  });
-
-  // Swipe gesture support per scorrere tra i filtri
-  let touchStart = null;
-  filterPillsContainer.addEventListener('touchstart', (e) => {
-    touchStart = e.touches[0].clientX;
-  }, false);
-
-  filterPillsContainer.addEventListener('touchend', (e) => {
-    if (!touchStart) return;
-    const touchEnd = e.changedTouches[0].clientX;
-    const diff = touchStart - touchEnd;
-    
-    if (Math.abs(diff) > 50) { // Swipe threshold
-      filterPillsContainer.scrollBy({
-        left: diff > 0 ? 200 : -200,
-        behavior: 'smooth'
-      });
-    }
-    touchStart = null;
-  }, false);
-
   // Funzioni globali per week navigation
   window.navigateWeek = navigateWeek;
   window.selectDate = selectDate;

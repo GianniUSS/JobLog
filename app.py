@@ -5907,11 +5907,11 @@ def api_user_turni():
             
             return jsonify({"turni": turni})
         
-        # Se ha crew_id, cerca in rentman_plannings per i prossimi 60 giorni
+        # Se ha crew_id, cerca in rentman_plannings (ultimi 30 giorni + prossimi 60 giorni)
         ensure_rentman_plannings_table(db)
         today = datetime.now()
         sixty_days_future = (today + timedelta(days=60)).strftime("%Y-%m-%d")
-        today_str = today.strftime("%Y-%m-%d")
+        thirty_days_past = (today - timedelta(days=30)).strftime("%Y-%m-%d")
         
         planning = db.execute(
             f"""
@@ -5923,7 +5923,7 @@ def api_user_turni():
               AND sent_to_webservice = 1
             ORDER BY planning_date ASC, plan_start ASC
             """,
-            (crew_id, today_str, sixty_days_future)
+            (crew_id, thirty_days_past, sixty_days_future)
         ).fetchall()
         
         turni = []
