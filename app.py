@@ -195,6 +195,35 @@ CONFIG_FILE = Path(__file__).with_name("config.json")
 USERS_FILE = Path(__file__).with_name("users.json")
 DEMO_PROJECT_CODE = "1001"
 
+# ═══════════════════════════════════════════════════════════════════
+# DATE SIMULATION FOR TESTING
+# ═══════════════════════════════════════════════════════════════════
+# Per simulare una data diversa, imposta SIMULATED_DATE nel formato "YYYY-MM-DD"
+# Es: SIMULATED_DATE = "2026-01-10"
+# Per usare la data reale, lascia None
+SIMULATED_DATE: Optional[str] = None
+
+
+def get_simulated_now() -> datetime:
+    """
+    Ritorna datetime.now() o la data simulata se impostata.
+    Usa questa funzione invece di datetime.now() per testare date diverse.
+    """
+    if SIMULATED_DATE:
+        try:
+            simulated = datetime.strptime(SIMULATED_DATE, "%Y-%m-%d")
+            # Mantieni l'ora corrente ma con la data simulata
+            now = datetime.now()
+            return simulated.replace(hour=now.hour, minute=now.minute, second=now.second, microsecond=now.microsecond)
+        except ValueError:
+            app.logger.warning(f"SIMULATED_DATE '{SIMULATED_DATE}' non valida, uso data reale")
+    return datetime.now()
+
+
+def get_simulated_today() -> date:
+    """Ritorna la data di oggi o la data simulata se impostata."""
+    return get_simulated_now().date()
+
 
 def static_version(filename: str) -> str:
     """Return cache-busted static URL using file mtime as version."""
@@ -5611,7 +5640,7 @@ def api_user_turno_oggi():
             ensure_employee_shifts_table(db)
             
             # Trova il giorno della settimana (0=Lunedì, 6=Domenica)
-            today = datetime.now()
+            today = get_simulated_now()
             day_of_week = today.weekday()
             
             shift_row = db.execute(f"""
@@ -5655,14 +5684,15 @@ def api_user_turno_oggi():
             return jsonify({"turno": None, "turni": [], "message": "Nessun turno configurato"})
         
         # Se ha crew_id, cerca in rentman_plannings
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = get_simulated_now().strftime("%Y-%m-%d")
         ensure_rentman_plannings_table(db)
         
         # DEBUG: Mostra cosa c'è nel database per questo utente oggi
         debug_rows = db.execute(
             f"""SELECT crew_id, planning_date, project_name, location_name, 
                       timbratura_gps_mode, gps_timbratura_location, location_id
-               FROM rentman_plannings WHERE crew_id = {placeholder} AND planning_date = {placeholder}""",
+               FROM rentman_plannings WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+               AND (is_obsolete = 0 OR is_obsolete IS NULL)""",
             (crew_id, today)
         ).fetchall()
         
@@ -5686,6 +5716,7 @@ def api_user_turno_oggi():
                    location_name, timbratura_gps_mode, gps_timbratura_location, location_id
             FROM rentman_plannings
             WHERE crew_id = {placeholder} AND planning_date = {placeholder} AND sent_to_webservice = 1
+              AND (is_obsolete = 0 OR is_obsolete IS NULL)
             ORDER BY plan_start ASC
             """,
             (crew_id, today)
@@ -5863,7 +5894,7 @@ def api_user_turni():
             
             turni = []
             # Genera turni per i prossimi 60 giorni basandosi su employee_shifts
-            today = datetime.now()
+            today = get_simulated_now()
             for days_ahead in range(60):
                 check_date = today + timedelta(days=days_ahead)
                 day_of_week = check_date.weekday()
@@ -5909,7 +5940,7 @@ def api_user_turni():
         
         # Se ha crew_id, cerca in rentman_plannings (ultimi 30 giorni + prossimi 60 giorni)
         ensure_rentman_plannings_table(db)
-        today = datetime.now()
+        today = get_simulated_now()
         sixty_days_future = (today + timedelta(days=60)).strftime("%Y-%m-%d")
         thirty_days_past = (today - timedelta(days=30)).strftime("%Y-%m-%d")
         
@@ -5921,6 +5952,7 @@ def api_user_turni():
             FROM rentman_plannings
             WHERE crew_id = {placeholder} AND planning_date >= {placeholder} AND planning_date <= {placeholder}
               AND sent_to_webservice = 1
+              AND (is_obsolete = 0 OR is_obsolete IS NULL)
             ORDER BY planning_date ASC, plan_start ASC
             """,
             (crew_id, thirty_days_past, sixty_days_future)
@@ -8922,6 +8954,62 @@ def api_admin_magazzino_summary() -> ResponseReturnValue:
             "team_total_sessions": team_total_sessions,
         }
     )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DEBUG: SIMULATED DATE API
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route("/api/admin/simulated-date", methods=["GET", "POST", "DELETE"], endpoint="api_admin_simulated_date")
+@login_required
+def api_admin_simulated_date() -> ResponseReturnValue:
+    """
+    GET: Mostra la data simulata attuale
+    POST: Imposta una data simulata (es: {"date": "2026-01-10"})
+    DELETE: Rimuove la data simulata (usa data reale)
+    """
+    global SIMULATED_DATE
+    
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "forbidden"}), 403
+    
+    if request.method == "GET":
+        return jsonify({
+            "simulated_date": SIMULATED_DATE,
+            "real_date": datetime.now().strftime("%Y-%m-%d"),
+            "effective_date": get_simulated_today().strftime("%Y-%m-%d")
+        })
+    
+    if request.method == "DELETE":
+        old_date = SIMULATED_DATE
+        SIMULATED_DATE = None
+        app.logger.info(f"Data simulata rimossa (era: {old_date})")
+        return jsonify({
+            "success": True,
+            "message": "Data simulata rimossa, usando data reale",
+            "effective_date": get_simulated_today().strftime("%Y-%m-%d")
+        })
+    
+    # POST: imposta nuova data simulata
+    data = request.get_json() or {}
+    new_date = data.get("date")
+    
+    if not new_date:
+        return jsonify({"error": "Specifica 'date' nel formato YYYY-MM-DD"}), 400
+    
+    try:
+        # Valida il formato
+        datetime.strptime(new_date, "%Y-%m-%d")
+        SIMULATED_DATE = new_date
+        app.logger.info(f"Data simulata impostata a: {SIMULATED_DATE}")
+        return jsonify({
+            "success": True,
+            "message": f"Data simulata impostata a {new_date}",
+            "simulated_date": SIMULATED_DATE,
+            "effective_date": get_simulated_today().strftime("%Y-%m-%d")
+        })
+    except ValueError:
+        return jsonify({"error": "Formato data non valido, usa YYYY-MM-DD"}), 400
 
 
 @app.route("/api/admin/day-sessions", methods=["GET"], endpoint="api_admin_day_sessions")
