@@ -573,24 +573,34 @@
             opacity: 0.9;
         }
         .location-card-coords {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .location-card-coords input {
-            flex: 1;
-            padding: 6px 10px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 12px 0;
+            padding: 10px;
             background: var(--bg);
-            color: var(--text);
-            font-size: 12px;
-            font-family: monospace;
+            border-radius: 6px;
         }
+
+        .location-card-coords input {
+            padding: 10px 12px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 13px;
+            font-family: monospace;
+            font-weight: 600;
+        }
+
+        .location-card-coords input::placeholder {
+            color: var(--text-muted);
+        }
+
         .location-card-coords input:focus {
             outline: none;
             border-color: var(--brand);
+            background: var(--bg);
         }
         .location-card-actions {
             display: flex;
@@ -1225,6 +1235,9 @@
         let selectedIds = new Set();
         let isFromDatabase = false;
         let hasSavedData = false;
+        let isLoadingData = false; // Flag per evitare doppi caricamenti
+        let dateCache = new Map(); // Cache per evitare risincronizzazioni
+        let lastLoadedDate = null; // Data caricata precedentemente
 
         // Helper functions - definite prima dell'uso
         function formatDateISO(d) {
@@ -1704,20 +1717,22 @@
         async function navigateDate(days) {
             const current = new Date(dateInput.value);
             current.setDate(current.getDate() + days);
-            dateInput.value = formatDateISO(current);
-            hasSavedData = false;
-            currentPlannings = [];
-            await loadSavedPlanningsIfExists();
-            if (!hasSavedData) {
-                // Carica automaticamente da Rentman se non ci sono dati salvati
-                await loadPlannings();
-            }
+            const newDate = formatDateISO(current);
+            
+            // Cambia solo il valore dell'input, il 'change' event lo gestisce
+            dateInput.value = newDate;
+            dateInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         btnPrev.addEventListener('click', () => navigateDate(-1));
         btnNext.addEventListener('click', () => navigateDate(1));
 
-        btnLoad.addEventListener('click', loadPlannings);
+        btnLoad.addEventListener('click', () => {
+            // Invalida la cache della data attuale quando clicchi "Sincronizza"
+            const currentDate = dateInput.value;
+            dateCache.delete(currentDate);
+            loadPlannings();
+        });
         
         // Espone loadPlannings per refreshData()
         window._loadPlannings = loadPlannings;
@@ -2040,11 +2055,18 @@
             }
             
             try {
+                console.log("🔧 toggleGpsMode:", {
+                    id: planning.id,
+                    rentman_id: planning.rentman_id,
+                    newMode: newMode
+                });
+                
                 const response = await fetch('/api/admin/rentman/planning/update-gps-mode', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         id: planning.id,
+                        rentman_id: planning.rentman_id || planning.id,
                         timbratura_gps_mode: newMode
                     })
                 });
@@ -2163,51 +2185,123 @@
                 `;
                 return;
             }
-            
-            let html = '';
-            locationsMap.forEach((loc, key) => {
-                const hasCoords = loc.lat && loc.lon;
-                html += `
-                    <div class="location-card" data-location-key="${escapeHtml(String(key))}">
-                        <div class="location-card-header">
-                            <div>
-                                <div class="location-card-name">${escapeHtml(loc.name)}</div>
-                                <div class="location-card-project">${escapeHtml(loc.project || '')}</div>
+
+            // Fetch dalla cache globale per aggiornare i valori
+            fetch('/api/admin/locations')
+                .then(res => res.json())
+                .then(data => {
+                    const locationsCache = new Map();
+                    (data.locations || []).forEach(loc => {
+                        if (loc.has_cache) {
+                            locationsCache.set(loc.name, { lat: loc.latitude, lon: loc.longitude });
+                        }
+                    });
+
+                    let html = '';
+                    locationsMap.forEach((loc, key) => {
+                        // Controlla prima nella cache globale, poi usa i valori locali
+                        const cachedCoords = locationsCache.get(loc.name);
+                        const finalLat = cachedCoords ? cachedCoords.lat : loc.lat;
+                        const finalLon = cachedCoords ? cachedCoords.lon : loc.lon;
+                        const hasCoords = finalLat && finalLon;
+                        
+                        html += `
+                            <div class="location-card" data-location-key="${escapeHtml(String(key))}">
+                                <div class="location-card-header">
+                                    <div>
+                                        <div class="location-card-name">${escapeHtml(loc.name)}</div>
+                                        <div class="location-card-project">${escapeHtml(loc.project || '')}</div>
+                                    </div>
+                                    <span class="location-card-status ${hasCoords ? 'ok' : 'missing'}">
+                                        ${hasCoords ? '✓ GPS OK' : '⚠ No GPS'}
+                                    </span>
+                                </div>
+                                ${loc.address ? `<div class="location-card-address">📍 ${escapeHtml(loc.address)}</div>` : ''}
+                                
+                                <div class="location-card-coords">
+                                    <div>
+                                        <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Latitudine</label>
+                                        <input type="number" class="lat-input" placeholder="es: 40.123456" step="0.000001" value="${finalLat || ''}" 
+                                               data-field="lat" data-key="${escapeHtml(String(key))}" style="width: 100%;">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Longitudine</label>
+                                        <input type="number" class="lon-input" placeholder="es: 15.654321" step="0.000001" value="${finalLon || ''}" 
+                                               data-field="lon" data-key="${escapeHtml(String(key))}" style="width: 100%;">
+                                    </div>
+                                </div>
+                                
+                                <div class="location-card-actions">
+                                    ${loc.address ? `
+                                        <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps/search/${encodeURIComponent(loc.address)}', '_blank')">
+                                            🗺️ Maps
+                                        </button>
+                                    ` : ''}
+                                    <button class="location-card-btn save" onclick="saveLocationCoords('${escapeHtml(String(key))}')">
+                                        💾 Salva
+                                    </button>
+                                </div>
+                                
+                                <div class="location-card-operators">
+                                    👥 ${loc.operators.join(', ')}
+                                </div>
                             </div>
-                            <span class="location-card-status ${hasCoords ? 'ok' : 'missing'}">
-                                ${hasCoords ? '✓ GPS OK' : '⚠ No GPS'}
-                            </span>
-                        </div>
-                        ${loc.address ? `<div class="location-card-address">📍 ${escapeHtml(loc.address)}</div>` : ''}
-                        
-                        <div class="location-card-coords">
-                            <input type="text" placeholder="Lat" value="${loc.lat || ''}" 
-                                   data-field="lat" data-key="${escapeHtml(String(key))}"
-                                   style="width: 45%;">
-                            <input type="text" placeholder="Lon" value="${loc.lon || ''}" 
-                                   data-field="lon" data-key="${escapeHtml(String(key))}"
-                                   style="width: 45%;">
-                        </div>
-                        
-                        <div class="location-card-actions">
-                            ${loc.address ? `
-                                <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps/search/${encodeURIComponent(loc.address)}', '_blank')">
-                                    🗺️ Maps
-                                </button>
-                            ` : ''}
-                            <button class="location-card-btn save" onclick="saveLocationCoords('${escapeHtml(String(key))}')">
-                                💾 Salva
-                            </button>
-                        </div>
-                        
-                        <div class="location-card-operators">
-                            👥 ${loc.operators.join(', ')}
-                        </div>
-                    </div>
-                `;
-            });
-            
-            locationsPanelContent.innerHTML = html;
+                        `;
+                    });
+                    
+                    locationsPanelContent.innerHTML = html;
+                })
+                .catch(err => {
+                    console.error('Errore caricamento cache location:', err);
+                    // Fallback: mostra i dati senza cache
+                    let html = '';
+                    locationsMap.forEach((loc, key) => {
+                        const hasCoords = loc.lat && loc.lon;
+                        html += `
+                            <div class="location-card" data-location-key="${escapeHtml(String(key))}">
+                                <div class="location-card-header">
+                                    <div>
+                                        <div class="location-card-name">${escapeHtml(loc.name)}</div>
+                                        <div class="location-card-project">${escapeHtml(loc.project || '')}</div>
+                                    </div>
+                                    <span class="location-card-status ${hasCoords ? 'ok' : 'missing'}">
+                                        ${hasCoords ? '✓ GPS OK' : '⚠ No GPS'}
+                                    </span>
+                                </div>
+                                ${loc.address ? `<div class="location-card-address">📍 ${escapeHtml(loc.address)}</div>` : ''}
+                                
+                                <div class="location-card-coords">
+                                    <div>
+                                        <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Latitudine</label>
+                                        <input type="number" class="lat-input" placeholder="es: 40.123456" step="0.000001" value="${loc.lat || ''}" 
+                                               data-field="lat" data-key="${escapeHtml(String(key))}" style="width: 100%;">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Longitudine</label>
+                                        <input type="number" class="lon-input" placeholder="es: 15.654321" step="0.000001" value="${loc.lon || ''}" 
+                                               data-field="lon" data-key="${escapeHtml(String(key))}" style="width: 100%;">
+                                    </div>
+                                </div>
+                                
+                                <div class="location-card-actions">
+                                    ${loc.address ? `
+                                        <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps/search/${encodeURIComponent(loc.address)}', '_blank')">
+                                            🗺️ Maps
+                                        </button>
+                                    ` : ''}
+                                    <button class="location-card-btn save" onclick="saveLocationCoords('${escapeHtml(String(key))}')">
+                                        💾 Salva
+                                    </button>
+                                </div>
+                                
+                                <div class="location-card-operators">
+                                    👥 ${loc.operators.join(', ')}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    locationsPanelContent.innerHTML = html;
+                });
         }
         
         window.saveLocationCoords = async function(locationKey) {
@@ -2245,53 +2339,54 @@
                 return;
             }
             
-            // Aggiorna tutte le pianificazioni con questa location
-            let successCount = 0;
-            for (const p of planningsToUpdate) {
-                try {
-                    // Usa l'ID del DB se disponibile, altrimenti rentman_id
-                    const payload = {
-                        date: dateInput.value,
-                        location_lat: lat,
-                        location_lon: lon
-                    };
-                    
-                    // Priorità: id DB > rentman_id > id generico
-                    if (p.id && typeof p.id === 'number') {
-                        payload.id = p.id;
-                    } else if (p.rentman_id) {
-                        payload.rentman_id = p.rentman_id;
-                    } else if (p.id) {
-                        // p.id potrebbe essere il rentman_id
-                        payload.rentman_id = p.id;
-                    }
-                    
-                    console.log('Salvataggio coordinate per:', payload);
-                    
-                    const res = await fetch('/api/admin/rentman/coords', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    
-                    const data = await res.json();
-                    if (data.success) {
-                        // Aggiorna i dati locali
-                        p.location_lat = lat;
-                        p.location_lon = lon;
-                        successCount++;
-                    }
-                } catch (err) {
-                    console.error('Errore salvataggio coordinate:', err);
-                }
+            // Estrai il nome della location dal primo planning con questa location
+            const locationName = planningsToUpdate[0]?.location_name;
+            if (!locationName) {
+                showMessage('Nome location non trovato', 'error');
+                return;
             }
             
-            if (successCount > 0) {
-                showMessage(`Coordinate aggiornate per ${successCount} pianificazioni`, 'success');
-                renderPlannings(currentPlannings);
-                updateLocationsPanel();
+            // Se coordinate fornite, salva nella cache globale delle location
+            if (lat && lon) {
+                try {
+                    console.log(`Salvataggio coordinate per location: ${locationName}`, { lat, lon });
+                    
+                    const res = await fetch(`/api/admin/locations/${encodeURIComponent(locationName)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ latitude: lat, longitude: lon })
+                    });
+                    
+                    console.log('Response status:', res.status);
+                    const data = await res.json();
+                    console.log('Response data:', data);
+                    
+                    if (data.ok) {
+                        showMessage('✅ Coordinate salvate nella cache globale!', 'success');
+                        
+                        // Aggiorna il card per mostrare lo status "ok" (verde)
+                        const statusElement = card.querySelector('.location-card-status');
+                        if (statusElement) {
+                            statusElement.className = 'location-card-status ok';
+                            statusElement.textContent = '✓ GPS OK';
+                        }
+                        
+                        // Mantieni i valori negli input
+                        latInput.value = lat;
+                        lonInput.value = lon;
+                        
+                        return;
+                    } else {
+                        showMessage(`Errore: ${data.error}`, 'error');
+                        return;
+                    }
+                } catch (err) {
+                    console.error('Errore salvataggio cache:', err);
+                    showMessage('Errore nel salvataggio: ' + err.message, 'error');
+                    return;
+                }
             } else {
-                showMessage('Errore nel salvataggio', 'error');
+                showMessage('Inserisci entrambe le coordinate', 'warning');
             }
         }
 
@@ -2300,13 +2395,44 @@
         });
 
         dateInput.addEventListener('change', async () => {
+            const selectedDate = dateInput.value;
+            
+            // Se è già caricata in cache, usa quella
+            if (dateCache.has(selectedDate)) {
+                const cached = dateCache.get(selectedDate);
+                currentPlannings = JSON.parse(JSON.stringify(cached.plannings));
+                hasSavedData = cached.hasSavedData;
+                isFromDatabase = cached.isFromDatabase;
+                selectedIds = new Set();
+                lastLoadedDate = selectedDate;
+                
+                // Rivisualizza i dati dalla cache
+                dateLabel.textContent = formatDateIT(selectedDate);
+                renderPlannings(currentPlannings);
+                updateSummary(currentPlannings);
+                updateSendButtonState();
+                updateLoadButtonText();
+                return;
+            }
+            
+            // Altrimenti carica normalmente
             hasSavedData = false;
             currentPlannings = [];
+            selectedIds = new Set();
+            
             await loadSavedPlanningsIfExists();
             if (!hasSavedData) {
                 // Carica automaticamente da Rentman se non ci sono dati salvati
                 await loadPlannings();
             }
+            
+            // Salva in cache quando caricamento completo
+            dateCache.set(selectedDate, {
+                plannings: JSON.parse(JSON.stringify(currentPlannings)),
+                hasSavedData: hasSavedData,
+                isFromDatabase: isFromDatabase
+            });
+            lastLoadedDate = selectedDate;
         });
 
         // Keyboard shortcuts

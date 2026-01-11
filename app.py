@@ -5058,7 +5058,7 @@ def api_timbratura_registra():
                     if crew_id:
                         # Cerca turno Rentman di oggi per l'utente (solo se inviato)
                         rentman_row = db.execute(f"""
-                            SELECT location_name, location_lat, location_lon, 
+                            SELECT location_name, location_id,
                                    timbratura_gps_mode, gps_timbratura_location
                             FROM rentman_plannings 
                             WHERE crew_id = {placeholder} 
@@ -5070,16 +5070,21 @@ def api_timbratura_registra():
                         if rentman_row:
                             if isinstance(rentman_row, dict):
                                 loc_name = rentman_row.get('location_name')
-                                loc_lat = rentman_row.get('location_lat')
-                                loc_lon = rentman_row.get('location_lon')
+                                loc_id = rentman_row.get('location_id')
                                 gps_mode = rentman_row.get('timbratura_gps_mode') or 'group'
                                 group_gps_name = rentman_row.get('gps_timbratura_location')
                             else:
                                 loc_name = rentman_row[0]
-                                loc_lat = rentman_row[1]
-                                loc_lon = rentman_row[2]
-                                gps_mode = rentman_row[3] or 'group'
-                                group_gps_name = rentman_row[4]
+                                loc_id = rentman_row[1]
+                                gps_mode = rentman_row[2] or 'group'
+                                group_gps_name = rentman_row[3]
+                            
+                            # Cerca coordinate nella cache
+                            loc_lat, loc_lon = None, None
+                            ensure_location_cache_table(db)
+                            cached_coords = get_location_cache(db, loc_name, loc_id)
+                            if cached_coords:
+                                loc_lat, loc_lon = cached_coords
                             
                             app.logger.info(f"Timbratura GPS: mode={gps_mode}, loc_name={loc_name}, loc_lat={loc_lat}, loc_lon={loc_lon}, group_gps_name={group_gps_name}")
                             app.logger.info(f"GPS locations configurate: {[l.get('name') for l in gps_locations]}")
@@ -5656,7 +5661,7 @@ def api_user_turno_oggi():
         # DEBUG: Mostra cosa c'è nel database per questo utente oggi
         debug_rows = db.execute(
             f"""SELECT crew_id, planning_date, project_name, location_name, 
-                      timbratura_gps_mode, gps_timbratura_location, location_lat, location_lon
+                      timbratura_gps_mode, gps_timbratura_location, location_id
                FROM rentman_plannings WHERE crew_id = {placeholder} AND planning_date = {placeholder}""",
             (crew_id, today)
         ).fetchall()
@@ -5668,7 +5673,7 @@ def api_user_turno_oggi():
                                   f"location_name={debug_row.get('location_name')}, "
                                   f"gps_mode={debug_row.get('timbratura_gps_mode')}, "
                                   f"gps_timbratura_location={debug_row.get('gps_timbratura_location')}, "
-                                  f"lat={debug_row.get('location_lat')}, lon={debug_row.get('location_lon')}")
+                                  f"location_id={debug_row.get('location_id')}")
                 else:
                     app.logger.info(f"DEBUG DB (tuple): {debug_row}")
         else:
@@ -5678,7 +5683,7 @@ def api_user_turno_oggi():
             f"""
             SELECT project_code, project_name, function_name, plan_start, plan_end,
                    hours_planned, remark, is_leader, transport, break_start, break_end, break_minutes,
-                   location_name, location_lat, location_lon, timbratura_gps_mode, gps_timbratura_location
+                   location_name, timbratura_gps_mode, gps_timbratura_location, location_id
             FROM rentman_plannings
             WHERE crew_id = {placeholder} AND planning_date = {placeholder} AND sent_to_webservice = 1
             ORDER BY plan_start ASC
@@ -5716,19 +5721,28 @@ def api_user_turno_oggi():
                 break_end = format_time_value(row.get('break_end'))
                 break_minutes = row.get('break_minutes')
                 location_name = row.get('location_name')
-                location_lat = row.get('location_lat')
-                location_lon = row.get('location_lon')
                 gps_mode = row.get('timbratura_gps_mode') or 'group'
                 gps_timbratura_location = row.get('gps_timbratura_location')
+                location_id = row.get('location_id')
             else:
                 break_start = format_time_value(row[9] if len(row) > 9 else None)
                 break_end = format_time_value(row[10] if len(row) > 10 else None)
                 break_minutes = row[11] if len(row) > 11 else None
                 location_name = row[12] if len(row) > 12 else None
-                location_lat = row[13] if len(row) > 13 else None
-                location_lon = row[14] if len(row) > 14 else None
-                gps_mode = (row[15] if len(row) > 15 else None) or 'group'
-                gps_timbratura_location = row[16] if len(row) > 16 else None
+                gps_mode = (row[13] if len(row) > 13 else None) or 'group'
+                gps_timbratura_location = row[14] if len(row) > 14 else None
+                location_id = row[15] if len(row) > 15 else None
+            
+            # Coordinate dalla cache globale
+            location_lat, location_lon = None, None
+            if location_name:
+                ensure_location_cache_table(db)
+                cached_coords = get_location_cache(db, location_name, location_id)
+                if cached_coords:
+                    location_lat, location_lon = cached_coords
+                    app.logger.info(f"✅ Location '{location_name}' (id={location_id}): usando coordinate dalla cache globale (turno-oggi): {location_lat}, {location_lon}")
+                else:
+                    app.logger.info(f"⚠️ Location '{location_name}' (id={location_id}): nessuna cache (turno-oggi)")
             
             # Determina dove timbrare e le coordinate GPS
             timbratura_location = None
@@ -10872,8 +10886,6 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     location_id INT,
     location_name VARCHAR(500),
     location_address VARCHAR(500),
-    location_lat DECIMAL(10,7),
-    location_lon DECIMAL(10,7),
     timbratura_gps_mode VARCHAR(20) DEFAULT 'group',
     gps_timbratura_location VARCHAR(255),
     plan_start DATETIME,
@@ -10917,8 +10929,8 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     location_id INTEGER,
     location_name TEXT,
     location_address TEXT,
-    location_lat REAL,
-    location_lon REAL,
+    timbratura_gps_mode TEXT DEFAULT 'group',
+    gps_timbratura_location TEXT,
     plan_start TEXT,
     plan_end TEXT,
     break_start TEXT DEFAULT NULL,
@@ -11386,29 +11398,16 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
                 db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_id INT AFTER subproject_id")
                 db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_name VARCHAR(500) AFTER location_id")
                 db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_address VARCHAR(500) AFTER location_name")
-                db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_lat DECIMAL(10,7) AFTER location_address")
-                db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_lon DECIMAL(10,7) AFTER location_lat")
                 db.commit()
                 app.logger.info("Migrazione rentman_plannings: aggiunte colonne location")
         except Exception as e:
             app.logger.warning(f"Migrazione rentman_plannings location: {e}")
         
-        # Migrazione: aggiungi colonne lat/lon se non esistono (per chi ha già location_id ma non lat/lon)
-        try:
-            cursor = db.execute("SHOW COLUMNS FROM rentman_plannings LIKE 'location_lat'")
-            if not cursor.fetchone():
-                db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_lat DECIMAL(10,7) AFTER location_address")
-                db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_lon DECIMAL(10,7) AFTER location_lat")
-                db.commit()
-                app.logger.info("Migrazione rentman_plannings: aggiunte colonne lat/lon")
-        except Exception as e:
-            app.logger.warning(f"Migrazione rentman_plannings lat/lon: {e}")
-        
         # Migrazione: aggiungi colonne plan_start e plan_end se non esistono
         try:
             cursor = db.execute("SHOW COLUMNS FROM rentman_plannings LIKE 'plan_start'")
             if not cursor.fetchone():
-                db.execute("ALTER TABLE rentman_plannings ADD COLUMN plan_start DATETIME DEFAULT NULL AFTER location_lon")
+                db.execute("ALTER TABLE rentman_plannings ADD COLUMN plan_start DATETIME DEFAULT NULL AFTER location_address")
                 db.execute("ALTER TABLE rentman_plannings ADD COLUMN plan_end DATETIME DEFAULT NULL AFTER plan_start")
                 db.commit()
                 app.logger.info("Migrazione rentman_plannings: aggiunte colonne plan_start e plan_end")
@@ -11431,7 +11430,7 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
         try:
             cursor = db.execute("SHOW COLUMNS FROM rentman_plannings LIKE 'timbratura_gps_mode'")
             if not cursor.fetchone():
-                db.execute("ALTER TABLE rentman_plannings ADD COLUMN timbratura_gps_mode VARCHAR(20) DEFAULT 'group' AFTER location_lon")
+                db.execute("ALTER TABLE rentman_plannings ADD COLUMN timbratura_gps_mode VARCHAR(20) DEFAULT 'group' AFTER location_address")
                 db.commit()
                 app.logger.info("Migrazione rentman_plannings: aggiunta colonna timbratura_gps_mode")
         except Exception as e:
@@ -11609,16 +11608,103 @@ def admin_rentman_planning_page() -> ResponseReturnValue:
     )
 
 
+@app.get("/admin/locations")
+@login_required
+def admin_locations_page() -> ResponseReturnValue:
+    """Pagina gestione location GPS."""
+    if not is_admin_or_supervisor():
+        abort(403)
+
+    display_name = session.get("user_display") or session.get("user_name") or session.get("user")
+    primary_name = session.get("user_name") or display_name or session.get("user")
+    initials = session.get("user_initials") or compute_initials(primary_name or "")
+
+    return render_template(
+        "admin_locations.html",
+        user_name=primary_name,
+        user_display=display_name,
+        user_initials=initials,
+        is_admin=bool(session.get("is_admin")),
+    )
+
+
+@app.get("/api/admin/locations")
+@login_required
+def api_admin_locations_list() -> ResponseReturnValue:
+    """Restituisce tutte le location da Rentman con stato coordinate."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "Accesso negato"}), 403
+
+    db = get_db()
+    ensure_rentman_plannings_table(db)
+    ensure_location_cache_table(db)
+
+    # Recupera tutte le location univoche da Rentman (location_name non NULL)
+    locations_rows = db.execute("""
+        SELECT DISTINCT location_name, location_address
+        FROM rentman_plannings
+        WHERE location_name IS NOT NULL AND location_name != ''
+        ORDER BY location_name
+    """).fetchall()
+
+    locations = []
+    for row in locations_rows:
+        location_name = row["location_name"] if isinstance(row, dict) else row[0]
+        location_address = row["location_address"] if isinstance(row, dict) else row[1]
+
+        # Controlla se ha coordinate in cache
+        cached = get_location_cache(db, location_name)
+
+        locations.append({
+            "name": location_name,
+            "address": location_address or "",
+            "has_cache": cached is not None,
+            "latitude": cached[0] if cached else None,
+            "longitude": cached[1] if cached else None,
+        })
+
+    return jsonify({"locations": locations})
+
+
+@app.post("/api/admin/locations/<location_name>")
+@login_required
+def api_admin_locations_save(location_name: str) -> ResponseReturnValue:
+    """Salva le coordinate per una location."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "Accesso negato"}), 403
+
+    data = request.get_json() or {}
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+
+    if latitude is None or longitude is None:
+        return jsonify({"error": "Latitudine e longitudine richieste"}), 400
+
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Coordinate non valide"}), 400
+
+    db = get_db()
+    save_location_cache(db, location_name, latitude, longitude)
+
+    return jsonify({"ok": True, "message": f"Coordinate salvate per {location_name}"})
+
+
 @app.get("/api/admin/rentman-planning")
 @login_required
 def api_admin_rentman_planning() -> ResponseReturnValue:
     """API per recuperare pianificazioni Rentman per una data."""
+    app.logger.warning("🔴🔴🔴 INIZIO /api/admin/rentman-planning")
     if not is_admin_or_supervisor():
         return jsonify({"error": "forbidden"}), 403
 
     target_date = request.args.get("date")
     if not target_date:
         target_date = datetime.now().date().isoformat()
+    
+    app.logger.warning(f"🔴 API rentman-planning: target_date={target_date}")
 
     try:
         from rentman_client import RentmanClient, RentmanError
@@ -11852,6 +11938,16 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                 except (ValueError, IndexError):
                     pass
 
+        # CONTROLLO CACHE GLOBALE: se le coordinate sono salvate nella cache, usa quelle
+        if location_name:
+            ensure_location_cache_table(db)
+            cached_coords = get_location_cache(db, location_name)
+            if cached_coords:
+                location_lat, location_lon = cached_coords
+                app.logger.info(f"✅ Location '{location_name}': usando coordinate dalla cache globale: {location_lat}, {location_lon}")
+            else:
+                app.logger.info(f"⚠️ Location '{location_name}': nessuna cache, usando coordinate da Rentman (lat={location_lat}, lon={location_lon})")
+        
         # Calcola ore JobLog per questo operatore
         joblog_registered = match_crew_name_to_joblog(crew_name, joblog_hours)
         
@@ -11898,7 +11994,17 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
             if group_id in group_gps_map:
                 gps_timbratura_location = group_gps_map[group_id]
         
-        app.logger.info("Operatore %s (crew_id=%s): gruppo=%s, gps=%s", crew_name, crew_id, crew_group_map.get(crew_id), gps_timbratura_location)
+        # CONTROLLO CACHE GLOBALE: se le coordinate sono salvate nella cache, usa quelle
+        if location_name:
+            ensure_location_cache_table(db)
+            cached_coords = get_location_cache(db, location_name, location_id)
+            if cached_coords:
+                location_lat, location_lon = cached_coords
+                app.logger.info(f"✅ Location '{location_name}' (id={location_id}): usando coordinate dalla cache globale: {location_lat}, {location_lon}")
+            else:
+                app.logger.info(f"⚠️ Location '{location_name}' (id={location_id}): nessuna cache, usando coordinate da Rentman (lat={location_lat}, lon={location_lon})")
+        
+        app.logger.warning(f"🔴 API /api/admin/rentman-planning: {crew_name} - location={location_name}, coords=({location_lat}, {location_lon})")
         
         results.append({
             "id": planning.get("id"),
@@ -11936,16 +12042,16 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
     
     if DB_VENDOR == "mysql":
         saved_rows = db.execute(
-            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name, sent_ts, break_start, break_end, break_minutes, location_lat, location_lon, gps_timbratura_location, timbratura_gps_mode FROM rentman_plannings WHERE planning_date = %s",
+            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name, sent_ts, break_start, break_end, break_minutes, gps_timbratura_location, timbratura_gps_mode FROM rentman_plannings WHERE planning_date = %s",
             (target_date,)
         ).fetchall()
     else:
         saved_rows = db.execute(
-            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name, sent_ts, break_start, break_end, break_minutes, location_lat, location_lon, gps_timbratura_location, timbratura_gps_mode FROM rentman_plannings WHERE planning_date = ?",
+            "SELECT rentman_id, sent_to_webservice, plan_start, plan_end, project_name, sent_ts, break_start, break_end, break_minutes, gps_timbratura_location, timbratura_gps_mode FROM rentman_plannings WHERE planning_date = ?",
             (target_date,)
         ).fetchall()
     
-    # Crea mappa rentman_id -> {sent, old_start, old_end, old_project, sent_ts, break_*, coords, gps}
+    # Crea mappa rentman_id -> {sent, old_start, old_end, old_project, sent_ts, break_*, gps}
     saved_map = {}
     for row in saved_rows:
         if isinstance(row, Mapping):
@@ -11958,8 +12064,6 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                 "break_start": row.get("break_start"),
                 "break_end": row.get("break_end"),
                 "break_minutes": row.get("break_minutes"),
-                "location_lat": row.get("location_lat"),
-                "location_lon": row.get("location_lon"),
                 "gps_timbratura_location": row.get("gps_timbratura_location"),
                 "timbratura_gps_mode": row.get("timbratura_gps_mode"),
             }
@@ -11973,10 +12077,8 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                 "break_start": row[6] if len(row) > 6 else None,
                 "break_end": row[7] if len(row) > 7 else None,
                 "break_minutes": row[8] if len(row) > 8 else None,
-                "location_lat": row[9] if len(row) > 9 else None,
-                "location_lon": row[10] if len(row) > 10 else None,
-                "gps_timbratura_location": row[11] if len(row) > 11 else None,
-                "timbratura_gps_mode": row[12] if len(row) > 12 else None,
+                "gps_timbratura_location": row[9] if len(row) > 9 else None,
+                "timbratura_gps_mode": row[10] if len(row) > 10 else None,
             }
     
     # Arricchisci i risultati con info invio e modifiche
@@ -12123,145 +12225,6 @@ def api_admin_rentman_planning_update_break() -> ResponseReturnValue:
     return jsonify({"success": True, "message": "Pausa aggiornata"})
 
 
-@app.route("/api/admin/rentman/planning/update-coords", methods=["POST"])
-@app.route("/api/admin/rentman/coords", methods=["POST"])  # Alias breve per evitare problemi di URL troncato
-@login_required
-def api_admin_rentman_planning_update_coords() -> ResponseReturnValue:
-    """Aggiorna le coordinate GPS di una pianificazione."""
-    if not is_admin_or_supervisor():
-        return jsonify({"error": "forbidden"}), 403
-
-    data = request.get_json() or {}
-    planning_id = data.get("id")  # ID locale del DB
-    rentman_id = data.get("rentman_id")  # ID Rentman
-    target_date = data.get("date")
-    
-    # Parse delle coordinate come float (importante per DECIMAL(10,7) su MySQL)
-    try:
-        location_lat = float(data.get("location_lat")) if data.get("location_lat") is not None else None
-        location_lon = float(data.get("location_lon")) if data.get("location_lon") is not None else None
-    except (ValueError, TypeError):
-        return jsonify({"error": "Coordinate non valide. Devono essere numeri."}), 400
-
-    app.logger.info(f"update-coords ricevuto: id={planning_id}, rentman_id={rentman_id}, date={target_date}, lat={location_lat}, lon={location_lon}")
-
-    # Valida le coordinate
-    if location_lat is not None and (location_lat < -90 or location_lat > 90):
-        return jsonify({"error": "Latitudine non valida. Deve essere tra -90 e 90."}), 400
-    if location_lon is not None and (location_lon < -180 or location_lon > 180):
-        return jsonify({"error": "Longitudine non valida. Deve essere tra -180 e 180."}), 400
-
-    db = get_db()
-    ensure_rentman_plannings_table(db)
-
-    now_ms = int(time.time() * 1000)
-    updated = False
-
-    # Prova prima con l'ID locale del database
-    if planning_id:
-        if DB_VENDOR == "mysql":
-            result = db.execute("""
-                UPDATE rentman_plannings 
-                SET location_lat = %s, location_lon = %s, updated_ts = %s
-                WHERE id = %s
-            """, (location_lat, location_lon, now_ms, planning_id))
-        else:
-            result = db.execute("""
-                UPDATE rentman_plannings 
-                SET location_lat = ?, location_lon = ?, updated_ts = ?
-                WHERE id = ?
-            """, (location_lat, location_lon, now_ms, planning_id))
-        
-        # Verifica se ha aggiornato qualcosa
-        if hasattr(result, 'rowcount') and result.rowcount > 0:
-            updated = True
-        else:
-            # Prova a verificare se esiste
-            if DB_VENDOR == "mysql":
-                existing = db.execute("SELECT id FROM rentman_plannings WHERE id = %s", (planning_id,)).fetchone()
-            else:
-                existing = db.execute("SELECT id FROM rentman_plannings WHERE id = ?", (planning_id,)).fetchone()
-            if existing:
-                updated = True  # L'update è avvenuto anche se rowcount non è supportato
-    
-    # Se non ha funzionato con l'ID locale, prova con rentman_id + data
-    if not updated and rentman_id and target_date:
-        if DB_VENDOR == "mysql":
-            result = db.execute("""
-                UPDATE rentman_plannings 
-                SET location_lat = %s, location_lon = %s, updated_ts = %s
-                WHERE rentman_id = %s AND planning_date = %s
-            """, (location_lat, location_lon, now_ms, rentman_id, target_date))
-        else:
-            result = db.execute("""
-                UPDATE rentman_plannings 
-                SET location_lat = ?, location_lon = ?, updated_ts = ?
-                WHERE rentman_id = ? AND planning_date = ?
-            """, (location_lat, location_lon, now_ms, rentman_id, target_date))
-        
-        if hasattr(result, 'rowcount') and result.rowcount > 0:
-            updated = True
-        else:
-            # Verifica se esiste
-            if DB_VENDOR == "mysql":
-                existing = db.execute(
-                    "SELECT id FROM rentman_plannings WHERE rentman_id = %s AND planning_date = %s",
-                    (rentman_id, target_date)
-                ).fetchone()
-            else:
-                existing = db.execute(
-                    "SELECT id FROM rentman_plannings WHERE rentman_id = ? AND planning_date = ?",
-                    (rentman_id, target_date)
-                ).fetchone()
-            if existing:
-                updated = True
-
-    # Se non ha funzionato, prova usando planning_id come rentman_id
-    if not updated and planning_id and target_date:
-        if DB_VENDOR == "mysql":
-            result = db.execute("""
-                UPDATE rentman_plannings 
-                SET location_lat = %s, location_lon = %s, updated_ts = %s
-                WHERE rentman_id = %s AND planning_date = %s
-            """, (location_lat, location_lon, now_ms, planning_id, target_date))
-        else:
-            result = db.execute("""
-                UPDATE rentman_plannings 
-                SET location_lat = ?, location_lon = ?, updated_ts = ?
-                WHERE rentman_id = ? AND planning_date = ?
-            """, (location_lat, location_lon, now_ms, planning_id, target_date))
-        
-        if hasattr(result, 'rowcount') and result.rowcount > 0:
-            updated = True
-        else:
-            if DB_VENDOR == "mysql":
-                existing = db.execute(
-                    "SELECT id FROM rentman_plannings WHERE rentman_id = %s AND planning_date = %s",
-                    (planning_id, target_date)
-                ).fetchone()
-            else:
-                existing = db.execute(
-                    "SELECT id FROM rentman_plannings WHERE rentman_id = ? AND planning_date = ?",
-                    (planning_id, target_date)
-                ).fetchone()
-            if existing:
-                updated = True
-
-    if not updated:
-        # Nessun record trovato - le pianificazioni devono essere salvate prima
-        return jsonify({
-            "error": "Pianificazione non trovata. Sincronizza prima le pianificazioni.",
-            "details": f"id={planning_id}, rentman_id={rentman_id}, date={target_date}"
-        }), 404
-
-    db.commit()
-
-    app.logger.info(f"Coordinate aggiornate: planning_id={planning_id}, rentman_id={rentman_id}, "
-                   f"lat={location_lat}, lon={location_lon}")
-
-    return jsonify({"success": True, "message": "Coordinate aggiornate"})
-
-
 @app.post("/api/admin/rentman/planning/update-gps-mode")
 @login_required
 def api_admin_rentman_planning_update_gps_mode() -> ResponseReturnValue:
@@ -12271,36 +12234,73 @@ def api_admin_rentman_planning_update_gps_mode() -> ResponseReturnValue:
 
     data = request.get_json() or {}
     planning_id = data.get("id")
+    rentman_id = data.get("rentman_id")
     gps_mode = data.get("timbratura_gps_mode")
 
-    if not planning_id:
+    app.logger.info(f"update-gps-mode: id={planning_id}, rentman_id={rentman_id}, mode={gps_mode}")
+
+    if not planning_id and not rentman_id:
         return jsonify({"error": "ID pianificazione richiesto"}), 400
 
     if gps_mode not in ("group", "location"):
         return jsonify({"error": "Modalità GPS non valida. Usa 'group' o 'location'"}), 400
 
     db = get_db()
-
-    # Aggiorna la modalità GPS
     now_ms = int(time.time() * 1000)
-    
-    if DB_VENDOR == "mysql":
-        db.execute("""
-            UPDATE rentman_plannings 
-            SET timbratura_gps_mode = %s, updated_ts = %s
-            WHERE id = %s
-        """, (gps_mode, now_ms, planning_id))
-    else:
-        db.execute("""
-            UPDATE rentman_plannings 
-            SET timbratura_gps_mode = ?, updated_ts = ?
-            WHERE id = ?
-        """, (gps_mode, now_ms, planning_id))
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
+    # Converti in int se possibile
+    try:
+        if planning_id:
+            planning_id = int(planning_id)
+        if rentman_id:
+            rentman_id = int(rentman_id)
+    except (ValueError, TypeError):
+        pass
+
+    # Trova il record - prova prima con id, poi con rentman_id
+    existing = None
+    
+    if planning_id:
+        existing = db.execute(
+            f"SELECT id FROM rentman_plannings WHERE id = {placeholder}",
+            (planning_id,)
+        ).fetchone()
+        app.logger.info(f"Cercato per id={planning_id}: {'trovato' if existing else 'non trovato'}")
+    
+    if not existing and rentman_id:
+        existing = db.execute(
+            f"SELECT id FROM rentman_plannings WHERE rentman_id = {placeholder}",
+            (rentman_id,)
+        ).fetchone()
+        app.logger.info(f"Cercato per rentman_id={rentman_id}: {'trovato' if existing else 'non trovato'}")
+    
+    if not existing and planning_id:
+        # Prova planning_id come rentman_id
+        existing = db.execute(
+            f"SELECT id FROM rentman_plannings WHERE rentman_id = {placeholder}",
+            (planning_id,)
+        ).fetchone()
+        app.logger.info(f"Cercato per planning_id come rentman_id={planning_id}: {'trovato' if existing else 'non trovato'}")
+
+    if not existing:
+        app.logger.warning(f"Pianificazione non trovata: id={planning_id}, rentman_id={rentman_id}")
+        return jsonify({"error": "Pianificazione non trovata"}), 404
+
+    # Recupera l'ID del record trovato
+    record_id = existing["id"] if isinstance(existing, dict) else existing[0]
+    
+    # Aggiorna
+    db.execute(f"""
+        UPDATE rentman_plannings 
+        SET timbratura_gps_mode = {placeholder}, updated_ts = {placeholder}
+        WHERE id = {placeholder}
+    """, (gps_mode, now_ms, record_id))
+    
     db.commit()
 
     mode_label = "Sede Gruppo" if gps_mode == "group" else "Location Progetto"
-    app.logger.info(f"Modalità GPS aggiornata per planning_id={planning_id}: {mode_label}")
+    app.logger.info(f"Modalità GPS aggiornata per id={record_id}: {mode_label}")
 
     return jsonify({"success": True, "message": f"Modalità GPS impostata a: {mode_label}"})
 
@@ -12395,15 +12395,15 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
             ).fetchone()
 
         if existing:
-            # Update existing record (but preserve sent status)
+            # Update existing record (but preserve sent status and timbratura_gps_mode!)
+            app.logger.warning(f"🔴 SAVE UPDATE DB: rentman_id={rentman_id}, location_name={p.get('location_name')}")
             if DB_VENDOR == "mysql":
                 db.execute("""
                     UPDATE rentman_plannings SET
                         crew_id = %s, crew_name = %s, function_id = %s, function_name = %s,
                         project_id = %s, project_name = %s, project_code = %s,
                         subproject_id = %s, location_id = %s, location_name = %s, location_address = %s,
-                        location_lat = %s, location_lon = %s, gps_timbratura_location = %s,
-                        timbratura_gps_mode = %s,
+                        gps_timbratura_location = %s,
                         plan_start = %s, plan_end = %s, 
                         break_start = %s, break_end = %s, break_minutes = %s,
                         hours_planned = %s, hours_registered = %s,
@@ -12413,8 +12413,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
                     project_id, p.get("project_name"), p.get("project_code"),
                     p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
-                    p.get("location_lat"), p.get("location_lon"), p.get("gps_timbratura_location"),
-                    p.get("timbratura_gps_mode") or "group",
+                    p.get("gps_timbratura_location"),
                     plan_start, plan_end,
                     p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
                     hours_planned, hours_registered,
@@ -12427,8 +12426,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         crew_id = ?, crew_name = ?, function_id = ?, function_name = ?,
                         project_id = ?, project_name = ?, project_code = ?,
                         subproject_id = ?, location_id = ?, location_name = ?, location_address = ?,
-                        location_lat = ?, location_lon = ?, gps_timbratura_location = ?,
-                        timbratura_gps_mode = ?,
+                        gps_timbratura_location = ?,
                         plan_start = ?, plan_end = ?,
                         break_start = ?, break_end = ?, break_minutes = ?,
                         hours_planned = ?, hours_registered = ?,
@@ -12438,8 +12436,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
                     project_id, p.get("project_name"), p.get("project_code"),
                     p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
-                    p.get("location_lat"), p.get("location_lon"), p.get("gps_timbratura_location"),
-                    p.get("timbratura_gps_mode") or "group",
+                    p.get("gps_timbratura_location"),
                     plan_start, plan_end,
                     p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
                     hours_planned, hours_registered,
@@ -12449,22 +12446,22 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
             updated += 1
         else:
             # Insert new record
+            app.logger.warning(f"🔴 SAVE INSERT DB: rentman_id={rentman_id}, location_name={p.get('location_name')}")
             if DB_VENDOR == "mysql":
                 db.execute("""
                     INSERT INTO rentman_plannings (
                         rentman_id, planning_date, crew_id, crew_name, function_id, function_name,
                         project_id, project_name, project_code, subproject_id, location_id, location_name, location_address,
-                        location_lat, location_lon, gps_timbratura_location, timbratura_gps_mode,
+                        gps_timbratura_location, timbratura_gps_mode,
                         plan_start, plan_end, break_start, break_end, break_minutes,
                         hours_planned, hours_registered, remark, is_leader, transport,
                         sent_to_webservice, created_ts, updated_ts
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
                 """, (
                     rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
                     function_id, p.get("function_name"), project_id, p.get("project_name"),
                     p.get("project_code"), p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
-                    p.get("location_lat"), p.get("location_lon"), p.get("gps_timbratura_location"),
-                    p.get("timbratura_gps_mode") or "group",
+                    p.get("gps_timbratura_location"), p.get("timbratura_gps_mode") or "group",
                     plan_start, plan_end, p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
                     hours_planned, hours_registered, p.get("remark"),
                     1 if p.get("is_leader") else 0, p.get("transport"), now_ms, now_ms
@@ -12474,17 +12471,16 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     INSERT INTO rentman_plannings (
                         rentman_id, planning_date, crew_id, crew_name, function_id, function_name,
                         project_id, project_name, project_code, subproject_id, location_id, location_name, location_address,
-                        location_lat, location_lon, gps_timbratura_location, timbratura_gps_mode,
+                        gps_timbratura_location, timbratura_gps_mode,
                         plan_start, plan_end, break_start, break_end, break_minutes,
                         hours_planned, hours_registered, remark, is_leader, transport,
                         sent_to_webservice, created_ts, updated_ts
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """, (
                     rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
                     function_id, p.get("function_name"), project_id, p.get("project_name"),
                     p.get("project_code"), p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
-                    p.get("location_lat"), p.get("location_lon"), p.get("gps_timbratura_location"),
-                    p.get("timbratura_gps_mode") or "group",
+                    p.get("gps_timbratura_location"), p.get("timbratura_gps_mode") or "group",
                     plan_start, plan_end, p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
                     hours_planned, hours_registered, p.get("remark"),
                     1 if p.get("is_leader") else 0, p.get("transport"), now_ms, now_ms
@@ -12568,12 +12564,12 @@ def api_admin_rentman_planning_saved() -> ResponseReturnValue:
 
     if DB_VENDOR == "mysql":
         rows = db.execute(
-            "SELECT * FROM rentman_plannings WHERE planning_date = %s ORDER BY plan_start, crew_name",
+            "SELECT * FROM rentman_plannings WHERE planning_date = %s AND is_obsolete = 0 ORDER BY plan_start, crew_name",
             (target_date,)
         ).fetchall()
     else:
         rows = db.execute(
-            "SELECT * FROM rentman_plannings WHERE planning_date = ? ORDER BY plan_start, crew_name",
+            "SELECT * FROM rentman_plannings WHERE planning_date = ? AND is_obsolete = 0 ORDER BY plan_start, crew_name",
             (target_date,)
         ).fetchall()
 
@@ -12582,15 +12578,15 @@ def api_admin_rentman_planning_saved() -> ResponseReturnValue:
         if isinstance(row, Mapping):
             plannings.append(dict(row))
         else:
-            # SQLite row to dict
+            # SQLite row to dict - ordine colonne deve corrispondere alla tabella
             cols = ["id", "rentman_id", "planning_date", "crew_id", "crew_name", "function_id",
                     "function_name", "project_id", "project_name", "project_code", 
                     "subproject_id", "location_id", "location_name", "location_address",
-                    "location_lat", "location_lon", "timbratura_gps_mode", "gps_timbratura_location",
+                    "gps_timbratura_location", "timbratura_gps_mode",
                     "plan_start", "plan_end", "break_start", "break_end", "break_minutes",
                     "hours_planned", "hours_registered", "remark", "is_leader",
                     "transport", "sent_to_webservice", "sent_ts", "webservice_response",
-                    "created_ts", "updated_ts"]
+                    "created_ts", "updated_ts", "is_obsolete"]
             plannings.append(dict(zip(cols, row)))
 
     return jsonify({
@@ -12774,7 +12770,7 @@ def _send_turni_notifications(db: DatabaseLike, users_to_notify: Dict[int, List[
             "badge": "/static/icons/badge-72.png",
             "tag": "turni-update",
             "data": {
-                "url": "/turni",
+                "url": "/user/turni",
                 "type": "turni_published"
             }
         }
@@ -13542,10 +13538,10 @@ def api_admin_group_planning(group_id: int) -> ResponseReturnValue:
         plannings = db.execute(f"""
             SELECT crew_id, planning_date, project_code, project_name, function_name,
                    plan_start, plan_end, hours_planned, remark, is_leader, transport,
-                   break_start, break_end, break_minutes
+                   break_start, break_end, break_minutes, location_name, location_id
             FROM rentman_plannings
             WHERE crew_id IN ({placeholders})
-              AND sent_to_webservice = 1
+              AND is_obsolete = 0
               AND planning_date >= {placeholder}
               AND planning_date <= {placeholder}
             ORDER BY planning_date, plan_start
@@ -13561,6 +13557,17 @@ def api_admin_group_planning(group_id: int) -> ResponseReturnValue:
             plan_start = p["plan_start"] if isinstance(p, dict) else p[5]
             plan_end = p["plan_end"] if isinstance(p, dict) else p[6]
             hours_planned = p["hours_planned"] if isinstance(p, dict) else p[7]
+            location_name = p["location_name"] if isinstance(p, dict) else p[14]
+            location_id = p["location_id"] if isinstance(p, dict) else p[15]
+            
+            # Coordinate dalla cache globale
+            location_lat, location_lon = None, None
+            if location_name:
+                ensure_location_cache_table(db)
+                cached_coords = get_location_cache(db, location_name, location_id)
+                if cached_coords:
+                    location_lat, location_lon = cached_coords
+                    app.logger.info(f"✅ Group-planning: Location '{location_name}' (id={location_id}) - usando coordinate dalla cache: {location_lat}, {location_lon}")
 
             # Normalizza data
             if hasattr(planning_date, 'isoformat'):
@@ -13596,9 +13603,111 @@ def api_admin_group_planning(group_id: int) -> ResponseReturnValue:
                 "hours": float(hours_planned or 0),
                 "note": p["remark"] if isinstance(p, dict) else p[8],
                 "is_leader": bool(p["is_leader"] if isinstance(p, dict) else p[9]),
+                "location_name": location_name,
+                "location_lat": location_lat,
+                "location_lon": location_lon,
             })
 
-    # TODO: Aggiungere anche le assenze/ferie dai request approvati
+    # Aggiungere le ferie/permessi approvati (solo tipo 1=Ferie e 3=Permesso)
+    if users_list:
+        usernames = [u["username"] for u in users_list]
+        placeholders = ",".join([placeholder] * len(usernames))
+        
+        requests = db.execute(f"""
+            SELECT username, request_type_id, date_from, date_to, notes, extra_data
+            FROM user_requests
+            WHERE username IN ({placeholders})
+              AND status = 'approved'
+              AND request_type_id IN (1, 3)
+              AND date_from <= {placeholder}
+              AND date_to >= {placeholder}
+            ORDER BY date_from
+        """, (*usernames, end_date, start_date)).fetchall()
+        
+        for req in requests:
+            username = req["username"] if isinstance(req, dict) else req[0]
+            request_type_id = req["request_type_id"] if isinstance(req, dict) else req[1]
+            date_from = req["date_from"] if isinstance(req, dict) else req[2]
+            date_to = req["date_to"] if isinstance(req, dict) else req[3]
+            notes = req["notes"] if isinstance(req, dict) else req[4]
+            extra_data_str = req["extra_data"] if isinstance(req, dict) else req[5]
+            
+            # Normalizza le date
+            if hasattr(date_from, 'isoformat'):
+                date_from_str = date_from.isoformat()
+            else:
+                date_from_str = str(date_from)[:10]
+            
+            if hasattr(date_to, 'isoformat'):
+                date_to_str = date_to.isoformat()
+            else:
+                date_to_str = str(date_to)[:10]
+            
+            # Leggi il tipo di richiesta
+            req_type = db.execute(
+                f"SELECT name FROM request_types WHERE id = {placeholder}",
+                (request_type_id,)
+            ).fetchone()
+            
+            type_name = req_type["name"] if req_type and isinstance(req_type, dict) else (req_type[0] if req_type else "Permesso")
+            
+            # Estrai orari da extra_data per i permessi
+            time_start = "00:00"
+            time_end = "24:00"
+            hours = 0
+            extra_data = None
+            
+            if request_type_id == 3 and extra_data_str:  # Permesso
+                try:
+                    import json
+                    # Parse extra_data se è stringa
+                    if isinstance(extra_data_str, str):
+                        extra = json.loads(extra_data_str)
+                    else:
+                        extra = extra_data_str
+                    
+                    time_start = extra.get("time_start", "00:00")
+                    time_end = extra.get("time_end", "24:00")
+                    extra_data = {"time_start": time_start, "time_end": time_end}
+                    
+                    # Calcola ore
+                    from datetime import datetime as dt
+                    start_time = dt.strptime(time_start, "%H:%M")
+                    end_time = dt.strptime(time_end, "%H:%M")
+                    delta = end_time - start_time
+                    hours = delta.total_seconds() / 3600
+                except Exception as e:
+                    app.logger.error(f"Errore parsing extra_data per permesso: {e}")
+                    pass
+            
+            # Aggiungi una card per ogni giorno della feria
+            current_date = date_from
+            while current_date <= date_to:
+                date_str = current_date.isoformat() if hasattr(current_date, 'isoformat') else str(current_date)[:10]
+                
+                shift_item = {
+                    "username": username,
+                    "date": date_str,
+                    "type": "vacation",
+                    "project_code": type_name,
+                    "project_name": type_name,
+                    "function": type_name,
+                    "start": time_start,
+                    "end": time_end,
+                    "hours": hours,
+                    "note": notes or "",
+                    "is_leader": False,
+                }
+                
+                # Aggiungi extra_data solo se presente
+                if extra_data:
+                    shift_item["extra_data"] = extra_data
+                
+                shifts_list.append(shift_item)
+                
+                # Incrementa di un giorno
+                from datetime import timedelta
+                current_date = current_date + timedelta(days=1)
 
     return jsonify({
         "users": users_list,
@@ -14308,6 +14417,119 @@ def api_admin_operators_sync() -> ResponseReturnValue:
     app.logger.info("Admin %s ha sincronizzato %d operatori da Rentman", session.get("user"), synced)
     return jsonify({"ok": True, "synced": synced})
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  LOCATION CACHE - Gestione coordinate GPS per location Rentman
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def ensure_location_cache_table(db: DatabaseLike) -> None:
+    """Crea la tabella location_cache per salvare le coordinate GPS delle location."""
+    if DB_VENDOR == "mysql":
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS location_cache (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                rentman_location_id INT COMMENT 'ID della location da Rentman',
+                location_name VARCHAR(500) NOT NULL COMMENT 'Nome della location Rentman',
+                latitude DECIMAL(10,7) NOT NULL COMMENT 'Latitudine GPS',
+                longitude DECIMAL(10,7) NOT NULL COMMENT 'Longitudine GPS',
+                created_ts BIGINT DEFAULT 0,
+                updated_ts BIGINT DEFAULT 0,
+                INDEX idx_location_name (location_name),
+                INDEX idx_rentman_location_id (rentman_location_id)
+            ) COMMENT='Cache delle coordinate GPS per le location Rentman'
+        """)
+        
+        # Aggiungi la colonna rentman_location_id se manca
+        try:
+            db.execute("ALTER TABLE location_cache ADD COLUMN rentman_location_id INT COMMENT 'ID della location da Rentman' AFTER id")
+            db.execute("ALTER TABLE location_cache ADD INDEX idx_rentman_location_id (rentman_location_id)")
+            app.logger.info("✅ Colonna rentman_location_id aggiunta a location_cache")
+        except Exception as e:
+            if "Duplicate column" in str(e) or "already exists" in str(e):
+                app.logger.info("ℹ️ Colonna rentman_location_id esiste già")
+            else:
+                app.logger.warning(f"⚠️ Errore aggiunta colonna rentman_location_id: {e}")
+    else:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS location_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rentman_location_id INTEGER,
+                location_name TEXT NOT NULL UNIQUE,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                created_ts INTEGER DEFAULT 0,
+                updated_ts INTEGER DEFAULT 0
+            )
+        """)
+    
+    db.commit()
+
+def get_location_cache(db: DatabaseLike, location_name: str, rentman_location_id: Optional[int] = None) -> Optional[Tuple[float, float]]:
+    """Recupera le coordinate GPS dalla cache per una location.
+    Cerca prima per location_id (se fornito), poi per location_name."""
+    if not location_name:
+        return None
+    
+    ensure_location_cache_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Cerca prima per location_id se disponibile (più preciso)
+    if rentman_location_id:
+        row = db.execute(
+            f"SELECT latitude, longitude FROM location_cache WHERE rentman_location_id = {placeholder}",
+            (rentman_location_id,)
+        ).fetchone()
+        if row:
+            lat = row["latitude"] if isinstance(row, dict) else row[0]
+            lon = row["longitude"] if isinstance(row, dict) else row[1]
+            return (lat, lon)
+    
+    # Fallback: cerca per location_name
+    row = db.execute(
+        f"SELECT latitude, longitude FROM location_cache WHERE location_name = {placeholder}",
+        (location_name,)
+    ).fetchone()
+    
+    if row:
+        lat = row["latitude"] if isinstance(row, dict) else row[0]
+        lon = row["longitude"] if isinstance(row, dict) else row[1]
+        return (lat, lon)
+    
+    return None
+
+def save_location_cache(db: DatabaseLike, location_name: str, latitude: float, longitude: float, rentman_location_id: Optional[int] = None) -> None:
+    """Salva le coordinate GPS nella cache per una location."""
+    if not location_name or latitude is None or longitude is None:
+        return
+    
+    ensure_location_cache_table(db)
+    
+    now = int(datetime.now().timestamp() * 1000)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    try:
+        # Prova l'INSERT o l'UPDATE se già esiste
+        if DB_VENDOR == "mysql":
+            db.execute("""
+                INSERT INTO location_cache (rentman_location_id, location_name, latitude, longitude, created_ts, updated_ts)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE rentman_location_id = %s, latitude = %s, longitude = %s, updated_ts = %s
+            """, (rentman_location_id, location_name, latitude, longitude, now, now, rentman_location_id, latitude, longitude, now))
+        else:
+            # SQLite: prova INSERT, altrimenti UPDATE
+            db.execute(
+                "INSERT OR IGNORE INTO location_cache (rentman_location_id, location_name, latitude, longitude, created_ts, updated_ts) VALUES (?, ?, ?, ?, ?, ?)",
+                (rentman_location_id, location_name, latitude, longitude, now, now)
+            )
+            db.execute(
+                "UPDATE location_cache SET rentman_location_id = ?, latitude = ?, longitude = ?, updated_ts = ? WHERE location_name = ?",
+                (rentman_location_id, latitude, longitude, now, location_name)
+            )
+        db.commit()
+        app.logger.info(f"Location cache salvata: location_id={rentman_location_id}, name={location_name} ({latitude}, {longitude})")
+    except Exception as e:
+        app.logger.error(f"Errore salvataggio location cache: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  REGOLE TIMBRATURE - ADMIN
@@ -16722,6 +16944,7 @@ def api_user_requests_create() -> ResponseReturnValue:
         notes = (data.get("notes") or "").strip()
         cdc = (data.get("cdc") or "").strip() or None
         tratte = data.get("tratte")  # Array di {da, a, km}
+        extra_data_json = data.get("extra_data")  # JSON per dati aggiuntivi (es. orari permessi)
         attachment_files = []
 
     if not request_type_id or not date_start:
@@ -16797,7 +17020,9 @@ def api_user_requests_create() -> ResponseReturnValue:
     now = int(datetime.now().timestamp() * 1000)  # timestamp in millisecondi
     value_amount = float(value) if value else 0.0
     tratte_json = json.dumps(tratte) if tratte else None
-    extra_data_json = None  # Per richieste normali, extra_data è vuoto
+    
+    # extra_data_json può essere valorizzato dal frontend (es. per permessi con orari)
+    # Se non viene passato, rimane None
     
     if DB_VENDOR == "mysql":
         db.execute("""
