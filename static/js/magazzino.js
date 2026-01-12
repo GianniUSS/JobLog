@@ -575,6 +575,7 @@
                 sessionsList.querySelectorAll('.session-item').forEach(el => el.classList.remove('selected'));
                 
                 const actionsBar = document.getElementById('sessionActionsBar');
+                const overlay = document.getElementById('sessionActionsOverlay');
                 const mainEl = document.querySelector('main');
                 
                 // Se non era selezionata, selezionala e mostra la barra
@@ -582,6 +583,7 @@
                     item.classList.add('selected');
                     window._selectedSessionItem = item;
                     actionsBar.classList.add('visible');
+                    overlay.classList.add('visible');
                     mainEl.classList.add('has-action-bar');
                     // Scroll per portare la sessione in cima alla lista
                     setTimeout(() => {
@@ -589,18 +591,34 @@
                     }, 50);
                 } else {
                     // Era selezionata, deseleziona e nascondi barra
-                    window._selectedSessionItem = null;
-                    actionsBar.classList.remove('visible');
-                    mainEl.classList.remove('has-action-bar');
+                    hideSessionActionsBar();
                 }
             });
         });
+    }
+    
+    function hideSessionActionsBar() {
+        const actionsBar = document.getElementById('sessionActionsBar');
+        const overlay = document.getElementById('sessionActionsOverlay');
+        const mainEl = document.querySelector('main');
+        
+        window._selectedSessionItem = null;
+        actionsBar.classList.remove('visible');
+        overlay.classList.remove('visible');
+        mainEl.classList.remove('has-action-bar');
+        sessionsList.querySelectorAll('.session-item').forEach(el => el.classList.remove('selected'));
     }
     
     // === SESSION ACTIONS BAR HANDLERS ===
     function initSessionActionsBar() {
         const barBtnResume = document.getElementById('barBtnResume');
         const barBtnIntervals = document.getElementById('barBtnIntervals');
+        const overlay = document.getElementById('sessionActionsOverlay');
+        
+        // Chiudi cliccando sull'overlay
+        if (overlay) {
+            overlay.addEventListener('click', hideSessionActionsBar);
+        }
         
         barBtnResume.addEventListener('click', () => {
             if (timer.running) {
@@ -616,10 +634,7 @@
                     note: item.dataset.note
                 });
                 // Nascondi barra dopo azione
-                document.getElementById('sessionActionsBar').classList.remove('visible');
-                document.querySelector('main').classList.remove('has-action-bar');
-                item.classList.remove('selected');
-                window._selectedSessionItem = null;
+                hideSessionActionsBar();
             }
         });
         
@@ -630,6 +645,8 @@
                 const session = window._sessionsData[idx];
                 if (session) {
                     openIntervalsModal(session);
+                    // Nascondi barra dopo azione
+                    hideSessionActionsBar();
                 }
             }
         });
