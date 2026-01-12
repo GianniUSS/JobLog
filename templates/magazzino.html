@@ -294,11 +294,42 @@
             border-color: var(--accent);
         }
         
-        /* Attività griglia */
+        /* Attività carousel */
+        .activities-container {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .activities-nav {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.15s ease;
+        }
+        .activities-nav:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+        .activities-nav:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
         .activities-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
         }
         .activity-btn {
             padding: 14px 8px;
@@ -1208,31 +1239,12 @@
         <!-- Activities section -->
         <div class="select-section">
             <div class="select-label">ATTIVITÀ</div>
-            <div class="activities-grid" id="actGrid">
-                <button class="activity-btn" data-act="Preparazione" title="Preparazione magazzino">
-                    <span class="activity-icon">📦</span>
-                    <span>Preparazione</span>
-                </button>
-                <button class="activity-btn" data-act="Carico" title="Carico merci">
-                    <span class="activity-icon">🚚</span>
-                    <span>Carico</span>
-                </button>
-                <button class="activity-btn" data-act="Scarico" title="Scarico merci">
-                    <span class="activity-icon">📥</span>
-                    <span>Scarico</span>
-                </button>
-                <button class="activity-btn" data-act="Controllo" title="Controllo qualità">
-                    <span class="activity-icon">🔍</span>
-                    <span>Controllo</span>
-                </button>
-                <button class="activity-btn" data-act="Manutenzione" title="Manutenzione attrezzature">
-                    <span class="activity-icon">🔧</span>
-                    <span>Manutenzione</span>
-                </button>
-                <button class="activity-btn" data-act="Altro" title="Altra attività">
-                    <span class="activity-icon">📝</span>
-                    <span>Altro</span>
-                </button>
+            <div class="activities-container">
+                <button class="activities-nav" id="actPrev" title="Precedenti">❮</button>
+                <div class="activities-grid" id="actGrid">
+                    <!-- Attività renderizzate via JS -->
+                </div>
+                <button class="activities-nav" id="actNext" title="Successive">❯</button>
             </div>
         </div>
 

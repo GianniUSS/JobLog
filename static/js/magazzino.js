@@ -61,6 +61,18 @@
     let resumeSessionId = null; // ID sessione da continuare
     let manualCode = '';
     
+    // === ACTIVITIES CAROUSEL ===
+    const ACTIVITIES = [
+        { code: 'Preparazione', icon: '📦', label: 'Preparazione' },
+        { code: 'Carico', icon: '🚚', label: 'Carico' },
+        { code: 'Scarico', icon: '📥', label: 'Scarico' },
+        { code: 'Controllo', icon: '🔍', label: 'Controllo' },
+        { code: 'Manutenzione', icon: '🔧', label: 'Manutenzione' },
+        { code: 'Altro', icon: '📝', label: 'Altro' }
+    ];
+    let activityPage = 0;
+    const ACTIVITIES_PER_PAGE = 4;
+    
     // === THEME ===
     function loadTheme() {
         const saved = localStorage.getItem(THEME_KEY);
@@ -1050,10 +1062,57 @@
         }
     });
     
+    // === ACTIVITIES CAROUSEL RENDER ===
+    function renderActivities() {
+        const totalPages = Math.ceil(ACTIVITIES.length / ACTIVITIES_PER_PAGE);
+        const start = activityPage * ACTIVITIES_PER_PAGE;
+        const pageActivities = ACTIVITIES.slice(start, start + ACTIVITIES_PER_PAGE);
+        
+        actGrid.innerHTML = pageActivities.map(a => `
+            <button class="activity-btn${selectedAct === a.code ? ' selected' : ''}" data-act="${a.code}" title="${a.label}">
+                <span class="activity-icon">${a.icon}</span>
+                <span>${a.label}</span>
+            </button>
+        `).join('');
+        
+        // Aggiorna stato frecce
+        const prevBtn = $('actPrev');
+        const nextBtn = $('actNext');
+        if (prevBtn) prevBtn.disabled = activityPage === 0;
+        if (nextBtn) nextBtn.disabled = activityPage >= totalPages - 1;
+    }
+    
+    function initActivitiesCarousel() {
+        const prevBtn = $('actPrev');
+        const nextBtn = $('actNext');
+        
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (activityPage > 0) {
+                    activityPage--;
+                    renderActivities();
+                }
+            });
+        }
+        
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                const totalPages = Math.ceil(ACTIVITIES.length / ACTIVITIES_PER_PAGE);
+                if (activityPage < totalPages - 1) {
+                    activityPage++;
+                    renderActivities();
+                }
+            });
+        }
+        
+        renderActivities();
+    }
+    
     // === INIT ===
     loadTheme();
     loadTimerState();
     initSessionActionsBar();
+    initActivitiesCarousel();
     
     // Restore running timer
     if (timer.running) {
