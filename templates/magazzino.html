@@ -521,7 +521,13 @@
         }
         /* Spazio in fondo quando la barra è visibile */
         main.has-action-bar .sessions-list {
-            padding-bottom: 70px;
+            padding-bottom: 80px;
+        }
+        /* Assicura che l'ultimo elemento sia visibile */
+        main.has-action-bar .sessions-list::after {
+            content: '';
+            display: block;
+            height: 10px;
         }
         .session-action-btn {
             padding: 8px 12px;
