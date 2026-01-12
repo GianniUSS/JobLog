@@ -56,6 +56,15 @@ function renderSessionsGrid(items) {
         return;
     }
     if (sessionsEmptyEl) sessionsEmptyEl.style.display = 'none';
+    
+    // Helper per formattare timestamp in ora HH:MM:SS
+    function formatTime(ts) {
+        if (!ts) return '—';
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return '—';
+        return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    
     items.forEach((it) => {
         const tr = document.createElement('tr');
         const tdDate = document.createElement('td'); tdDate.textContent = it.date_label || '—';
@@ -63,8 +72,17 @@ function renderSessionsGrid(items) {
         const tdProj = document.createElement('td'); tdProj.textContent = it.project_code || '—';
         const tdUser = document.createElement('td'); tdUser.textContent = it.user || '—';
         const tdAct = document.createElement('td'); tdAct.textContent = it.activity || '—';
+        const tdNotes = document.createElement('td'); 
+        tdNotes.textContent = it.notes || '—';
+        tdNotes.style.maxWidth = '200px';
+        tdNotes.style.overflow = 'hidden';
+        tdNotes.style.textOverflow = 'ellipsis';
+        tdNotes.style.whiteSpace = 'nowrap';
+        tdNotes.title = it.notes || '';
+        const tdStart = document.createElement('td'); tdStart.textContent = formatTime(it.start_ts);
+        const tdEnd = document.createElement('td'); tdEnd.textContent = formatTime(it.end_ts);
         const tdTime = document.createElement('td'); tdTime.textContent = formatMs(it.ms);
-        tr.append(tdDate, tdSource, tdProj, tdUser, tdAct, tdTime);
+        tr.append(tdDate, tdSource, tdProj, tdUser, tdAct, tdNotes, tdStart, tdEnd, tdTime);
         sessionsTableBody.appendChild(tr);
     });
 }
@@ -153,6 +171,9 @@ async function loadData(dateStart, dateEnd) {
                 project_code: s.project_code,
                 user: s.member_name || s.member_key,
                 activity: s.activity_label || s.activity_id,
+                notes: s.notes || '',
+                start_ts: _coerce(s.start_ts) || null,
+                end_ts: _coerce(s.end_ts) || null,
                 ms: _coerce(s.net_ms) || 0,
                 sort_ts: _coerce(s.end_ts || s.start_ts) || 0,
                 date_label: formatDateLabel(s.start_ts || s.end_ts),
@@ -162,6 +183,9 @@ async function loadData(dateStart, dateEnd) {
                 project_code: s.project_code,
                 user: s.username,
                 activity: s.activity_label,
+                notes: s.note || '',
+                start_ts: _coerce(s.start_ts) || null,
+                end_ts: _coerce(s.end_ts) || null,
                 ms: _coerce(s.elapsed_ms) || 0,
                 sort_ts: _coerce(s.created_ts) || 0,
                 date_label: formatDateLabel(s.created_ts),

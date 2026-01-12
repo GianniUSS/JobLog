@@ -1749,7 +1749,7 @@ function showToastGlobal(message) {
     const diffMs = turnoTime - now;
     const diffMins = Math.floor(diffMs / 60000);
     
-    if (diffMins < 0) return { type: 'ended', text: 'Terminato' };
+    if (diffMins < 0) return null; // Non mostrare nulla se terminato
     if (diffMins <= 30) return { type: 'starting', text: 'Tra poco' };
     if (diffMins <= 120) return { type: 'soon', text: `Tra ${diffMins}min` };
     return null;

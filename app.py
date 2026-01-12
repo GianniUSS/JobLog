@@ -5933,6 +5933,34 @@ def api_user_turni():
                         break_end = str(shift_row[3])[:5] if shift_row[3] else None
                         location_name = shift_row[4] if len(shift_row) > 4 else None
                     
+                    # Calcola ore e minuti pausa
+                    hours_val = None
+                    break_minutes_val = 0
+                    
+                    if start_time and end_time:
+                        try:
+                            start_parts = start_time.split(':')
+                            end_parts = end_time.split(':')
+                            start_mins = int(start_parts[0]) * 60 + int(start_parts[1])
+                            end_mins = int(end_parts[0]) * 60 + int(end_parts[1])
+                            total_mins = end_mins - start_mins
+                            if total_mins > 0:
+                                hours_val = total_mins / 60.0
+                        except:
+                            pass
+                    
+                    if break_start and break_end:
+                        try:
+                            bs_parts = break_start.split(':')
+                            be_parts = break_end.split(':')
+                            bs_mins = int(bs_parts[0]) * 60 + int(bs_parts[1])
+                            be_mins = int(be_parts[0]) * 60 + int(be_parts[1])
+                            break_minutes_val = be_mins - bs_mins
+                            if break_minutes_val < 0:
+                                break_minutes_val = 0
+                        except:
+                            pass
+                    
                     turni.append({
                         "date": check_date.strftime("%Y-%m-%d"),
                         "project_code": "UFFICIO",
@@ -5942,7 +5970,8 @@ def api_user_turni():
                         "end": end_time,
                         "break_start": break_start,
                         "break_end": break_end,
-                        "hours": None,
+                        "hours": hours_val,
+                        "break_minutes": break_minutes_val,
                         "note": None,
                         "is_leader": False,
                         "transport": None,
@@ -9111,7 +9140,7 @@ def api_admin_day_sessions() -> ResponseReturnValue:
     ensure_warehouse_sessions_table(db)
     wh_rows = db.execute(
         """
-        SELECT project_code, activity_label, elapsed_ms, username, created_ts
+        SELECT project_code, activity_label, elapsed_ms, username, created_ts, note, start_ts, end_ts
         FROM warehouse_sessions
         WHERE created_ts >= ? AND created_ts < ?
         ORDER BY created_ts DESC
@@ -9127,6 +9156,9 @@ def api_admin_day_sessions() -> ResponseReturnValue:
             "elapsed_ms": _coerce_int(row["elapsed_ms"]) or 0,
             "username": row["username"],
             "created_ts": _coerce_int(row["created_ts"]) or 0,
+            "note": row["note"] or "",
+            "start_ts": _coerce_int(row["start_ts"]) if row["start_ts"] else None,
+            "end_ts": _coerce_int(row["end_ts"]) if row["end_ts"] else None,
         }
         for row in wh_rows or []
     ]
