@@ -1250,9 +1250,12 @@
 
         async function initPage() {
             console.log('initPage chiamata, data:', dateInput.value);
-            // Carica SEMPRE da Rentman per avere dati aggiornati
-            // Il database serve solo per tracciare lo stato "inviato"
-            await loadPlannings();
+            // Prima prova a caricare dal database locale
+            const hasSaved = await loadSavedPlanningsIfExists();
+            if (!hasSaved) {
+                // Se non ci sono dati salvati, carica da Rentman
+                await loadPlannings();
+            }
         }
 
         function updateLoadButtonText() {
@@ -1663,6 +1666,12 @@
 
                 const plannings = data.plannings || [];
                 console.log('loadSavedPlanningsIfExists - pianificazioni trovate:', plannings.length);
+                
+                // DEBUG: Log GPS mode di ogni pianificazione
+                plannings.forEach((p, i) => {
+                    console.log(`📍 [${i}] ${p.crew_name}: gps_mode=${p.timbratura_gps_mode}, gps_location=${p.gps_timbratura_location}`);
+                });
+                
                 if (plannings.length > 0) {
                     // Mappa i campi dal DB ai nomi usati nel frontend
                     currentPlannings = plannings.map(p => ({

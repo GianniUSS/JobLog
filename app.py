@@ -6764,42 +6764,43 @@ def api_magazzino_activities_create() -> ResponseReturnValue:
 @app.get("/api/magazzino/sessions")
 @login_required
 def api_magazzino_sessions_list() -> ResponseReturnValue:
-    """Lista sessioni di lavoro magazzino di oggi (tutte o per progetto)."""
+    """Lista sessioni di lavoro magazzino di oggi (solo utente corrente)."""
     guard = _magazzino_only()
     if guard is not None:
         return guard
 
     project_code = _normalize_text(request.args.get("project_code")).upper()
+    current_user = session.get("user")
 
     db = get_db()
     ensure_warehouse_sessions_table(db)
 
-    # Filtra sessioni di oggi per default
+    # Filtra sessioni di oggi per l'utente corrente
     today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_ms = int(today_start.timestamp() * 1000)
 
-    # Se project_code specificato, filtra per progetto, altrimenti mostra tutte
+    # Filtra sempre per utente corrente, opzionalmente anche per progetto
     if project_code:
         rows = db.execute(
             """
             SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, note, username, created_ts
             FROM warehouse_sessions
-            WHERE project_code = ? AND created_ts >= ?
+            WHERE project_code = ? AND username = ? AND created_ts >= ?
             ORDER BY created_ts DESC
             LIMIT 100
             """,
-            (project_code, today_start_ms),
+            (project_code, current_user, today_start_ms),
         ).fetchall()
     else:
         rows = db.execute(
             """
             SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, note, username, created_ts
             FROM warehouse_sessions
-            WHERE created_ts >= ?
+            WHERE username = ? AND created_ts >= ?
             ORDER BY created_ts DESC
             LIMIT 100
             """,
-            (today_start_ms,),
+            (current_user, today_start_ms),
         ).fetchall()
     
     items = [dict(row) for row in rows] if rows else []
@@ -11041,6 +11042,8 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     location_id INT,
     location_name VARCHAR(500),
     location_address VARCHAR(500),
+    location_lat DECIMAL(12,8) DEFAULT NULL COMMENT 'Latitudine location',
+    location_lon DECIMAL(12,8) DEFAULT NULL COMMENT 'Longitudine location',
     timbratura_gps_mode VARCHAR(20) DEFAULT 'group',
     gps_timbratura_location VARCHAR(255),
     plan_start DATETIME,
@@ -11084,6 +11087,8 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     location_id INTEGER,
     location_name TEXT,
     location_address TEXT,
+    location_lat REAL DEFAULT NULL,
+    location_lon REAL DEFAULT NULL,
     timbratura_gps_mode TEXT DEFAULT 'group',
     gps_timbratura_location TEXT,
     plan_start TEXT,
@@ -11610,6 +11615,17 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
                 app.logger.info("Migrazione rentman_plannings: aggiunta colonna is_obsolete")
         except Exception as e:
             app.logger.warning(f"Migrazione rentman_plannings is_obsolete: {e}")
+        
+        # Migrazione: aggiungi colonne location_lat e location_lon se non esistono
+        try:
+            cursor = db.execute("SHOW COLUMNS FROM rentman_plannings LIKE 'location_lat'")
+            if not cursor.fetchone():
+                db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_lat DECIMAL(12,8) DEFAULT NULL AFTER location_address")
+                db.execute("ALTER TABLE rentman_plannings ADD COLUMN location_lon DECIMAL(12,8) DEFAULT NULL AFTER location_lat")
+                db.commit()
+                app.logger.info("Migrazione rentman_plannings: aggiunte colonne location_lat e location_lon")
+        except Exception as e:
+            app.logger.warning(f"Migrazione rentman_plannings location_lat/lon: {e}")
     else:
         # SQLite migrations
         migrations_sqlite = [
@@ -11619,6 +11635,8 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
             "ALTER TABLE rentman_plannings ADD COLUMN timbratura_gps_mode TEXT DEFAULT 'group'",
             "ALTER TABLE rentman_plannings ADD COLUMN gps_timbratura_location TEXT DEFAULT NULL",
             "ALTER TABLE rentman_plannings ADD COLUMN is_obsolete INTEGER DEFAULT 0",
+            "ALTER TABLE rentman_plannings ADD COLUMN location_lat REAL DEFAULT NULL",
+            "ALTER TABLE rentman_plannings ADD COLUMN location_lon REAL DEFAULT NULL",
         ]
         for migration in migrations_sqlite:
             try:
@@ -12455,7 +12473,12 @@ def api_admin_rentman_planning_update_gps_mode() -> ResponseReturnValue:
     db.commit()
 
     mode_label = "Sede Gruppo" if gps_mode == "group" else "Location Progetto"
-    app.logger.info(f"Modalità GPS aggiornata per id={record_id}: {mode_label}")
+    app.logger.info(f"✅ Modalità GPS aggiornata per id={record_id}: {mode_label}")
+
+    # Verifica che il salvataggio sia andato a buon fine
+    verify = db.execute(f"SELECT timbratura_gps_mode FROM rentman_plannings WHERE id = {placeholder}", (record_id,)).fetchone()
+    saved_mode = verify['timbratura_gps_mode'] if isinstance(verify, dict) else (verify[0] if verify else None)
+    app.logger.info(f"🔍 Verifica dopo save: mode nel DB = {saved_mode}")
 
     return jsonify({"success": True, "message": f"Modalità GPS impostata a: {mode_label}"})
 
@@ -12551,13 +12574,14 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
 
         if existing:
             # Update existing record (but preserve sent status and timbratura_gps_mode!)
-            app.logger.warning(f"🔴 SAVE UPDATE DB: rentman_id={rentman_id}, location_name={p.get('location_name')}")
+            app.logger.warning(f"🔴 SAVE UPDATE DB: rentman_id={rentman_id}, location_name={p.get('location_name')}, lat={p.get('location_lat')}, lon={p.get('location_lon')}")
             if DB_VENDOR == "mysql":
                 db.execute("""
                     UPDATE rentman_plannings SET
                         crew_id = %s, crew_name = %s, function_id = %s, function_name = %s,
                         project_id = %s, project_name = %s, project_code = %s,
                         subproject_id = %s, location_id = %s, location_name = %s, location_address = %s,
+                        location_lat = %s, location_lon = %s,
                         gps_timbratura_location = %s,
                         plan_start = %s, plan_end = %s, 
                         break_start = %s, break_end = %s, break_minutes = %s,
@@ -12569,6 +12593,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
                     project_id, p.get("project_name"), p.get("project_code"),
                     p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
+                    p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"),
                     plan_start, plan_end,
                     p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
@@ -12582,6 +12607,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         crew_id = ?, crew_name = ?, function_id = ?, function_name = ?,
                         project_id = ?, project_name = ?, project_code = ?,
                         subproject_id = ?, location_id = ?, location_name = ?, location_address = ?,
+                        location_lat = ?, location_lon = ?,
                         gps_timbratura_location = ?,
                         plan_start = ?, plan_end = ?,
                         break_start = ?, break_end = ?, break_minutes = ?,
@@ -12593,6 +12619,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
                     project_id, p.get("project_name"), p.get("project_code"),
                     p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
+                    p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"),
                     plan_start, plan_end,
                     p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
@@ -12603,21 +12630,23 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
             updated += 1
         else:
             # Insert new record
-            app.logger.warning(f"🔴 SAVE INSERT DB: rentman_id={rentman_id}, location_name={p.get('location_name')}")
+            app.logger.warning(f"🔴 SAVE INSERT DB: rentman_id={rentman_id}, location_name={p.get('location_name')}, lat={p.get('location_lat')}, lon={p.get('location_lon')}")
             if DB_VENDOR == "mysql":
                 db.execute("""
                     INSERT INTO rentman_plannings (
                         rentman_id, planning_date, crew_id, crew_name, function_id, function_name,
                         project_id, project_name, project_code, subproject_id, location_id, location_name, location_address,
+                        location_lat, location_lon,
                         gps_timbratura_location, timbratura_gps_mode,
                         plan_start, plan_end, break_start, break_end, break_minutes,
                         hours_planned, hours_registered, remark, is_leader, transport,
                         sent_to_webservice, created_ts, updated_ts
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
                 """, (
                     rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
                     function_id, p.get("function_name"), project_id, p.get("project_name"),
                     p.get("project_code"), p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
+                    p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"), p.get("timbratura_gps_mode") or "group",
                     plan_start, plan_end, p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
                     hours_planned, hours_registered, p.get("remark"),
@@ -12628,15 +12657,17 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     INSERT INTO rentman_plannings (
                         rentman_id, planning_date, crew_id, crew_name, function_id, function_name,
                         project_id, project_name, project_code, subproject_id, location_id, location_name, location_address,
+                        location_lat, location_lon,
                         gps_timbratura_location, timbratura_gps_mode,
                         plan_start, plan_end, break_start, break_end, break_minutes,
                         hours_planned, hours_registered, remark, is_leader, transport,
                         sent_to_webservice, created_ts, updated_ts
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """, (
                     rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
                     function_id, p.get("function_name"), project_id, p.get("project_name"),
                     p.get("project_code"), p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
+                    p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"), p.get("timbratura_gps_mode") or "group",
                     plan_start, plan_end, p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
                     hours_planned, hours_registered, p.get("remark"),
@@ -12645,7 +12676,14 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
             saved += 1
 
     # Raccogli tutti i rentman_id ricevuti dalla sincronizzazione
-    synced_rentman_ids = [p.get("id") for p in plannings if p.get("id")]
+    # IMPORTANTE: il frontend invia sia 'rentman_id' (originale Rentman) che 'id' (può essere DB id o Rentman id)
+    # Preferisci 'rentman_id' se presente, altrimenti usa 'id'
+    synced_rentman_ids = []
+    for p in plannings:
+        rid = p.get("rentman_id") or p.get("id")
+        if rid:
+            synced_rentman_ids.append(rid)
+    app.logger.info(f"🔴 synced_rentman_ids raccolti: {synced_rentman_ids}")
     
     # Rimuovi i turni NON PIÙ INVIATI (sent_to_webservice = 0) che non sono nella sincronizzazione
     # Marca come obsoleti i turni già inviati (sent_to_webservice = 1) che non sono più in Rentman
@@ -12739,12 +12777,17 @@ def api_admin_rentman_planning_saved() -> ResponseReturnValue:
             cols = ["id", "rentman_id", "planning_date", "crew_id", "crew_name", "function_id",
                     "function_name", "project_id", "project_name", "project_code", 
                     "subproject_id", "location_id", "location_name", "location_address",
-                    "gps_timbratura_location", "timbratura_gps_mode",
+                    "location_lat", "location_lon",
+                    "timbratura_gps_mode", "gps_timbratura_location",
                     "plan_start", "plan_end", "break_start", "break_end", "break_minutes",
                     "hours_planned", "hours_registered", "remark", "is_leader",
                     "transport", "sent_to_webservice", "sent_ts", "webservice_response",
                     "created_ts", "updated_ts", "is_obsolete"]
             plannings.append(dict(zip(cols, row)))
+
+    # DEBUG: Log GPS mode per ogni pianificazione
+    for p in plannings:
+        app.logger.info(f"📍 SAVED API: {p.get('crew_name')} - gps_mode={p.get('timbratura_gps_mode')}, gps_loc={p.get('gps_timbratura_location')}, lat={p.get('location_lat')}, lon={p.get('location_lon')}")
 
     return jsonify({
         "ok": True,
