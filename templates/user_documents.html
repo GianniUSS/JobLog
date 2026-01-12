@@ -959,6 +959,12 @@
                     <span class="icon">🔔</span>
                     <span>Storico Notifiche</span>
                 </a>
+                {% if magazzino_enabled %}
+                <a href="{{ url_for('magazzino_home') }}" class="menu-item">
+                    <span class="icon">📦</span>
+                    <span>Magazzino</span>
+                </a>
+                {% endif %}
             </div>
             
             <div class="menu-section">

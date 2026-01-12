@@ -4842,11 +4842,14 @@ def home() -> ResponseReturnValue:
         return redirect(url_for('magazzino_home'))
     # Utenti "user" senza ruolo specifico - mostrano pagina minima con solo logout
     if session.get('user_role') == ROLE_USER:
+        db = get_db()
         display_name = session.get('user_display') or session.get('user_name') or session.get('user')
         primary_name = session.get('user_name') or display_name or session.get('user')
         initials = session.get('user_initials') or compute_initials(primary_name or "")
         user_role = session.get('user_role', 'user')
         username = session.get('user')
+        # Verifica se il modulo magazzino è abilitato
+        magazzino_enabled = is_module_enabled(db, "magazzino")
         return render_template(
             "user_home.html",
             user_name=primary_name,
@@ -4854,6 +4857,7 @@ def home() -> ResponseReturnValue:
             user_initials=initials,
             user_role=user_role,
             username=username,
+            magazzino_enabled=magazzino_enabled,
         )
     # Supervisor e altri ruoli - mostrano dashboard operativa completa
     db = get_db()
@@ -16676,12 +16680,15 @@ def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
 @login_required
 def user_requests_page() -> ResponseReturnValue:
     """Pagina utente per inviare richieste (ferie, permessi, rimborsi, ecc.)."""
+    db = get_db()
+    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_requests.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
+        magazzino_enabled=magazzino_enabled,
     )
 
 
@@ -16689,12 +16696,15 @@ def user_requests_page() -> ResponseReturnValue:
 @login_required
 def user_turni_page() -> ResponseReturnValue:
     """Pagina utente per visualizzare i propri turni."""
+    db = get_db()
+    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_turni.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
+        magazzino_enabled=magazzino_enabled,
     )
 
 
@@ -16702,12 +16712,15 @@ def user_turni_page() -> ResponseReturnValue:
 @login_required
 def user_notifications_page() -> ResponseReturnValue:
     """Pagina utente per visualizzare lo storico delle notifiche push."""
+    db = get_db()
+    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_notifications.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
+        magazzino_enabled=magazzino_enabled,
     )
 
 
@@ -16715,12 +16728,15 @@ def user_notifications_page() -> ResponseReturnValue:
 @login_required
 def user_documents_page() -> ResponseReturnValue:
     """Pagina utente per visualizzare i documenti (circolari, comunicazioni, buste paga)."""
+    db = get_db()
+    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_documents.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
+        magazzino_enabled=magazzino_enabled,
     )
 
 
