@@ -729,12 +729,22 @@ def _apply_user_session(user_row: Mapping[str, Any]) -> None:
 
 
 def _magazzino_only() -> Optional[ResponseReturnValue]:
+    """Verifica accesso al magazzino: admin, magazzinieri, o utenti se modulo abilitato."""
     role = session.get('user_role')
-    if role not in {ROLE_MAGAZZINO, ROLE_ADMIN}:
-        if request.path.startswith('/api/'):
-            return jsonify({"error": "forbidden"}), 403
-        return ("Forbidden", 403)
-    return None
+    
+    # Admin e magazzinieri hanno sempre accesso
+    if role in {ROLE_MAGAZZINO, ROLE_ADMIN}:
+        return None
+    
+    # Per altri utenti, verifica se il modulo magazzino è abilitato
+    db = get_db()
+    if is_module_enabled(db, "magazzino"):
+        return None  # Accesso consentito
+    
+    # Accesso negato
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "forbidden"}), 403
+    return ("Forbidden", 403)
 
 
 @app.before_request
