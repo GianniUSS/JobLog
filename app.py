@@ -6058,17 +6058,25 @@ def magazzino_home() -> ResponseReturnValue:
     if guard is not None:
         return guard
 
+    db = get_db()
     display_name = session.get('user_display') or session.get('user_name') or session.get('user')
     primary_name = session.get('user_name') or display_name or session.get('user')
     initials = session.get('user_initials') or compute_initials(primary_name or "")
     header_clock = datetime.now().strftime("%d/%m/%Y | %H:%M")
+    user_role = session.get('user_role', 'user')
+    
+    # Company logo
+    settings = get_company_settings(db)
+    company_logo = settings.get('logo_url') if settings else None
 
     return render_template(
         "magazzino.html",
         user_name=primary_name,
         user_display=display_name,
         user_initials=initials,
+        user_role=user_role,
         header_clock=header_clock,
+        company_logo=company_logo,
     )
 
 
@@ -6107,6 +6115,8 @@ CREATE TABLE IF NOT EXISTS warehouse_sessions (
     project_code VARCHAR(128) NOT NULL,
     activity_label VARCHAR(255) NOT NULL,
     elapsed_ms BIGINT NOT NULL DEFAULT 0,
+    start_ts BIGINT DEFAULT NULL,
+    end_ts BIGINT DEFAULT NULL,
     note TEXT,
     username VARCHAR(190) DEFAULT NULL,
     created_ts BIGINT NOT NULL,
@@ -6123,6 +6133,8 @@ CREATE TABLE IF NOT EXISTS warehouse_sessions (
     project_code TEXT NOT NULL,
     activity_label TEXT NOT NULL,
     elapsed_ms INTEGER NOT NULL DEFAULT 0,
+    start_ts INTEGER DEFAULT NULL,
+    end_ts INTEGER DEFAULT NULL,
     note TEXT,
     username TEXT,
     created_ts INTEGER NOT NULL
@@ -6267,6 +6279,33 @@ def ensure_warehouse_sessions_table(db: DatabaseLike) -> None:
         try:
             cursor.close()
         except AttributeError:
+            pass
+    
+    # Migrazione: aggiungi colonne start_ts e end_ts se non esistono
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute("ALTER TABLE warehouse_sessions ADD COLUMN start_ts BIGINT DEFAULT NULL")
+            db.commit()
+    except Exception:
+        pass
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute("ALTER TABLE warehouse_sessions ADD COLUMN end_ts BIGINT DEFAULT NULL")
+            db.commit()
+    except Exception:
+        pass
+    
+    # SQLite: verifica se le colonne esistono
+    if DB_VENDOR != "mysql":
+        try:
+            cursor = db.execute("PRAGMA table_info(warehouse_sessions)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "start_ts" not in columns:
+                db.execute("ALTER TABLE warehouse_sessions ADD COLUMN start_ts INTEGER DEFAULT NULL")
+            if "end_ts" not in columns:
+                db.execute("ALTER TABLE warehouse_sessions ADD COLUMN end_ts INTEGER DEFAULT NULL")
+            db.commit()
+        except Exception:
             pass
 
 
@@ -6725,14 +6764,12 @@ def api_magazzino_activities_create() -> ResponseReturnValue:
 @app.get("/api/magazzino/sessions")
 @login_required
 def api_magazzino_sessions_list() -> ResponseReturnValue:
-    """Lista sessioni di lavoro magazzino per progetto."""
+    """Lista sessioni di lavoro magazzino di oggi (tutte o per progetto)."""
     guard = _magazzino_only()
     if guard is not None:
         return guard
 
     project_code = _normalize_text(request.args.get("project_code")).upper()
-    if not project_code:
-        return jsonify({"ok": False, "error": "missing_project_code"}), 400
 
     db = get_db()
     ensure_warehouse_sessions_table(db)
@@ -6741,18 +6778,32 @@ def api_magazzino_sessions_list() -> ResponseReturnValue:
     today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_ms = int(today_start.timestamp() * 1000)
 
-    rows = db.execute(
-        """
-        SELECT id, project_code, activity_label, elapsed_ms, note, username, created_ts
-        FROM warehouse_sessions
-        WHERE project_code = ? AND created_ts >= ?
-        ORDER BY created_ts DESC
-        LIMIT 100
-        """,
-        (project_code, today_start_ms),
-    ).fetchall()
+    # Se project_code specificato, filtra per progetto, altrimenti mostra tutte
+    if project_code:
+        rows = db.execute(
+            """
+            SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, note, username, created_ts
+            FROM warehouse_sessions
+            WHERE project_code = ? AND created_ts >= ?
+            ORDER BY created_ts DESC
+            LIMIT 100
+            """,
+            (project_code, today_start_ms),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, note, username, created_ts
+            FROM warehouse_sessions
+            WHERE created_ts >= ?
+            ORDER BY created_ts DESC
+            LIMIT 100
+            """,
+            (today_start_ms,),
+        ).fetchall()
+    
     items = [dict(row) for row in rows] if rows else []
-    return jsonify({"ok": True, "project_code": project_code, "items": items})
+    return jsonify({"ok": True, "items": items})
 
 
 @app.post("/api/magazzino/sessions")
@@ -6767,6 +6818,8 @@ def api_magazzino_sessions_create() -> ResponseReturnValue:
     project_code = _normalize_text(data.get("project_code")).upper()
     activity_label = _normalize_text(data.get("activity_label"))
     elapsed_ms = _coerce_int(data.get("elapsed_ms"))
+    start_ts = _coerce_int(data.get("start_ts"))
+    end_ts = _coerce_int(data.get("end_ts"))
     note = _normalize_text(data.get("note"))
 
     if not project_code:
@@ -6783,16 +6836,16 @@ def api_magazzino_sessions_create() -> ResponseReturnValue:
 
     db.execute(
         """
-        INSERT INTO warehouse_sessions(project_code, activity_label, elapsed_ms, note, username, created_ts)
-        VALUES(?,?,?,?,?,?)
+        INSERT INTO warehouse_sessions(project_code, activity_label, elapsed_ms, start_ts, end_ts, note, username, created_ts)
+        VALUES(?,?,?,?,?,?,?,?)
         """,
-        (project_code, activity_label, elapsed_ms, note or None, username, now),
+        (project_code, activity_label, elapsed_ms, start_ts, end_ts, note or None, username, now),
     )
     try:
         db.commit()
     except Exception:
         pass
-    return jsonify({"ok": True, "created_ts": now, "elapsed_ms": elapsed_ms})
+    return jsonify({"ok": True, "created_ts": now, "elapsed_ms": elapsed_ms, "start_ts": start_ts, "end_ts": end_ts})
 
 
 @app.route("/api/activities", methods=["GET", "POST"])

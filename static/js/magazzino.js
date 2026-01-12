@@ -39,6 +39,14 @@
     const notesHint = $('notesHint');
     const cancelNotes = $('cancelNotes');
     const confirmNotes = $('confirmNotes');
+    const clearNotes = $('clearNotes');
+    const notesModalTitle = $('notesModalTitle');
+    const notesModalDesc = $('notesModalDesc');
+    const notesRequiredStar = $('notesRequiredStar');
+    const notesAddBtn = $('notesAddBtn');
+    const notesBtnText = $('notesBtnText');
+    const notesBtnBadge = $('notesBtnBadge');
+    const notesPreview = $('notesPreview');
     
     // === STATE ===
     let projects = [];
@@ -46,7 +54,7 @@
     let selectedProj = null;
     let selectedAct = null;
     let selectedNotes = '';
-    let timer = { running: false, paused: false, start: 0, elapsed: 0, proj: null, act: null, notes: '' };
+    let timer = { running: false, paused: false, start: 0, elapsed: 0, startedAt: 0, proj: null, act: null, notes: '' };
     let tickId = null;
     let toastTimeout = null;
     let darkMode = false;
@@ -87,6 +95,11 @@
     const fmtTime = ms => {
         const s = Math.floor(ms / 1000);
         return `${fmt(Math.floor(s / 3600))}:${fmt(Math.floor((s % 3600) / 60))}:${fmt(s % 60)}`;
+    };
+    const fmtHourMin = ts => {
+        if (!ts) return '';
+        const d = new Date(ts);
+        return `${fmt(d.getHours())}:${fmt(d.getMinutes())}:${fmt(d.getSeconds())}`;
     };
 
     const projTitle = p => (p?.name || p?.displayname || p?.reference || '').trim();
@@ -187,6 +200,9 @@
     function clearTimerState() {
         timer = { running: false, paused: false, start: 0, elapsed: 0, proj: null, act: null, notes: '' };
         localStorage.removeItem(TIMER_KEY);
+        selectedNotes = '';
+        // Aggiorna pulsante note
+        updateNotesButton();
     }
 
     function rememberProject(code) {
@@ -357,14 +373,9 @@
     }
     
     async function fetchSessions() {
-        const proj = selectedProj || timer.proj;
-        if (!proj) {
-            sessionsList.innerHTML = '<div class="sessions-empty">Seleziona un progetto</div>';
-            totalTimeEl.textContent = '-';
-            return;
-        }
+        // Carica TUTTE le sessioni di oggi, non solo quelle del progetto selezionato
         try {
-            const res = await fetch(`/api/magazzino/sessions?project_code=${encodeURIComponent(proj.code)}`);
+            const res = await fetch('/api/magazzino/sessions');
             if (!res.ok) {
                 if (res.status === 401 || res.status === 302) {
                     window.location.reload();
@@ -391,10 +402,14 @@
             return;
         }
         try {
+            const endTs = Date.now();
+            const startTs = timer.startedAt || (endTs - elapsed);
             const payload = {
                 project_code: projCode,
                 activity_label: act,
-                elapsed_ms: elapsed
+                elapsed_ms: elapsed,
+                start_ts: startTs,
+                end_ts: endTs
             };
             
             // Aggiungi note se presenti (attività "Altro") - il backend vuole "note" singolare
@@ -469,13 +484,30 @@
         sessionsList.innerHTML = items.map(s => {
             total += s.elapsed_ms || 0;
             const hasNote = s.note && s.note.trim();
+            const noteHtml = hasNote 
+                ? `<div class="session-note">
+                    <span class="session-note-label">📝 Note</span>
+                    ${s.note}
+                   </div>` 
+                : '';
+            // Mostra orari inizio-fine se disponibili
+            const startTime = s.start_ts ? fmtHourMin(s.start_ts) : '';
+            const endTime = s.end_ts ? fmtHourMin(s.end_ts) : '';
+            const timeRangeHtml = (startTime && endTime) 
+                ? `<span class="session-time-range">🕐 ${startTime} → ${endTime}</span>` 
+                : '';
             return `<div class="session-item">
-                <div class="session-details">
-                    <div class="session-act">${s.activity_label}</div>
-                    <div class="session-proj">${s.project_code}</div>
-                    ${hasNote ? `<div class="session-note">📝 ${s.note}</div>` : ''}
+                <div class="session-header">
+                    <div class="session-details">
+                        <div class="session-act">${s.activity_label}</div>
+                        <div class="session-proj">
+                            <span class="session-proj-code">${s.project_code}</span>
+                            ${timeRangeHtml}
+                        </div>
+                    </div>
+                    <div class="session-duration">${fmtTime(s.elapsed_ms || 0)}</div>
                 </div>
-                <div class="session-duration">${fmtTime(s.elapsed_ms || 0)}</div>
+                ${noteHtml}
             </div>`;
         }).join('');
         
@@ -535,7 +567,50 @@
         document.querySelectorAll('.proj-item').forEach(el => el.disabled = timer.running);
         document.querySelectorAll('.activity-btn').forEach(el => el.disabled = timer.running);
         
+        // Aggiorna stato pulsante note
+        updateNotesButton();
+        
         updateDisplay();
+    }
+    
+    function updateNotesButton() {
+        if (!notesAddBtn) return;
+        
+        const isAltro = selectedAct === 'Altro';
+        const hasNotes = selectedNotes && selectedNotes.trim().length > 0;
+        
+        // Disabilita durante il timer
+        notesAddBtn.disabled = timer.running;
+        
+        // Aggiorna classi
+        notesAddBtn.classList.toggle('has-notes', hasNotes);
+        notesAddBtn.classList.toggle('required', isAltro && !hasNotes);
+        
+        // Aggiorna testo
+        if (notesBtnText) {
+            if (hasNotes) {
+                notesBtnText.textContent = '✓ Note aggiunte (clicca per modificare)';
+            } else if (isAltro) {
+                notesBtnText.textContent = 'Aggiungi note (obbligatorio per Altro)';
+            } else {
+                notesBtnText.textContent = 'Aggiungi note (opzionale)';
+            }
+        }
+        
+        // Badge obbligatorio
+        if (notesBtnBadge) {
+            notesBtnBadge.classList.toggle('hide', !isAltro || hasNotes);
+        }
+        
+        // Preview note
+        if (notesPreview) {
+            if (hasNotes && !timer.running) {
+                notesPreview.textContent = selectedNotes;
+                notesPreview.classList.remove('hide');
+            } else {
+                notesPreview.classList.add('hide');
+            }
+        }
     }
     
     function startTick() {
@@ -550,19 +625,20 @@
     function startTimer() {
         if (!selectedProj || !selectedAct) return;
         
-        // Se attività è "Altro", richiedi note obbligatorie
-        if (selectedAct === 'Altro') {
-            openNotesModal();
-            return;
-        }
-        
+        // Apri sempre il popup note prima di avviare
+        openNotesModal(true); // true = modalità avvio
+    }
+    
+    function doStartTimer() {
+        // Avvia effettivamente il timer
         timer.running = true;
         timer.paused = false;
         timer.start = Date.now();
+        timer.startedAt = Date.now();
         timer.elapsed = 0;
         timer.proj = selectedProj;
         timer.act = selectedAct;
-        timer.notes = '';
+        timer.notes = selectedNotes;
         saveTimerState();
         startTick();
         updateUI();
@@ -592,42 +668,100 @@
     }
     
     // === NOTES MODAL ===
-    function openNotesModal() {
-        notesInput.value = '';
-        notesHint.textContent = '';
+    let notesModalStartMode = false; // true = avvia timer dopo conferma
+    
+    function openNotesModal(startMode = false) {
+        notesModalStartMode = startMode;
+        const isAltro = selectedAct === 'Altro';
+        const hasNotes = selectedNotes && selectedNotes.trim().length > 0;
+        
+        // Configura il modal
+        if (notesModalTitle) {
+            if (startMode) {
+                notesModalTitle.textContent = isAltro ? '📝 Note (Obbligatorie)' : '📝 Aggiungi Note';
+            } else {
+                notesModalTitle.textContent = '📝 Modifica Note';
+            }
+        }
+        if (notesModalDesc) {
+            if (startMode) {
+                notesModalDesc.textContent = isAltro 
+                    ? 'Descrivi brevemente l\'attività "Altro" che stai per eseguire.'
+                    : 'Vuoi aggiungere una nota per questa attività? (opzionale)';
+            } else {
+                notesModalDesc.textContent = 'Modifica la nota per questa attività.';
+            }
+        }
+        if (notesRequiredStar) {
+            notesRequiredStar.classList.toggle('hide', !isAltro);
+        }
+        if (clearNotes) {
+            clearNotes.classList.toggle('hide', !hasNotes || startMode);
+        }
+        if (confirmNotes) {
+            confirmNotes.textContent = startMode ? '▶ Avvia' : '✓ Salva';
+        }
+        
+        // Popola con note esistenti
+        if (notesInput) {
+            notesInput.value = selectedNotes || '';
+            updateNotesHint();
+        }
+        
         notesModal.classList.remove('hide');
-        setTimeout(() => notesInput.focus(), 100);
+        setTimeout(() => notesInput?.focus(), 100);
     }
     
     function closeNotesModal() {
         notesModal.classList.add('hide');
-        notesInput.value = '';
+        notesModalStartMode = false;
+    }
+    
+    function updateNotesHint() {
+        if (notesHint && notesInput) {
+            const len = notesInput.value.length;
+            notesHint.textContent = `${len}/500`;
+            notesHint.style.color = 'var(--text-light)';
+        }
     }
     
     function submitNotes() {
-        const notes = (notesInput.value || '').trim();
-        if (!notes) {
-            notesHint.textContent = '⚠️ Le note sono obbligatorie per questa attività';
-            notesHint.style.color = 'var(--danger)';
-            notesInput.focus();
+        const notes = (notesInput?.value || '').trim();
+        const isAltro = selectedAct === 'Altro';
+        const shouldStartTimer = notesModalStartMode; // Salva prima di chiudere
+        
+        // Se è "Altro" e non ci sono note, mostra errore
+        if (isAltro && !notes) {
+            if (notesHint) {
+                notesHint.textContent = '⚠️ Le note sono obbligatorie per "Altro"';
+                notesHint.style.color = 'var(--danger)';
+            }
+            notesInput?.focus();
             return;
         }
         
         selectedNotes = notes;
-        timer.notes = notes;
         closeNotesModal();
         
-        // Ora avvia il timer
-        timer.running = true;
-        timer.paused = false;
-        timer.start = Date.now();
-        timer.elapsed = 0;
-        timer.proj = selectedProj;
-        timer.act = selectedAct;
-        saveTimerState();
-        startTick();
-        updateUI();
-        toast('✓ Note salvate', 'ok');
+        // Se siamo in modalità avvio, avvia il timer
+        if (shouldStartTimer) {
+            doStartTimer();
+            if (notes) {
+                toast('✓ Attività avviata con note', 'ok');
+            } else {
+                toast('▶ Attività avviata', 'ok');
+            }
+        } else if (notes) {
+            toast('✓ Note salvate', 'ok');
+        }
+    }
+    
+    function clearNotesAction() {
+        selectedNotes = '';
+        if (notesInput) notesInput.value = '';
+        closeNotesModal();
+        updateNotesButton();
+        toast('Note rimosse', 'ok');
     }
     
     // === EVENTS ===
@@ -657,8 +791,16 @@
             el.classList.toggle('selected', el.dataset.act === selectedAct)
         );
         
+        // Aggiorna pulsante note
+        updateNotesButton();
+        
         updateUI();
     });
+    
+    // Event listener per il pulsante note
+    if (notesAddBtn) {
+        notesAddBtn.addEventListener('click', openNotesModal);
+    }
     
     btnStart.addEventListener('click', startTimer);
     btnPause.addEventListener('click', pauseTimer);
@@ -669,13 +811,9 @@
     if (confirmAdd) confirmAdd.addEventListener('click', addManualProject);
     if (cancelNotes) cancelNotes.addEventListener('click', closeNotesModal);
     if (confirmNotes) confirmNotes.addEventListener('click', submitNotes);
+    if (clearNotes) clearNotes.addEventListener('click', clearNotesAction);
     if (notesInput) {
-        notesInput.addEventListener('input', () => {
-            notesHint.textContent = `${notesInput.value.length}/500`;
-            if (notesInput.value.length > 0) {
-                notesHint.style.color = 'var(--text-light)';
-            }
-        });
+        notesInput.addEventListener('input', updateNotesHint);
     }
     if (keypadEl) {
         keypadEl.addEventListener('click', e => {

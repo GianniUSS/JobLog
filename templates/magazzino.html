@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#0ea5e9" />
+    <meta name="theme-color" content="#667eea" />
     <title>Magazzino · JobLog</title>
     <link rel="manifest" href="{{ static_version('manifest.json') }}">
     <style>
@@ -56,52 +56,47 @@
         
         /* Header */
         header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            background: linear-gradient(135deg, var(--accent) 0%, #0284c7 100%);
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            padding: calc(20px + env(safe-area-inset-top, 0px)) 20px 20px;
             color: white;
             flex-shrink: 0;
-            box-shadow: var(--shadow);
-            z-index: 50;
+            position: relative;
         }
-        .logo {
-            font-size: 18px;
-            font-weight: 800;
-            letter-spacing: -0.5px;
+        header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+            pointer-events: none;
         }
-        .header-right {
+        .header-content {
             display: flex;
             align-items: center;
-            gap: 8px;
+            position: relative;
+            min-height: 44px;
         }
-        .avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.3);
+        .header-content .hamburger-btn {
+            position: relative;
+            z-index: 2;
+        }
+        .header-title {
+            position: absolute;
+            left: 0;
+            right: 0;
+            text-align: center;
+            pointer-events: none;
+        }
+        .header-title h1 {
             color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            font-size: 1.5rem;
             font-weight: 700;
-            font-size: 13px;
-            border: 1px solid rgba(255,255,255,0.5);
+            margin: 0;
         }
-        .header-btn {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 20px;
-            padding: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0.9;
+        .header-title p {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.875rem;
+            margin: 2px 0 0 0;
         }
-        .header-btn:active { opacity: 0.7; }
 
         /* Main content */
         main {
@@ -119,8 +114,8 @@
         /* ===== TIMER SECTION ===== */
         .timer-section {
             background: var(--card);
-            border-radius: 16px;
-            padding: 20px;
+            border-radius: 12px;
+            padding: 12px 16px;
             box-shadow: var(--shadow);
             text-align: center;
             flex-shrink: 0;
@@ -133,10 +128,10 @@
         }
         
         .timer-project {
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-light);
-            margin-bottom: 6px;
-            min-height: 18px;
+            margin-bottom: 4px;
+            min-height: 16px;
             font-weight: 600;
         }
         .timer-project strong {
@@ -146,22 +141,22 @@
         
         .timer-display {
             font-family: "Menlo", "Monaco", monospace;
-            font-size: 52px;
+            font-size: 36px;
             font-weight: 800;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
             color: var(--accent);
             line-height: 1;
-            margin: 12px 0;
+            margin: 6px 0;
             font-variant-numeric: tabular-nums;
         }
         
         .timer-status {
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 1px;
             color: var(--text-light);
-            margin-bottom: 16px;
+            margin-bottom: 10px;
         }
         .timer-status.running {
             color: var(--success);
@@ -179,18 +174,18 @@
         }
         .btn-action {
             flex: 1;
-            max-width: 120px;
-            padding: 14px 12px;
+            max-width: 100px;
+            padding: 10px 10px;
             border: none;
-            border-radius: 12px;
-            font-size: 14px;
+            border-radius: 10px;
+            font-size: 13px;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.15s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 5px;
             color: white;
         }
         .btn-action:active { transform: scale(0.95); }
@@ -346,7 +341,7 @@
             flex-direction: column;
             overflow: hidden;
             flex: 1;
-            min-height: 150px;
+            min-height: 180px;
         }
         .sessions-header {
             padding: 12px 14px;
@@ -359,60 +354,97 @@
             justify-content: space-between;
             align-items: center;
             flex-shrink: 0;
+            background: var(--card);
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
         .sessions-list {
             flex: 1;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
         .session-item {
+            background: var(--bg);
+            border-radius: 10px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            transition: all 0.15s ease;
+        }
+        .session-item:active {
+            transform: scale(0.98);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .session-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            padding: 12px 14px;
-            border-bottom: 1px solid var(--border);
-            transition: background 0.15s ease;
-        }
-        .session-item:last-child { border-bottom: none; }
-        .session-item:active {
-            background: var(--bg);
+            align-items: flex-start;
+            margin-bottom: 6px;
         }
         .session-details {
             flex: 1;
             min-width: 0;
         }
         .session-proj {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-light);
             margin-bottom: 2px;
             font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .session-proj-code {
+            background: var(--accent);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+        .session-time-range {
+            font-size: 11px;
+            color: var(--text-light);
+            margin-left: 8px;
         }
         .session-act {
-            font-size: 13px;
-            font-weight: 600;
+            font-size: 14px;
+            font-weight: 700;
             color: var(--text);
             word-break: break-word;
         }
         .session-note {
-            font-size: 11px;
-            color: var(--text-light);
-            margin-top: 4px;
-            padding: 6px;
-            background: var(--bg);
-            border-left: 2px solid var(--accent);
-            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text);
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: var(--card);
+            border-left: 3px solid var(--accent);
+            border-radius: 6px;
             word-break: break-word;
-            line-height: 1.4;
+            line-height: 1.5;
+        }
+        .session-note-label {
+            font-size: 10px;
+            color: var(--text-light);
+            text-transform: uppercase;
+            font-weight: 700;
+            margin-bottom: 4px;
+            display: block;
         }
         .session-duration {
             font-family: "Menlo", monospace;
-            font-size: 14px;
-            font-weight: 700;
+            font-size: 16px;
+            font-weight: 800;
             color: var(--accent);
             flex-shrink: 0;
-            margin-left: 12px;
-            min-width: 60px;
-            text-align: right;
+            background: rgba(14, 165, 233, 0.1);
+            padding: 4px 10px;
+            border-radius: 8px;
         }
         .sessions-empty {
             display: flex;
@@ -423,6 +455,7 @@
             color: var(--text-light);
             font-size: 14px;
             gap: 6px;
+            padding: 24px;
         }
         .sessions-empty-icon {
             font-size: 32px;
@@ -430,10 +463,13 @@
         }
         
         .total-time {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
             color: var(--accent);
             font-family: monospace;
+            background: rgba(14, 165, 233, 0.1);
+            padding: 4px 8px;
+            border-radius: 6px;
         }
 
         /* ===== MODALS ===== */
@@ -648,6 +684,80 @@
             font-weight: 700;
         }
         
+        /* Notes button section */
+        .notes-button-section {
+            background: var(--card);
+            border-radius: 14px;
+            padding: 12px;
+            box-shadow: var(--shadow);
+            flex-shrink: 0;
+        }
+        .notes-add-btn {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.15s ease;
+        }
+        .notes-add-btn:hover {
+            border-color: var(--accent);
+            background: rgba(14, 165, 233, 0.05);
+        }
+        .notes-add-btn:active {
+            transform: scale(0.98);
+        }
+        .notes-add-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .notes-add-btn.has-notes {
+            border-style: solid;
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .notes-add-btn.required {
+            border-color: var(--warning);
+            background: rgba(245, 158, 11, 0.1);
+        }
+        .notes-btn-icon {
+            font-size: 18px;
+        }
+        .notes-btn-text {
+            flex: 1;
+            text-align: left;
+        }
+        .notes-btn-badge {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--warning);
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .notes-preview {
+            margin-top: 8px;
+            padding: 10px 12px;
+            background: var(--bg);
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--text);
+            border-left: 3px solid var(--accent);
+            word-break: break-word;
+            line-height: 1.4;
+        }
+        
         /* Smooth scrolling per tutti i browser */
         html {
             scroll-behavior: smooth;
@@ -657,15 +767,241 @@
         input, button, select {
             font-size: 16px;
         }
+        
+        /* Hamburger Button */
+        .hamburger-btn {
+            background: none;
+            border: none;
+            padding: 8px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 100;
+        }
+        .hamburger-btn:hover {
+            opacity: 0.8;
+        }
+        .hamburger-btn span {
+            display: block;
+            width: 22px;
+            height: 2px;
+            background: white;
+            border-radius: 1px;
+            transition: all 0.3s ease;
+        }
+        .hamburger-btn.active span:nth-child(1) {
+            transform: rotate(45deg) translate(5px, 5px);
+        }
+        .hamburger-btn.active span:nth-child(2) {
+            opacity: 0;
+        }
+        .hamburger-btn.active span:nth-child(3) {
+            transform: rotate(-45deg) translate(5px, -5px);
+        }
+        
+        /* Side Menu Overlay */
+        .side-menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 600;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        .side-menu-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: -320px;
+            width: 300px;
+            max-width: 85vw;
+            height: 100vh;
+            height: 100dvh;
+            background: var(--card);
+            z-index: 700;
+            transition: left 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.2);
+        }
+        .side-menu.active {
+            left: 0;
+        }
+        .side-menu-header {
+            padding: 20px;
+            padding-top: calc(20px + env(safe-area-inset-top, 0px));
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, var(--accent) 0%, #0284c7 100%);
+        }
+        .side-menu-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .side-menu-user-info {
+            flex: 1;
+        }
+        .side-menu-user-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: white;
+        }
+        .side-menu-user-role {
+            font-size: 13px;
+            color: rgba(255,255,255,0.8);
+        }
+        .side-menu-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        .menu-section {
+            margin-bottom: 24px;
+        }
+        .menu-section-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            padding: 0 8px;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 14px;
+            color: var(--text);
+            text-decoration: none;
+        }
+        .menu-item:hover {
+            background: var(--bg);
+        }
+        .menu-item.active {
+            background: rgba(14, 165, 233, 0.15);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .menu-item .icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+        .menu-item.danger {
+            color: var(--danger);
+        }
+        .side-menu-footer {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: center;
+        }
+        .side-menu-footer img {
+            max-height: 40px;
+            max-width: 150px;
+            object-fit: contain;
+        }
     </style>
 <body>
+    <!-- Side Menu Overlay -->
+    <div class="side-menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+
+    <!-- Side Menu -->
+    <div class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-avatar">{{ user_initials or '?' }}</div>
+            <div class="side-menu-user-info">
+                <div class="side-menu-user-name">{{ user_display or user_name }}</div>
+                <div class="side-menu-user-role">{{ user_role|default('user', true) }}</div>
+            </div>
+        </div>
+        
+        <div class="side-menu-content">
+            <div class="menu-section">
+                <div class="menu-section-title">📋 Menu</div>
+                <a href="{{ url_for('home') }}" class="menu-item">
+                    <span class="icon">🏠</span>
+                    <span>Home Timbrature</span>
+                </a>
+                <a href="{{ url_for('user_turni_page') }}" class="menu-item">
+                    <span class="icon">📅</span>
+                    <span>I Miei Turni</span>
+                </a>
+                <a href="{{ url_for('user_requests_page') }}" class="menu-item">
+                    <span class="icon">📝</span>
+                    <span>Richieste</span>
+                </a>
+                <a href="{{ url_for('user_documents_page') }}" class="menu-item">
+                    <span class="icon">📄</span>
+                    <span>Documenti</span>
+                </a>
+                <a href="/user/notifications" class="menu-item">
+                    <span class="icon">🔔</span>
+                    <span>Storico Notifiche</span>
+                </a>
+                <a href="{{ url_for('magazzino_home') }}" class="menu-item active">
+                    <span class="icon">📦</span>
+                    <span>Magazzino</span>
+                </a>
+            </div>
+            
+            <div class="menu-section">
+                <div class="menu-section-title">⚙️ Impostazioni</div>
+                <div class="menu-item" onclick="toggleThemeAndClose()">
+                    <span class="icon">🌙</span>
+                    <span>Tema Scuro</span>
+                </div>
+            </div>
+            
+            <div class="menu-section">
+                <a href="{{ url_for('logout') }}" class="menu-item danger">
+                    <span class="icon">🚪</span>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </div>
+        
+        {% if company_logo %}
+        <div class="side-menu-footer">
+            <img src="{{ company_logo }}" alt="Logo Azienda">
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Header -->
     <header>
-        <span class="logo">📦 Magazzino</span>
-        <div class="header-right">
-            <button class="header-btn" id="themeBtn" title="Cambia tema">🌙</button>
-            <div class="avatar">{{ user_initials or '?' }}</div>
-            <a href="{{ url_for('logout') }}" class="header-btn" title="Esci">⏻</a>
+        <div class="header-content">
+            <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMenu()">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div class="header-title">
+                <h1>Magazzino</h1>
+                <p>Gestione attività</p>
+            </div>
         </div>
     </header>
 
@@ -748,19 +1084,20 @@
     <!-- Toast notifications -->
     <div class="toast" id="toast"></div>
 
-    <!-- Modal: Note per attività Altro -->
+    <!-- Modal: Note -->
     <div class="modal-backdrop hide" id="notesModal">
         <div class="modal">
-            <div class="modal-title">📝 Note per Attività</div>
-            <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">Descrivere brevemente l'attività "Altro" eseguita.</p>
+            <div class="modal-title" id="notesModalTitle">📝 Note</div>
+            <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;" id="notesModalDesc">Aggiungi una nota per questa attività.</p>
             
-            <label class="modal-label">Note <span class="notes-required">*</span></label>
+            <label class="modal-label">Note <span class="notes-required hide" id="notesRequiredStar">*</span></label>
             <textarea class="notes-textarea" id="notesInput" placeholder="Es: Pulizia magazzino, riordino scaffali, ecc..." maxlength="500"></textarea>
-            <div class="notes-hint" id="notesHint"></div>
+            <div class="notes-hint" id="notesHint">0/500</div>
             
             <div class="modal-actions">
                 <button class="modal-btn ghost" id="cancelNotes">Annulla</button>
-                <button class="modal-btn primary" id="confirmNotes">Continua</button>
+                <button class="modal-btn danger hide" id="clearNotes">🗑️ Rimuovi</button>
+                <button class="modal-btn primary" id="confirmNotes">✓ Salva</button>
             </div>
         </div>
     </div>
@@ -798,6 +1135,38 @@
         </div>
     </div>
 
+    <script>
+    // Menu laterale
+    function toggleMenu() {
+        const btn = document.getElementById('hamburgerBtn');
+        const menu = document.getElementById('sideMenu');
+        const overlay = document.getElementById('menuOverlay');
+        
+        btn.classList.toggle('active');
+        menu.classList.toggle('active');
+        overlay.classList.toggle('active');
+    }
+
+    function closeMenu() {
+        document.getElementById('hamburgerBtn').classList.remove('active');
+        document.getElementById('sideMenu').classList.remove('active');
+        document.getElementById('menuOverlay').classList.remove('active');
+    }
+
+    function toggleThemeAndClose() {
+        // Usa la funzione toggleTheme del file magazzino.js
+        if (typeof toggleTheme === 'function') {
+            toggleTheme();
+        } else {
+            // Fallback se la funzione non esiste ancora
+            const html = document.documentElement;
+            const isDark = html.dataset.theme === 'dark';
+            html.dataset.theme = isDark ? 'light' : 'dark';
+            localStorage.setItem('theme', html.dataset.theme);
+        }
+        closeMenu();
+    }
+    </script>
     <script src="{{ static_version('js/magazzino.js') }}"></script>
 </body>
 </html>
