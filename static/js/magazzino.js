@@ -583,10 +583,10 @@
                     window._selectedSessionItem = item;
                     actionsBar.classList.add('visible');
                     mainEl.classList.add('has-action-bar');
-                    // Scroll per assicurarsi che la sessione sia visibile sopra la barra
+                    // Scroll per portare la sessione in cima alla lista
                     setTimeout(() => {
-                        item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                    }, 100);
+                        item.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 50);
                 } else {
                     // Era selezionata, deseleziona e nascondi barra
                     window._selectedSessionItem = null;
