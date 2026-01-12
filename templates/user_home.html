@@ -3115,9 +3115,12 @@ async function autoRequestNotifications() {
       updatePushUI();
     }
   } else if (Notification.permission === 'granted' && !pushState.subscribed) {
-    // Permesso già dato ma non iscritto - iscriviti silenziosamente
-    await subscribeToPush();
-    updatePushUI();
+    // Permesso già dato ma non iscritto - chiedi conferma comunque
+    const shouldAsk = await showNotificationPrompt();
+    if (shouldAsk) {
+      await subscribeToPush();
+      updatePushUI();
+    }
   }
 }
 
