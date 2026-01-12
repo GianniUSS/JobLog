@@ -472,6 +472,132 @@
             border-radius: 6px;
         }
 
+        /* ===== SESSION ACTIONS ===== */
+        .session-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+        }
+        .session-action-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+        .session-action-btn.resume {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        .session-action-btn.resume:active {
+            transform: scale(0.95);
+        }
+        .session-action-btn.edit-time {
+            background: var(--card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .session-action-btn.edit-time:active {
+            background: var(--border);
+        }
+        
+        /* Time inputs */
+        .time-inputs-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .time-input-group {
+            flex: 1;
+        }
+        .time-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 18px;
+            font-family: "Menlo", monospace;
+            background: var(--bg);
+            color: var(--text);
+            text-align: center;
+        }
+        .time-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+        }
+
+        /* Intervals list */
+        .intervals-list {
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .interval-row {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            gap: 8px;
+        }
+        .interval-row:last-child {
+            border-bottom: none;
+        }
+        .interval-num {
+            font-size: 11px;
+            color: var(--text-light);
+            font-weight: 700;
+            min-width: 20px;
+        }
+        .interval-times {
+            flex: 1;
+            font-family: "Menlo", monospace;
+            font-size: 14px;
+            color: var(--text);
+        }
+        .interval-duration {
+            font-family: "Menlo", monospace;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--accent);
+            background: rgba(14, 165, 233, 0.1);
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+        .interval-empty {
+            padding: 20px;
+            text-align: center;
+            color: var(--text-light);
+            font-size: 13px;
+        }
+        .intervals-total {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: var(--bg);
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+        .intervals-total .total-value {
+            font-family: "Menlo", monospace;
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--accent);
+        }
+
         /* ===== MODALS ===== */
         .modal-backdrop {
             position: fixed;
@@ -1131,6 +1257,30 @@
             <div class="modal-actions">
                 <button class="modal-btn ghost" id="cancelAdd">Annulla</button>
                 <button class="modal-btn primary" id="confirmAdd">Aggiungi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Modifica Orari -->
+    <div class="modal-backdrop hide" id="editTimeModal">
+        <div class="modal">
+            <div class="modal-title">🕐 Modifica Orari</div>
+            <p style="font-size:13px;color:var(--text-light);margin-bottom:16px;">Modifica gli orari di inizio e fine della sessione.</p>
+            
+            <div class="time-inputs-row">
+                <div class="time-input-group">
+                    <label class="modal-label">Inizio</label>
+                    <input type="time" class="time-input" id="editStartTime" />
+                </div>
+                <div class="time-input-group">
+                    <label class="modal-label">Fine</label>
+                    <input type="time" class="time-input" id="editEndTime" />
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button class="modal-btn ghost" id="cancelEditTime">Annulla</button>
+                <button class="modal-btn primary" id="confirmEditTime">✓ Salva</button>
             </div>
         </div>
     </div>

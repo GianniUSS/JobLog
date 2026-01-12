@@ -58,6 +58,7 @@
     let tickId = null;
     let toastTimeout = null;
     let darkMode = false;
+    let resumeSessionId = null; // ID sessione da continuare
     let manualCode = '';
     
     // === THEME ===
@@ -404,6 +405,29 @@
         try {
             const endTs = Date.now();
             const startTs = timer.startedAt || (endTs - elapsed);
+            
+            // Se stiamo riprendendo una sessione, aggiorna quella esistente
+            if (resumeSessionId) {
+                const res = await fetch(`/api/magazzino/sessions/${resumeSessionId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        add_elapsed_ms: elapsed,
+                        interval_start: startTs,  // Inizio di questo intervallo
+                        end_ts: endTs
+                    })
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json().catch(() => ({}));
+                if (data && data.ok === false) throw new Error(data.error || 'update_failed');
+                toast('✓ Tempo aggiunto alla sessione', 'ok');
+                resumeSessionId = null; // Reset
+                selectedNotes = '';
+                await fetchSessions();
+                return;
+            }
+            
+            // Altrimenti crea nuova sessione
             const payload = {
                 project_code: projCode,
                 activity_label: act,
@@ -480,8 +504,11 @@
             return;
         }
         
+        // Salva items per accesso successivo
+        window._sessionsData = items;
+        
         let total = 0;
-        sessionsList.innerHTML = items.map(s => {
+        sessionsList.innerHTML = items.map((s, idx) => {
             total += s.elapsed_ms || 0;
             const hasNote = s.note && s.note.trim();
             const noteHtml = hasNote 
@@ -490,13 +517,27 @@
                     ${s.note}
                    </div>` 
                 : '';
-            // Mostra orari inizio-fine se disponibili
-            const startTime = s.start_ts ? fmtHourMin(s.start_ts) : '';
-            const endTime = s.end_ts ? fmtHourMin(s.end_ts) : '';
+            // Mostra orari inizio-fine (primo e ultimo)
+            const intervals = s.intervals || [];
+            const firstStart = intervals.length ? intervals[0].start : s.start_ts;
+            const lastEnd = intervals.length ? intervals[intervals.length - 1].end : s.end_ts;
+            const startTime = firstStart ? fmtHourMin(firstStart) : '';
+            const endTime = lastEnd ? fmtHourMin(lastEnd) : '';
+            const intervalsCount = intervals.length;
             const timeRangeHtml = (startTime && endTime) 
-                ? `<span class="session-time-range">🕐 ${startTime} → ${endTime}</span>` 
+                ? `<span class="session-time-range">🕐 ${startTime} → ${endTime}${intervalsCount > 1 ? ` (${intervalsCount} int.)` : ''}</span>` 
                 : '';
-            return `<div class="session-item">
+            // Pulsanti azioni
+            const actionsHtml = `
+                <div class="session-actions">
+                    <button class="session-action-btn resume" data-session-id="${s.id}" data-project="${s.project_code}" data-activity="${s.activity_label}" data-note="${(s.note || '').replace(/"/g, '&quot;')}" title="Riprendi attività">
+                        ▶ Riprendi
+                    </button>
+                    <button class="session-action-btn edit-time" data-session-idx="${idx}" title="Visualizza tutti gli orari">
+                        🕐 Orari
+                    </button>
+                </div>`;
+            return `<div class="session-item" data-session-id="${s.id}">
                 <div class="session-header">
                     <div class="session-details">
                         <div class="session-act">${s.activity_label}</div>
@@ -508,10 +549,136 @@
                     <div class="session-duration">${fmtTime(s.elapsed_ms || 0)}</div>
                 </div>
                 ${noteHtml}
+                ${actionsHtml}
             </div>`;
         }).join('');
         
         totalTimeEl.textContent = fmtTime(total);
+        
+        // Event listeners per pulsanti sessione
+        sessionsList.querySelectorAll('.session-action-btn.resume').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (timer.running) {
+                    toast('Ferma il timer prima di riprendere', 'warn');
+                    return;
+                }
+                resumeSession(btn.dataset);
+            });
+        });
+        
+        sessionsList.querySelectorAll('.session-action-btn.edit-time').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const idx = parseInt(btn.dataset.sessionIdx);
+                const session = window._sessionsData[idx];
+                if (session) {
+                    openIntervalsModal(session);
+                }
+            });
+        });
+    }
+    
+    // === RESUME SESSION ===
+    function resumeSession(data) {
+        const { sessionId, project, activity, note } = data;
+        resumeSessionId = parseInt(sessionId);
+        
+        // Trova e seleziona il progetto
+        const proj = projects.find(p => p.code === project);
+        if (proj) {
+            selectedProj = proj;
+            document.querySelectorAll('.proj-item').forEach(el => {
+                el.classList.toggle('selected', el.dataset.code === project);
+            });
+        } else {
+            // Aggiungi progetto temporaneo se non esiste
+            const tempProj = { code: project, name: '' };
+            projects.push(tempProj);
+            selectedProj = tempProj;
+            renderProjects();
+        }
+        
+        // Seleziona attività
+        selectedAct = activity;
+        document.querySelectorAll('.activity-btn').forEach(el => {
+            el.classList.toggle('selected', el.dataset.act === activity);
+        });
+        
+        // Imposta note
+        selectedNotes = note || '';
+        
+        updateUI();
+        
+        // Scroll verso l'alto per vedere il timer
+        document.querySelector('main').scrollTo({ top: 0, behavior: 'smooth' });
+        
+        // Avvia automaticamente il timer dopo un breve delay (per permettere lo scroll)
+        setTimeout(() => {
+            startTimer();
+        }, 300);
+    }
+    
+    // === INTERVALS MODAL (mostra tutti gli intervalli) ===
+    function openIntervalsModal(session) {
+        const modal = $('editTimeModal');
+        if (!modal) return;
+        
+        const intervals = session.intervals || [];
+        const totalMs = session.elapsed_ms || 0;
+        
+        // Genera HTML per gli intervalli
+        let intervalsHtml = '';
+        if (intervals.length === 0) {
+            intervalsHtml = '<div class="interval-empty">Nessun intervallo registrato</div>';
+        } else {
+            intervalsHtml = intervals.map((iv, i) => {
+                const startTime = iv.start ? fmtHourMin(iv.start) : '—';
+                const endTime = iv.end ? fmtHourMin(iv.end) : '—';
+                const duration = (iv.start && iv.end) ? fmtTime(iv.end - iv.start) : '—';
+                return `
+                    <div class="interval-row">
+                        <span class="interval-num">${i + 1}.</span>
+                        <span class="interval-times">${startTime} → ${endTime}</span>
+                        <span class="interval-duration">${duration}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Aggiorna contenuto modal
+        const modalContent = modal.querySelector('.modal');
+        if (modalContent) {
+            modalContent.innerHTML = `
+                <div class="modal-title">🕐 Dettaglio Orari</div>
+                <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
+                    <strong>${session.activity_label}</strong> - Progetto ${session.project_code}
+                </p>
+                <div class="intervals-list">
+                    ${intervalsHtml}
+                </div>
+                <div class="intervals-total">
+                    <span>Tempo totale:</span>
+                    <span class="total-value">${fmtTime(totalMs)}</span>
+                </div>
+                <div class="modal-actions">
+                    <button class="modal-btn primary" id="closeIntervalsModal">Chiudi</button>
+                </div>
+            `;
+            
+            // Event listener per chiudere
+            const closeBtn = modal.querySelector('#closeIntervalsModal');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => modal.classList.add('hide'));
+            }
+        }
+        
+        modal.classList.remove('hide');
+    }
+    
+    function closeEditTimeModal() {
+        const modal = $('editTimeModal');
+        if (modal) modal.classList.add('hide');
     }
     
     // === TIMER ===
@@ -815,6 +982,7 @@
     if (notesInput) {
         notesInput.addEventListener('input', updateNotesHint);
     }
+    
     if (keypadEl) {
         keypadEl.addEventListener('click', e => {
             const k = e.target.getAttribute('data-k');

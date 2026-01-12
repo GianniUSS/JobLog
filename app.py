@@ -6333,6 +6333,15 @@ def ensure_warehouse_sessions_table(db: DatabaseLike) -> None:
                 db.execute("ALTER TABLE warehouse_sessions ADD COLUMN start_ts INTEGER DEFAULT NULL")
             if "end_ts" not in columns:
                 db.execute("ALTER TABLE warehouse_sessions ADD COLUMN end_ts INTEGER DEFAULT NULL")
+            if "intervals" not in columns:
+                db.execute("ALTER TABLE warehouse_sessions ADD COLUMN intervals TEXT DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass
+    else:
+        # MySQL: aggiungi colonna intervals se non esiste
+        try:
+            db.execute("ALTER TABLE warehouse_sessions ADD COLUMN intervals TEXT DEFAULT NULL")
             db.commit()
         except Exception:
             pass
@@ -6798,6 +6807,8 @@ def api_magazzino_sessions_list() -> ResponseReturnValue:
     if guard is not None:
         return guard
 
+    import json as json_module
+    
     project_code = _normalize_text(request.args.get("project_code")).upper()
     current_user = session.get("user")
 
@@ -6812,7 +6823,7 @@ def api_magazzino_sessions_list() -> ResponseReturnValue:
     if project_code:
         rows = db.execute(
             """
-            SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, note, username, created_ts
+            SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, intervals, note, username, created_ts
             FROM warehouse_sessions
             WHERE project_code = ? AND username = ? AND created_ts >= ?
             ORDER BY created_ts DESC
@@ -6823,7 +6834,7 @@ def api_magazzino_sessions_list() -> ResponseReturnValue:
     else:
         rows = db.execute(
             """
-            SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, note, username, created_ts
+            SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, intervals, note, username, created_ts
             FROM warehouse_sessions
             WHERE username = ? AND created_ts >= ?
             ORDER BY created_ts DESC
@@ -6832,7 +6843,23 @@ def api_magazzino_sessions_list() -> ResponseReturnValue:
             (current_user, today_start_ms),
         ).fetchall()
     
-    items = [dict(row) for row in rows] if rows else []
+    items = []
+    for row in (rows or []):
+        item = dict(row)
+        # Parsa intervals da JSON
+        if item.get("intervals"):
+            try:
+                item["intervals"] = json_module.loads(item["intervals"])
+            except:
+                item["intervals"] = []
+        else:
+            # Se non ci sono intervals ma c'è start/end, crea un array con un singolo intervallo
+            if item.get("start_ts") and item.get("end_ts"):
+                item["intervals"] = [{"start": item["start_ts"], "end": item["end_ts"]}]
+            else:
+                item["intervals"] = []
+        items.append(item)
+    
     return jsonify({"ok": True, "items": items})
 
 
@@ -6864,18 +6891,111 @@ def api_magazzino_sessions_create() -> ResponseReturnValue:
     now = now_ms()
     username = session.get("user")
 
+    # Salva il primo intervallo
+    import json as json_module
+    intervals = json_module.dumps([{"start": start_ts, "end": end_ts}]) if start_ts and end_ts else None
+
     db.execute(
         """
-        INSERT INTO warehouse_sessions(project_code, activity_label, elapsed_ms, start_ts, end_ts, note, username, created_ts)
-        VALUES(?,?,?,?,?,?,?,?)
+        INSERT INTO warehouse_sessions(project_code, activity_label, elapsed_ms, start_ts, end_ts, intervals, note, username, created_ts)
+        VALUES(?,?,?,?,?,?,?,?,?)
         """,
-        (project_code, activity_label, elapsed_ms, start_ts, end_ts, note or None, username, now),
+        (project_code, activity_label, elapsed_ms, start_ts, end_ts, intervals, note or None, username, now),
     )
     try:
         db.commit()
     except Exception:
         pass
     return jsonify({"ok": True, "created_ts": now, "elapsed_ms": elapsed_ms, "start_ts": start_ts, "end_ts": end_ts})
+
+
+@app.put("/api/magazzino/sessions/<int:session_id>")
+@login_required
+def api_magazzino_sessions_update(session_id: int) -> ResponseReturnValue:
+    """Aggiorna una sessione esistente (aggiunge tempo o modifica orari)."""
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    import json as json_module
+    
+    data = request.get_json(silent=True) or {}
+    add_elapsed_ms = _coerce_int(data.get("add_elapsed_ms"))  # Tempo da aggiungere
+    new_start_ts = _coerce_int(data.get("start_ts"))  # Inizio nuovo intervallo
+    new_end_ts = _coerce_int(data.get("end_ts"))  # Fine nuovo intervallo
+    interval_start = _coerce_int(data.get("interval_start"))  # Inizio del nuovo intervallo di lavoro
+
+    db = get_db()
+    ensure_warehouse_sessions_table(db)
+    username = session.get("user")
+
+    # Verifica che la sessione esista e appartenga all'utente
+    row = db.execute(
+        "SELECT id, elapsed_ms, start_ts, end_ts, intervals FROM warehouse_sessions WHERE id = ? AND username = ?",
+        (session_id, username)
+    ).fetchone()
+    
+    if not row:
+        return jsonify({"ok": False, "error": "session_not_found"}), 404
+
+    current_elapsed = row["elapsed_ms"] or 0
+    current_start = row["start_ts"]
+    current_intervals = []
+    
+    # Carica intervalli esistenti
+    if row["intervals"]:
+        try:
+            current_intervals = json_module.loads(row["intervals"])
+        except:
+            current_intervals = []
+    
+    # Se non ci sono intervalli ma c'è start_ts/end_ts, crea il primo
+    if not current_intervals and current_start and row["end_ts"]:
+        current_intervals = [{"start": current_start, "end": row["end_ts"]}]
+
+    # Calcola nuovi valori
+    new_elapsed = current_elapsed
+    if add_elapsed_ms and add_elapsed_ms > 0:
+        new_elapsed = current_elapsed + add_elapsed_ms
+        # Aggiungi nuovo intervallo
+        if interval_start and new_end_ts:
+            current_intervals.append({"start": interval_start, "end": new_end_ts})
+        elif new_end_ts:
+            # Usa end_ts - elapsed come inizio approssimativo
+            current_intervals.append({"start": new_end_ts - add_elapsed_ms, "end": new_end_ts})
+
+    # Se vengono passati nuovi orari senza add_elapsed (modifica manuale)
+    final_start = current_start  # Mantieni l'inizio originale
+    final_end = new_end_ts if new_end_ts else row["end_ts"]
+    
+    # Se modifica manuale degli orari (senza add_elapsed)
+    if not add_elapsed_ms and (new_start_ts is not None or new_end_ts is not None):
+        final_start = new_start_ts if new_start_ts is not None else current_start
+        final_end = new_end_ts if new_end_ts is not None else row["end_ts"]
+
+    intervals_json = json_module.dumps(current_intervals) if current_intervals else None
+
+    db.execute(
+        """
+        UPDATE warehouse_sessions 
+        SET elapsed_ms = ?, start_ts = ?, end_ts = ?, intervals = ?
+        WHERE id = ? AND username = ?
+        """,
+        (new_elapsed, final_start, final_end, intervals_json, session_id, username)
+    )
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok": True, 
+        "id": session_id,
+        "elapsed_ms": new_elapsed, 
+        "start_ts": final_start, 
+        "end_ts": final_end,
+        "intervals": current_intervals
+    })
 
 
 @app.route("/api/activities", methods=["GET", "POST"])
