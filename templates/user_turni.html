@@ -1349,6 +1349,81 @@ async function loadPushState() {
   }
   
   updatePushUI();
+  
+  // Auto-richiedi notifiche se non attive
+  autoRequestNotifications();
+}
+
+// Richiedi automaticamente le notifiche se non sono attive
+async function autoRequestNotifications() {
+  await new Promise(r => setTimeout(r, 1000));
+  
+  if (!pushState.supported) return;
+  if (pushState.subscribed) return;
+  if (pushState.permission === 'denied') return;
+  if (sessionStorage.getItem('push_prompted')) return;
+  
+  sessionStorage.setItem('push_prompted', '1');
+  
+  if (Notification.permission === 'default') {
+    const shouldAsk = await showNotificationPrompt();
+    if (shouldAsk) {
+      await subscribeToPush();
+      updatePushUI();
+    }
+  } else if (Notification.permission === 'granted' && !pushState.subscribed) {
+    await subscribeToPush();
+    updatePushUI();
+  }
+}
+
+function showNotificationPrompt() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.id = 'notification-prompt-overlay';
+    overlay.style.cssText = `
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 10000;
+      display: flex; align-items: center; justify-content: center;
+    `;
+    
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+      background: var(--bg-card, white); border-radius: 16px;
+      padding: 24px; max-width: 340px; margin: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center;
+    `;
+    
+    dialog.innerHTML = `
+      <div style="font-size: 48px; margin-bottom: 16px;">🔔</div>
+      <h3 style="margin: 0 0 12px; color: var(--text-primary, #333); font-size: 18px;">
+        Vuoi ricevere notifiche?
+      </h3>
+      <p style="margin: 0 0 20px; color: var(--text-secondary, #666); font-size: 14px; line-height: 1.5;">
+        Ti avviseremo quando vengono pubblicati nuovi turni e altre comunicazioni importanti.
+      </p>
+      <div style="display: flex; gap: 12px;">
+        <button id="notif-no" style="
+          flex: 1; padding: 12px; border: 1px solid var(--border, #ddd);
+          background: transparent; border-radius: 8px; cursor: pointer;
+          font-size: 14px; color: var(--text-secondary, #666);
+        ">Non ora</button>
+        <button id="notif-yes" style="
+          flex: 1; padding: 12px; border: none;
+          background: linear-gradient(135deg, #667eea, #764ba2);
+          color: white; border-radius: 8px; cursor: pointer;
+          font-size: 14px; font-weight: 600;
+        ">Attiva</button>
+      </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    document.getElementById('notif-yes').onclick = () => { overlay.remove(); resolve(true); };
+    document.getElementById('notif-no').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } };
+  });
 }
 
 function updatePushUI() {
