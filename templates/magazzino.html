@@ -114,8 +114,8 @@
         /* ===== TIMER SECTION ===== */
         .timer-section {
             background: var(--card);
-            border-radius: 10px;
-            padding: 6px 12px;
+            border-radius: 12px;
+            padding: 12px 16px;
             box-shadow: var(--shadow);
             text-align: center;
             flex-shrink: 0;
@@ -141,22 +141,22 @@
         
         .timer-display {
             font-family: "Menlo", "Monaco", monospace;
-            font-size: 28px;
+            font-size: 36px;
             font-weight: 800;
             letter-spacing: 1px;
             color: var(--accent);
             line-height: 1;
-            margin: 2px 0;
+            margin: 6px 0;
             font-variant-numeric: tabular-nums;
         }
         
         .timer-status {
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 1px;
             color: var(--text-light);
-            margin-bottom: 4px;
+            margin-bottom: 10px;
         }
         .timer-status.running {
             color: var(--success);
@@ -174,18 +174,18 @@
         }
         .btn-action {
             flex: 1;
-            max-width: 90px;
-            padding: 6px 8px;
+            max-width: 100px;
+            padding: 10px 10px;
             border: none;
-            border-radius: 8px;
-            font-size: 12px;
+            border-radius: 10px;
+            font-size: 13px;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.15s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 4px;
+            gap: 5px;
             color: white;
         }
         .btn-action:active { transform: scale(0.95); }
@@ -200,18 +200,18 @@
         /* ===== QUICK SELECT ===== */
         .select-section {
             background: var(--card);
-            border-radius: 10px;
-            padding: 8px 10px;
+            border-radius: 14px;
+            padding: 14px;
             box-shadow: var(--shadow);
             flex-shrink: 0;
         }
         .select-label {
-            font-size: 10px;
+            font-size: 12px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: var(--text-light);
-            margin-bottom: 4px;
+            margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -240,9 +240,9 @@
         
         .proj-item {
             flex-shrink: 0;
-            width: 100px;
-            padding: 8px;
-            border-radius: 8px;
+            width: 130px;
+            padding: 12px;
+            border-radius: 12px;
             background: linear-gradient(135deg, rgba(226,232,240,0.5), rgba(248,250,252,0.8));
             border: 1.5px solid var(--border);
             color: var(--text);
@@ -250,7 +250,7 @@
             transition: all 0.15s ease;
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 6px;
             scroll-snap-align: start;
             user-select: none;
         }
@@ -301,19 +301,19 @@
             gap: 8px;
         }
         .activity-btn {
-            padding: 8px 4px;
-            border-radius: 8px;
+            padding: 14px 8px;
+            border-radius: 12px;
             background: var(--bg);
             border: 1.5px solid var(--border);
             color: var(--text);
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.15s ease;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2px;
+            gap: 6px;
             user-select: none;
         }
         .activity-btn:active { transform: scale(0.95); }
@@ -328,7 +328,7 @@
             box-shadow: 0 4px 12px rgba(14,165,233,0.3);
         }
         .activity-icon {
-            font-size: 16px;
+            font-size: 20px;
             line-height: 1;
         }
         
@@ -368,13 +368,6 @@
             flex-direction: column;
             gap: 8px;
         }
-        .session-item {
-            background: var(--bg);
-            border-radius: 10px;
-            padding: 12px;
-            border: 1px solid var(--border);
-            transition: all 0.15s ease;
-        }
         .session-item:active {
             transform: scale(0.98);
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -383,7 +376,6 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 6px;
         }
         .session-details {
             flex: 1;
@@ -418,23 +410,25 @@
             word-break: break-word;
         }
         .session-note {
-            font-size: 12px;
-            color: var(--text);
-            margin-top: 8px;
-            padding: 8px 10px;
-            background: var(--card);
-            border-left: 3px solid var(--accent);
-            border-radius: 6px;
-            word-break: break-word;
-            line-height: 1.5;
+            font-size: 11px;
+            color: var(--text-light);
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            overflow: hidden;
         }
         .session-note-label {
             font-size: 10px;
             color: var(--text-light);
-            text-transform: uppercase;
-            font-weight: 700;
-            margin-bottom: 4px;
-            display: block;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .session-note-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
         }
         .session-duration {
             font-family: "Menlo", monospace;
@@ -472,19 +466,67 @@
             border-radius: 6px;
         }
 
-        /* ===== SESSION ACTIONS ===== */
-        .session-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 10px;
-            padding-top: 10px;
+        /* ===== SESSION ACTIONS BAR (Fixed Bottom) ===== */
+        .session-actions-bar {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--card);
+            padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
             border-top: 1px solid var(--border);
+            z-index: 100;
+            flex-direction: row;
+            gap: 10px;
+            justify-content: center;
+        }
+        .session-actions-bar.visible {
+            display: flex;
+        }
+        .session-actions-bar .action-btn {
+            flex: 1;
+            max-width: 160px;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .session-actions-bar .action-btn.resume {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        .session-actions-bar .action-btn.intervals {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .session-item {
+            background: var(--bg);
+            border-radius: 10px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            transition: all 0.15s ease;
+        }
+        .session-item.selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+        }
+        /* Spazio in fondo quando la barra è visibile */
+        main.has-action-bar {
+            padding-bottom: 80px;
         }
         .session-action-btn {
-            flex: 1;
             padding: 8px 12px;
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
@@ -493,6 +535,7 @@
             align-items: center;
             justify-content: center;
             gap: 4px;
+            white-space: nowrap;
         }
         .session-action-btn.resume {
             background: linear-gradient(135deg, #10b981 0%, #059669 100%);
@@ -1201,6 +1244,12 @@
             </div>
         </div>
     </main>
+
+    <!-- Session Actions Bar (Fixed Bottom) -->
+    <div class="session-actions-bar" id="sessionActionsBar">
+        <button class="action-btn resume" id="barBtnResume">▶ Riprendi</button>
+        <button class="action-btn intervals" id="barBtnIntervals">🕐 Orari</button>
+    </div>
 
     <!-- Loading -->
     <div class="loading hide" id="loading">

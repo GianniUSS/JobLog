@@ -513,8 +513,8 @@
             const hasNote = s.note && s.note.trim();
             const noteHtml = hasNote 
                 ? `<div class="session-note">
-                    <span class="session-note-label">📝 Note</span>
-                    ${s.note}
+                    <span class="session-note-label">📝</span>
+                    <span class="session-note-text">${s.note}</span>
                    </div>` 
                 : '';
             // Mostra orari inizio-fine (primo e ultimo)
@@ -533,11 +533,11 @@
                     <button class="session-action-btn resume" data-session-id="${s.id}" data-project="${s.project_code}" data-activity="${s.activity_label}" data-note="${(s.note || '').replace(/"/g, '&quot;')}" title="Riprendi attività">
                         ▶ Riprendi
                     </button>
-                    <button class="session-action-btn edit-time" data-session-idx="${idx}" title="Visualizza tutti gli orari">
+                    <button class="session-action-btn edit-time" data-session-idx="${idx}" title="Visualizza orari">
                         🕐 Orari
                     </button>
                 </div>`;
-            return `<div class="session-item" data-session-id="${s.id}">
+            return `<div class="session-item" data-session-id="${s.id}" data-project="${s.project_code}" data-activity="${s.activity_label}" data-note="${(s.note || '').replace(/"/g, '&quot;')}" data-idx="${idx}">
                 <div class="session-header">
                     <div class="session-details">
                         <div class="session-act">${s.activity_label}</div>
@@ -549,33 +549,73 @@
                     <div class="session-duration">${fmtTime(s.elapsed_ms || 0)}</div>
                 </div>
                 ${noteHtml}
-                ${actionsHtml}
             </div>`;
         }).join('');
         
         totalTimeEl.textContent = fmtTime(total);
         
-        // Event listeners per pulsanti sessione
-        sessionsList.querySelectorAll('.session-action-btn.resume').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (timer.running) {
-                    toast('Ferma il timer prima di riprendere', 'warn');
-                    return;
+        // Event listeners per click su sessione (toggle selezione)
+        sessionsList.querySelectorAll('.session-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                // Toggle selezione
+                const wasSelected = item.classList.contains('selected');
+                // Deseleziona tutte
+                sessionsList.querySelectorAll('.session-item').forEach(el => el.classList.remove('selected'));
+                
+                const actionsBar = document.getElementById('sessionActionsBar');
+                const mainEl = document.querySelector('main');
+                
+                // Se non era selezionata, selezionala e mostra la barra
+                if (!wasSelected) {
+                    item.classList.add('selected');
+                    window._selectedSessionItem = item;
+                    actionsBar.classList.add('visible');
+                    mainEl.classList.add('has-action-bar');
+                } else {
+                    // Era selezionata, deseleziona e nascondi barra
+                    window._selectedSessionItem = null;
+                    actionsBar.classList.remove('visible');
+                    mainEl.classList.remove('has-action-bar');
                 }
-                resumeSession(btn.dataset);
             });
         });
+    }
+    
+    // === SESSION ACTIONS BAR HANDLERS ===
+    function initSessionActionsBar() {
+        const barBtnResume = document.getElementById('barBtnResume');
+        const barBtnIntervals = document.getElementById('barBtnIntervals');
         
-        sessionsList.querySelectorAll('.session-action-btn.edit-time').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const idx = parseInt(btn.dataset.sessionIdx);
+        barBtnResume.addEventListener('click', () => {
+            if (timer.running) {
+                toast('Ferma il timer prima di riprendere', 'warn');
+                return;
+            }
+            const item = window._selectedSessionItem;
+            if (item) {
+                resumeSession({
+                    sessionId: item.dataset.sessionId,
+                    project: item.dataset.project,
+                    activity: item.dataset.activity,
+                    note: item.dataset.note
+                });
+                // Nascondi barra dopo azione
+                document.getElementById('sessionActionsBar').classList.remove('visible');
+                document.querySelector('main').classList.remove('has-action-bar');
+                item.classList.remove('selected');
+                window._selectedSessionItem = null;
+            }
+        });
+        
+        barBtnIntervals.addEventListener('click', () => {
+            const item = window._selectedSessionItem;
+            if (item) {
+                const idx = parseInt(item.dataset.idx);
                 const session = window._sessionsData[idx];
                 if (session) {
                     openIntervalsModal(session);
                 }
-            });
+            }
         });
     }
     
@@ -1009,6 +1049,7 @@
     // === INIT ===
     loadTheme();
     loadTimerState();
+    initSessionActionsBar();
     
     // Restore running timer
     if (timer.running) {
