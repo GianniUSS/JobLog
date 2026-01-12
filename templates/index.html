@@ -74,10 +74,11 @@ header { background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,
 .logo-title { font-weight: 700; font-size: 28px; letter-spacing: 0.5px; }
 .header-actions #clock { font-size: 16px; font-weight: 600; letter-spacing: 0.3px; white-space: nowrap; background: rgba(255,255,255,0.15); padding: 6px 12px; border-radius: 8px; }
 .header-actions { display: flex; align-items: center; gap: 12px; }
-.header-user { display:flex; align-items:center; gap:10px; padding:10px 14px; background:rgba(255,255,255,0.18); border:none; border-radius:999px; color:white; min-height:var(--touch-min); touch-action:manipulation; }
-.header-user:hover { background:rgba(255,255,255,0.28); }
-.header-user-avatar { width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,0.35); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; text-transform:uppercase; }
-.header-user-name { font-weight:700; font-size:15px; max-width:100px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.header-user { display:flex; align-items:center; gap:8px; padding:8px 16px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:8px; color:white; min-height:var(--touch-min); touch-action:manipulation; transition:all 0.2s ease; }
+.header-user:hover { background:rgba(255,255,255,0.2); border-color:rgba(255,255,255,0.3); }
+.header-user-avatar { display:none; }
+.header-user-icon { font-size:16px; opacity:0.9; }
+.header-user-name { font-weight:600; font-size:14px; max-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.3px; }
 .header-icon-btn { width:52px; height:52px; border:none; border-radius:14px; background:rgba(255,255,255,0.18); color:white; font-size:24px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.2s ease, transform 0.1s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .header-icon-btn:active { background:rgba(255,255,255,0.35); transform: scale(0.92); }
 .menu-overlay { position:fixed; inset:0; background:rgba(32,33,36,0.32); z-index:210; }
@@ -607,9 +608,9 @@ header { background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,
         .logo-title { font-size: 22px; }
         .header-actions { gap: 10px; }
         .header-actions .btn { padding: 12px 16px; font-size: 14px; }
-    .header-user { padding: 6px 10px; gap: 8px; }
-    .header-user-avatar { width: 36px; height: 36px; font-size: 14px; }
-    .header-user-name { max-width: 90px; font-size: 14px; font-weight: 700; }
+    .header-user { padding: 6px 12px; gap: 6px; }
+    .header-user-icon { font-size: 14px; }
+    .header-user-name { max-width: 90px; font-size: 13px; font-weight: 600; }
         #clock { font-size: 16px; padding: 8px 12px; font-weight: 700; }
         .container { padding: 12px 14px; }
         .selection-toolbar { padding: 16px 18px; margin-top: 12px; }
@@ -654,8 +655,8 @@ header { background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,
     .logo-title { font-size: 22px; }
   #clock { font-size: 13px; padding: 4px 8px; }
   .header-icon-btn { width: 40px; height: 40px; font-size: 18px; }
-  .header-user { padding: 4px 6px; }
-  .header-user-avatar { width: 26px; height: 26px; font-size: 11px; }
+  .header-user { padding: 4px 8px; gap: 4px; }
+  .header-user-icon { font-size: 12px; }
   .header-user-name { display: none; }
   .btn { padding: 12px 14px; font-size: 14px; min-height: 44px; }
   .team-member, .member-task { padding: 16px 12px; }
@@ -703,7 +704,7 @@ header { background: linear-gradient(90deg, rgba(15,23,42,0.96), rgba(12,74,110,
 <span id="clock">{{ header_clock or '--/--/---- | --:--' }}</span>
 </div>
 <div class="header-user" title="Accesso come {{ user_name or user_display or 'Utente' }}">
-<span class="header-user-avatar">{{ user_initials or '?' }}</span>
+<span class="header-user-icon">👤</span>
 <span class="header-user-name">{{ user_name or user_display or 'Utente' }}</span>
 </div>
 </div>
