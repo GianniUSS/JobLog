@@ -818,6 +818,12 @@
             padding-top: 8px;
             border-top: 1px solid var(--border);
         }
+        /* Rimuovi spinner dai campi raggio */
+        .radius-input::-webkit-inner-spin-button,
+        .radius-input::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
         
         .time-info {
             display: flex;
@@ -2702,7 +2708,7 @@
                     const locationsCache = new Map();
                     (data.locations || []).forEach(loc => {
                         if (loc.has_cache) {
-                            locationsCache.set(loc.name, { lat: loc.latitude, lon: loc.longitude });
+                            locationsCache.set(loc.name, { lat: loc.latitude, lon: loc.longitude, radius: loc.radius_meters || 100 });
                         }
                     });
 
@@ -2712,6 +2718,7 @@
                         const cachedCoords = locationsCache.get(loc.name);
                         const finalLat = cachedCoords ? cachedCoords.lat : loc.lat;
                         const finalLon = cachedCoords ? cachedCoords.lon : loc.lon;
+                        const finalRadius = cachedCoords ? cachedCoords.radius : 100;
                         const hasCoords = finalLat && finalLon;
                         
                         html += `
@@ -2738,6 +2745,12 @@
                                         <input type="number" class="lon-input" placeholder="es: 15.654321" step="0.000001" value="${finalLon || ''}" 
                                                data-field="lon" data-key="${escapeHtml(String(key))}" style="width: 100%;">
                                     </div>
+                                </div>
+                                
+                                <div class="location-card-radius" style="margin-top: 8px;">
+                                    <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Raggio (m)</label>
+                                    <input type="number" class="radius-input" placeholder="300" step="10" min="10" max="5000" value="${finalRadius || 300}" 
+                                           data-field="radius" data-key="${escapeHtml(String(key))}" style="width: 70px; -moz-appearance: textfield; -webkit-appearance: none;">
                                 </div>
                                 
                                 <div class="location-card-actions">
@@ -2792,6 +2805,12 @@
                                     </div>
                                 </div>
                                 
+                                <div class="location-card-radius" style="margin-top: 8px;">
+                                    <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Raggio (m)</label>
+                                    <input type="number" class="radius-input" placeholder="300" step="10" min="10" max="5000" value="300" 
+                                           data-field="radius" data-key="${escapeHtml(String(key))}" style="width: 70px; -moz-appearance: textfield; -webkit-appearance: none;">
+                                </div>
+                                
                                 <div class="location-card-actions">
                                     ${loc.address ? `
                                         <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps/search/${encodeURIComponent(loc.address)}', '_blank')">
@@ -2819,9 +2838,11 @@
             
             const latInput = card.querySelector('input[data-field="lat"]');
             const lonInput = card.querySelector('input[data-field="lon"]');
+            const radiusInput = card.querySelector('input[data-field="radius"]');
             
             const lat = parseFloat(latInput.value) || null;
             const lon = parseFloat(lonInput.value) || null;
+            const radius = parseInt(radiusInput?.value) || 100;
             
             // Valida coordinate
             if ((lat && !lon) || (!lat && lon)) {
@@ -2834,6 +2855,10 @@
             }
             if (lon && (lon < -180 || lon > 180)) {
                 showMessage('Longitudine non valida', 'error');
+                return;
+            }
+            if (radius < 10 || radius > 5000) {
+                showMessage('Raggio deve essere tra 10 e 5000 metri', 'error');
                 return;
             }
             
@@ -2858,12 +2883,12 @@
             // Se coordinate fornite, salva nella cache globale delle location
             if (lat && lon) {
                 try {
-                    console.log(`Salvataggio coordinate per location: ${locationName}`, { lat, lon });
+                    console.log(`Salvataggio coordinate per location: ${locationName}`, { lat, lon, radius });
                     
                     const res = await fetch(`/api/admin/locations/${encodeURIComponent(locationName)}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ latitude: lat, longitude: lon })
+                        body: JSON.stringify({ latitude: lat, longitude: lon, radius_meters: radius })
                     });
                     
                     console.log('Response status:', res.status);
@@ -2871,7 +2896,7 @@
                     console.log('Response data:', data);
                     
                     if (data.ok) {
-                        showMessage('✅ Coordinate salvate nella cache globale!', 'success');
+                        showMessage(`✅ Coordinate salvate! (Raggio: ${radius}m)`, 'success');
                         
                         // Aggiorna il card per mostrare lo status "ok" (verde)
                         const statusElement = card.querySelector('.location-card-status');
@@ -2883,6 +2908,7 @@
                         // Mantieni i valori negli input
                         latInput.value = lat;
                         lonInput.value = lon;
+                        if (radiusInput) radiusInput.value = radius;
                         
                         return;
                     } else {

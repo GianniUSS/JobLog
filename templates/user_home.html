@@ -2084,7 +2084,7 @@ function onGpsSuccess(position) {
       name: currentShiftGpsData.location || 'Sede',
       latitude: parseFloat(currentShiftGpsData.lat),
       longitude: parseFloat(currentShiftGpsData.lon),
-      radius_meters: 100
+      radius_meters: currentShiftGpsData.radius || 300
     }];
   }
   // Priorità 2: Filtra per sede specifica del turno se presente nelle gps_locations
@@ -2127,7 +2127,7 @@ function onGpsSuccess(position) {
   const isAccuracyOk = accuracy <= timbraturaConfig.gps_max_accuracy_meters;
   
   // Verifica anche la distanza dalla sede
-  const maxRadius = nearestLocation ? (nearestLocation.radius_meters || 100) : 100;
+  const maxRadius = nearestLocation ? (nearestLocation.radius_meters || 300) : 300;
   const isDistanceOk = minDistance <= (maxRadius + accuracy); // considera l'accuracy come margine
   const isValid = isAccuracyOk && isDistanceOk;
   
@@ -2931,6 +2931,7 @@ function displayTurno(index) {
         location: turno.timbratura_location,
         lat: turno.timbratura_lat,
         lon: turno.timbratura_lon,
+        radius: turno.timbratura_radius || 300,
         mode: turno.gps_mode
       };
       

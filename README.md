@@ -1,5 +1,11 @@
-
- E:/Progetti/JOBLogApp/.venv-1/Scripts/python.exe manage_users.py create ciro --role magazzino --display-name "Ciro" --name "Ciro"
+TODO
+>Le richieste  di tipo permesso  (da migliorare)
+>Chiusra automatica  quando non timbrano la chiusura 
+>Menu Magazzino velocizzare l'avvio
+>Menu storico timbraturee per mese  daa creare 
+>Gestione timbratura manuale con processo di approvazione
+>aadmin/dashboard problemi su inizio/fine  (pausa )
+>admin/activity-analysis da sistemare e migliorare 
 
 
 

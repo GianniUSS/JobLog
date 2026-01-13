@@ -5123,13 +5123,13 @@ def api_timbratura_registra():
                                 group_gps_name = rentman_row[3]
                             
                             # Cerca coordinate nella cache
-                            loc_lat, loc_lon = None, None
+                            loc_lat, loc_lon, loc_radius = None, None, 300
                             ensure_location_cache_table(db)
                             cached_coords = get_location_cache(db, loc_name, loc_id)
                             if cached_coords:
-                                loc_lat, loc_lon = cached_coords
+                                loc_lat, loc_lon, loc_radius = cached_coords
                             
-                            app.logger.info(f"Timbratura GPS: mode={gps_mode}, loc_name={loc_name}, loc_lat={loc_lat}, loc_lon={loc_lon}, group_gps_name={group_gps_name}")
+                            app.logger.info(f"Timbratura GPS: mode={gps_mode}, loc_name={loc_name}, loc_lat={loc_lat}, loc_lon={loc_lon}, loc_radius={loc_radius}, group_gps_name={group_gps_name}")
                             app.logger.info(f"GPS locations configurate: {[l.get('name') for l in gps_locations]}")
                             
                             # Decidi quale location usare in base al mode
@@ -5139,9 +5139,9 @@ def api_timbratura_registra():
                                     'name': loc_name or 'Location Progetto',
                                     'latitude': float(loc_lat),
                                     'longitude': float(loc_lon),
-                                    'radius_meters': 100  # Raggio default
+                                    'radius_meters': loc_radius  # Raggio dalla cache
                                 }
-                                app.logger.info(f"Timbratura GPS Rentman: usando location progetto '{loc_name}' per {username}")
+                                app.logger.info(f"Timbratura GPS Rentman: usando location progetto '{loc_name}' per {username} (raggio: {loc_radius}m)")
                             elif gps_mode == 'group' and group_gps_name:
                                 # Usa la sede GPS del gruppo - cerca nelle locations configurate
                                 group_location = None
@@ -5169,7 +5169,7 @@ def api_timbratura_registra():
                                                     'name': group_gps_name,
                                                     'latitude': float(g_lat),
                                                     'longitude': float(g_lon),
-                                                    'radius_meters': g_radius or 100
+                                                    'radius_meters': g_radius or 300
                                                 }
                                                 app.logger.info(f"Timbratura GPS Rentman: usando coordinate gruppo '{group_gps_name}' per {username}")
             except Exception as e:
@@ -5217,7 +5217,7 @@ def api_timbratura_registra():
                 for loc in gps_locations:
                     loc_lat = loc.get('latitude')
                     loc_lon = loc.get('longitude')
-                    loc_radius = loc.get('radius_meters', 100)
+                    loc_radius = loc.get('radius_meters', 300)
                     
                     if loc_lat is None or loc_lon is None:
                         continue
@@ -5453,7 +5453,7 @@ def api_timbratura_registra():
         for loc in locations:
             loc_lat = loc.get("latitude")
             loc_lon = loc.get("longitude")
-            loc_radius = loc.get("radius_meters", 100)
+            loc_radius = loc.get("radius_meters", 300)
             if loc_lat and loc_lon:
                 from math import radians, sin, cos, sqrt, atan2
                 R = 6371000
@@ -5686,12 +5686,14 @@ def api_user_turno_oggi():
                 # Cerca coordinate della location nelle gps_locations configurate
                 timbratura_lat = None
                 timbratura_lon = None
+                timbratura_radius = 300
                 if location_name:
                     for loc in gps_locations:
                         if loc.get('name') == location_name:
                             timbratura_lat = loc.get('latitude')
                             timbratura_lon = loc.get('longitude')
-                            app.logger.info(f"✅ employee_shifts: Location '{location_name}' trovata con coordinate: {timbratura_lat}, {timbratura_lon}")
+                            timbratura_radius = loc.get('radius_meters', 300)
+                            app.logger.info(f"✅ employee_shifts: Location '{location_name}' trovata con coordinate: {timbratura_lat}, {timbratura_lon}, raggio={timbratura_radius}")
                             break
                     if not timbratura_lat:
                         app.logger.warning(f"⚠️ employee_shifts: Location '{location_name}' NON trovata nelle gps_locations: {[l.get('name') for l in gps_locations]}")
@@ -5713,6 +5715,7 @@ def api_user_turno_oggi():
                     "timbratura_location": location_name,
                     "timbratura_lat": timbratura_lat,
                     "timbratura_lon": timbratura_lon,
+                    "timbratura_radius": timbratura_radius,
                     "gps_mode": "group",
                 }
                 return jsonify({"turno": turno, "turni": [turno]})
@@ -5801,13 +5804,13 @@ def api_user_turno_oggi():
                 location_id = row[15] if len(row) > 15 else None
             
             # Coordinate dalla cache globale
-            location_lat, location_lon = None, None
+            location_lat, location_lon, location_radius = None, None, 300
             if location_name:
                 ensure_location_cache_table(db)
                 cached_coords = get_location_cache(db, location_name, location_id)
                 if cached_coords:
-                    location_lat, location_lon = cached_coords
-                    app.logger.info(f"✅ Location '{location_name}' (id={location_id}): usando coordinate dalla cache globale (turno-oggi): {location_lat}, {location_lon}")
+                    location_lat, location_lon, location_radius = cached_coords
+                    app.logger.info(f"✅ Location '{location_name}' (id={location_id}): usando coordinate dalla cache globale (turno-oggi): {location_lat}, {location_lon}, raggio={location_radius}m")
                 else:
                     app.logger.info(f"⚠️ Location '{location_name}' (id={location_id}): nessuna cache (turno-oggi)")
             
@@ -5815,6 +5818,7 @@ def api_user_turno_oggi():
             timbratura_location = None
             timbratura_lat = None
             timbratura_lon = None
+            timbratura_radius = 300
             
             # DEBUG
             app.logger.info(f"DEBUG TURNO OGGI: gps_mode={gps_mode}, location_name={location_name}, location_lat={location_lat}, location_lon={location_lon}, gps_timbratura_location={gps_timbratura_location}")
@@ -5829,7 +5833,8 @@ def api_user_turno_oggi():
                 if location_lat and location_lon:
                     timbratura_lat = location_lat
                     timbratura_lon = location_lon
-                    app.logger.info(f"DEBUG: Modo LOCATION - Timbratura presso '{timbratura_location}' con coordinate da Rentman: {timbratura_lat}, {timbratura_lon}")
+                    timbratura_radius = location_radius  # Usa il raggio dalla cache
+                    app.logger.info(f"DEBUG: Modo LOCATION - Timbratura presso '{timbratura_location}' con coordinate da Rentman: {timbratura_lat}, {timbratura_lon}, raggio={timbratura_radius}m")
                 else:
                     app.logger.warning(f"DEBUG: Modo LOCATION - Location '{location_name}' senza coordinate in Rentman")
             
@@ -5861,7 +5866,8 @@ def api_user_turno_oggi():
                             if loc_name == gps_timbratura_location:
                                 timbratura_lat = loc.get('latitude')
                                 timbratura_lon = loc.get('longitude')
-                                app.logger.info(f"DEBUG: ✓ Modo GROUP - TROVATO! Timbratura presso '{gps_timbratura_location}' con coordinate: {timbratura_lat}, {timbratura_lon}")
+                                timbratura_radius = loc.get('radius_meters', 300)
+                                app.logger.info(f"DEBUG: ✓ Modo GROUP - TROVATO! Timbratura presso '{gps_timbratura_location}' con coordinate: {timbratura_lat}, {timbratura_lon}, raggio={timbratura_radius}m")
                                 break
                         if not timbratura_lat or not timbratura_lon:
                             app.logger.warning(f"DEBUG: ✗ Modo GROUP - Sede gruppo '{gps_timbratura_location}' NON TROVATA in config. Sedi disponibili: {[l.get('name') for l in gps_locations]}")
@@ -5892,6 +5898,7 @@ def api_user_turno_oggi():
                 "timbratura_location": timbratura_location,
                 "timbratura_lat": timbratura_lat,
                 "timbratura_lon": timbratura_lon,
+                "timbratura_radius": timbratura_radius,
             })
         
         return jsonify({"turno": turni[0] if turni else None, "turni": turni})
@@ -5964,11 +5971,13 @@ def api_user_turni():
                     # Cerca coordinate della location nelle gps_locations configurate
                     timbratura_lat = None
                     timbratura_lon = None
+                    timbratura_radius = 300
                     if location_name:
                         for loc in gps_locations:
                             if loc.get('name') == location_name:
                                 timbratura_lat = loc.get('latitude')
                                 timbratura_lon = loc.get('longitude')
+                                timbratura_radius = loc.get('radius_meters', 300)
                                 break
                     
                     # Calcola ore e minuti pausa
@@ -6018,6 +6027,7 @@ def api_user_turni():
                         "timbratura_location": location_name,
                         "timbratura_lat": timbratura_lat,
                         "timbratura_lon": timbratura_lon,
+                        "timbratura_radius": timbratura_radius,
                     })
             
             return jsonify({"turni": turni})
@@ -6099,6 +6109,7 @@ def api_user_turni():
             timbratura_location = None
             timbratura_lat = None
             timbratura_lon = None
+            timbratura_radius = 300
             
             if gps_mode == 'location' and location_name:
                 timbratura_location = location_name
@@ -6108,7 +6119,7 @@ def api_user_turni():
                     loc_id = row.get('location_id') if isinstance(row, dict) else None
                     cached = get_location_cache(db, location_name, loc_id)
                     if cached:
-                        timbratura_lat, timbratura_lon = cached
+                        timbratura_lat, timbratura_lon, timbratura_radius = cached
                 except:
                     pass
             elif gps_timbratura_location:
@@ -6118,6 +6129,7 @@ def api_user_turni():
                     if loc.get('name') == gps_timbratura_location:
                         timbratura_lat = loc.get('latitude')
                         timbratura_lon = loc.get('longitude')
+                        timbratura_radius = loc.get('radius_meters', 300)
                         break
             
             turni.append({
@@ -6138,6 +6150,7 @@ def api_user_turni():
                 "timbratura_location": timbratura_location,
                 "timbratura_lat": timbratura_lat,
                 "timbratura_lon": timbratura_lon,
+                "timbratura_radius": timbratura_radius,
                 "gps_mode": gps_mode,
                 "gps_timbratura_location": gps_timbratura_location,
             })
@@ -11393,7 +11406,7 @@ REQUEST_TYPES_TABLE_MYSQL = """
 CREATE TABLE IF NOT EXISTS request_types (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    value_type ENUM('hours', 'days', 'amount', 'km', 'minutes') NOT NULL,
+    value_type ENUM('hours', 'days', 'amount', 'km', 'minutes', 'timbratura') NOT NULL,
     external_id VARCHAR(100),
     description TEXT,
     active TINYINT(1) DEFAULT 1,
@@ -11409,7 +11422,7 @@ REQUEST_TYPES_TABLE_SQLITE = """
 CREATE TABLE IF NOT EXISTS request_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    value_type TEXT NOT NULL CHECK(value_type IN ('hours', 'days', 'amount', 'km', 'minutes')),
+    value_type TEXT NOT NULL CHECK(value_type IN ('hours', 'days', 'amount', 'km', 'minutes', 'timbratura')),
     external_id TEXT,
     description TEXT,
     active INTEGER DEFAULT 1,
@@ -11648,6 +11661,37 @@ def _ensure_overtime_request_type(db: DatabaseLike) -> int:
     return row["id"] if isinstance(row, Mapping) else row[0]
 
 
+def _ensure_missed_punch_request_type(db: DatabaseLike) -> int:
+    """
+    Assicura che esista il tipo richiesta 'Mancata Timbratura' e ritorna il suo ID.
+    """
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Cerca se esiste già
+    row = db.execute(
+        f"SELECT id FROM request_types WHERE name = {placeholder}",
+        ("Mancata Timbratura",)
+    ).fetchone()
+    
+    if row:
+        return row["id"] if isinstance(row, Mapping) else row[0]
+    
+    # Crea il tipo se non esiste
+    db.execute(f"""
+        INSERT INTO request_types (name, value_type, description, active, sort_order)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, 1, 4)
+    """, ("Mancata Timbratura", "timbratura", "Richiesta di inserimento timbratura mancante"))
+    db.commit()
+    
+    # Recupera l'ID appena creato
+    row = db.execute(
+        f"SELECT id FROM request_types WHERE name = {placeholder}",
+        ("Mancata Timbratura",)
+    ).fetchone()
+    
+    return row["id"] if isinstance(row, Mapping) else row[0]
+
+
 def get_overtime_request_type_id(db: DatabaseLike) -> int:
     """Ritorna l'ID del tipo richiesta 'Straordinario', creandolo se necessario."""
     ensure_request_types_table(db)
@@ -11681,11 +11725,11 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
             db.commit()
         except Exception:
             pass
-        # Poi aggiungi 'minutes' all'ENUM
+        # Poi aggiungi 'minutes' e 'timbratura' all'ENUM
         try:
             db.execute("""
                 ALTER TABLE request_types 
-                MODIFY COLUMN value_type ENUM('hours', 'days', 'amount', 'km', 'minutes') NOT NULL
+                MODIFY COLUMN value_type ENUM('hours', 'days', 'amount', 'km', 'minutes', 'timbratura') NOT NULL
             """)
             db.commit()
             app.logger.info("Migrazione ENUM value_type completata con successo")
@@ -11694,6 +11738,9 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
     
     # Assicura che esista il tipo "Straordinario" per le richieste automatiche
     _ensure_overtime_request_type(db)
+    
+    # Assicura che esista il tipo "Mancata Timbratura"
+    _ensure_missed_punch_request_type(db)
 
 
 def ensure_user_requests_table(db: DatabaseLike) -> None:
@@ -12093,7 +12140,7 @@ def api_admin_locations_list() -> ResponseReturnValue:
         location_name = row["location_name"] if isinstance(row, dict) else row[0]
         location_address = row["location_address"] if isinstance(row, dict) else row[1]
 
-        # Controlla se ha coordinate in cache
+        # Controlla se ha coordinate in cache (ora restituisce anche il raggio)
         cached = get_location_cache(db, location_name)
 
         locations.append({
@@ -12102,6 +12149,7 @@ def api_admin_locations_list() -> ResponseReturnValue:
             "has_cache": cached is not None,
             "latitude": cached[0] if cached else None,
             "longitude": cached[1] if cached else None,
+            "radius_meters": cached[2] if cached else 300,
         })
 
     return jsonify({"locations": locations})
@@ -12110,13 +12158,14 @@ def api_admin_locations_list() -> ResponseReturnValue:
 @app.post("/api/admin/locations/<location_name>")
 @login_required
 def api_admin_locations_save(location_name: str) -> ResponseReturnValue:
-    """Salva le coordinate per una location."""
+    """Salva le coordinate e il raggio per una location."""
     if not is_admin_or_supervisor():
         return jsonify({"error": "Accesso negato"}), 403
 
     data = request.get_json() or {}
     latitude = data.get("latitude")
     longitude = data.get("longitude")
+    radius_meters = data.get("radius_meters", 300)
 
     if latitude is None or longitude is None:
         return jsonify({"error": "Latitudine e longitudine richieste"}), 400
@@ -12124,13 +12173,14 @@ def api_admin_locations_save(location_name: str) -> ResponseReturnValue:
     try:
         latitude = float(latitude)
         longitude = float(longitude)
+        radius_meters = int(radius_meters) if radius_meters else 300
     except (ValueError, TypeError):
         return jsonify({"error": "Coordinate non valide"}), 400
 
     db = get_db()
-    save_location_cache(db, location_name, latitude, longitude)
+    save_location_cache(db, location_name, latitude, longitude, radius_meters=radius_meters)
 
-    return jsonify({"ok": True, "message": f"Coordinate salvate per {location_name}"})
+    return jsonify({"ok": True, "message": f"Coordinate salvate per {location_name} (raggio: {radius_meters}m)"})
 
 
 @app.get("/api/admin/rentman-planning")
@@ -12380,14 +12430,15 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                     pass
 
         # CONTROLLO CACHE GLOBALE: se le coordinate sono salvate nella cache, usa quelle
+        location_radius = 300
         if location_name:
             ensure_location_cache_table(db)
-            cached_coords = get_location_cache(db, location_name)
+            cached_coords = get_location_cache(db, location_name, location_id)
             if cached_coords:
-                location_lat, location_lon = cached_coords
-                app.logger.info(f"✅ Location '{location_name}': usando coordinate dalla cache globale: {location_lat}, {location_lon}")
+                location_lat, location_lon, location_radius = cached_coords
+                app.logger.info(f"✅ Location '{location_name}' (id={location_id}): usando coordinate dalla cache globale: {location_lat}, {location_lon}, raggio={location_radius}m")
             else:
-                app.logger.info(f"⚠️ Location '{location_name}': nessuna cache, usando coordinate da Rentman (lat={location_lat}, lon={location_lon})")
+                app.logger.info(f"⚠️ Location '{location_name}' (id={location_id}): nessuna cache, usando coordinate da Rentman (lat={location_lat}, lon={location_lon})")
         
         # Calcola ore JobLog per questo operatore
         joblog_registered = match_crew_name_to_joblog(crew_name, joblog_hours)
@@ -12436,12 +12487,13 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                 gps_timbratura_location = group_gps_map[group_id]
         
         # CONTROLLO CACHE GLOBALE: se le coordinate sono salvate nella cache, usa quelle
+        location_radius = 300
         if location_name:
             ensure_location_cache_table(db)
             cached_coords = get_location_cache(db, location_name, location_id)
             if cached_coords:
-                location_lat, location_lon = cached_coords
-                app.logger.info(f"✅ Location '{location_name}' (id={location_id}): usando coordinate dalla cache globale: {location_lat}, {location_lon}")
+                location_lat, location_lon, location_radius = cached_coords
+                app.logger.info(f"✅ Location '{location_name}' (id={location_id}): usando coordinate dalla cache globale: {location_lat}, {location_lon}, raggio={location_radius}m")
             else:
                 app.logger.info(f"⚠️ Location '{location_name}' (id={location_id}): nessuna cache, usando coordinate da Rentman (lat={location_lat}, lon={location_lon})")
         
@@ -13742,7 +13794,7 @@ def api_timbratura_config():
             "name": loc.get("name", "Sede"),
             "latitude": loc.get("latitude"),
             "longitude": loc.get("longitude"),
-            "radius_meters": loc.get("radius_meters", 100)
+            "radius_meters": loc.get("radius_meters", 300)
         })
     
     return jsonify({
@@ -13849,11 +13901,19 @@ def api_timbratura_validate_gps():
                     app.logger.error(f"VALIDATE-GPS: Errore conversione coordinate: lat={shift_location_lat}, lon={shift_location_lon}")
                     return jsonify({"valid": False, "error": "Coordinate sede non valide"}), 400
                 
+                # Recupera il raggio dalla cache se disponibile
+                virtual_radius = 300
+                db = get_db()
+                cached = get_location_cache(db, shift_location_name)
+                if cached:
+                    virtual_radius = cached[2]  # Il terzo elemento è il raggio
+                    app.logger.info(f"VALIDATE-GPS: Usando raggio dalla cache: {virtual_radius}m")
+                
                 virtual_location = {
                     "name": shift_location_name or "Sede",
                     "latitude": virtual_lat,
                     "longitude": virtual_lon,
-                    "radius_meters": 100
+                    "radius_meters": virtual_radius
                 }
                 locations = [virtual_location]
     
@@ -13864,7 +13924,7 @@ def api_timbratura_validate_gps():
     for loc in locations:
         loc_lat = loc.get("latitude")
         loc_lon = loc.get("longitude")
-        loc_radius = loc.get("radius_meters", 100)
+        loc_radius = loc.get("radius_meters", 300)
         
         if loc_lat is None or loc_lon is None:
             continue
@@ -14036,13 +14096,13 @@ def api_admin_group_planning(group_id: int) -> ResponseReturnValue:
             location_id = p["location_id"] if isinstance(p, dict) else p[15]
             
             # Coordinate dalla cache globale
-            location_lat, location_lon = None, None
+            location_lat, location_lon, location_radius = None, None, 300
             if location_name:
                 ensure_location_cache_table(db)
                 cached_coords = get_location_cache(db, location_name, location_id)
                 if cached_coords:
-                    location_lat, location_lon = cached_coords
-                    app.logger.info(f"✅ Group-planning: Location '{location_name}' (id={location_id}) - usando coordinate dalla cache: {location_lat}, {location_lon}")
+                    location_lat, location_lon, location_radius = cached_coords
+                    app.logger.info(f"✅ Group-planning: Location '{location_name}' (id={location_id}) - usando coordinate dalla cache: {location_lat}, {location_lon}, raggio={location_radius}m")
 
             # Normalizza data
             if hasattr(planning_date, 'isoformat'):
@@ -14907,6 +14967,7 @@ def ensure_location_cache_table(db: DatabaseLike) -> None:
                 location_name VARCHAR(500) NOT NULL COMMENT 'Nome della location Rentman',
                 latitude DECIMAL(10,7) NOT NULL COMMENT 'Latitudine GPS',
                 longitude DECIMAL(10,7) NOT NULL COMMENT 'Longitudine GPS',
+                radius_meters INT DEFAULT 300 COMMENT 'Raggio tolleranza GPS in metri',
                 created_ts BIGINT DEFAULT 0,
                 updated_ts BIGINT DEFAULT 0,
                 INDEX idx_location_name (location_name),
@@ -14924,6 +14985,16 @@ def ensure_location_cache_table(db: DatabaseLike) -> None:
                 app.logger.info("ℹ️ Colonna rentman_location_id esiste già")
             else:
                 app.logger.warning(f"⚠️ Errore aggiunta colonna rentman_location_id: {e}")
+        
+        # Aggiungi la colonna radius_meters se manca
+        try:
+            db.execute("ALTER TABLE location_cache ADD COLUMN radius_meters INT DEFAULT 300 COMMENT 'Raggio tolleranza GPS in metri' AFTER longitude")
+            app.logger.info("✅ Colonna radius_meters aggiunta a location_cache")
+        except Exception as e:
+            if "Duplicate column" in str(e) or "already exists" in str(e):
+                app.logger.info("ℹ️ Colonna radius_meters esiste già")
+            else:
+                app.logger.warning(f"⚠️ Errore aggiunta colonna radius_meters: {e}")
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS location_cache (
@@ -14932,6 +15003,7 @@ def ensure_location_cache_table(db: DatabaseLike) -> None:
                 location_name TEXT NOT NULL UNIQUE,
                 latitude REAL NOT NULL,
                 longitude REAL NOT NULL,
+                radius_meters INTEGER DEFAULT 300,
                 created_ts INTEGER DEFAULT 0,
                 updated_ts INTEGER DEFAULT 0
             )
@@ -14939,9 +15011,10 @@ def ensure_location_cache_table(db: DatabaseLike) -> None:
     
     db.commit()
 
-def get_location_cache(db: DatabaseLike, location_name: str, rentman_location_id: Optional[int] = None) -> Optional[Tuple[float, float]]:
-    """Recupera le coordinate GPS dalla cache per una location.
-    Cerca prima per location_id (se fornito), poi per location_name."""
+def get_location_cache(db: DatabaseLike, location_name: str, rentman_location_id: Optional[int] = None) -> Optional[Tuple[float, float, int]]:
+    """Recupera le coordinate GPS e il raggio dalla cache per una location.
+    Cerca prima per location_id (se fornito), poi per location_name.
+    Ritorna (lat, lon, radius_meters) oppure None."""
     if not location_name:
         return None
     
@@ -14952,29 +15025,31 @@ def get_location_cache(db: DatabaseLike, location_name: str, rentman_location_id
     # Cerca prima per location_id se disponibile (più preciso)
     if rentman_location_id:
         row = db.execute(
-            f"SELECT latitude, longitude FROM location_cache WHERE rentman_location_id = {placeholder}",
+            f"SELECT latitude, longitude, COALESCE(radius_meters, 300) as radius_meters FROM location_cache WHERE rentman_location_id = {placeholder}",
             (rentman_location_id,)
         ).fetchone()
         if row:
             lat = row["latitude"] if isinstance(row, dict) else row[0]
             lon = row["longitude"] if isinstance(row, dict) else row[1]
-            return (lat, lon)
+            radius = row["radius_meters"] if isinstance(row, dict) else row[2]
+            return (lat, lon, radius)
     
     # Fallback: cerca per location_name
     row = db.execute(
-        f"SELECT latitude, longitude FROM location_cache WHERE location_name = {placeholder}",
+        f"SELECT latitude, longitude, COALESCE(radius_meters, 300) as radius_meters FROM location_cache WHERE location_name = {placeholder}",
         (location_name,)
     ).fetchone()
     
     if row:
         lat = row["latitude"] if isinstance(row, dict) else row[0]
         lon = row["longitude"] if isinstance(row, dict) else row[1]
-        return (lat, lon)
+        radius = row["radius_meters"] if isinstance(row, dict) else row[2]
+        return (lat, lon, radius)
     
     return None
 
-def save_location_cache(db: DatabaseLike, location_name: str, latitude: float, longitude: float, rentman_location_id: Optional[int] = None) -> None:
-    """Salva le coordinate GPS nella cache per una location."""
+def save_location_cache(db: DatabaseLike, location_name: str, latitude: float, longitude: float, rentman_location_id: Optional[int] = None, radius_meters: int = 300) -> None:
+    """Salva le coordinate GPS e il raggio nella cache per una location."""
     if not location_name or latitude is None or longitude is None:
         return
     
@@ -14987,22 +15062,22 @@ def save_location_cache(db: DatabaseLike, location_name: str, latitude: float, l
         # Prova l'INSERT o l'UPDATE se già esiste
         if DB_VENDOR == "mysql":
             db.execute("""
-                INSERT INTO location_cache (rentman_location_id, location_name, latitude, longitude, created_ts, updated_ts)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE rentman_location_id = %s, latitude = %s, longitude = %s, updated_ts = %s
-            """, (rentman_location_id, location_name, latitude, longitude, now, now, rentman_location_id, latitude, longitude, now))
+                INSERT INTO location_cache (rentman_location_id, location_name, latitude, longitude, radius_meters, created_ts, updated_ts)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE rentman_location_id = %s, latitude = %s, longitude = %s, radius_meters = %s, updated_ts = %s
+            """, (rentman_location_id, location_name, latitude, longitude, radius_meters, now, now, rentman_location_id, latitude, longitude, radius_meters, now))
         else:
             # SQLite: prova INSERT, altrimenti UPDATE
             db.execute(
-                "INSERT OR IGNORE INTO location_cache (rentman_location_id, location_name, latitude, longitude, created_ts, updated_ts) VALUES (?, ?, ?, ?, ?, ?)",
-                (rentman_location_id, location_name, latitude, longitude, now, now)
+                "INSERT OR IGNORE INTO location_cache (rentman_location_id, location_name, latitude, longitude, radius_meters, created_ts, updated_ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (rentman_location_id, location_name, latitude, longitude, radius_meters, now, now)
             )
             db.execute(
-                "UPDATE location_cache SET rentman_location_id = ?, latitude = ?, longitude = ?, updated_ts = ? WHERE location_name = ?",
-                (rentman_location_id, latitude, longitude, now, location_name)
+                "UPDATE location_cache SET rentman_location_id = ?, latitude = ?, longitude = ?, radius_meters = ?, updated_ts = ? WHERE location_name = ?",
+                (rentman_location_id, latitude, longitude, radius_meters, now, location_name)
             )
         db.commit()
-        app.logger.info(f"Location cache salvata: location_id={rentman_location_id}, name={location_name} ({latitude}, {longitude})")
+        app.logger.info(f"Location cache salvata: location_id={rentman_location_id}, name={location_name} ({latitude}, {longitude}), raggio={radius_meters}m")
     except Exception as e:
         app.logger.error(f"Errore salvataggio location cache: {e}")
 
@@ -17210,14 +17285,14 @@ def api_user_document_mark_read(doc_id: int) -> ResponseReturnValue:
 @app.get("/api/user/request-types")
 @login_required
 def api_user_request_types_list() -> ResponseReturnValue:
-    """Restituisce le tipologie di richiesta attive per l'utente."""
+    """Restituisce le tipologie di richiesta attive per l'utente (escluse quelle con ordine 99)."""
     db = get_db()
     ensure_request_types_table(db)
     
     rows = db.execute("""
         SELECT id, name, value_type, description
         FROM request_types
-        WHERE active = 1
+        WHERE active = 1 AND (sort_order IS NULL OR sort_order != 99)
         ORDER BY sort_order ASC, name ASC
     """).fetchall()
 

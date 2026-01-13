@@ -595,6 +595,41 @@
             color: var(--success);
             font-weight: 700;
         }
+        
+        /* Stili Mancata Timbratura */
+        .request-timbratura-details {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, rgba(255, 152, 0, 0.12), rgba(255, 193, 7, 0.05));
+            border: 1px solid rgba(255, 152, 0, 0.3);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-top: 12px;
+        }
+        .timbratura-tipo {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+        .timbratura-ora {
+            font-size: 14px;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+        .timbratura-ora strong {
+            color: #ff9800;
+            font-weight: 700;
+        }
+        .timbratura-motivazione {
+            font-size: 13px;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+        
         .overtime-row {
             display: flex;
             justify-content: space-between;
@@ -1147,6 +1182,25 @@
                     </div>`;
             }
             
+            // Dettagli Mancata Timbratura (extra_data)
+            let timbraturaHtml = '';
+            if (r.value_type === 'timbratura' && r.extra_data) {
+                const ed = r.extra_data;
+                const tipoLabels = {
+                    'ingresso': '🟢 Ingresso',
+                    'uscita': '🔴 Uscita',
+                    'pausa_in': '🟡 Inizio Pausa',
+                    'pausa_out': '🟡 Fine Pausa'
+                };
+                const tipoLabel = tipoLabels[ed.tipo_timbratura] || ed.tipo_timbratura;
+                timbraturaHtml = `
+                    <div class="request-timbratura-details">
+                        <div class="timbratura-tipo">${tipoLabel}</div>
+                        <div class="timbratura-ora">🕐 Orario: <strong>${ed.ora_timbratura || '--:--'}</strong></div>
+                        ${ed.motivazione ? `<div class="timbratura-motivazione">📝 Motivazione: ${ed.motivazione}</div>` : ''}
+                    </div>`;
+            }
+            
             let attachmentHtml = '';
             if (r.attachment_path) {
                 // Controlla se è un JSON array (più file) o un singolo path
@@ -1196,6 +1250,7 @@
                     <span class="request-status ${statusClass}">${statusLabels[r.status]}</span>
                     ${actionBtn}
                     ${permissionHtml}
+                    ${timbraturaHtml}
                     ${cdcHtml}
                     ${tratteHtml}
                     ${overtimeHtml}
@@ -1278,12 +1333,31 @@
                 const timeEnd = r.extra_data.time_end;
                 permissionTimeInfo = `<div class="summary-row"><span class="summary-label">Orario</span><span class="summary-value">dalle ore ${timeStart} alle ore ${timeEnd}</span></div>`;
             }
+            
+            // Se è una Mancata Timbratura, mostra i dettagli
+            let timbraturaInfo = '';
+            if (r.value_type === 'timbratura' && r.extra_data) {
+                const ed = r.extra_data;
+                const tipoLabels = {
+                    'ingresso': '🟢 Ingresso',
+                    'uscita': '🔴 Uscita',
+                    'pausa_in': '🟡 Inizio Pausa',
+                    'pausa_out': '🟡 Fine Pausa'
+                };
+                const tipoLabel = tipoLabels[ed.tipo_timbratura] || ed.tipo_timbratura;
+                timbraturaInfo = `
+                    <div class="summary-row"><span class="summary-label">Tipo Timbratura</span><span class="summary-value">${tipoLabel}</span></div>
+                    <div class="summary-row"><span class="summary-label">Orario</span><span class="summary-value">${ed.ora_timbratura || '--:--'}</span></div>
+                    ${ed.motivazione ? `<div class="summary-row"><span class="summary-label">Motivazione</span><span class="summary-value">${ed.motivazione}</span></div>` : ''}
+                `;
+            }
 
             document.getElementById('reviewSummary').innerHTML = `
                 <div class="summary-row"><span class="summary-label">Utente</span><span class="summary-value">${r.username}</span></div>
                 <div class="summary-row"><span class="summary-label">Tipo</span><span class="summary-value">${r.type_name}</span></div>
                 <div class="summary-row"><span class="summary-label">Data</span><span class="summary-value">${dateFrom}${dateTo}</span></div>
                 ${permissionTimeInfo}
+                ${timbraturaInfo}
                 ${extraInfo}
                 ${r.value && r.value_type !== 'minutes' ? `<div class="summary-row"><span class="summary-label">Valore</span><span class="summary-value">${r.value} ${valueUnit}</span></div>` : ''}
                 ${r.notes ? `<div class="summary-row"><span class="summary-label">Note</span><span class="summary-value">${r.notes}</span></div>` : ''}

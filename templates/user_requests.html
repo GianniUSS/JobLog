@@ -456,6 +456,78 @@
             }
         }
 
+        /* Mancata Timbratura Styles */
+        .timbratura-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .timbratura-option {
+            cursor: pointer;
+        }
+        
+        .timbratura-option input[type="radio"] {
+            display: none;
+        }
+        
+        .timbratura-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 16px 12px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg);
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .timbratura-icon {
+            font-size: 24px;
+            margin-bottom: 6px;
+        }
+        
+        .timbratura-btn.ingresso {
+            border-color: rgba(34, 197, 94, 0.3);
+        }
+        
+        .timbratura-btn.uscita {
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+        
+        .timbratura-btn.pausa {
+            border-color: rgba(251, 191, 36, 0.3);
+        }
+        
+        .timbratura-option input[type="radio"]:checked + .timbratura-btn.ingresso {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            border-color: #16a34a;
+            color: white;
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+        }
+        
+        .timbratura-option input[type="radio"]:checked + .timbratura-btn.uscita {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            border-color: #dc2626;
+            color: white;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+        }
+        
+        .timbratura-option input[type="radio"]:checked + .timbratura-btn.pausa {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            border-color: #f59e0b;
+            color: white;
+            box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
+        }
+        
+        @media (max-width: 360px) {
+            .timbratura-options {
+                grid-template-columns: 1fr;
+            }
+        }
+
         /* File Upload Styles */
         .file-upload-container {
             display: flex;
@@ -1527,8 +1599,56 @@
                         </div>
                     </div>
 
+                    <!-- Sezione Mancata Timbratura -->
+                    <div class="form-group" id="timbratura-group" style="display: none;">
+                        <label class="form-label">Tipo Timbratura *</label>
+                        <div class="timbratura-options">
+                            <label class="timbratura-option">
+                                <input type="radio" name="timbratura-tipo" value="ingresso" required>
+                                <span class="timbratura-btn ingresso">
+                                    <span class="timbratura-icon">→</span>
+                                    Inizio Giornata
+                                </span>
+                            </label>
+                            <label class="timbratura-option">
+                                <input type="radio" name="timbratura-tipo" value="uscita">
+                                <span class="timbratura-btn uscita">
+                                    <span class="timbratura-icon">←</span>
+                                    Fine Giornata
+                                </span>
+                            </label>
+                            <label class="timbratura-option">
+                                <input type="radio" name="timbratura-tipo" value="pausa_in">
+                                <span class="timbratura-btn pausa">
+                                    <span class="timbratura-icon">☕</span>
+                                    Inizio Pausa
+                                </span>
+                            </label>
+                            <label class="timbratura-option">
+                                <input type="radio" name="timbratura-tipo" value="pausa_out">
+                                <span class="timbratura-btn pausa">
+                                    <span class="timbratura-icon">✓</span>
+                                    Fine Pausa
+                                </span>
+                            </label>
+                        </div>
+                        
+                        <label class="form-label" style="margin-top: 16px;">Ora della Timbratura *</label>
+                        <input type="time" class="form-input" id="timbratura-ora" required>
+                    </div>
+
+                    <div class="form-group" id="motivazione-group" style="display: none;">
+                        <label class="form-label">Motivazione *</label>
+                        <textarea class="form-textarea" id="timbratura-motivazione" 
+                            placeholder="Spiega il motivo della mancata timbratura..." 
+                            required minlength="10"></textarea>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                            Minimo 10 caratteri
+                        </div>
+                    </div>
+
                     <div class="form-group">
-                        <label class="form-label">Note (opzionale)</label>
+                        <label class="form-label" id="notes-label">Note (opzionale)</label>
                         <textarea class="form-textarea" id="request-notes" placeholder="Aggiungi note..."></textarea>
                     </div>
                     <button type="submit" class="submit-btn" id="submit-btn">
@@ -1698,6 +1818,23 @@
             ferieCounter.style.display = 'none';
             permessiCounter.style.display = 'none';
             
+            // Reset campi timbratura
+            const timbraturaGroup = document.getElementById('timbratura-group');
+            const motivazioneGroup = document.getElementById('motivazione-group');
+            const notesLabel = document.getElementById('notes-label');
+            const dateRowDiv = document.querySelector('.date-row');
+            const endDateGroup = document.getElementById('end-date').closest('div');
+            
+            timbraturaGroup.style.display = 'none';
+            motivazioneGroup.style.display = 'none';
+            notesLabel.textContent = 'Note (opzionale)';
+            endDateGroup.style.display = 'block';
+            
+            // Reset required timbratura
+            document.querySelectorAll('input[name="timbratura-tipo"]').forEach(r => r.removeAttribute('required'));
+            document.getElementById('timbratura-ora').removeAttribute('required');
+            document.getElementById('timbratura-motivazione').removeAttribute('required');
+            
             // Reset required
             valueInput.removeAttribute('required');
             cdcInput.removeAttribute('required');
@@ -1749,6 +1886,18 @@
                     valueLabel.textContent = 'Minuti di straordinario';
                     valueInput.setAttribute('required', 'required');
                     valueInput.placeholder = 'Es: 60 per 1 ora';
+                    break;
+                case 'timbratura':
+                    // Mancata timbratura - form semplificato
+                    timbraturaGroup.style.display = 'block';
+                    motivazioneGroup.style.display = 'block';
+                    notesLabel.textContent = 'Note aggiuntive (opzionale)';
+                    // Nascondi data fine (solo una data per la timbratura)
+                    endDateGroup.style.display = 'none';
+                    // Imposta required
+                    document.querySelectorAll('input[name="timbratura-tipo"]')[0].setAttribute('required', 'required');
+                    document.getElementById('timbratura-ora').setAttribute('required', 'required');
+                    document.getElementById('timbratura-motivazione').setAttribute('required', 'required');
                     break;
             }
         }
@@ -2165,9 +2314,35 @@
             const selected = select.options[select.selectedIndex];
             const valueType = selected.dataset.unit || 'hours';
 
-            if (!typeId || !startDate || !endDate) {
+            if (!typeId || !startDate) {
                 showToast('Compila tutti i campi obbligatori', 'error');
                 return;
+            }
+            
+            // Per timbratura non serve data fine
+            if (valueType !== 'timbratura' && !endDate) {
+                showToast('Compila tutti i campi obbligatori', 'error');
+                return;
+            }
+            
+            // Validazioni specifiche per timbratura
+            if (valueType === 'timbratura') {
+                const tipoTimbratura = document.querySelector('input[name="timbratura-tipo"]:checked');
+                const oraTimbratura = document.getElementById('timbratura-ora').value;
+                const motivazione = document.getElementById('timbratura-motivazione').value;
+                
+                if (!tipoTimbratura) {
+                    showToast('Seleziona il tipo di timbratura', 'error');
+                    return;
+                }
+                if (!oraTimbratura) {
+                    showToast('Inserisci l\'ora della timbratura', 'error');
+                    return;
+                }
+                if (!motivazione || motivazione.trim().length < 10) {
+                    showToast('La motivazione deve essere di almeno 10 caratteri', 'error');
+                    return;
+                }
             }
             
             // Validazioni specifiche per amount
@@ -2226,8 +2401,8 @@
                     const payload = {
                         request_type_id: parseInt(typeId),
                         start_date: startDate,
-                        end_date: endDate,
-                        value: totaleKm !== null ? totaleKm : (value ? parseFloat(value) : null),
+                        end_date: valueType === 'timbratura' ? startDate : endDate,
+                        value: totaleKm !== null ? totaleKm : (value ? parseFloat(value) : 0),
                         notes: notes || null,
                         cdc: cdc || null
                     };
@@ -2242,6 +2417,20 @@
                                 time_end: timeEnd
                             });
                         }
+                    }
+                    
+                    // Per timbratura, aggiungi tipo, ora e motivazione in extra_data
+                    if (valueType === 'timbratura') {
+                        const tipoTimbratura = document.querySelector('input[name="timbratura-tipo"]:checked').value;
+                        const oraTimbratura = document.getElementById('timbratura-ora').value;
+                        const motivazione = document.getElementById('timbratura-motivazione').value;
+                        payload.extra_data = JSON.stringify({
+                            tipo_timbratura: tipoTimbratura,
+                            ora_timbratura: oraTimbratura,
+                            motivazione: motivazione
+                        });
+                        // Metti la motivazione anche nelle note per visibilità
+                        payload.notes = motivazione + (notes ? '\n\n' + notes : '');
                     }
                     
                     // Aggiungi tratte se presenti
@@ -2261,6 +2450,10 @@
                     form.reset();
                     setDefaultDates();
                     removeAllFiles();
+                    // Reset campi timbratura
+                    document.querySelectorAll('input[name="timbratura-tipo"]').forEach(r => r.checked = false);
+                    document.getElementById('timbratura-ora').value = '';
+                    document.getElementById('timbratura-motivazione').value = '';
                     updateFormFields();
                     loadResiduals();
                     loadMyRequests();
