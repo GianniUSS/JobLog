@@ -53,8 +53,18 @@
             return;
         }
 
+        const getCurrentScriptURL = () => {
+            const ctrl = navigator.serviceWorker.controller || registration.active || registration.waiting;
+            return ctrl ? ctrl.scriptURL : null;
+        };
+
         const handleWaitingWorker = (worker) => {
             if (!worker || worker.state !== 'installed') {
+                return;
+            }
+            const currentUrl = getCurrentScriptURL();
+            // Evita banner se lo script è lo stesso (false positive)
+            if (currentUrl && worker.scriptURL === currentUrl) {
                 return;
             }
             pendingServiceWorker = worker;
@@ -85,7 +95,8 @@
     }
 
     // Schedule periodic service worker checks
-    const SW_UPDATE_INTERVAL_MS = 10000;
+    // Poll meno aggressivo per evitare falsi positivi: 15 minuti
+    const SW_UPDATE_INTERVAL_MS = 15 * 60 * 1000;
     let swUpdateIntervalId = null;
 
     function scheduleServiceWorkerUpdates(registration) {

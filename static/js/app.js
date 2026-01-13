@@ -4739,7 +4739,13 @@ function createMemberNode(member, baseClass) {
         <div class="pause-info">${statusLabel}</div>
     `;
 
-    node.addEventListener("click", () => toggleSelection(node));
+    // Use both click and touchend for better mobile responsiveness
+    const handleTap = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelection(node);
+    };
+    node.addEventListener("click", handleTap, { passive: false });
     return node;
 }
 
@@ -5018,9 +5024,10 @@ function renderActivities(activities) {
         collapseBtn.textContent = isCollapsed ? "Mostra operatori" : "Nascondi operatori";
         collapseBtn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
         collapseBtn.addEventListener("click", (event) => {
+            event.preventDefault();
             event.stopPropagation();
             toggleActivityCollapse(card, activityId);
-        });
+        }, { passive: false });
         meta.appendChild(collapseBtn);
 
         const selectBtn = document.createElement("button");
@@ -5029,9 +5036,10 @@ function renderActivities(activities) {
         selectBtn.dataset.activitySelect = activity.activity_id || "";
         selectBtn.textContent = "Seleziona tutti";
         selectBtn.addEventListener("click", (e) => {
+            e.preventDefault();
             e.stopPropagation();
             toggleActivitySelection(selectBtn.dataset.activitySelect);
-        });
+        }, { passive: false });
         meta.appendChild(selectBtn);
 
         const completeBtn = document.createElement("button");
@@ -5039,9 +5047,10 @@ function renderActivities(activities) {
         completeBtn.className = "activity-complete-btn";
         completeBtn.textContent = "Attività completata";
         completeBtn.addEventListener("click", (e) => {
+            e.preventDefault();
             e.stopPropagation();
             openFeedbackModalForActivity(activity);
-        });
+        }, { passive: false });
         meta.appendChild(completeBtn);
 
         // Summary compatto visibile quando card collassata
@@ -5065,8 +5074,12 @@ function renderActivities(activities) {
         header.appendChild(info);
         header.appendChild(meta);
         
-        // Click su header per toggle card
-        header.addEventListener("click", () => {
+        // Click su header per toggle card - ma NON se clicco su un button
+        header.addEventListener("click", (e) => {
+            // Se il click è su un button o dentro un button, non fare toggle
+            if (e.target.closest('button')) {
+                return;
+            }
             toggleCardCollapse(card, activityId);
         });
         
@@ -6277,6 +6290,7 @@ function bindUI() {
     const photoPreviewModal = document.getElementById("photoPreviewModal");
     const photoPreviewCloseBtn = document.getElementById("photoPreviewCloseBtn");
     const photoDeleteBtn = document.getElementById("photoDeleteBtn");
+    const memberList = document.getElementById("memberList");
 
     if (startAllBtn) {
         startAllBtn.addEventListener("click", async () => {
@@ -6318,6 +6332,21 @@ function bindUI() {
 
     if (selectionStartBtn) {
         selectionStartBtn.addEventListener("click", startSelection);
+    }
+
+    // Delego il click sulle card operatore: intercetta qualunque punto della card
+    if (memberList) {
+        memberList.addEventListener(
+            "click",
+            (ev) => {
+                const card = ev.target.closest(".team-member, .member-task");
+                if (!card) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                toggleSelection(card);
+            },
+            { passive: false }
+        );
     }
 
     if (cancelBtn) {
@@ -6802,8 +6831,11 @@ function bindUI() {
     }
 
     if (equipmentModal) {
+        // Non chiudere su click fuori: chiusura solo con i bottoni dedicati
+        equipmentModal.dataset.backdropClose = "false";
         equipmentModal.addEventListener("click", (event) => {
-            if (event.target === equipmentModal) {
+            const allowBackdrop = equipmentModal.dataset.backdropClose === "true";
+            if (allowBackdrop && event.target === equipmentModal) {
                 closeEquipmentModal();
             }
         });
@@ -6941,7 +6973,7 @@ function bindUI() {
             closePushNotificationsModal();
             closeAttachmentsModal();
             closeMaterialsModal();
-            closeEquipmentModal();
+            // NON chiudo automaticamente il modal attrezzature per evitare chiusure spurie in prod
             closeAddOperatorModal();
         }
     });
