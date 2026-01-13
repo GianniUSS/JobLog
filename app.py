@@ -5653,6 +5653,12 @@ def api_user_turno_oggi():
         if not crew_id:
             ensure_employee_shifts_table(db)
             
+            # Carica le gps_locations dalla configurazione per associare coordinate ai turni
+            settings = get_company_settings(db)
+            custom = settings.get('custom_settings', {})
+            timbratura_config = custom.get('timbratura', {})
+            gps_locations = timbratura_config.get('gps_locations', [])
+            
             # Trova il giorno della settimana (0=Lunedì, 6=Domenica)
             today = get_simulated_now()
             day_of_week = today.weekday()
@@ -5677,6 +5683,19 @@ def api_user_turno_oggi():
                     break_end = str(shift_row[3])[:5] if shift_row[3] else None
                     location_name = shift_row[4] if len(shift_row) > 4 else None
                 
+                # Cerca coordinate della location nelle gps_locations configurate
+                timbratura_lat = None
+                timbratura_lon = None
+                if location_name:
+                    for loc in gps_locations:
+                        if loc.get('name') == location_name:
+                            timbratura_lat = loc.get('latitude')
+                            timbratura_lon = loc.get('longitude')
+                            app.logger.info(f"✅ employee_shifts: Location '{location_name}' trovata con coordinate: {timbratura_lat}, {timbratura_lon}")
+                            break
+                    if not timbratura_lat:
+                        app.logger.warning(f"⚠️ employee_shifts: Location '{location_name}' NON trovata nelle gps_locations: {[l.get('name') for l in gps_locations]}")
+                
                 turno = {
                     "project_code": "UFFICIO",
                     "project_name": "Lavoro in ufficio",
@@ -5691,7 +5710,10 @@ def api_user_turno_oggi():
                     "transport": None,
                     "source": "employee_shifts",
                     "location_name": location_name,
-                    "timbratura_location": location_name  # Nel fallback, usa la location_name come timbratura_location
+                    "timbratura_location": location_name,
+                    "timbratura_lat": timbratura_lat,
+                    "timbratura_lon": timbratura_lon,
+                    "gps_mode": "group",
                 }
                 return jsonify({"turno": turno, "turni": [turno]})
             
@@ -5906,6 +5928,12 @@ def api_user_turni():
         if not crew_id:
             ensure_employee_shifts_table(db)
             
+            # Carica le gps_locations dalla configurazione per associare coordinate ai turni
+            settings = get_company_settings(db)
+            custom = settings.get('custom_settings', {})
+            timbratura_config = custom.get('timbratura', {})
+            gps_locations = timbratura_config.get('gps_locations', [])
+            
             turni = []
             # Genera turni per i prossimi 60 giorni basandosi su employee_shifts
             today = get_simulated_now()
@@ -5932,6 +5960,16 @@ def api_user_turni():
                         break_start = str(shift_row[2])[:5] if shift_row[2] else None
                         break_end = str(shift_row[3])[:5] if shift_row[3] else None
                         location_name = shift_row[4] if len(shift_row) > 4 else None
+                    
+                    # Cerca coordinate della location nelle gps_locations configurate
+                    timbratura_lat = None
+                    timbratura_lon = None
+                    if location_name:
+                        for loc in gps_locations:
+                            if loc.get('name') == location_name:
+                                timbratura_lat = loc.get('latitude')
+                                timbratura_lon = loc.get('longitude')
+                                break
                     
                     # Calcola ore e minuti pausa
                     hours_val = None
@@ -5976,7 +6014,10 @@ def api_user_turni():
                         "is_leader": False,
                         "transport": None,
                         "source": "employee_shifts",
-                        "location_name": location_name
+                        "location_name": location_name,
+                        "timbratura_location": location_name,
+                        "timbratura_lat": timbratura_lat,
+                        "timbratura_lon": timbratura_lon,
                     })
             
             return jsonify({"turni": turni})
@@ -5986,6 +6027,12 @@ def api_user_turni():
         today = get_simulated_now()
         sixty_days_future = (today + timedelta(days=60)).strftime("%Y-%m-%d")
         thirty_days_past = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+        
+        # Carica le gps_locations dalla configurazione per associare coordinate ai turni
+        settings = get_company_settings(db)
+        custom = settings.get('custom_settings', {})
+        timbratura_config = custom.get('timbratura', {})
+        gps_locations = timbratura_config.get('gps_locations', [])
         
         planning = db.execute(
             f"""
@@ -6050,10 +6097,28 @@ def api_user_turni():
             
             # Determina dove timbrare
             timbratura_location = None
+            timbratura_lat = None
+            timbratura_lon = None
+            
             if gps_mode == 'location' and location_name:
                 timbratura_location = location_name
+                # Cerca coordinate nella cache location di Rentman
+                try:
+                    ensure_location_cache_table(db)
+                    loc_id = row.get('location_id') if isinstance(row, dict) else None
+                    cached = get_location_cache(db, location_name, loc_id)
+                    if cached:
+                        timbratura_lat, timbratura_lon = cached
+                except:
+                    pass
             elif gps_timbratura_location:
                 timbratura_location = gps_timbratura_location
+                # Cerca coordinate nelle gps_locations configurate
+                for loc in gps_locations:
+                    if loc.get('name') == gps_timbratura_location:
+                        timbratura_lat = loc.get('latitude')
+                        timbratura_lon = loc.get('longitude')
+                        break
             
             turni.append({
                 "date": date_str,
@@ -6071,6 +6136,10 @@ def api_user_turni():
                 "break_minutes": break_minutes,
                 "location_name": location_name,
                 "timbratura_location": timbratura_location,
+                "timbratura_lat": timbratura_lat,
+                "timbratura_lon": timbratura_lon,
+                "gps_mode": gps_mode,
+                "gps_timbratura_location": gps_timbratura_location,
             })
         
         return jsonify({"turni": turni})

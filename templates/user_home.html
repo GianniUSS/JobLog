@@ -946,12 +946,28 @@ header {
 }
 .turno-detail-row {
   grid-column: 1;
-  justify-content: space-between;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 6px 10px;
   background: rgba(255,255,255,0.15);
   border: 1px solid rgba(255,255,255,0.25);
   font-size: 14px;
   border-radius: 6px;
+}
+.turno-pausa-badge {
+  position: absolute;
+  top: 10px;
+  right: 60px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  background: rgba(255,140,0,0.95);
+  padding: 4px 10px;
+  border-radius: 12px;
+  z-index: 4;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 .turno-timbratura {
   width: 100%;
@@ -1729,6 +1745,7 @@ header {
     <div class="turno-header">
       <span>📅</span> Il tuo turno oggi
     </div>
+    <span id="turnoPausaBadge" class="turno-pausa-badge" style="display:none;"></span>
     <div class="turno-nav">
       <button class="turno-nav-btn" id="turnoPrevBtn" onclick="navigateTurno(-1)" style="display:none;">‹</button>
       <div class="turno-content">
@@ -1736,11 +1753,8 @@ header {
         <div class="turno-details">
           <!-- Orario -->
           <div class="turno-detail turno-detail-row" id="turnoOrarioRow">
-            <div style="display:flex; align-items:center; gap:4px;">
-              <span class="icon">🕐</span>
-              <span id="turnoOrarioText" style="font-weight:600;">-</span>
-            </div>
-            <span id="turnoPausaInline" style="display:none; font-size:14px; font-weight:600; color:white;"></span>
+            <span class="icon">🕐</span>
+            <span id="turnoOrarioText" style="font-weight:600;">-</span>
           </div>
           
           <!-- Funzione -->
@@ -2782,16 +2796,16 @@ function displayTurno(index) {
     document.getElementById('turnoOrarioText').textContent = orarioText;
   }
   
-  // Pausa prevista (inline)
-  const pausaInline = document.getElementById('turnoPausaInline');
+  // Pausa prevista (badge in alto)
+  const pausaBadge = document.getElementById('turnoPausaBadge');
   if (turno.break_start && turno.break_end) {
-    pausaInline.textContent = `☕ ${turno.break_start}-${turno.break_end}`;
-    pausaInline.style.display = 'inline';
+    pausaBadge.textContent = `☕ ${turno.break_start}-${turno.break_end}`;
+    pausaBadge.style.display = 'block';
   } else if (turno.break_minutes && turno.break_minutes > 0) {
-    pausaInline.textContent = `☕ ${turno.break_minutes}min`;
-    pausaInline.style.display = 'inline';
+    pausaBadge.textContent = `☕ ${turno.break_minutes}min`;
+    pausaBadge.style.display = 'block';
   } else {
-    pausaInline.style.display = 'none';
+    pausaBadge.style.display = 'none';
   }
   
   // Funzione/Ruolo

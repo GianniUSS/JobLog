@@ -4824,13 +4824,7 @@ function createMemberNode(member, baseClass) {
         <div class="pause-info">${statusLabel}</div>
     `;
 
-    // Use both click and touchend for better mobile responsiveness
-    const handleTap = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSelection(node);
-    };
-    node.addEventListener("click", handleTap, { passive: false });
+    // Don't add individual listener - we use event delegation on document
     return node;
 }
 
@@ -7156,3 +7150,40 @@ window.addEventListener("DOMContentLoaded", init);
 window.addEventListener("resize", () => {
     syncSelectionToolbarOffset();
 });
+
+// Event delegation for member cards - works better on mobile
+document.addEventListener("click", (e) => {
+    const card = e.target.closest(".team-member, .member-task");
+    if (card) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelection(card);
+    }
+}, { capture: true });
+
+// Touch support for mobile - handle touchend for immediate response
+let touchStartTarget = null;
+let touchMoved = false;
+document.addEventListener("touchstart", (e) => {
+    const card = e.target.closest(".team-member, .member-task");
+    if (card) {
+        touchStartTarget = card;
+        touchMoved = false;
+    }
+}, { passive: true });
+
+document.addEventListener("touchmove", () => {
+    touchMoved = true;
+}, { passive: true });
+
+document.addEventListener("touchend", (e) => {
+    if (touchStartTarget && !touchMoved) {
+        const card = e.target.closest(".team-member, .member-task");
+        if (card && card === touchStartTarget) {
+            e.preventDefault();
+            toggleSelection(card);
+        }
+    }
+    touchStartTarget = null;
+    touchMoved = false;
+}, { passive: false });

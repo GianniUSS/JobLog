@@ -138,7 +138,7 @@ header { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #
 .keypad button.wide { grid-column: span 2; }
 .empty-state { background:var(--bg-card); border-radius:12px; padding:40px 24px; margin-bottom:20px; box-shadow:0 2px 5px var(--shadow); font-size:18px; color:var(--text-secondary); display:none; justify-content:center; align-items:center; text-align:center; min-height:120px; transition: background-color 0.2s ease; }
 .timeline-card { margin-top: -4px; }
-.team-card, .task-card { background: var(--bg-card); border-radius: 12px; box-shadow: 0 2px 5px var(--shadow); padding: 16px; margin: 0 0 20px; transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; position: relative; overflow: hidden; z-index: 12; pointer-events: auto; box-sizing: border-box; width: 100%; }
+.team-card, .task-card { background: var(--bg-card); border-radius: 12px; box-shadow: 0 2px 5px var(--shadow); padding: 16px; margin: 0 0 20px; transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; position: relative; z-index: 12; pointer-events: auto; box-sizing: border-box; width: 100%; }
 /* Card collassabile */
 .task-card .task-header { cursor: pointer; }
 .task-card.card-collapsed .task-card-body { display: none; }
@@ -280,8 +280,7 @@ header { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #
 .btn-toggle{ background: var(--warn); }
 .btn-secondary { background: rgba(255,255,255,0.18); color:white; border:1px solid rgba(255,255,255,0.35); }
 .btn-secondary.active { background: rgba(0,0,0,0.25); }
-.team-member, .member-task { background: var(--member-bg); color: var(--text-primary); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; cursor: pointer; user-select: none; -webkit-user-select: none; transition: background 0.08s ease, transform 0.04s ease; min-height: 44px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; border: 2px solid transparent; box-shadow: 0 1px 4px rgba(0,0,0,0.05); position: relative; z-index: 1; width: auto; max-width: 100%; box-sizing: border-box; }
-.team-member *, .member-task *, .team-member *::before, .member-task *::before, .team-member *::after, .member-task *::after { pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; }
+.team-member, .member-task { background: var(--member-bg); color: var(--text-primary); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; transition: background 0.08s ease, transform 0.04s ease; min-height: 44px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; border: 2px solid transparent; box-shadow: 0 1px 4px rgba(0,0,0,0.05); position: relative; z-index: 15; width: auto; max-width: 100%; box-sizing: border-box; }
 .team-member:active, .member-task:active { transform: scale(0.98); background: var(--member-selected-bg); }
 .team-member.selected, .member-task.selected { background: var(--member-selected-bg); border-left: 5px solid var(--brand); border-color: var(--brand); box-shadow: 0 3px 12px rgba(37,99,235,0.2); }
 .drop-zone { border: 2px dashed var(--brand); border-radius: 10px; padding: 10px; text-align: center; font-size: 16px; color: var(--brand); margin-top: 10px; }
@@ -290,7 +289,7 @@ header { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #
 .member-name { font-size:15px; font-weight:700; color:var(--text-primary); pointer-events: none; }
 .member-start { font-size:11px; color:var(--text-secondary); font-weight:600; pointer-events: none; }
 .timer-display { font-weight: 700; color: var(--brand); font-size: 15px; font-family: 'Courier New', monospace; letter-spacing: 0.3px; pointer-events: none; }
-.member-list { display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 10; pointer-events: auto; isolation: isolate; width: 100%; box-sizing: border-box; overflow: hidden; }
+.member-list { display: flex; flex-direction: column; position: relative; z-index: 10; pointer-events: auto; isolation: isolate; width: 100%; box-sizing: border-box; }
 .activity-select-btn { border:none; border-radius:999px; background:#2563eb; color:#fff; padding:12px 18px; font-size:14px; font-weight:700; cursor:pointer; transition:transform 0.05s ease, box-shadow 0.1s ease; touch-action: manipulation; min-height:44px; box-shadow: 0 4px 12px rgba(37,99,235,0.3); z-index: 20; position: relative; }
 .activity-select-btn:active { transform: scale(0.94); box-shadow: 0 2px 6px rgba(37,99,235,0.5); }
 .team-add-activity-btn { background:#16a34a; color:#fff; }
