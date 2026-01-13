@@ -3731,6 +3731,63 @@ let qrTimbraturaModalOpen = false;
 let qrRefreshInterval = null;
 let qrProgressInterval = null;
 let qrRefreshSeconds = 10;
+const QR_DEVICE_ID = "WebApp-001";
+
+// Libreria QRCode inline minificata (qrcode-generator 1.4.4)
+var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],f={},c=function(t,r){o=function(t){for(var r=new Array(t),e=0;e<t;e+=1){r[e]=new Array(t);for(var n=0;n<t;n+=1)r[e][n]=null}return r}(i=4*e+17),l(0,0),l(i-7,0),l(0,i-7),s(),h(),d(t,r),e>=7&&v(t),null==a&&(a=p(e,n,u)),w(a,r)},l=function(t,r){for(var e=-1;e<=7;e+=1)if(!(t+e<=-1||i<=t+e))for(var n=-1;n<=7;n+=1)r+n<=-1||i<=r+n||(o[t+e][r+n]=0<=e&&e<=6&&(0==n||6==n)||0<=n&&n<=6&&(0==e||6==e)||2<=e&&e<=4&&2<=n&&n<=4)},h=function(){for(var t=8;t<i-8;t+=1)null==o[t][6]&&(o[t][6]=t%2==0);for(var r=8;r<i-8;r+=1)null==o[6][r]&&(o[6][r]=r%2==0)},s=function(){for(var t=B.getPatternPosition(e),r=0;r<t.length;r+=1)for(var n=0;n<t.length;n+=1){var a=t[r],u=t[n];if(null==o[a][u])for(var f=-2;f<=2;f+=1)for(var c=-2;c<=2;c+=1)o[a+f][u+c]=-2==f||2==f||-2==c||2==c||0==f&&0==c}},v=function(t){for(var r=B.getBCHTypeNumber(e),n=0;n<18;n+=1){var a=!t&&1==(r>>n&1);o[Math.floor(n/3)][n%3+i-8-3]=a}for(n=0;n<18;n+=1){a=!t&&1==(r>>n&1);o[n%3+i-8-3][Math.floor(n/3)]=a}},d=function(t,r){for(var e=n<<3|r,a=B.getBCHTypeInfo(e),u=0;u<15;u+=1){var f=!t&&1==(a>>u&1);u<6?o[u][8]=f:u<8?o[u+1][8]=f:o[i-15+u][8]=f}for(u=0;u<15;u+=1){f=!t&&1==(a>>u&1);u<8?o[8][i-u-1]=f:u<9?o[8][15-u-1+1]=f:o[8][15-u-1]=f}o[i-8][8]=!t},w=function(t,r){for(var e=-1,n=i-1,a=7,u=0,f=B.getMaskFunction(r),c=i-1;c>0;c-=2)for(6==c&&(c-=1);;){for(var g=0;g<2;g+=1)if(null==o[n][c-g]){var l=!1;u<t.length&&(l=1==(t[u]>>>a&1)),f(n,c-g)&&(l=!l),o[n][c-g]=l,-1==(a-=1)&&(u+=1,a=7)}if((n+=e)<0||i<=n){n-=e,e=-e;break}}},p=function(t,r,e){for(var n=A.getRSBlocks(t,r),o=b(),i=0;i<e.length;i+=1){var a=e[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var u=0;for(i=0;i<n.length;i+=1)u+=n[i].dataCount;if(o.getLengthInBits()>8*u)throw"code length overflow. ("+o.getLengthInBits()+">"+8*u+")";for(o.getLengthInBits()+4<=8*u&&o.put(0,4);o.getLengthInBits()%8!=0;)o.putBit(!1);for(;!(o.getLengthInBits()>=8*u||(o.put(236,8),o.getLengthInBits()>=8*u));)o.put(17,8);return function(t,r){for(var e=0,n=0,o=0,i=new Array(r.length),a=new Array(r.length),u=0;u<r.length;u+=1){var f=r[u].dataCount,c=r[u].totalCount-f;n=Math.max(n,f),o=Math.max(o,c),i[u]=new Array(f);for(var g=0;g<i[u].length;g+=1)i[u][g]=255&t.getBuffer()[g+e];e+=f;var l=B.getErrorCorrectPolynomial(c),h=k(i[u],l.getLength()-1).mod(l);for(a[u]=new Array(l.getLength()-1),g=0;g<a[u].length;g+=1){var s=g+h.getLength()-a[u].length;a[u][g]=s>=0?h.getAt(s):0}}var v=0;for(g=0;g<r.length;g+=1)v+=r[g].totalCount;var d=new Array(v),w=0;for(g=0;g<n;g+=1)for(u=0;u<r.length;u+=1)g<i[u].length&&(d[w]=i[u][g],w+=1);for(g=0;g<o;g+=1)for(u=0;u<r.length;u+=1)g<a[u].length&&(d[w]=a[u][g],w+=1);return d}(o,n)};f.addData=function(t,r){var e=null;switch(r=r||"Byte"){case"Numeric":e=M(t);break;case"Alphanumeric":e=x(t);break;case"Byte":e=m(t);break;case"Kanji":e=L(t);break;default:throw"mode:"+r}u.push(e),a=null},f.isDark=function(t,r){if(t<0||i<=t||r<0||i<=r)throw t+","+r;return o[t][r]},f.getModuleCount=function(){return i},f.make=function(){if(e<1){for(var t=1;t<40;t++){for(var r=A.getRSBlocks(t,n),o=b(),i=0;i<u.length;i++){var a=u[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var g=0;for(i=0;i<r.length;i++)g+=r[i].dataCount;if(o.getLengthInBits()<=8*g)break}e=t}c(!1,function(){for(var t=0,r=0,e=0;e<8;e+=1){c(!0,e);var n=B.getLostPoint(f);(0==e||t>n)&&(t=n,r=e)}return r}())},f.createDataURL=function(t,r){t=t||2,r=void 0===r?4*t:r;var e=f.getModuleCount()*t+2*r,n=r,o=e-r;return I(e,e,(function(r,e){if(n<=r&&r<o&&n<=e&&e<o){var i=Math.floor((r-n)/t),a=Math.floor((e-n)/t);return f.isDark(a,i)?0:1}return 1}))};return f};t.stringToBytes=function(t){for(var r=[],e=0;e<t.length;e+=1){var n=t.charCodeAt(e);r.push(255&n)}return r};var g={L:1,M:0,Q:3,H:2},l=0,h=1,s=2,v=3,d=4,w=5,p=6,y=7,B=function(){var r=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],e=1335,n=7973,o=function(t){for(var r=0;0!=t;)r+=1,t>>>=1;return r},i={};return i.getBCHTypeInfo=function(t){for(var r=t<<10;o(r)-o(e)>=0;)r^=e<<o(r)-o(e);return 21522^(t<<10|r)},i.getBCHTypeNumber=function(t){for(var r=t<<12;o(r)-o(n)>=0;)r^=n<<o(r)-o(n);return t<<12|r},i.getPatternPosition=function(t){return r[t-1]},i.getMaskFunction=function(t){switch(t){case l:return function(t,r){return(t+r)%2==0};case h:return function(t,r){return t%2==0};case s:return function(t,r){return r%3==0};case v:return function(t,r){return(t+r)%3==0};case d:return function(t,r){return(Math.floor(t/2)+Math.floor(r/3))%2==0};case w:return function(t,r){return t*r%2+t*r%3==0};case p:return function(t,r){return(t*r%2+t*r%3)%2==0};case y:return function(t,r){return(t*r%3+(t+r)%2)%2==0};default:throw"bad maskPattern:"+t}},i.getErrorCorrectPolynomial=function(t){for(var r=k([1],0),e=0;e<t;e+=1)r=r.multiply(k([1,C.gexp(e)],0));return r},i.getLengthInBits=function(t,r){if(1<=r&&r<10)switch(t){case 1:return 10;case 2:return 9;case 4:case 8:return 8;default:throw"mode:"+t}else if(r<27)switch(t){case 1:return 12;case 2:return 11;case 4:return 16;case 8:return 10;default:throw"mode:"+t}else{if(!(r<41))throw"type:"+r;switch(t){case 1:return 14;case 2:return 13;case 4:return 16;case 8:return 12;default:throw"mode:"+t}}},i.getLostPoint=function(t){for(var r=t.getModuleCount(),e=0,n=0;n<r;n+=1)for(var o=0;o<r;o+=1){for(var i=0,a=t.isDark(n,o),u=-1;u<=1;u+=1)if(!(n+u<0||r<=n+u))for(var f=-1;f<=1;f+=1)o+f<0||r<=o+f||0==u&&0==f||a==t.isDark(n+u,o+f)&&(i+=1);i>5&&(e+=3+i-5)}for(n=0;n<r-1;n+=1)for(o=0;o<r-1;o+=1){var c=0;t.isDark(n,o)&&(c+=1),t.isDark(n+1,o)&&(c+=1),t.isDark(n,o+1)&&(c+=1),t.isDark(n+1,o+1)&&(c+=1),0!=c&&4!=c||(e+=3)}for(n=0;n<r;n+=1)for(o=0;o<r-6;o+=1)t.isDark(n,o)&&!t.isDark(n,o+1)&&t.isDark(n,o+2)&&t.isDark(n,o+3)&&t.isDark(n,o+4)&&!t.isDark(n,o+5)&&t.isDark(n,o+6)&&(e+=40);for(o=0;o<r;o+=1)for(n=0;n<r-6;n+=1)t.isDark(n,o)&&!t.isDark(n+1,o)&&t.isDark(n+2,o)&&t.isDark(n+3,o)&&t.isDark(n+4,o)&&!t.isDark(n+5,o)&&t.isDark(n+6,o)&&(e+=40);var g=0;for(o=0;o<r;o+=1)for(n=0;n<r;n+=1)t.isDark(n,o)&&(g+=1);return e+=Math.abs(100*g/r/r-50)/5*10},i}(),C=function(){for(var t=new Array(256),r=new Array(256),e=0;e<8;e+=1)t[e]=1<<e;for(e=8;e<256;e+=1)t[e]=t[e-4]^t[e-5]^t[e-6]^t[e-8];for(e=0;e<255;e+=1)r[t[e]]=e;return{glog:function(t){if(t<1)throw"glog("+t+")";return r[t]},gexp:function(r){for(;r<0;)r+=255;for(;r>=256;)r-=255;return t[r]}}}();function k(t,r){if(void 0===t.length)throw t.length+"/"+r;var e=function(){for(var e=0;e<t.length&&0==t[e];)e+=1;for(var n=new Array(t.length-e+r),o=0;o<t.length-e;o+=1)n[o]=t[o+e];return n}(),n={getAt:function(t){return e[t]},getLength:function(){return e.length},multiply:function(t){for(var r=new Array(n.getLength()+t.getLength()-1),e=0;e<n.getLength();e+=1)for(var o=0;o<t.getLength();o+=1)r[e+o]^=C.gexp(C.glog(n.getAt(e))+C.glog(t.getAt(o)));return k(r,0)},mod:function(t){if(n.getLength()-t.getLength()<0)return n;for(var r=C.glog(n.getAt(0))-C.glog(t.getAt(0)),e=new Array(n.getLength()),o=0;o<n.getLength();o+=1)e[o]=n.getAt(o);for(o=0;o<t.getLength();o+=1)e[o]^=C.gexp(C.glog(t.getAt(o))+r);return k(e,0).mod(t)}};return n}var A=function(){var t=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],r=function(t,r){return{totalCount:t,dataCount:r}},e={};return e.getRSBlocks=function(e,n){var o=function(r,e){switch(e){case g.L:return t[4*(r-1)+0];case g.M:return t[4*(r-1)+1];case g.Q:return t[4*(r-1)+2];case g.H:return t[4*(r-1)+3];default:return}}(e,n);if(void 0===o)throw"bad rs block @ typeNumber:"+e+"/errorCorrectionLevel:"+n;for(var i=o.length/3,a=[],u=0;u<i;u+=1)for(var f=o[3*u+0],c=o[3*u+1],l=o[3*u+2],h=0;h<f;h+=1)a.push(r(c,l));return a},e}(),b=function(){var t=[],r=0;return{getBuffer:function(){return t},getAt:function(r){return 1==(t[Math.floor(r/8)]>>>7-r%8&1)},put:function(t,n){for(var o=0;o<n;o+=1)1==(t>>>n-o-1&1)&&(function(n){var o=Math.floor(r/8);t.length<=o&&t.push(0),n&&(t[o]|=128>>>r%8),r+=1}(!0))},getLengthInBits:function(){return r},putBit:function(e){var n=Math.floor(r/8);t.length<=n&&t.push(0),e&&(t[n]|=128>>>r%8),r+=1}}},M=function(t){var r=1,e=t;return{getMode:function(){return r},getLength:function(){return e.length},write:function(t){for(var r=e,n=0;n+2<r.length;)t.put(parseInt(r.substring(n,n+3)),10),n+=3;n<r.length&&(r.length-n==1?t.put(parseInt(r.substring(n,n+1)),4):r.length-n==2&&t.put(parseInt(r.substring(n,n+2)),7))}}},x=function(r){var e=2,n=r;return{getMode:function(){return e},getLength:function(){return n.length},write:function(r){for(var e=n,o=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);if("A"<=t&&t<="Z")return t.charCodeAt(0)-"A".charCodeAt(0)+10;switch(t){case" ":return 36;case"$":return 37;case"%":return 38;case"*":return 39;case"+":return 40;case"-":return 41;case".":return 42;case"/":return 43;case":":return 44;default:throw"illegal char :"+t}},i=0;i+1<e.length;)r.put(45*o(e.charAt(i))+o(e.charAt(i+1)),11),i+=2;i<e.length&&r.put(o(e.charAt(i)),6)}}},m=function(r){var e=4,n=t.stringToBytes(r);return{getMode:function(){return e},getLength:function(){return n.length},write:function(t){for(var r=0;r<n.length;r+=1)t.put(n[r],8)}}},L=function(){throw"Kanji not supported"},I=function(t,r,e){for(var n=function(t,r){var e=t,n=r,o=new Array(t*r),i={setPixel:function(t,r,n){o[r*e+t]=n},write:function(t){t.writeString("GIF87a"),t.writeShort(e),t.writeShort(n),t.writeByte(128),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(255),t.writeByte(255),t.writeByte(255),t.writeString(","),t.writeShort(0),t.writeShort(0),t.writeShort(e),t.writeShort(n),t.writeByte(0);var r=2,i=1<<r,a=i+1,u=r+1,f=function(){var t={},r=0;return{add:function(e){if(void 0!==t[e])throw"dup key:"+e;t[e]=r,r+=1},size:function(){return r},indexOf:function(r){return t[r]},contains:function(r){return void 0!==t[r]}}}();for(var c=0;c<i;c+=1)f.add(String.fromCharCode(c));f.add(String.fromCharCode(i)),f.add(String.fromCharCode(a));var g=function(){var t=[],r={writeByte:function(e){t.push(255&e)},writeShort:function(t){r.writeByte(t),r.writeByte(t>>>8)},writeBytes:function(t,e,n){e=e||0,n=n||t.length;for(var o=0;o<n;o+=1)r.writeByte(t[o+e])},writeString:function(t){for(var e=0;e<t.length;e+=1)r.writeByte(t.charCodeAt(e))},toByteArray:function(){return t}};return r}(),l=function(){var t,r=0,e=0;return{write:function(n,o){if(n>>>o!=0)throw"length over";for(;r+o>=8;)t.writeByte(255&(n<<r|e)),o-=8-r,n>>>=8-r,e=0,r=0;e|=n<<r,r+=o},flush:function(){r>0&&t.writeByte(e)},setOut:function(r){t=r}}}();l.setOut(g),l.write(i,u);var h=0,s=String.fromCharCode(o[h]);for(h+=1;h<o.length;){var v=String.fromCharCode(o[h]);h+=1,f.contains(s+v)?s+=v:(l.write(f.indexOf(s),u),f.size()<4095&&(f.size()==1<<u&&(u+=1),f.add(s+v)),s=v)}l.write(f.indexOf(s),u),l.write(a,u),l.flush();var d=g.toByteArray();t.writeByte(2);for(var w=0;d.length-w>255;)t.writeByte(255),t.writeBytes(d,w,255),w+=255;t.writeByte(d.length-w),t.writeBytes(d,w,d.length-w),t.writeByte(0),t.writeString(";")}};return i}(t,r),o=0;o<r;o+=1)for(var i=0;i<t;i+=1)n.setPixel(i,o,e(i,o));var a=function(){var t=[],r={writeByte:function(e){t.push(255&e)},writeShort:function(t){r.writeByte(t),r.writeByte(t>>>8)},writeBytes:function(t,e,n){e=e||0,n=n||t.length;for(var o=0;o<n;o+=1)r.writeByte(t[o+e])},writeString:function(t){for(var e=0;e<t.length;e+=1)r.writeByte(t.charCodeAt(e))},toByteArray:function(){return t}};return r}();n.write(a);for(var u=function(){var t=0,r=0,e=0,n="",o=function(t){n+=String.fromCharCode(function(t){if(t<0);else{if(t<26)return 65+t;if(t<52)return t-26+97;if(t<62)return t-52+48;if(62==t)return 43;if(63==t)return 47}throw"n:"+t}(63&t))};return{writeByte:function(n){for(t=t<<8|255&n,r+=8,e+=1;r>=6;)o(t>>>r-6),r-=6},flush:function(){if(r>0&&(o(t<<6-r),t=0,r=0),e%3!=0)for(var i=3-e%3,a=0;a<i;a+=1)n+="="},toString:function(){return n}}}(),f=a.toByteArray(),c=0;c<f.length;c+=1)u.writeByte(f[c]);return u.flush(),"data:image/gif;base64,"+u};return t}();
+
+// Genera payload GiQR Level 4 Lite (stesso algoritmo del server)
+function generateGiQRPayload() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    
+    const dtStr = `${year}${month}${day}${hours}${minutes}${seconds}`;
+    const nonce = Math.floor(Math.random() * 65536);
+    
+    // Firma (stesso algoritmo Python)
+    let devSum = 0;
+    for (let i = 0; i < QR_DEVICE_ID.length; i++) {
+        devSum += QR_DEVICE_ID.charCodeAt(i);
+    }
+    const sig = (
+        now.getHours() * 97 +
+        now.getMinutes() * 59 +
+        now.getSeconds() * 31 +
+        year +
+        (now.getMonth() + 1) +
+        now.getDate() +
+        devSum
+    ) % 100000;
+    
+    return {
+        v: 1,
+        dt: dtStr,
+        dev: QR_DEVICE_ID,
+        n: nonce,
+        sig: sig
+    };
+}
+
+// Genera QR code localmente
+function generateQRCodeLocally() {
+    const payload = generateGiQRPayload();
+    const rawJson = JSON.stringify(payload);
+    const b64Payload = btoa(rawJson);
+    
+    const qr = qrcode(0, 'M');
+    qr.addData(b64Payload);
+    qr.make();
+    
+    return {
+        image: qr.createDataURL(8, 8),  // Dimensione celle 8px come il server
+        payload: payload
+    };
+}
 
 function openQrTimbraturaModal() {
     const modal = document.getElementById("qrTimbraturaModal");
@@ -3764,13 +3821,14 @@ function closeQrTimbraturaModal() {
 }
 
 async function loadQrTimbratura() {
-    const container = document.getElementById("qrContainer");
-    const loading = document.getElementById("qrLoading");
-    const image = document.getElementById("qrImage");
-    const timeEl = document.getElementById("clock");
-    const deviceIdEl = document.getElementById("deviceId");
-    const refreshSecondsEl = document.getElementById("refreshSeconds");
-    const progressBar = document.getElementById("qrProgress");
+    // ID per la modal nella dashboard
+    const container = document.getElementById("qrTimbraturaContainer") || document.getElementById("qrContainer");
+    const loading = document.getElementById("qrTimbraturaLoading") || document.getElementById("qrLoading");
+    const image = document.getElementById("qrTimbraturaImage") || document.getElementById("qrImage");
+    const timeEl = document.getElementById("qrTimbraturaTime") || document.getElementById("clock");
+    const deviceIdEl = document.getElementById("qrDeviceId") || document.getElementById("deviceId");
+    const refreshSecondsEl = document.getElementById("qrRefreshSeconds") || document.getElementById("refreshSeconds");
+    const progressBar = document.getElementById("qrRefreshProgress") || document.getElementById("qrProgress");
     
     if (!container) return;
     
@@ -3778,39 +3836,66 @@ async function loadQrTimbratura() {
     if (loading) loading.style.display = "flex";
     if (image) image.classList.remove("loaded");
     
-    try {
-        const res = await fetch("/api/qr-timbratura");
-        if (!res.ok) throw new Error("Errore nel caricamento QR");
-        
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || "Errore QR");
-        
-        // Aggiorna immagine
+    let useLocalGeneration = !navigator.onLine;
+    let data = null;
+    
+    // Prova prima dal server se online
+    if (!useLocalGeneration) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+            
+            const res = await fetch("/api/qr-timbratura", { signal: controller.signal });
+            clearTimeout(timeoutId);
+            
+            if (!res.ok) throw new Error("Errore nel caricamento QR");
+            
+            data = await res.json();
+            if (!data.ok) throw new Error(data.error || "Errore QR");
+            
+        } catch (err) {
+            console.warn("QR server fetch failed, using local generation:", err.message);
+            useLocalGeneration = true;
+        }
+    }
+    
+    // Generazione locale (offline o fallback)
+    if (useLocalGeneration) {
+        try {
+            const localQR = generateQRCodeLocally();
+            data = {
+                ok: true,
+                image: localQR.image,
+                payload: localQR.payload,
+                refresh_seconds: 10
+            };
+        } catch (err) {
+            console.error("Local QR generation failed:", err);
+            if (loading) {
+                loading.innerHTML = `<span style="color:#ef4444;">❌ Errore generazione QR</span>`;
+            }
+            return;
+        }
+    }
+    
+    // Aggiorna UI
+    if (data) {
         if (image) {
             image.src = data.image;
             image.classList.add("loaded");
         }
         if (loading) loading.style.display = "none";
         
-        // Aggiorna device ID
         if (deviceIdEl && data.payload) {
-            deviceIdEl.textContent = data.payload.dev || "";
+            deviceIdEl.textContent = data.payload.dev || QR_DEVICE_ID;
         }
         
-        // Aggiorna tempo di refresh
         qrRefreshSeconds = data.refresh_seconds || 10;
         if (refreshSecondsEl) {
             refreshSecondsEl.textContent = qrRefreshSeconds;
         }
         
-        // Avvia/riavvia i timer
         startQrRefreshTimers(progressBar);
-        
-    } catch (err) {
-        console.error("QR Timbratura error:", err);
-        if (loading) {
-            loading.innerHTML = `<span style="color:#ef4444;">❌ ${err.message}</span>`;
-        }
     }
     
     // Aggiorna orologio
