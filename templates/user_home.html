@@ -2301,6 +2301,12 @@ async function confirmGpsLocation() {
     } else if (res.ok && data.success) {
       const locationName = validateData.location || 'Sede';
       showToast(`${TIMBRATURA_TYPES[tipo]?.label} registrata (${locationName})! ✓`, 'success');
+      
+      // 🧪 TEST PAYLOAD POPUP - Mostra URL CedolinoWeb
+      if (TEST_PAYLOAD_POPUP && data.cedolino_url) {
+        showTestPayloadPopup(data.cedolino_url, tipo);
+      }
+      
       loadTimbrature();
       // Check straordinario dopo fine giornata
       if (tipo === 'fine_giornata') {
@@ -2308,6 +2314,10 @@ async function confirmGpsLocation() {
       }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
+      // Mostra anche l'URL di debug in caso di errore
+      if (TEST_PAYLOAD_POPUP && data.cedolino_url) {
+        showTestPayloadPopup(data.cedolino_url, tipo, data.error);
+      }
     }
   } catch (err) {
     console.error('Errore GPS:', err);
@@ -2331,6 +2341,11 @@ async function confirmGpsLocation() {
 // ═══════════════════════════════════════════════════════════════════
 
 // Registra timbratura direttamente (modalità diretta o offline)
+// ═══════════════════════════════════════════════════════════════════
+// TEST PAYLOAD - Imposta a true per vedere popup con payload CedolinoWeb
+// ═══════════════════════════════════════════════════════════════════
+const TEST_PAYLOAD_POPUP = false;  // <-- Cambia a true per attivare
+
 async function registerTimbraturaDirectly(tipo) {
   try {
     const payload = { tipo, bypass_qr: true, offline_ts: Date.now() };
@@ -2349,6 +2364,12 @@ async function registerTimbraturaDirectly(tipo) {
       saveOfflineTimbratura(tipo);
     } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
+      
+      // 🧪 TEST PAYLOAD POPUP - Mostra URL CedolinoWeb
+      if (TEST_PAYLOAD_POPUP && data.cedolino_url) {
+        showTestPayloadPopup(data.cedolino_url, tipo);
+      }
+      
       loadTimbrature();
       // Check straordinario dopo fine giornata
       if (tipo === 'fine_giornata') {
@@ -2356,6 +2377,10 @@ async function registerTimbraturaDirectly(tipo) {
       }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
+      // Mostra anche l'URL di debug in caso di errore
+      if (TEST_PAYLOAD_POPUP && data.cedolino_url) {
+        showTestPayloadPopup(data.cedolino_url, tipo, data.error);
+      }
     }
   } catch (err) {
     console.error('Errore:', err);
@@ -2370,6 +2395,48 @@ async function registerTimbraturaDirectly(tipo) {
     }
   }
   pendingTimbraturaType = null;
+}
+
+// 🧪 TEST PAYLOAD - Mostra popup con dettagli CedolinoWeb
+function showTestPayloadPopup(url, tipo, error = null) {
+  // Parsa i parametri dall'URL
+  const params = new URL(url).searchParams;
+  let html = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;" onclick="this.remove()">
+      <div style="background:#1e1e1e;color:#fff;padding:20px;border-radius:12px;max-width:95%;max-height:90vh;overflow:auto;font-family:monospace;font-size:12px;" onclick="event.stopPropagation()">
+        <h3 style="color:#4fc3f7;margin:0 0 15px;">🧪 TEST PAYLOAD CEDOLINO</h3>
+        <div style="color:#aaa;margin-bottom:10px;">Tipo: <strong style="color:#fff;">${tipo}</strong></div>
+        ${error ? `<div style="color:#ff5252;margin-bottom:15px;">⚠️ Errore: ${error}</div>` : ''}
+        <table style="width:100%;border-collapse:collapse;">
+          <tr style="border-bottom:1px solid #333;">
+            <th style="text-align:left;padding:8px;color:#81c784;">Parametro</th>
+            <th style="text-align:left;padding:8px;color:#81c784;">Valore</th>
+          </tr>
+  `;
+  
+  for (const [key, value] of params) {
+    const isNull = value === 'NULL' || value === '' || value === 'N/A';
+    html += `
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:8px;color:#fff;">${key}</td>
+        <td style="padding:8px;color:${isNull ? '#ff9800' : '#4fc3f7'};">${value || '(vuoto)'}</td>
+      </tr>
+    `;
+  }
+  
+  html += `
+        </table>
+        <div style="margin-top:15px;padding:10px;background:#2d2d2d;border-radius:6px;word-break:break-all;font-size:10px;color:#888;">
+          <strong>URL completo:</strong><br>${url}
+        </div>
+        <button onclick="this.parentElement.parentElement.remove()" style="margin-top:15px;padding:10px 20px;background:#4fc3f7;color:#000;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">
+          CHIUDI
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 // Salva timbratura offline in localStorage come backup

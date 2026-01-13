@@ -10683,29 +10683,62 @@ def get_external_group_id_for_username(db: DatabaseLike, username: str) -> Optio
     """
     Recupera l'external_group_id (Gruppo ID CedolinoWeb) per un utente dato il suo username.
     
-    L'external_group_id viene cercato SOLO nella tabella app_users.
+    Ordine di ricerca:
+    1. Prima cerca external_group_id direttamente in app_users (override utente)
+    2. Se non trovato, cerca cedolino_group_id dalla tabella user_groups tramite group_id
     """
     if not username:
         return None
     
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     
-    # Recupera external_group_id dalla tabella app_users
+    # Prima cerca external_group_id diretto dall'utente E il group_id per fallback
     user_row = db.execute(
-        f"SELECT external_group_id FROM app_users WHERE username = {placeholder}",
+        f"SELECT external_group_id, group_id FROM app_users WHERE username = {placeholder}",
         (username,)
     ).fetchone()
     
     if not user_row:
         return None
     
-    # Estrai il valore
+    # Estrai i valori
     if isinstance(user_row, dict):
         external_group_id = user_row.get('external_group_id')
+        group_id = user_row.get('group_id')
     else:
         external_group_id = user_row[0]
+        group_id = user_row[1]
     
-    return external_group_id if external_group_id else None
+    # Se l'utente ha un external_group_id diretto, usalo
+    if external_group_id:
+        app.logger.info(f"CedolinoWeb gruppo: utente {username} ha external_group_id diretto: {external_group_id}")
+        return external_group_id
+    
+    # Altrimenti cerca il cedolino_group_id dal gruppo associato
+    if group_id:
+        group_row = db.execute(
+            f"SELECT cedolino_group_id FROM user_groups WHERE id = {placeholder}",
+            (group_id,)
+        ).fetchone()
+        
+        if group_row:
+            if isinstance(group_row, dict):
+                cedolino_group_id = group_row.get('cedolino_group_id')
+            else:
+                cedolino_group_id = group_row[0]
+            
+            if cedolino_group_id:
+                app.logger.info(f"CedolinoWeb gruppo: utente {username} usa cedolino_group_id dal gruppo: {cedolino_group_id}")
+                return cedolino_group_id
+    
+    app.logger.warning(f"CedolinoWeb gruppo: utente {username} non ha gruppo_id associato")
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST PAYLOAD - Imposta a True per vedere il payload completo nei log
+# ═══════════════════════════════════════════════════════════════════
+CEDOLINO_TEST_PAYLOAD = False  # <-- Cambia a True per attivare
 
 
 def call_cedolino_webservice(
@@ -10755,10 +10788,24 @@ def call_cedolino_webservice(
     # Costruisci URL completo per debug
     from urllib.parse import urlencode
     full_url = f"{endpoint}?{urlencode(params)}"
-    app.logger.info("=" * 80)
-    app.logger.info("CedolinoWeb REQUEST URL:")
-    app.logger.info(full_url)
-    app.logger.info("=" * 80)
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # TEST PAYLOAD LOG - Mostra payload dettagliato
+    # ═══════════════════════════════════════════════════════════════════
+    if CEDOLINO_TEST_PAYLOAD:
+        app.logger.info("=" * 80)
+        app.logger.info("🧪 CEDOLINO TEST PAYLOAD 🧪")
+        app.logger.info("=" * 80)
+        app.logger.info("ENDPOINT: %s", endpoint)
+        app.logger.info("-" * 40)
+        app.logger.info("PAYLOAD PARAMETERS:")
+        for key, value in params.items():
+            app.logger.info("  %-20s : %s", key, value)
+        app.logger.info("-" * 40)
+        app.logger.info("FULL URL: %s", full_url)
+        app.logger.info("=" * 80)
+    else:
+        app.logger.info("CedolinoWeb REQUEST URL: %s", full_url)
     
     try:
         app.logger.info(
@@ -13794,11 +13841,18 @@ def api_timbratura_validate_gps():
             # Se la sede non è trovata in configurazione ma abbiamo le coordinate dal backend, usale
             if shift_location_lat is not None and shift_location_lon is not None:
                 app.logger.info(f"VALIDATE-GPS: Usando coordinate ricevute dal frontend: lat={shift_location_lat}, lon={shift_location_lon}")
-                # Crea una location virtuale con le coordinate ricevute
+                # Crea una location virtuale con le coordinate ricevute (convertendo in float)
+                try:
+                    virtual_lat = float(shift_location_lat)
+                    virtual_lon = float(shift_location_lon)
+                except (ValueError, TypeError):
+                    app.logger.error(f"VALIDATE-GPS: Errore conversione coordinate: lat={shift_location_lat}, lon={shift_location_lon}")
+                    return jsonify({"valid": False, "error": "Coordinate sede non valide"}), 400
+                
                 virtual_location = {
                     "name": shift_location_name or "Sede",
-                    "latitude": shift_location_lat,
-                    "longitude": shift_location_lon,
+                    "latitude": virtual_lat,
+                    "longitude": virtual_lon,
                     "radius_meters": 100
                 }
                 locations = [virtual_location]
