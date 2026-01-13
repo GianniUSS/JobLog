@@ -138,7 +138,7 @@ header { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #
 .keypad button.wide { grid-column: span 2; }
 .empty-state { background:var(--bg-card); border-radius:12px; padding:40px 24px; margin-bottom:20px; box-shadow:0 2px 5px var(--shadow); font-size:18px; color:var(--text-secondary); display:none; justify-content:center; align-items:center; text-align:center; min-height:120px; transition: background-color 0.2s ease; }
 .timeline-card { margin-top: -4px; }
-.team-card, .task-card { background: var(--bg-card); border-radius: 12px; box-shadow: 0 2px 5px var(--shadow); padding: 16px; margin-bottom: 20px; transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; position: relative; overflow: hidden; z-index: 12; pointer-events: auto; }
+.team-card, .task-card { background: var(--bg-card); border-radius: 12px; box-shadow: 0 2px 5px var(--shadow); padding: 16px; margin: 0 12px 20px; transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; position: relative; overflow: hidden; z-index: 12; pointer-events: auto; width: calc(100% - 24px); box-sizing: border-box; }
 /* Card collassabile */
 .task-card .task-header { cursor: pointer; }
 .task-card.card-collapsed .task-card-body { display: none; }
