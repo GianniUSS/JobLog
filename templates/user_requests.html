@@ -1000,7 +1000,7 @@
             color: var(--brand);
         }
         
-        /* Overtime/Straordinario details */
+        /* Overtime/Extra Turno details */
         .overtime-details {
             margin-top: 12px;
             padding: 12px;
@@ -1421,6 +1421,10 @@
                 <a href="/user/notifications" class="menu-item">
                     <span class="icon">🔔</span>
                     <span>Storico Notifiche</span>
+                </a>
+                <a href="/user/storico-timbrature" class="menu-item">
+                    <span class="icon">🕐</span>
+                    <span>Storico Timbrature</span>
                 </a>
                 {% if magazzino_enabled %}
                 <a href="{{ url_for('magazzino_home') }}" class="menu-item">
@@ -1881,9 +1885,9 @@
                     setTratteRequired(true);
                     break;
                 case 'minutes':
-                    // Straordinario - mostra campo minuti
+                    // Extra Turno - mostra campo minuti
                     valueGroup.style.display = 'block';
-                    valueLabel.textContent = 'Minuti di straordinario';
+                    valueLabel.textContent = 'Minuti di Extra Turno';
                     valueInput.setAttribute('required', 'required');
                     valueInput.placeholder = 'Es: 60 per 1 ora';
                     break;
@@ -2233,7 +2237,7 @@
                                 <span class="overtime-row-value">${roundedStart} - ${roundedEnd}</span>
                             </div>
                             <div class="overtime-row">
-                                <span class="overtime-row-label">Totale straordinario</span>
+                                <span class="overtime-row-label">Totale Extra Turno</span>
                                 <span class="overtime-row-value" style="color: var(--brand); font-weight: 600;">${totalFormatted}</span>
                             </div>
                         </div>

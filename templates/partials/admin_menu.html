@@ -25,7 +25,10 @@
         <div class="menu-divider"></div>
         <a href="/admin/timbratura-rules" class="menu-item {% if active_page == 'timbratura-rules' %}active{% endif %}">⚙️ Regole Timbrature</a>
         <a href="/admin/request-types" class="menu-item {% if active_page == 'request-types' %}active{% endif %}">📝 Tipi Richieste</a>
-        <a href="/admin/user-requests" class="menu-item {% if active_page == 'user-requests' %}active{% endif %}">📥 Richieste Utenti</a>
+        <a href="/admin/user-requests" class="menu-item {% if active_page == 'user-requests' %}active{% endif %}">
+            📥 Richieste Utenti
+            <span class="menu-badge" id="pendingRequestsBadge" style="display: none;"></span>
+        </a>
         <a href="/admin/overtime" class="menu-item {% if active_page == 'overtime' %}active{% endif %}">⏰ Straordinari</a>
         <a href="/admin/documents" class="menu-item {% if active_page == 'documents' %}active{% endif %}">📄 Documenti</a>
         <div class="menu-divider"></div>
@@ -118,6 +121,18 @@
 .menu-item.danger:hover {
     background: rgba(239, 68, 68, 0.1);
 }
+
+.menu-badge {
+    background: #ef4444;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: auto;
+    min-width: 18px;
+    text-align: center;
+}
 </style>
 
 <script>
@@ -138,4 +153,23 @@ document.addEventListener('keydown', function(e) {
         closeMenu();
     }
 });
+
+// Carica contatore richieste pendenti
+function loadPendingRequestsCount() {
+    fetch('/api/admin/user-requests/pending-count')
+        .then(r => r.json())
+        .then(data => {
+            const badge = document.getElementById('pendingRequestsBadge');
+            if (badge && data.count > 0) {
+                badge.textContent = data.count;
+                badge.style.display = 'inline-block';
+            } else if (badge) {
+                badge.style.display = 'none';
+            }
+        })
+        .catch(() => {});
+}
+
+// Carica il contatore al caricamento della pagina
+document.addEventListener('DOMContentLoaded', loadPendingRequestsCount);
 </script>

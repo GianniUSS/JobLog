@@ -488,25 +488,8 @@
                     </button>`;
         }).join('');
 
-        // Se non c'è un progetto selezionato (e timer non in corso), ripristina l'ultimo usato oppure seleziona il primo
-        if (!selectedProj && !timer.running) {
-            let toSelect = null;
-            const lastCode = loadLastProject();
-            if (lastCode) {
-                toSelect = projects.find(p => p.code === lastCode) || null;
-            }
-            if (!toSelect && projects.length) {
-                toSelect = projects[0];
-            }
-            if (toSelect) {
-                selectedProj = toSelect;
-                const btn = Array.from(projList.querySelectorAll('.proj-item'))
-                    .find(el => el.dataset.code === toSelect.code);
-                if (btn) btn.classList.add('selected');
-                updateUI();
-                fetchSessions();
-            }
-        }
+        // NON auto-selezionare progetti all'avvio - l'utente deve scegliere manualmente
+        // (Mantenuto solo per timer in corso)
     }
     
     function renderSessions(items) {
@@ -904,7 +887,17 @@
         stopTick();
         await saveSession();
         clearTimerState();
+        // Deseleziona progetto e attività dopo aver salvato
+        selectedProj = null;
+        selectedAct = null;
+        selectedNotes = '';
+        // Pulisce ultimo progetto salvato
+        rememberProject('');
+        // Aggiorna UI e re-renderizza liste per rimuovere selezione visiva
+        renderProjects();
+        renderActivities();
         updateUI();
+        fetchSessions();
     }
     
     // === NOTES MODAL ===

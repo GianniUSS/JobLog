@@ -241,6 +241,17 @@
     }
     .menu-item.danger { color: var(--danger); }
     .menu-item.danger:hover { background: rgba(102, 126, 234, 0.1); }
+    .menu-badge {
+        background: #ef4444;
+        color: white;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 10px;
+        margin-left: auto;
+        min-width: 18px;
+        text-align: center;
+    }
 
     /* Main */
     main {
@@ -645,13 +656,18 @@
     }
 
     .action-btn.notify.primary {
-      background: var(--primary);
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
       color: white;
-      padding: 6px 12px;
+      padding: 8px 16px;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+      border: none;
     }
 
     .action-btn.notify.primary:hover {
-      background: #0284c7;
+      background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.5);
+      transform: translateY(-1px);
     }
 
     .action-btn.view {
@@ -725,7 +741,7 @@
     }
 
     .modal {
-      background: var(--card);
+      background: var(--card, #ffffff);
       border-radius: var(--radius-lg);
       width: 90%;
       max-width: 400px;
@@ -733,6 +749,7 @@
       overflow: hidden;
       transform: scale(0.9);
       transition: transform 0.3s;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
 
     .modal-overlay.active .modal {
@@ -964,7 +981,10 @@
         <div class="menu-divider"></div>
         <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
         <a href="/admin/documents" class="menu-item active">📄 Documenti</a>
-        <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+        <a href="/admin/user-requests" class="menu-item">
+            📥 Richieste
+            <span class="menu-badge" id="pendingRequestsBadge" style="display: none;"></span>
+        </a>
         <div class="menu-divider"></div>
         <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
         <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
@@ -1161,6 +1181,39 @@
     <div class="modal-body">
       <div class="recipient-list" id="recipientsList">
         <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Visualizza/Modifica Documento -->
+<div class="modal-overlay" id="documentModal" onclick="closeDocumentModal(event)">
+  <div class="modal" style="max-width: 600px; background: #ffffff;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>📝 Dettagli Documento</h3>
+      <button class="modal-close" onclick="closeDocumentModal()">&times;</button>
+    </div>
+    <div class="modal-body" style="padding: 20px;">
+      <input type="hidden" id="editDocId">
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--muted);">Categoria</label>
+        <div id="editDocCategory" style="padding: 10px; background: var(--bg-soft); border-radius: var(--radius-sm); font-size: 14px;"></div>
+      </div>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--muted);">Titolo *</label>
+        <input type="text" id="editDocTitle" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text); font-size: 14px;">
+      </div>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--muted);">Descrizione / Contenuto</label>
+        <textarea id="editDocDescription" rows="8" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text); font-size: 14px; resize: vertical; min-height: 150px;" placeholder="Inserisci qui il contenuto della circolare o comunicazione..."></textarea>
+      </div>
+      <div id="editDocFileInfo" style="margin-bottom: 16px; display: none;">
+        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--muted);">Allegato</label>
+        <a id="editDocFileLink" href="#" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--brand-soft); color: var(--brand); border-radius: var(--radius-sm); text-decoration: none; font-size: 14px;">📄 <span id="editDocFileName"></span></a>
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+        <button type="button" onclick="closeDocumentModal()" style="padding: 12px 24px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text); cursor: pointer; font-size: 14px;">Annulla</button>
+        <button type="button" onclick="saveDocument()" style="padding: 12px 24px; border: none; border-radius: var(--radius-sm); background: linear-gradient(135deg, var(--brand) 0%, var(--brand-strong) 100%); color: white; cursor: pointer; font-size: 14px; font-weight: 600;">💾 Salva Modifiche</button>
       </div>
     </div>
   </div>
@@ -1366,14 +1419,16 @@ function renderDocumentTable(docs, tbodyId, emptyId, showNotifiedDate) {
       'busta_paga': '💰 Busta Paga'
     };
     
-    // Data: creazione per pending, notifica per sent
+    // Data: creazione per pending, notifica per sent (sempre con ora)
     let dateCell;
     if (showNotifiedDate && doc.notified_at) {
       const notifiedDate = new Date(doc.notified_at).toLocaleDateString('it-IT');
       const notifiedTime = new Date(doc.notified_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
       dateCell = `${notifiedDate} ${notifiedTime}`;
     } else {
-      dateCell = new Date(doc.created_at).toLocaleDateString('it-IT');
+      const createdDate = new Date(doc.created_at).toLocaleDateString('it-IT');
+      const createdTime = new Date(doc.created_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      dateCell = `${createdDate} ${createdTime}`;
     }
     
     // Colonna destinatari
@@ -1404,6 +1459,7 @@ function renderDocumentTable(docs, tbodyId, emptyId, showNotifiedDate) {
         <td>${targetCell}</td>
         <td>${dateCell}</td>
         <td>
+          <button class="action-btn view" onclick="openDocumentModal(${index})" title="Visualizza/Modifica">📝</button>
           ${notifyBtn}
           <button class="action-btn delete" onclick="deleteDocument(${doc.id})">🗑️</button>
         </td>
@@ -1613,11 +1669,87 @@ function closeRecipientsModal(event) {
   }
 }
 
+// Open document modal for viewing/editing
+function openDocumentModal(docIndex) {
+  const doc = allDocuments[docIndex];
+  const categoryLabels = {
+    'circolare': '📢 Circolare',
+    'comunicazione': '📨 Comunicazione',
+    'busta_paga': '💰 Busta Paga'
+  };
+  
+  document.getElementById('editDocId').value = doc.id;
+  document.getElementById('editDocCategory').textContent = categoryLabels[doc.category] || doc.category;
+  document.getElementById('editDocTitle').value = doc.title || '';
+  document.getElementById('editDocDescription').value = doc.description || '';
+  
+  // File info
+  const fileInfo = document.getElementById('editDocFileInfo');
+  if (doc.file_url) {
+    fileInfo.style.display = 'block';
+    document.getElementById('editDocFileLink').href = doc.file_url;
+    document.getElementById('editDocFileName').textContent = doc.file_name || 'Apri allegato';
+  } else {
+    fileInfo.style.display = 'none';
+  }
+  
+  document.getElementById('documentModal').classList.add('active');
+}
+
+// Close document modal
+function closeDocumentModal(event) {
+  if (!event || event.target === event.currentTarget) {
+    document.getElementById('documentModal').classList.remove('active');
+  }
+}
+
+// Save document changes
+async function saveDocument() {
+  const docId = document.getElementById('editDocId').value;
+  const title = document.getElementById('editDocTitle').value.trim();
+  const description = document.getElementById('editDocDescription').value.trim();
+  
+  if (!title) {
+    showToast('Il titolo è obbligatorio', 'error');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`/api/admin/documents/${docId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description })
+    });
+    const data = await res.json();
+    
+    if (res.ok && data.success) {
+      showToast('Documento aggiornato', 'success');
+      closeDocumentModal();
+      loadDocuments();
+    } else {
+      showToast(data.error || 'Errore aggiornamento', 'error');
+    }
+  } catch (err) {
+    showToast('Errore di connessione', 'error');
+  }
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => {
   loadUsers();
   loadStats();
   loadDocuments(); // Carica subito per aggiornare il badge "Da Inviare"
+
+  // Carica contatore richieste pendenti
+  fetch('/api/admin/user-requests/pending-count')
+      .then(r => r.json())
+      .then(data => {
+          const badge = document.getElementById('pendingRequestsBadge');
+          if (badge && data.count > 0) {
+              badge.textContent = data.count;
+              badge.style.display = 'inline-block';
+          }
+      }).catch(() => {});
 });
 </script>
 

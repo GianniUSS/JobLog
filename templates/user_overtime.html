@@ -547,7 +547,7 @@
     <div class="modal-overlay" id="newRequestModal">
         <div class="modal-content">
             <div class="modal-handle"></div>
-            <h3 class="modal-title"><i class="bi bi-clock-history me-2"></i>Richiedi Straordinario</h3>
+            <h3 class="modal-title"><i class="bi bi-clock-history me-2"></i>Richiedi Extra Turno</h3>
             
             <form id="newOvertimeForm">
                 <div class="form-group">
@@ -564,7 +564,7 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>Minuti di Straordinario</label>
+                    <label>Minuti di Extra Turno</label>
                     <input type="number" id="reqMinutes" min="5" max="480" placeholder="es. 60" required>
                 </div>
                 
@@ -580,7 +580,7 @@
                 
                 <div class="form-group">
                     <label>Note (opzionale)</label>
-                    <textarea id="reqNotes" placeholder="Descrivi il motivo dello straordinario..."></textarea>
+                    <textarea id="reqNotes" placeholder="Descrivi il motivo dell'Extra Turno..."></textarea>
                 </div>
                 
                 <button type="submit" class="btn-submit">
@@ -689,7 +689,7 @@
                 container.innerHTML = `
                     <div class="empty-state">
                         <i class="bi bi-clock"></i>
-                        <h3>Nessuno Straordinario</h3>
+                        <h3>Nessun Extra Turno</h3>
                         <p>${currentFilter === 'all' ? 'Premi + per aggiungere una richiesta' : 'Nessuna richiesta con questo stato'}</p>
                     </div>
                 `;
@@ -747,7 +747,7 @@
                     
                     <div class="overtime-time">
                         <div class="value">${timeStr}</div>
-                        <div class="label">${typeLabels[overtime.overtime_type] || 'Straordinario'}</div>
+                        <div class="label">${typeLabels[overtime.overtime_type] || 'Extra Turno'}</div>
                     </div>
                     
                     <div class="overtime-details">

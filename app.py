@@ -330,6 +330,10 @@ class CursorWrapper:
     def description(self):
         return self._cursor.description
 
+    @property
+    def lastrowid(self):
+        return self._cursor.lastrowid
+
     def fetchone(self):
         row = self._cursor.fetchone()
         if row is None:
@@ -4012,12 +4016,21 @@ def build_session_rows(
     end_date: Optional[date] = None,
     member_filter: Optional[str] = None,
     activity_filter: Optional[str] = None,
+    project_filter: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     activity_rows = db.execute(
-        "SELECT activity_id, label, planned_duration_ms FROM activities ORDER BY sort_order, label"
+        "SELECT activity_id, project_code, label, planned_duration_ms, notes FROM activities ORDER BY sort_order, label"
     ).fetchall()
-    activity_map = {row["activity_id"]: row["label"] for row in activity_rows}
-    activity_planned_map = {row["activity_id"]: row["planned_duration_ms"] for row in activity_rows}
+    # Mappa con chiave (activity_id, project_code) per supportare attività multi-progetto
+    activity_map = {(row["activity_id"], row["project_code"]): row["label"] for row in activity_rows}
+    activity_planned_map = {(row["activity_id"], row["project_code"]): row["planned_duration_ms"] for row in activity_rows}
+    activity_notes_map = {(row["activity_id"], row["project_code"]): row["notes"] or "" for row in activity_rows}
+    # Fallback senza project_code per retrocompatibilità
+    for row in activity_rows:
+        if row["activity_id"] not in activity_map:
+            activity_map[row["activity_id"]] = row["label"]
+            activity_planned_map[row["activity_id"]] = row["planned_duration_ms"]
+            activity_notes_map[row["activity_id"]] = row["notes"] or ""
 
     query = (
         "SELECT el.ts, el.kind, el.member_key, el.details, ms.member_name "
@@ -4030,6 +4043,7 @@ def build_session_rows(
 
     member_filter_norm = member_filter.strip().lower() if member_filter else None
     activity_filter_norm = activity_filter.strip() if activity_filter else None
+    project_filter_norm = project_filter.strip() if project_filter else None
 
     sessions: Dict[Tuple[str, str], Dict[str, Any]] = {}
     last_project_code: Optional[str] = None
@@ -4048,6 +4062,11 @@ def build_session_rows(
 
         if last_project_code and not details.get("project_code"):
             details["project_code"] = last_project_code
+
+        # Applica filtro progetto
+        event_project = details.get("project_code") or ""
+        if project_filter_norm and str(event_project) != project_filter_norm:
+            continue
 
         member_key = row["member_key"]
         if not member_key:
@@ -4078,7 +4097,6 @@ def build_session_rows(
             continue
 
         member_name = row["member_name"] or details.get("member_name") or "Operatore"
-
         session_key = (member_key, str(activity_id))
         if session_key not in sessions:
             sessions[session_key] = {
@@ -4099,6 +4117,11 @@ def build_session_rows(
 
     if not sessions:
         return []
+
+    # Ottieni lo stato corrente degli operatori per determinare quali sessioni sono ancora in corso
+    current_state_query = "SELECT member_key, activity_id FROM member_state WHERE activity_id IS NOT NULL"
+    current_state_rows = db.execute(current_state_query).fetchall()
+    currently_active = {(row["member_key"], str(row["activity_id"])) for row in current_state_rows}
 
     now_utc = datetime.now(tz=timezone.utc)
     results: List[Dict[str, Any]] = []
@@ -4146,12 +4169,18 @@ def build_session_rows(
             pause_duration_ms = max(0, total_duration_ms - net_duration_ms)
 
         pause_count = len(pause_events)
-        status = "completed" if end_event else "running"
+        
+        # Una sessione è "running" se l'operatore è attualmente su questa attività
+        # altrimenti è "completed" (anche se non c'è un finish_activity esplicito)
+        is_currently_active = session_key in currently_active
+        status = "running" if is_currently_active else "completed"
 
         end_ts_value = int(end_dt.timestamp() * 1000)
         
-        # Ore preventivate per questa attività
-        planned_ms = activity_planned_map.get(activity_id) or 0
+        # Ore preventivate per questa attività (usa chiave composita o fallback)
+        activity_key = (activity_id, project_code) if project_code else activity_id
+        planned_ms = activity_planned_map.get(activity_key) or activity_planned_map.get(activity_id) or 0
+        activity_note = activity_notes_map.get(activity_key) or activity_notes_map.get(activity_id) or ""
 
         results.append(
             {
@@ -4170,7 +4199,7 @@ def build_session_rows(
                 "planned_ms": planned_ms,
                 "override_id": None,
                 "manual_entry": False,
-                "note": "",
+                "note": activity_note,
                 "source_member_key": member_key,
                 "source_activity_id": activity_id,
                 "source_start_ts": int(start_dt.timestamp() * 1000),
@@ -4793,6 +4822,12 @@ def login():
     return render_template("login.html")
 
 
+@app.get("/api/ping")
+def api_ping():
+    """Simple endpoint to check server connectivity."""
+    return jsonify({"status": "ok", "timestamp": int(datetime.now().timestamp() * 1000)})
+
+
 @app.post("/api/login")
 def api_login():
     """Handle login POST request."""
@@ -4944,13 +4979,20 @@ def api_timbratura_oggi():
     
     db = get_db()
     ensure_timbrature_table(db)
+    ensure_cedolino_timbrature_table(db)
+    
+    # Recupera le regole dell'utente per sapere se usa rounding daily
+    user_rules = get_user_timbratura_rules(db, username)
+    rounding_mode = user_rules.get('rounding_mode', 'single')
     
     today = datetime.now().strftime("%Y-%m-%d")
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     
+    # Prima recupera le timbrature di oggi
     rows = db.execute(
         f"""
-        SELECT tipo, ora, ora_mod, method, gps_lat, gps_lon, location_name FROM timbrature
+        SELECT id, tipo, ora, ora_mod, method, gps_lat, gps_lon, location_name, created_ts, created_by
+        FROM timbrature
         WHERE username = {placeholder} AND data = {placeholder}
         ORDER BY created_ts ASC
         """,
@@ -4959,12 +5001,48 @@ def api_timbratura_oggi():
     
     timbrature = []
     for row in rows:
-        ora_val = row['ora'] if isinstance(row, dict) else row[1]
-        ora_mod_val = row['ora_mod'] if isinstance(row, dict) else row[2]
-        method = row['method'] if isinstance(row, dict) else row[3]
-        gps_lat = row['gps_lat'] if isinstance(row, dict) else row[4]
-        gps_lon = row['gps_lon'] if isinstance(row, dict) else row[5]
-        location_name = row['location_name'] if isinstance(row, dict) else row[6]
+        timbratura_id = row['id'] if isinstance(row, dict) else row[0]
+        tipo = row['tipo'] if isinstance(row, dict) else row[1]
+        ora_val = row['ora'] if isinstance(row, dict) else row[2]
+        ora_mod_val = row['ora_mod'] if isinstance(row, dict) else row[3]
+        method = row['method'] if isinstance(row, dict) else row[4]
+        gps_lat = row['gps_lat'] if isinstance(row, dict) else row[5]
+        gps_lon = row['gps_lon'] if isinstance(row, dict) else row[6]
+        location_name = row['location_name'] if isinstance(row, dict) else row[7]
+        created_ts = row['created_ts'] if isinstance(row, dict) else row[8]
+        created_by = row['created_by'] if isinstance(row, dict) else row[9]
+        
+        # Mappa tipo timbratura -> timeframe_id
+        timeframe_map = {
+            'inizio_giornata': 1,
+            'inizio_pausa': 4,
+            'fine_pausa': 5,
+            'fine_giornata': 8
+        }
+        timeframe_id = timeframe_map.get(tipo, 0)
+        
+        # Cerca il cedolino corrispondente più recente (basato su created_ts vicino a quello della timbratura)
+        cedolino_row = db.execute(
+            f"""
+            SELECT synced_ts, sync_error, overtime_request_id
+            FROM cedolino_timbrature
+            WHERE username = {placeholder} 
+              AND data_riferimento = {placeholder}
+              AND timeframe_id = {placeholder}
+              AND ABS(created_ts - {placeholder}) < 60000
+            ORDER BY ABS(created_ts - {placeholder}) ASC
+            LIMIT 1
+            """,
+            (username, today, timeframe_id, created_ts, created_ts)
+        ).fetchone()
+        
+        synced_ts = None
+        sync_error = None
+        overtime_request_id = None
+        if cedolino_row:
+            synced_ts = cedolino_row['synced_ts'] if isinstance(cedolino_row, dict) else cedolino_row[0]
+            sync_error = cedolino_row['sync_error'] if isinstance(cedolino_row, dict) else cedolino_row[1]
+            overtime_request_id = cedolino_row['overtime_request_id'] if isinstance(cedolino_row, dict) else cedolino_row[2]
         
         # Gestisce sia TIME che stringa
         if hasattr(ora_val, 'strftime'):
@@ -4986,30 +5064,40 @@ def api_timbratura_oggi():
         if gps_lon is not None:
             gps_lon = float(gps_lon)
         
+        # Determina se è in attesa di conferma Extra Turno
+        pending_extra_turno = False
+        if overtime_request_id and synced_ts is None:
+            pending_extra_turno = True
+        
         timbrature.append({
-            "tipo": row['tipo'] if isinstance(row, dict) else row[0],
+            "id": timbratura_id,
+            "tipo": row['tipo'] if isinstance(row, dict) else row[1],
             "ora": ora_str,
             "ora_mod": ora_mod_str,
+            "rounding_mode": rounding_mode,  # 'single' o 'daily'
             "method": method,
+            "created_by": created_by,
             "gps_lat": gps_lat,
             "gps_lon": gps_lon,
-            "location_name": location_name
+            "location_name": location_name,
+            "pending_extra_turno": pending_extra_turno,
+            "sync_error": sync_error if pending_extra_turno else None
         })
     
     # Verifica se c'è uno straordinario pending per oggi
     pending_overtime = None
-    overtime_request_id = _get_pending_overtime_request_id(db, username, today)
-    if overtime_request_id:
+    overtime_req_id = _get_pending_overtime_request_id(db, username, today)
+    if overtime_req_id:
         # Recupera i dettagli della richiesta straordinario
         overtime_type_id = get_overtime_request_type_id(db)
         ot_row = db.execute(f"""
             SELECT value_amount, extra_data FROM user_requests
             WHERE id = {placeholder} AND request_type_id = {placeholder}
-        """, (overtime_request_id, overtime_type_id)).fetchone()
+        """, (overtime_req_id, overtime_type_id)).fetchone()
         if ot_row:
             minutes = int(ot_row['value_amount'] if isinstance(ot_row, dict) else ot_row[0]) if ot_row else 0
             pending_overtime = {
-                "id": overtime_request_id,
+                "id": overtime_req_id,
                 "minutes": minutes,
                 "status": "pending"
             }
@@ -5331,37 +5419,61 @@ def api_timbratura_registra():
         if pause_count <= 0:
             return jsonify({"error": "Non hai nessuna pausa in corso"}), 400
     
-    # Calcola ora_mod in base alle regole
+    # Calcola ora_mod in base alle regole (usa regole specifiche per gruppo se esistono)
     ora_mod = None
+    turno_start = None
+    turno_end = None
+    flex_warning = None  # Avviso se timbrata fuori flessibilità (per daily mode)
+    flex_request_id = None  # ID richiesta Fuori Flessibilità (se creata)
     try:
-        rules = get_timbratura_rules(db)
+        # Usa le regole specifiche dell'utente (gruppo o globali)
+        rules = get_user_timbratura_rules(db, username)
+        rounding_mode = rules.get('rounding_mode', 'single')
         
-        # Ottieni turno per normalizzazione (solo per inizio_giornata)
-        turno_start = None
-        if tipo == 'inizio_giornata':
+        app.logger.info(f"Timbratura {username}: usando regole {rules.get('source')} (mode={rounding_mode})")
+        
+        # Ottieni turno per normalizzazione e rilevamento Extra Turno
+        # Recupera sia inizio che fine turno
+        day_of_week = datetime.now().weekday()
+        
+        if tipo in ('inizio_giornata', 'fine_giornata'):
             # Prima cerca nei turni configurati manualmente (employee_shifts)
-            day_of_week = datetime.now().weekday()
             try:
                 ensure_employee_shifts_table(db)
                 shift_row = db.execute(
-                    f"""SELECT start_time FROM employee_shifts 
+                    f"""SELECT start_time, end_time FROM employee_shifts 
                        WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1
                        ORDER BY start_time ASC LIMIT 1""",
                     (username, day_of_week)
                 ).fetchone()
                 if shift_row:
                     start_time = shift_row['start_time'] if isinstance(shift_row, dict) else shift_row[0]
+                    end_time = shift_row['end_time'] if isinstance(shift_row, dict) else shift_row[1]
                     if start_time:
                         if hasattr(start_time, 'strftime'):
                             turno_start = start_time.strftime("%H:%M")
+                        elif hasattr(start_time, 'total_seconds'):
+                            # È un timedelta (MySQL TIME restituisce timedelta)
+                            total_sec = int(start_time.total_seconds())
+                            turno_start = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}"
                         else:
                             turno_start = str(start_time)[:5]
-                        app.logger.info(f"Turno trovato in employee_shifts per {username}: {turno_start}")
+                    if end_time:
+                        if hasattr(end_time, 'strftime'):
+                            turno_end = end_time.strftime("%H:%M")
+                        elif hasattr(end_time, 'total_seconds'):
+                            # È un timedelta (MySQL TIME restituisce timedelta)
+                            total_sec = int(end_time.total_seconds())
+                            turno_end = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}"
+                        else:
+                            turno_end = str(end_time)[:5]
+                    if turno_start or turno_end:
+                        app.logger.info(f"Turno trovato in employee_shifts per {username}: {turno_start} - {turno_end}")
             except Exception as e:
                 app.logger.warning(f"Errore lettura employee_shifts: {e}")
             
             # Se non trovato, cerca in rentman_plannings (turni da Rentman)
-            if not turno_start:
+            if not turno_start or not turno_end:
                 # Trova il rentman_crew_id dell'utente
                 user_row = db.execute(
                     f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
@@ -5372,23 +5484,40 @@ def api_timbratura_registra():
                     crew_id = user_row['rentman_crew_id'] if isinstance(user_row, dict) else user_row[0]
                     if crew_id:
                         # Cerca turno di oggi per l'utente dalla tabella rentman_plannings
+                        # Recupera PRIMO inizio (plan_start ASC) e ULTIMO fine (plan_end DESC)
                         turno_row = db.execute(
-                            f"SELECT plan_start FROM rentman_plannings WHERE crew_id = {placeholder} AND planning_date = {placeholder} ORDER BY plan_start ASC LIMIT 1",
-                            (crew_id, today)
+                            f"""SELECT 
+                                   (SELECT plan_start FROM rentman_plannings 
+                                    WHERE crew_id = {placeholder} AND planning_date = {placeholder} 
+                                    ORDER BY plan_start ASC LIMIT 1) as first_start,
+                                   (SELECT plan_end FROM rentman_plannings 
+                                    WHERE crew_id = {placeholder} AND planning_date = {placeholder} 
+                                    ORDER BY plan_end DESC LIMIT 1) as last_end
+                            """, (crew_id, today, crew_id, today)
                         ).fetchone()
                         if turno_row:
-                            plan_start = turno_row['plan_start'] if isinstance(turno_row, dict) else turno_row[0]
-                            if plan_start:
+                            plan_start = turno_row['first_start'] if isinstance(turno_row, dict) else turno_row[0]
+                            plan_end = turno_row['last_end'] if isinstance(turno_row, dict) else turno_row[1]
+                            if plan_start and not turno_start:
                                 if hasattr(plan_start, 'strftime'):
                                     turno_start = plan_start.strftime("%H:%M")
                                 else:
-                                    # Formato datetime string: "2025-01-01 08:00:00"
                                     plan_str = str(plan_start)
                                     if len(plan_str) > 11:
                                         turno_start = plan_str[11:16]
                                     else:
                                         turno_start = plan_str[:5]
-                                app.logger.info(f"Turno trovato in rentman_plannings per {username}: {turno_start}")
+                            if plan_end and not turno_end:
+                                if hasattr(plan_end, 'strftime'):
+                                    turno_end = plan_end.strftime("%H:%M")
+                                else:
+                                    plan_str = str(plan_end)
+                                    if len(plan_str) > 11:
+                                        turno_end = plan_str[11:16]
+                                    else:
+                                        turno_end = plan_str[:5]
+                            if turno_start or turno_end:
+                                app.logger.info(f"Turno trovato in rentman_plannings per {username}: {turno_start} - {turno_end}")
         
         # Per fine_pausa, applica le regole sulla durata della pausa
         if tipo == 'fine_pausa':
@@ -5426,13 +5555,102 @@ def api_timbratura_registra():
                 app.logger.info(f"Pausa: {inizio_str} -> {ora[:5]} (durata effettiva {int(ora[:2])*60+int(ora[3:5]) - inizio_min} min, durata mod {durata_mod} min, fine mod {ora_mod})")
             else:
                 ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
+        elif rounding_mode == 'daily' and tipo == 'fine_giornata':
+            # Per daily mode: calcola l'ora di uscita che porta esattamente alle ore del turno
+            ora_mod = _calcola_ora_fine_daily(db, username, today, ora, turno_start, turno_end, rules, placeholder)
         else:
             ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
         
-        app.logger.info(f"Ora mod calcolata: {ora} -> {ora_mod} (turno: {turno_start}, tipo: {tipo})")
+        # Per daily mode: verifica flessibilità e gestisci azione
+        flex_request_id = None  # ID richiesta fuori flessibilità (se creata)
+        if rounding_mode == 'daily' and tipo in ('inizio_giornata', 'fine_giornata'):
+            flex_check = verifica_flessibilita_timbrata(ora, tipo, turno_start, turno_end, rules)
+            app.logger.info(f"Flex check per {username}: {flex_check}")
+            
+            if not flex_check['within_flex']:
+                action = flex_check['action']
+                if action == 'block':
+                    app.logger.warning(f"BLOCCO timbratura {username}: fuori flessibilità - {flex_check['message']}")
+                    return jsonify({
+                        "error": f"Timbratura fuori flessibilità: {flex_check['message']}. Contatta l'amministratore."
+                    }), 400
+                elif action == 'warn':
+                    # Crea una richiesta di autorizzazione per fuori flessibilità
+                    flex_warning = flex_check['message']
+                    app.logger.warning(f"Timbratura {username} fuori flessibilità: {flex_warning}")
+                    
+                    # Crea richiesta "Fuori Flessibilità" (type_id=17)
+                    try:
+                        # Prendi arrotondamento dalle regole del gruppo
+                        arrot_minuti = rules.get('arrotondamento_giornaliero_minuti', 30) if rules else 30
+                        flex_request_id = _create_flex_request(
+                            db, username, today, tipo, ora, ora_mod,
+                            flex_check['diff_minutes'], flex_warning, placeholder,
+                            turno_start, turno_end, arrot_minuti
+                        )
+                        app.logger.info(f"Creata richiesta Fuori Flessibilità ID={flex_request_id} per {username}")
+                    except Exception as e:
+                        app.logger.error(f"Errore creazione richiesta fuori flessibilità: {e}")
+        
+        app.logger.info(f"Ora mod calcolata: {ora} -> {ora_mod} (turno: {turno_start} - {turno_end}, tipo: {tipo}, mode: {rounding_mode})")
     except Exception as e:
         app.logger.error(f"Errore calcolo ora_mod: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
         ora_mod = ora  # Fallback: usa ora originale
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # RILEVAMENTO EXTRA TURNO
+    # ═══════════════════════════════════════════════════════════════════════════
+    extra_turno_request_id = None
+    extra_turno_data = None
+    
+    # Verifica se il modulo straordinari è attivo prima di rilevare Extra Turno
+    if is_module_enabled(db, "straordinari") and tipo in ('inizio_giornata', 'fine_giornata'):
+        try:
+            # Usa le regole specifiche dell'utente (gruppo o globali)
+            rules_for_extra = get_user_timbratura_rules(db, username)
+            app.logger.info(
+                "Checking Extra Turno: user=%s, tipo=%s, ora=%s, ora_mod=%s, turno_start=%s, turno_end=%s, rules=%s",
+                username, tipo, ora, ora_mod, turno_start, turno_end, rules_for_extra
+            )
+            extra_turno_data = _detect_extra_turno(
+                ora_timbrata=ora,
+                ora_mod=ora_mod,
+                tipo=tipo,
+                turno_start=turno_start,
+                turno_end=turno_end,
+                rules=rules_for_extra
+            )
+            
+            if extra_turno_data:
+                app.logger.info(
+                    "Extra Turno rilevato per %s: type=%s, minutes=%s, turno=%s",
+                    username, extra_turno_data.get("extra_type"), 
+                    extra_turno_data.get("extra_minutes"),
+                    extra_turno_data.get("turno_time")
+                )
+                
+                # Crea automaticamente la richiesta di Extra Turno
+                extra_turno_data["planned_start"] = turno_start
+                extra_turno_data["planned_end"] = turno_end
+                
+                extra_turno_request_id = _create_auto_extra_turno_request(
+                    db=db,
+                    username=username,
+                    date_str=today,
+                    extra_data=extra_turno_data,
+                    notes=f"Extra Turno rilevato automaticamente - {extra_turno_data.get('extra_type')}"
+                )
+            else:
+                app.logger.info(
+                    "Extra Turno NON rilevato per %s: tipo=%s, ora=%s, ora_mod=%s, turno_start=%s, turno_end=%s",
+                    username, tipo, ora, ora_mod, turno_start, turno_end
+                )
+        except Exception as e:
+            app.logger.error(f"Errore rilevamento Extra Turno: {e}")
+            import traceback
+            app.logger.error(f"Traceback: {traceback.format_exc()}")
     
     # Recupera dati GPS dalla sessione o da offline_gps
     method = session.get("timbratura_method", "manual")
@@ -5471,13 +5689,45 @@ def api_timbratura_registra():
         method = "qr_offline"
     
     # Inserisce la timbratura con dati GPS
-    db.execute(
+    cursor = db.execute(
         f"""
         INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method, gps_lat, gps_lon, location_name)
         VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
         """,
         (username, tipo, today, ora, ora_mod, created_ts, method, gps_lat, gps_lon, location_name)
     )
+    new_timbratura_id = cursor.lastrowid
+    
+    # Se fine_giornata, verifica che ora_mod non sia prima di fine_pausa.ora_mod
+    # (la giornata non può finire prima che finisca la pausa normalizzata)
+    if tipo == 'fine_giornata':
+        fine_pausa_row = db.execute(
+            f"""
+            SELECT ora_mod FROM timbrature 
+            WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'fine_pausa'
+            ORDER BY ora DESC LIMIT 1
+            """,
+            (username, today)
+        ).fetchone()
+        
+        if fine_pausa_row:
+            fp_ora_mod = fine_pausa_row['ora_mod'] if isinstance(fine_pausa_row, dict) else fine_pausa_row[0]
+            
+            if fp_ora_mod and ora_mod:
+                # Converti in minuti per confronto
+                fp_mod_parts = str(fp_ora_mod).split(':')
+                fg_parts = str(ora_mod).split(':')
+                fp_mod_min = int(fp_mod_parts[0]) * 60 + int(fp_mod_parts[1])
+                fg_min = int(fg_parts[0]) * 60 + int(fg_parts[1])
+                
+                if fp_mod_min > fg_min:
+                    # fine_giornata.ora_mod deve essere almeno = fine_pausa.ora_mod
+                    app.logger.info(f"Aggiusto fine_giornata: ora_mod {ora_mod} < fine_pausa.ora_mod {fp_ora_mod}, aggiorno a {fp_ora_mod}")
+                    db.execute(
+                        f"UPDATE timbrature SET ora_mod = {placeholder} WHERE id = {placeholder}",
+                        (fp_ora_mod, new_timbratura_id)
+                    )
+                    ora_mod = fp_ora_mod  # Aggiorna per CedolinoWeb
     
     # Pulisce dati timbratura dalla sessione
     session.pop("timbratura_method", None)
@@ -5527,15 +5777,25 @@ def api_timbratura_registra():
         }
         cedolino_url = f"{CEDOLINO_WEB_ENDPOINT}?{urlencode(debug_params)}"
         
-        # Per fine_giornata: verifica se c'è uno straordinario pending per bloccare la sync
-        overtime_request_id = None
-        if tipo == 'fine_giornata':
+        # Determina se bloccare la sync per Extra Turno o Fuori Flessibilità:
+        # 1. Se abbiamo appena creato una richiesta Extra Turno automatica, usa quell'ID
+        # 2. Se abbiamo appena creato una richiesta Fuori Flessibilità automatica, usa quell'ID
+        # 3. Altrimenti verifica se c'è una richiesta Extra Turno pending esistente
+        overtime_request_id = extra_turno_request_id  # Usa l'ID Extra Turno appena creato se presente
+        
+        # Se c'è una richiesta Fuori Flessibilità, quella ha la priorità (blocca prima dell'Extra Turno)
+        if flex_request_id:
+            overtime_request_id = flex_request_id
+        elif not overtime_request_id:
+            # Cerca richieste Extra Turno pending esistenti per oggi
             overtime_request_id = _get_pending_overtime_request_id(db, username, today)
-            if overtime_request_id:
-                app.logger.info(
-                    "Timbratura fine_giornata per %s bloccata in attesa revisione straordinario (request_id=%s)",
-                    username, overtime_request_id
-                )
+        
+        if overtime_request_id:
+            request_type = "Fuori Flessibilità" if flex_request_id else "Extra Turno"
+            app.logger.info(
+                "Timbratura %s per %s bloccata in attesa revisione %s (request_id=%s)",
+                tipo, username, request_type, overtime_request_id
+            )
         
         timbrata_ok, external_id, timbrata_error, _ = send_timbrata_utente(
             db,
@@ -5568,6 +5828,26 @@ def api_timbratura_registra():
     response_data = {"success": True, "tipo": tipo, "ora": ora[:5]}
     if cedolino_url:
         response_data["cedolino_url"] = cedolino_url
+    
+    # Se c'è un Extra Turno rilevato, informa il frontend
+    if extra_turno_data:
+        response_data["extra_turno"] = {
+            "detected": True,
+            "type": extra_turno_data.get("extra_type"),
+            "minutes": extra_turno_data.get("extra_minutes"),
+            "request_id": extra_turno_request_id
+        }
+    
+    # Se c'è un warning Fuori Flessibilità, informa il frontend
+    if flex_warning and flex_request_id:
+        response_data["flex_warning"] = {
+            "detected": True,
+            "message": flex_warning,
+            "request_id": flex_request_id,
+            "tipo": tipo
+        }
+    
+    app.logger.info(f"Risposta timbratura per {username}: extra_turno_data={extra_turno_data}, flex_warning={flex_warning}, response_data={response_data}")
     
     return jsonify(response_data)
 
@@ -5752,7 +6032,7 @@ def api_user_turno_oggi():
             f"""
             SELECT project_code, project_name, function_name, plan_start, plan_end,
                    hours_planned, remark, is_leader, transport, break_start, break_end, break_minutes,
-                   location_name, timbratura_gps_mode, gps_timbratura_location, location_id
+                   location_name, timbratura_gps_mode, gps_timbratura_location, location_id, remark_planner
             FROM rentman_plannings
             WHERE crew_id = {placeholder} AND planning_date = {placeholder} AND sent_to_webservice = 1
               AND (is_obsolete = 0 OR is_obsolete IS NULL)
@@ -5794,6 +6074,7 @@ def api_user_turno_oggi():
                 gps_mode = row.get('timbratura_gps_mode') or 'group'
                 gps_timbratura_location = row.get('gps_timbratura_location')
                 location_id = row.get('location_id')
+                remark_planner = row.get('remark_planner')
             else:
                 break_start = format_time_value(row[9] if len(row) > 9 else None)
                 break_end = format_time_value(row[10] if len(row) > 10 else None)
@@ -5802,6 +6083,7 @@ def api_user_turno_oggi():
                 gps_mode = (row[13] if len(row) > 13 else None) or 'group'
                 gps_timbratura_location = row[14] if len(row) > 14 else None
                 location_id = row[15] if len(row) > 15 else None
+                remark_planner = row[16] if len(row) > 16 else None
             
             # Coordinate dalla cache globale
             location_lat, location_lon, location_radius = None, None, 300
@@ -5887,6 +6169,7 @@ def api_user_turno_oggi():
                 "end": end_str,
                 "hours": float(row['hours_planned'] if isinstance(row, dict) else row[5] or 0),
                 "note": row['remark'] if isinstance(row, dict) else row[6],
+                "note_planner": remark_planner,
                 "is_leader": bool(row['is_leader'] if isinstance(row, dict) else row[7]),
                 "transport": row['transport'] if isinstance(row, dict) else row[8],
                 "break_start": break_start,
@@ -5911,7 +6194,7 @@ def api_user_turno_oggi():
 @app.get("/api/user/turni")
 @login_required
 def api_user_turni():
-    """Restituisce tutti i turni dell'utente (prossimi 60 giorni da Rentman o employee_shifts)."""
+    """Restituisce tutti i turni dell'utente (7 giorni indietro + 60 giorni avanti da Rentman o employee_shifts)."""
     try:
         username = session.get('user')
         if not username:
@@ -5942,10 +6225,10 @@ def api_user_turni():
             gps_locations = timbratura_config.get('gps_locations', [])
             
             turni = []
-            # Genera turni per i prossimi 60 giorni basandosi su employee_shifts
+            # Genera turni per i 7 giorni precedenti + 60 giorni successivi basandosi su employee_shifts
             today = get_simulated_now()
-            for days_ahead in range(60):
-                check_date = today + timedelta(days=days_ahead)
+            for days_offset in range(-7, 60):  # 7 giorni indietro + 60 giorni avanti
+                check_date = today + timedelta(days=days_offset)
                 day_of_week = check_date.weekday()
                 
                 shift_row = db.execute(f"""
@@ -8572,6 +8855,17 @@ def api_member_pause():
         ),
     )
 
+    # Genera timbratura inizio_pausa per l'operatore
+    member_username = get_username_from_member_key(db, member_key)
+    if member_username:
+        create_supervisor_pause_timbratura(
+            db,
+            username=member_username,
+            tipo='inizio_pausa',
+            member_name=member["member_name"],
+            supervisor_username=session.get("user")
+        )
+
     db.commit()
     return jsonify({"ok": True})
 
@@ -8623,6 +8917,17 @@ def api_member_resume():
             project_code,
         ),
     )
+
+    # Genera timbratura fine_pausa per l'operatore
+    member_username = get_username_from_member_key(db, member_key)
+    if member_username:
+        create_supervisor_pause_timbratura(
+            db,
+            username=member_username,
+            tipo='fine_pausa',
+            member_name=member["member_name"],
+            supervisor_username=session.get("user")
+        )
 
     db.commit()
     return jsonify({"ok": True})
@@ -9311,6 +9616,73 @@ def api_admin_simulated_date() -> ResponseReturnValue:
         return jsonify({"error": "Formato data non valido, usa YYYY-MM-DD"}), 400
 
 
+@app.get("/api/admin/open-sessions")
+@login_required
+def api_admin_open_sessions() -> ResponseReturnValue:
+    """Restituisce le sessioni aperte (timer in corso) per tutti i progetti."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    now = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+
+    # Ottieni tutti i membri con sessioni attive (running o in pausa con attività)
+    rows = db.execute(
+        f"""
+        SELECT ms.member_key, ms.member_name, ms.activity_id, ms.running, 
+               ms.start_ts, ms.elapsed_cached, ms.pause_start, ms.entered_ts,
+               ms.project_code,
+               a.label AS activity_label,
+               a.notes AS activity_notes
+        FROM member_state ms
+        LEFT JOIN activities a ON ms.activity_id = a.activity_id AND ms.project_code = a.project_code
+        WHERE ms.activity_id IS NOT NULL
+        ORDER BY ms.project_code, ms.member_name
+        """
+    ).fetchall()
+
+    # Conta le pause per ogni membro/attività dal log
+    pause_counts: Dict[str, int] = {}
+    pause_rows = db.execute(
+        """
+        SELECT member_key, COUNT(*) as pause_count
+        FROM event_log
+        WHERE kind = 'pause_member'
+        GROUP BY member_key
+        """
+    ).fetchall()
+    for pr in pause_rows:
+        pause_counts[pr["member_key"]] = pr["pause_count"]
+
+    open_sessions = []
+    for row in rows:
+        elapsed = compute_elapsed(row, now)
+        start_ts = row["entered_ts"] or row["start_ts"]
+        running_state = int(row["running"])
+        member_key = row["member_key"]
+        
+        open_sessions.append({
+            "member_key": member_key,
+            "member_name": row["member_name"],
+            "activity_id": row["activity_id"],
+            "activity_label": row["activity_label"] or row["activity_id"],
+            "project_code": row["project_code"],
+            "running": running_state == RUN_STATE_RUNNING,
+            "paused": running_state == RUN_STATE_PAUSED or row["pause_start"] is not None,
+            "start_ts": start_ts,
+            "elapsed_ms": elapsed,
+            "pause_count": pause_counts.get(member_key, 0),
+            "notes": row["activity_notes"] or "",
+        })
+
+    return jsonify({
+        "ok": True,
+        "open_sessions": open_sessions,
+        "count": len(open_sessions),
+    })
+
+
 @app.route("/api/admin/day-sessions", methods=["GET"], endpoint="api_admin_day_sessions")
 @login_required
 def api_admin_day_sessions() -> ResponseReturnValue:
@@ -9321,6 +9693,7 @@ def api_admin_day_sessions() -> ResponseReturnValue:
     # Supporto range date: date_start/date_end oppure date singola (retrocompatibilità)
     date_start = parse_iso_date(request.args.get("date_start")) or parse_iso_date(request.args.get("date")) or datetime.now().date()
     date_end = parse_iso_date(request.args.get("date_end")) or date_start
+    project_filter = request.args.get("project") or None
     
     # Assicura che date_end >= date_start
     if date_end < date_start:
@@ -9332,24 +9705,40 @@ def api_admin_day_sessions() -> ResponseReturnValue:
     end_ms = int(end_dt.timestamp() * 1000)
 
     db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     team_sessions = build_session_rows(
         db,
         start_date=date_start,
         end_date=date_end,
+        project_filter=project_filter,
     )
 
     ensure_warehouse_sessions_table(db)
-    wh_rows = db.execute(
-        """
-        SELECT project_code, activity_label, elapsed_ms, username, created_ts, note, start_ts, end_ts
-        FROM warehouse_sessions
-        WHERE created_ts >= ? AND created_ts < ?
-        ORDER BY created_ts DESC
-        LIMIT 500
-        """,
-        (start_ms, end_ms),
-    ).fetchall()
+    
+    # Query magazzino con filtro progetto opzionale
+    if project_filter:
+        wh_rows = db.execute(
+            f"""
+            SELECT project_code, activity_label, elapsed_ms, username, created_ts, note, start_ts, end_ts
+            FROM warehouse_sessions
+            WHERE created_ts >= {placeholder} AND created_ts < {placeholder} AND project_code = {placeholder}
+            ORDER BY created_ts DESC
+            LIMIT 500
+            """,
+            (start_ms, end_ms, project_filter),
+        ).fetchall()
+    else:
+        wh_rows = db.execute(
+            f"""
+            SELECT project_code, activity_label, elapsed_ms, username, created_ts, note, start_ts, end_ts
+            FROM warehouse_sessions
+            WHERE created_ts >= {placeholder} AND created_ts < {placeholder}
+            ORDER BY created_ts DESC
+            LIMIT 500
+            """,
+            (start_ms, end_ms),
+        ).fetchall()
 
     magazzino_sessions = [
         {
@@ -9365,14 +9754,108 @@ def api_admin_day_sessions() -> ResponseReturnValue:
         for row in wh_rows or []
     ]
 
+    # Calcola totali
+    team_total_ms = sum(_coerce_int(s.get("net_ms")) or 0 for s in team_sessions)
+    magazzino_total_ms = sum(_coerce_int(s.get("elapsed_ms")) or 0 for s in magazzino_sessions)
+    combined_total_ms = team_total_ms + magazzino_total_ms
+
+    # Calcola ore pianificate per il progetto da Rentman (filtrate per data)
+    planned_total_ms = 0
+    activity_breakdown = []
+    if project_filter:
+        # Recupera ore pianificate da rentman_plannings per la data selezionata
+        planned_rows = db.execute(
+            f"SELECT SUM(hours_planned) as total_hours FROM rentman_plannings WHERE project_code = {placeholder} AND planning_date = {placeholder} AND is_obsolete = 0",
+            (project_filter, date_start.isoformat())
+        ).fetchone()
+        if planned_rows and planned_rows["total_hours"]:
+            # Converti ore in millisecondi
+            planned_total_ms = int(float(planned_rows["total_hours"]) * 3600000)
+        
+        # Calcola distribuzione ore per attività (squadra + magazzino)
+        activity_hours: Dict[str, int] = {}
+        
+        # Aggiungi ore squadra
+        for s in team_sessions:
+            if s.get("status") == "completed":
+                act_label = s.get("activity_label") or s.get("activity_id") or "Altro"
+                activity_hours[act_label] = activity_hours.get(act_label, 0) + (_coerce_int(s.get("net_ms")) or 0)
+        
+        # Aggiungi ore magazzino
+        for s in magazzino_sessions:
+            act_label = s.get("activity_label") or "Magazzino"
+            activity_hours[act_label] = activity_hours.get(act_label, 0) + (_coerce_int(s.get("elapsed_ms")) or 0)
+        
+        # Converti in lista per il frontend (usa combined_total_ms per percentuali)
+        for label, ms in sorted(activity_hours.items(), key=lambda x: -x[1]):
+            activity_breakdown.append({
+                "label": label,
+                "ms": ms,
+                "percent": round((ms / combined_total_ms * 100) if combined_total_ms > 0 else 0, 1)
+            })
+
     return jsonify(
         {
             "ok": True,
             "date": date_start.isoformat() if date_start == date_end else f"{date_start.isoformat()} - {date_end.isoformat()}",
+            "project_filter": project_filter,
             "team_sessions": team_sessions,
             "magazzino_sessions": magazzino_sessions,
+            "team_total_ms": team_total_ms,
+            "magazzino_total_ms": magazzino_total_ms,
+            "combined_total_ms": combined_total_ms,
+            "planned_total_ms": planned_total_ms,
+            "activity_breakdown": activity_breakdown,
         }
     )
+
+
+@app.get("/api/admin/projects-list")
+@login_required
+def api_admin_projects_list() -> ResponseReturnValue:
+    """Restituisce la lista dei progetti con sessioni recenti."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Ottieni progetti da event_log (ultimi 30 giorni)
+    thirty_days_ago = int((datetime.now() - timedelta(days=30)).timestamp() * 1000)
+    
+    projects_set = set()
+    
+    # Da event_log
+    rows = db.execute(
+        f"SELECT DISTINCT JSON_EXTRACT(details, '$.project_code') as project_code FROM event_log WHERE ts > {placeholder} AND details IS NOT NULL",
+        (thirty_days_ago,)
+    ).fetchall()
+    for row in rows:
+        pc = row["project_code"]
+        if pc and pc != "null" and pc.strip('"'):
+            projects_set.add(pc.strip('"'))
+    
+    # Da warehouse_sessions
+    wh_rows = db.execute(
+        f"SELECT DISTINCT project_code FROM warehouse_sessions WHERE created_ts > {placeholder}",
+        (thirty_days_ago,)
+    ).fetchall()
+    for row in wh_rows:
+        if row["project_code"]:
+            projects_set.add(row["project_code"])
+    
+    # Da activities
+    act_rows = db.execute("SELECT DISTINCT project_code FROM activities").fetchall()
+    for row in act_rows:
+        if row["project_code"]:
+            projects_set.add(row["project_code"])
+    
+    projects = sorted([p for p in projects_set if p])
+    
+    return jsonify({
+        "ok": True,
+        "projects": projects,
+    })
 
 
 @app.route(
@@ -10475,7 +10958,7 @@ def sync_crew_member_from_rentman(db: DatabaseLike, rentman_id: int, name: str) 
 
 def _get_pending_overtime_request_id(db: DatabaseLike, username: str, date_str: str) -> Optional[int]:
     """
-    Verifica se esiste una richiesta di straordinario pending per un utente in una data specifica.
+    Verifica se esiste una richiesta di Extra Turno pending per un utente in una data specifica.
     
     Args:
         db: connessione database
@@ -10483,10 +10966,10 @@ def _get_pending_overtime_request_id(db: DatabaseLike, username: str, date_str: 
         date_str: data in formato YYYY-MM-DD
     
     Returns:
-        ID della richiesta straordinario pending, o None se non esiste
+        ID della richiesta Extra Turno pending, o None se non esiste
     """
     try:
-        # Ottieni l'ID del tipo "Straordinario"
+        # Ottieni l'ID del tipo "Extra Turno"
         overtime_type_id = get_overtime_request_type_id(db)
         placeholder = "%s" if DB_VENDOR == "mysql" else "?"
         
@@ -10510,7 +10993,7 @@ def _get_pending_overtime_request_id(db: DatabaseLike, username: str, date_str: 
         app.logger.info(f"No pending overtime found for {username} on {date_str}")
         return None
     except Exception as e:
-        app.logger.warning(f"Errore verifica straordinario pending: {e}")
+        app.logger.warning(f"Errore verifica Extra Turno pending: {e}")
         return None
 
 
@@ -10637,6 +11120,213 @@ def get_external_id_for_member(db: DatabaseLike, member_key: str) -> Optional[st
     
     external_id = row["external_id"] if isinstance(row, dict) else row[0]
     return external_id if external_id else None
+
+
+def get_username_from_member_key(db: DatabaseLike, member_key: str) -> Optional[str]:
+    """
+    Recupera lo username dell'utente associato a un member_key.
+    Il member_key ha formato 'rentman-crew-{rentman_id}' dove rentman_id è l'ID
+    dell'assignment Rentman (non il crew_id).
+    
+    Il mapping avviene in due passi:
+    1. Cerca il crew_id dalla tabella rentman_plannings tramite rentman_id
+    2. Cerca lo username dalla tabella app_users tramite rentman_crew_id = crew_id
+    
+    Args:
+        db: connessione database
+        member_key: chiave operatore (es. rentman-crew-1903)
+    
+    Returns:
+        username se trovato, None altrimenti
+    """
+    if not member_key:
+        return None
+    
+    # Estrai rentman_id (assignment_id) dal member_key
+    if not member_key.startswith("rentman-crew-"):
+        app.logger.debug("get_username_from_member_key: member_key non valido (formato atteso: rentman-crew-ID): %s", member_key)
+        return None
+    
+    try:
+        rentman_id = int(member_key.replace("rentman-crew-", ""))
+    except ValueError:
+        app.logger.warning("get_username_from_member_key: impossibile estrarre rentman_id da %s", member_key)
+        return None
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Step 1: Cerca il crew_id dalla tabella rentman_plannings tramite rentman_id
+    planning_row = db.execute(
+        f"SELECT crew_id FROM rentman_plannings WHERE rentman_id = {placeholder} LIMIT 1",
+        (rentman_id,)
+    ).fetchone()
+    
+    if not planning_row:
+        app.logger.debug("get_username_from_member_key: nessun planning trovato per rentman_id %s", rentman_id)
+        return None
+    
+    crew_id = planning_row["crew_id"] if isinstance(planning_row, dict) else planning_row[0]
+    if not crew_id:
+        app.logger.debug("get_username_from_member_key: crew_id nullo per rentman_id %s", rentman_id)
+        return None
+    
+    # Step 2: Cerca lo username dalla tabella app_users tramite rentman_crew_id = crew_id
+    user_row = db.execute(
+        f"SELECT username FROM app_users WHERE rentman_crew_id = {placeholder} AND is_active = 1",
+        (crew_id,)
+    ).fetchone()
+    
+    if not user_row:
+        app.logger.debug("get_username_from_member_key: nessun utente trovato per crew_id %s (rentman_id=%s)", crew_id, rentman_id)
+        return None
+    
+    username = user_row["username"] if isinstance(user_row, dict) else user_row[0]
+    app.logger.debug("get_username_from_member_key: trovato username '%s' per member_key '%s' (rentman_id=%s, crew_id=%s)", 
+                     username, member_key, rentman_id, crew_id)
+    return username
+
+
+def create_supervisor_pause_timbratura(
+    db: DatabaseLike,
+    username: str,
+    tipo: str,
+    member_name: Optional[str] = None,
+    supervisor_username: Optional[str] = None
+) -> bool:
+    """
+    Genera una timbratura di pausa (inizio_pausa o fine_pausa) quando il supervisor
+    mette in pausa o riprende un operatore.
+    
+    Args:
+        db: connessione database
+        username: username dell'operatore
+        tipo: 'inizio_pausa' o 'fine_pausa'
+        member_name: nome visualizzato dell'operatore (per logging)
+        supervisor_username: username del supervisor che ha generato la timbratura
+    
+    Returns:
+        True se la timbratura è stata creata, False altrimenti
+    """
+    if not username:
+        return False
+    
+    if tipo not in ('inizio_pausa', 'fine_pausa'):
+        app.logger.error("create_supervisor_pause_timbratura: tipo non valido: %s", tipo)
+        return False
+    
+    # Data e ora correnti
+    today = datetime.now().strftime("%Y-%m-%d")
+    ora = datetime.now().strftime("%H:%M:%S")
+    created_ts = now_ms()
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Calcola ora_mod in base alle regole
+    ora_mod = ora
+    
+    # Recupera le regole di timbratura dell'utente
+    try:
+        rules = get_user_timbratura_rules(db, username)
+    except Exception as e:
+        app.logger.warning(f"Errore recupero regole timbratura: {e}, uso default")
+        rules = {
+            'pausa_blocco_minimo_minuti': 30,
+            'pausa_incremento_minuti': 15,
+            'pausa_tolleranza_minuti': 5
+        }
+    
+    # Per fine_pausa, calcola ora_mod basato sulla durata della pausa
+    if tipo == 'fine_pausa':
+        try:
+            # Recupera l'ora di inizio pausa (l'ultima non chiusa)
+            inizio_pausa_row = db.execute(
+                f"""SELECT ora, ora_mod FROM timbrature 
+                   WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'inizio_pausa'
+                   ORDER BY created_ts DESC LIMIT 1""",
+                (username, today)
+            ).fetchone()
+            
+            if inizio_pausa_row:
+                inizio_ora_mod = inizio_pausa_row['ora_mod'] if isinstance(inizio_pausa_row, dict) else inizio_pausa_row[1]
+                if not inizio_ora_mod:
+                    inizio_ora_mod = inizio_pausa_row['ora'] if isinstance(inizio_pausa_row, dict) else inizio_pausa_row[0]
+                
+                # Formatta l'ora di inizio pausa
+                if hasattr(inizio_ora_mod, 'strftime'):
+                    inizio_str = inizio_ora_mod.strftime("%H:%M")
+                elif hasattr(inizio_ora_mod, 'total_seconds'):
+                    # È un timedelta (MySQL TIME restituisce timedelta)
+                    total_sec = int(inizio_ora_mod.total_seconds())
+                    inizio_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}"
+                else:
+                    inizio_str = str(inizio_ora_mod)[:5]
+                
+                # Calcola durata modificata usando le regole pause
+                durata_mod = calcola_pausa_mod(inizio_str, ora[:5], rules)
+                
+                # Calcola ora_mod di fine_pausa = inizio_pausa_mod + durata_mod
+                inizio_parts = inizio_str.split(':')
+                inizio_min = int(inizio_parts[0]) * 60 + int(inizio_parts[1])
+                fine_mod_min = inizio_min + durata_mod
+                
+                h = fine_mod_min // 60
+                m = fine_mod_min % 60
+                ora_mod = f"{h:02d}:{m:02d}:00"
+                
+                # Calcola durata effettiva per il log
+                ora_parts = ora[:5].split(':')
+                ora_min = int(ora_parts[0]) * 60 + int(ora_parts[1])
+                durata_effettiva = ora_min - inizio_min
+                
+                app.logger.info(
+                    f"Pausa supervisor: {inizio_str} -> {ora[:5]} (durata effettiva {durata_effettiva} min, durata mod {durata_mod} min, fine mod {ora_mod})"
+                )
+        except Exception as e:
+            app.logger.warning(f"Errore calcolo ora_mod pausa: {e}, uso ora originale")
+            ora_mod = ora
+    
+    # Inserisce la timbratura di pausa
+    try:
+        db.execute(
+            f"""
+            INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method, created_by)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """,
+            (username, tipo, today, ora, ora_mod, created_ts, "supervisor", supervisor_username)
+        )
+        
+        app.logger.info(
+            "Timbratura %s generata da supervisor per %s (%s) alle %s (ora_mod: %s)",
+            tipo, username, member_name or username, ora, ora_mod
+        )
+        
+        # Invia a CedolinoWeb
+        timeframe_id = TIMEFRAME_INIZIO_PAUSA if tipo == 'inizio_pausa' else TIMEFRAME_FINE_PAUSA
+        
+        # Recupera display_name per CedolinoWeb
+        user_row = db.execute(
+            f"SELECT display_name FROM app_users WHERE username = {placeholder}",
+            (username,)
+        ).fetchone()
+        display_name = username
+        if user_row:
+            display_name = (user_row['display_name'] if isinstance(user_row, dict) else user_row[0]) or username
+        
+        send_timbrata_utente(
+            db,
+            username=username,
+            member_name=display_name,
+            timeframe_id=timeframe_id,
+            data_riferimento=today,
+            ora_originale=ora,
+            ora_modificata=ora_mod,
+        )
+        
+        return True
+        
+    except Exception as e:
+        app.logger.error("create_supervisor_pause_timbratura: errore inserimento timbratura: %s", e)
+        return False
 
 
 def get_external_id_for_username(db: DatabaseLike, username: str, return_reason: bool = False):
@@ -11144,17 +11834,17 @@ def retry_pending_timbrature(db: DatabaseLike, max_attempts: int = 5) -> int:
     endpoint = settings.get("endpoint") or CEDOLINO_WEB_ENDPOINT
     
     # Recupera timbrate non sincronizzate con tentativi < max
-    # Esclude quelle bloccate per straordinario (overtime_request_id NOT NULL con richiesta pending)
+    # IMPORTANTE: Esclude TUTTE quelle con overtime_request_id - vengono gestite
+    # esclusivamente da _sync_overtime_blocked_timbrature dopo la revisione dell'admin
     if DB_VENDOR == "mysql":
         rows = db.execute(
             """
             SELECT ct.id, ct.external_id, ct.timeframe_id, ct.data_riferimento, 
                    ct.ora_originale, ct.ora_modificata, ct.sync_attempts, ct.username
             FROM cedolino_timbrature ct
-            LEFT JOIN user_requests ur ON ct.overtime_request_id = ur.id
             WHERE ct.synced_ts IS NULL 
               AND ct.sync_attempts < %s
-              AND (ct.overtime_request_id IS NULL OR ur.status != 'pending')
+              AND ct.overtime_request_id IS NULL
             ORDER BY ct.created_ts ASC
             LIMIT 50
             """,
@@ -11166,10 +11856,9 @@ def retry_pending_timbrature(db: DatabaseLike, max_attempts: int = 5) -> int:
             SELECT ct.id, ct.external_id, ct.timeframe_id, ct.data_riferimento, 
                    ct.ora_originale, ct.ora_modificata, ct.sync_attempts, ct.username
             FROM cedolino_timbrature ct
-            LEFT JOIN user_requests ur ON ct.overtime_request_id = ur.id
             WHERE ct.synced_ts IS NULL 
               AND ct.sync_attempts < ?
-              AND (ct.overtime_request_id IS NULL OR ur.status != 'pending')
+              AND ct.overtime_request_id IS NULL
             ORDER BY ct.created_ts ASC
             LIMIT 50
             """,
@@ -11335,6 +12024,7 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     hours_planned DECIMAL(10,2),
     hours_registered DECIMAL(10,2),
     remark TEXT,
+    remark_planner TEXT,
     is_leader TINYINT(1) DEFAULT 0,
     transport VARCHAR(50),
     sent_to_webservice TINYINT(1) DEFAULT 0,
@@ -11380,6 +12070,7 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     hours_planned REAL,
     hours_registered REAL,
     remark TEXT,
+    remark_planner TEXT,
     is_leader INTEGER DEFAULT 0,
     transport TEXT,
     sent_to_webservice INTEGER DEFAULT 0,
@@ -11408,6 +12099,7 @@ CREATE TABLE IF NOT EXISTS request_types (
     name VARCHAR(100) NOT NULL,
     value_type ENUM('hours', 'days', 'amount', 'km', 'minutes', 'timbratura') NOT NULL,
     external_id VARCHAR(100),
+    abbreviation VARCHAR(10),
     description TEXT,
     active TINYINT(1) DEFAULT 1,
     sort_order INT DEFAULT 0,
@@ -11424,6 +12116,7 @@ CREATE TABLE IF NOT EXISTS request_types (
     name TEXT NOT NULL,
     value_type TEXT NOT NULL CHECK(value_type IN ('hours', 'days', 'amount', 'km', 'minutes', 'timbratura')),
     external_id TEXT,
+    abbreviation TEXT,
     description TEXT,
     active INTEGER DEFAULT 1,
     sort_order INTEGER DEFAULT 0,
@@ -11631,31 +12324,51 @@ def ensure_overtime_table(db: DatabaseLike) -> None:
 
 def _ensure_overtime_request_type(db: DatabaseLike) -> int:
     """
-    Assicura che esista il tipo richiesta 'Straordinario' e ritorna il suo ID.
-    Questo tipo viene usato per le richieste di straordinario automatiche e manuali.
+    Assicura che esista il tipo richiesta 'Extra Turno' e ritorna il suo ID.
+    Questo tipo viene usato per le richieste di Extra Turno automatiche e manuali.
+    
+    Nota: Migra automaticamente il vecchio nome 'Straordinario' a 'Extra Turno'.
     """
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     
-    # Cerca se esiste già
+    # Prima cerca se esiste con il nuovo nome
     row = db.execute(
         f"SELECT id FROM request_types WHERE name = {placeholder}",
-        ("Straordinario",)
+        ("Extra Turno",)
     ).fetchone()
     
     if row:
         return row["id"] if isinstance(row, Mapping) else row[0]
     
+    # Cerca se esiste con il vecchio nome e rinominalo
+    old_row = db.execute(
+        f"SELECT id FROM request_types WHERE name = {placeholder}",
+        ("Straordinario",)
+    ).fetchone()
+    
+    if old_row:
+        # Rinomina da "Straordinario" a "Extra Turno"
+        old_id = old_row["id"] if isinstance(old_row, Mapping) else old_row[0]
+        db.execute(f"""
+            UPDATE request_types 
+            SET name = {placeholder}, description = {placeholder}
+            WHERE id = {placeholder}
+        """, ("Extra Turno", "Richiesta di riconoscimento ore di Extra Turno", old_id))
+        db.commit()
+        app.logger.info(f"Migrato tipo richiesta 'Straordinario' → 'Extra Turno' (id={old_id})")
+        return old_id
+    
     # Crea il tipo se non esiste
     db.execute(f"""
         INSERT INTO request_types (name, value_type, description, active, sort_order)
         VALUES ({placeholder}, {placeholder}, {placeholder}, 1, 100)
-    """, ("Straordinario", "minutes", "Richiesta di riconoscimento ore di straordinario"))
+    """, ("Extra Turno", "minutes", "Richiesta di riconoscimento ore di Extra Turno"))
     db.commit()
     
     # Recupera l'ID appena creato
     row = db.execute(
         f"SELECT id FROM request_types WHERE name = {placeholder}",
-        ("Straordinario",)
+        ("Extra Turno",)
     ).fetchone()
     
     return row["id"] if isinstance(row, Mapping) else row[0]
@@ -11693,7 +12406,7 @@ def _ensure_missed_punch_request_type(db: DatabaseLike) -> int:
 
 
 def get_overtime_request_type_id(db: DatabaseLike) -> int:
-    """Ritorna l'ID del tipo richiesta 'Straordinario', creandolo se necessario."""
+    """Ritorna l'ID del tipo richiesta 'Extra Turno', creandolo se necessario."""
     ensure_request_types_table(db)
     return _ensure_overtime_request_type(db)
 
@@ -11736,7 +12449,7 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
         except Exception as e:
             app.logger.warning(f"Migrazione ENUM value_type: {e}")
     
-    # Assicura che esista il tipo "Straordinario" per le richieste automatiche
+    # Assicura che esista il tipo "Extra Turno" per le richieste automatiche
     _ensure_overtime_request_type(db)
     
     # Assicura che esista il tipo "Mancata Timbratura"
@@ -11941,6 +12654,16 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
                 app.logger.info("Migrazione rentman_plannings: aggiunte colonne location_lat e location_lon")
         except Exception as e:
             app.logger.warning(f"Migrazione rentman_plannings location_lat/lon: {e}")
+        
+        # Migrazione: aggiungi colonna remark_planner se non esiste
+        try:
+            cursor = db.execute("SHOW COLUMNS FROM rentman_plannings LIKE 'remark_planner'")
+            if not cursor.fetchone():
+                db.execute("ALTER TABLE rentman_plannings ADD COLUMN remark_planner TEXT AFTER remark")
+                db.commit()
+                app.logger.info("Migrazione rentman_plannings: aggiunta colonna remark_planner")
+        except Exception as e:
+            app.logger.warning(f"Migrazione rentman_plannings remark_planner: {e}")
     else:
         # SQLite migrations
         migrations_sqlite = [
@@ -11952,6 +12675,7 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
             "ALTER TABLE rentman_plannings ADD COLUMN is_obsolete INTEGER DEFAULT 0",
             "ALTER TABLE rentman_plannings ADD COLUMN location_lat REAL DEFAULT NULL",
             "ALTER TABLE rentman_plannings ADD COLUMN location_lon REAL DEFAULT NULL",
+            "ALTER TABLE rentman_plannings ADD COLUMN remark_planner TEXT DEFAULT NULL",
         ]
         for migration in migrations_sqlite:
             try:
@@ -12522,6 +13246,7 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
             "hours_registered": round(joblog_registered, 2) if joblog_registered is not None else 0,
             "hours_rentman": planning.get("hours_registered"),  # Mantieni valore originale Rentman per riferimento
             "remark": planning.get("remark", ""),
+            "remark_planner": planning.get("remark_planner", ""),  # Nota al pianificatore
             "is_leader": planning.get("project_leader", False),
             "transport": planning.get("transport", ""),
         })
@@ -12895,6 +13620,11 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
         if existing:
             # Update existing record (but preserve sent status and timbratura_gps_mode!)
             app.logger.warning(f"🔴 SAVE UPDATE DB: rentman_id={rentman_id}, location_name={p.get('location_name')}, lat={p.get('location_lat')}, lon={p.get('location_lon')}")
+            
+            # Nota: preserva le note esistenti se quelle da Rentman sono vuote
+            new_remark = p.get("remark") or None
+            new_remark_planner = p.get("remark_planner") or None
+            
             if DB_VENDOR == "mysql":
                 db.execute("""
                     UPDATE rentman_plannings SET
@@ -12906,7 +13636,8 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         plan_start = %s, plan_end = %s, 
                         break_start = %s, break_end = %s, break_minutes = %s,
                         hours_planned = %s, hours_registered = %s,
-                        remark = %s, is_leader = %s, transport = %s, updated_ts = %s,
+                        remark = COALESCE(%s, remark), remark_planner = COALESCE(%s, remark_planner), 
+                        is_leader = %s, transport = %s, updated_ts = %s,
                         is_obsolete = 0
                     WHERE rentman_id = %s AND planning_date = %s
                 """, (
@@ -12918,7 +13649,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     plan_start, plan_end,
                     p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
                     hours_planned, hours_registered,
-                    p.get("remark"), 1 if p.get("is_leader") else 0, p.get("transport"), now_ms,
+                    new_remark, new_remark_planner, 1 if p.get("is_leader") else 0, p.get("transport"), now_ms,
                     rentman_id, target_date
                 ))
             else:
@@ -12932,7 +13663,8 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         plan_start = ?, plan_end = ?,
                         break_start = ?, break_end = ?, break_minutes = ?,
                         hours_planned = ?, hours_registered = ?,
-                        remark = ?, is_leader = ?, transport = ?, updated_ts = ?,
+                        remark = COALESCE(?, remark), remark_planner = COALESCE(?, remark_planner), 
+                        is_leader = ?, transport = ?, updated_ts = ?,
                         is_obsolete = 0
                     WHERE rentman_id = ? AND planning_date = ?
                 """, (
@@ -12944,7 +13676,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     plan_start, plan_end,
                     p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
                     hours_planned, hours_registered,
-                    p.get("remark"), 1 if p.get("is_leader") else 0, p.get("transport"), now_ms,
+                    new_remark, new_remark_planner, 1 if p.get("is_leader") else 0, p.get("transport"), now_ms,
                     rentman_id, target_date
                 ))
             updated += 1
@@ -12959,9 +13691,9 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         location_lat, location_lon,
                         gps_timbratura_location, timbratura_gps_mode,
                         plan_start, plan_end, break_start, break_end, break_minutes,
-                        hours_planned, hours_registered, remark, is_leader, transport,
+                        hours_planned, hours_registered, remark, remark_planner, is_leader, transport,
                         sent_to_webservice, created_ts, updated_ts
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
                 """, (
                     rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
                     function_id, p.get("function_name"), project_id, p.get("project_name"),
@@ -12969,7 +13701,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"), p.get("timbratura_gps_mode") or "group",
                     plan_start, plan_end, p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
-                    hours_planned, hours_registered, p.get("remark"),
+                    hours_planned, hours_registered, p.get("remark"), p.get("remark_planner"),
                     1 if p.get("is_leader") else 0, p.get("transport"), now_ms, now_ms
                 ))
             else:
@@ -12980,9 +13712,9 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         location_lat, location_lon,
                         gps_timbratura_location, timbratura_gps_mode,
                         plan_start, plan_end, break_start, break_end, break_minutes,
-                        hours_planned, hours_registered, remark, is_leader, transport,
+                        hours_planned, hours_registered, remark, remark_planner, is_leader, transport,
                         sent_to_webservice, created_ts, updated_ts
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """, (
                     rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
                     function_id, p.get("function_name"), project_id, p.get("project_name"),
@@ -12990,7 +13722,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"), p.get("timbratura_gps_mode") or "group",
                     plan_start, plan_end, p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
-                    hours_planned, hours_registered, p.get("remark"),
+                    hours_planned, hours_registered, p.get("remark"), p.get("remark_planner"),
                     1 if p.get("is_leader") else 0, p.get("transport"), now_ms, now_ms
                 ))
             saved += 1
@@ -13100,7 +13832,7 @@ def api_admin_rentman_planning_saved() -> ResponseReturnValue:
                     "location_lat", "location_lon",
                     "timbratura_gps_mode", "gps_timbratura_location",
                     "plan_start", "plan_end", "break_start", "break_end", "break_minutes",
-                    "hours_planned", "hours_registered", "remark", "is_leader",
+                    "hours_planned", "hours_registered", "remark", "remark_planner", "is_leader",
                     "transport", "sent_to_webservice", "sent_ts", "webservice_response",
                     "created_ts", "updated_ts", "is_obsolete"]
             plannings.append(dict(zip(cols, row)))
@@ -13351,7 +14083,8 @@ def _send_document_notifications(
     category: str,
     title: str,
     target_all: bool,
-    target_users_json: str
+    target_users_json: str,
+    doc_id: int = None
 ) -> int:
     """Invia notifiche push per un nuovo documento caricato."""
     settings = get_webpush_settings()
@@ -13372,6 +14105,11 @@ def _send_document_notifications(
     notification_title = category_labels.get(category, "📄 Nuovo Documento")
     notification_body = title
     
+    # Costruisci URL con documento specifico se disponibile
+    target_url = "/user/documents"
+    if doc_id:
+        target_url = f"/user/documents?doc={doc_id}"
+    
     payload = {
         "title": notification_title,
         "body": notification_body,
@@ -13379,8 +14117,9 @@ def _send_document_notifications(
         "badge": "/static/icons/icon-72x72.png",
         "tag": f"document-{category}",
         "data": {
-            "url": "/user/documents",
-            "type": "new_document"
+            "url": target_url,
+            "type": "new_document",
+            "doc_id": doc_id
         }
     }
     
@@ -15148,6 +15887,215 @@ def ensure_timbratura_rules_table(db):
     db.commit()
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  REGOLE TIMBRATURE PER GRUPPO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+GROUP_TIMBRATURA_RULES_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS group_timbratura_rules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    group_id INT NOT NULL,
+    rounding_mode ENUM('single', 'daily') NOT NULL DEFAULT 'single' COMMENT 'single=arrotonda singola timbrata, daily=arrotonda totale giornaliero',
+    flessibilita_ingresso_minuti INT DEFAULT 30 COMMENT 'Minuti di flessibilità in ingresso rispetto al turno',
+    flessibilita_uscita_minuti INT DEFAULT 30 COMMENT 'Minuti di flessibilità in uscita rispetto al turno',
+    arrotondamento_giornaliero_minuti INT DEFAULT 15 COMMENT 'Blocco arrotondamento per daily mode',
+    arrotondamento_giornaliero_tipo ENUM('floor', 'ceil', 'nearest') DEFAULT 'floor' COMMENT 'floor=in difetto, ceil=in eccesso, nearest=al più vicino',
+    oltre_flessibilita_action ENUM('allow', 'warn', 'block') DEFAULT 'allow' COMMENT 'Azione se timbrata oltre flessibilità',
+    usa_regole_pausa_standard TINYINT(1) DEFAULT 1 COMMENT 'Se true, usa regole pausa globali',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    updated_by VARCHAR(100),
+    UNIQUE KEY uk_group_rules (group_id),
+    FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+GROUP_TIMBRATURA_RULES_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS group_timbratura_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL UNIQUE,
+    rounding_mode TEXT NOT NULL DEFAULT 'single',
+    flessibilita_ingresso_minuti INTEGER DEFAULT 30,
+    flessibilita_uscita_minuti INTEGER DEFAULT 30,
+    arrotondamento_giornaliero_minuti INTEGER DEFAULT 15,
+    arrotondamento_giornaliero_tipo TEXT DEFAULT 'floor',
+    oltre_flessibilita_action TEXT DEFAULT 'allow',
+    usa_regole_pausa_standard INTEGER DEFAULT 1,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL,
+    updated_by TEXT,
+    FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
+)
+"""
+
+
+def ensure_group_timbratura_rules_table(db):
+    """Crea la tabella group_timbratura_rules se non esiste."""
+    if DB_VENDOR == "mysql":
+        db.execute(GROUP_TIMBRATURA_RULES_TABLE_MYSQL)
+    else:
+        db.execute(GROUP_TIMBRATURA_RULES_TABLE_SQLITE)
+    db.commit()
+
+
+def get_group_timbratura_rules(db, group_id: int) -> Optional[dict]:
+    """
+    Ottiene le regole timbrature per un gruppo specifico.
+    Ritorna None se il gruppo non ha regole specifiche.
+    """
+    ensure_group_timbratura_rules_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    row = db.execute(
+        f"SELECT * FROM group_timbratura_rules WHERE group_id = {placeholder} AND is_active = 1",
+        (group_id,)
+    ).fetchone()
+    
+    if not row:
+        return None
+    
+    if isinstance(row, dict):
+        return row
+    
+    # Converte tuple a dict
+    columns = ['id', 'group_id', 'rounding_mode', 'flessibilita_ingresso_minuti',
+               'flessibilita_uscita_minuti', 'arrotondamento_giornaliero_minuti',
+               'arrotondamento_giornaliero_tipo', 'oltre_flessibilita_action',
+               'usa_regole_pausa_standard', 'is_active', 'created_ts', 'updated_ts', 'updated_by']
+    return dict(zip(columns, row))
+
+
+def get_user_timbratura_rules(db, username: str) -> dict:
+    """
+    Ottiene le regole timbrature per un utente.
+    
+    Logica:
+    1. Se l'utente appartiene a un gruppo con regole specifiche, usa quelle
+    2. Altrimenti usa le regole globali di timbratura_rules
+    
+    Returns:
+        dict con le regole + campo 'source' ('group' o 'global') e 'rounding_mode'
+    """
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Trova il gruppo dell'utente
+    user_row = db.execute(
+        f"SELECT group_id FROM app_users WHERE username = {placeholder}",
+        (username,)
+    ).fetchone()
+    
+    group_id = None
+    if user_row:
+        group_id = user_row['group_id'] if isinstance(user_row, dict) else user_row[0]
+    
+    # Se ha un gruppo, cerca regole specifiche
+    group_rules = None
+    if group_id:
+        group_rules = get_group_timbratura_rules(db, group_id)
+    
+    # Ottieni sempre le regole globali come fallback
+    global_rules = get_timbratura_rules(db)
+    
+    if group_rules:
+        # Merge: regole gruppo + regole pausa da globali (se usa_regole_pausa_standard)
+        result = {
+            'source': 'group',
+            'group_id': group_id,
+            'rounding_mode': group_rules.get('rounding_mode', 'single'),
+            'flessibilita_ingresso_minuti': group_rules.get('flessibilita_ingresso_minuti', 30),
+            'flessibilita_uscita_minuti': group_rules.get('flessibilita_uscita_minuti', 30),
+            'arrotondamento_giornaliero_minuti': group_rules.get('arrotondamento_giornaliero_minuti', 15),
+            'arrotondamento_giornaliero_tipo': group_rules.get('arrotondamento_giornaliero_tipo', 'floor'),
+            'oltre_flessibilita_action': group_rules.get('oltre_flessibilita_action', 'allow'),
+            # Per single mode, usa comunque i valori globali
+            'anticipo_max_minuti': global_rules.get('anticipo_max_minuti', 30),
+            'tolleranza_ritardo_minuti': global_rules.get('tolleranza_ritardo_minuti', 5),
+            'arrotondamento_ingresso_minuti': global_rules.get('arrotondamento_ingresso_minuti', 15),
+            'arrotondamento_ingresso_tipo': global_rules.get('arrotondamento_ingresso_tipo', '+'),
+            'arrotondamento_uscita_minuti': global_rules.get('arrotondamento_uscita_minuti', 15),
+            'arrotondamento_uscita_tipo': global_rules.get('arrotondamento_uscita_tipo', '-'),
+        }
+        
+        # Regole pausa: da globali se usa_regole_pausa_standard
+        if group_rules.get('usa_regole_pausa_standard', True):
+            result['pausa_blocco_minimo_minuti'] = global_rules.get('pausa_blocco_minimo_minuti', 30)
+            result['pausa_incremento_minuti'] = global_rules.get('pausa_incremento_minuti', 15)
+            result['pausa_tolleranza_minuti'] = global_rules.get('pausa_tolleranza_minuti', 5)
+        else:
+            # Prendi la pausa minima dal turno dell'utente per oggi
+            from datetime import datetime
+            day_of_week = datetime.now().weekday()  # 0=Lunedì, 6=Domenica
+            try:
+                ensure_employee_shifts_table(db)
+                shift_row = db.execute(
+                    f"""SELECT break_start, break_end FROM employee_shifts 
+                       WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1
+                       LIMIT 1""",
+                    (username, day_of_week)
+                ).fetchone()
+                
+                if shift_row:
+                    break_start = shift_row['break_start'] if isinstance(shift_row, dict) else shift_row[0]
+                    break_end = shift_row['break_end'] if isinstance(shift_row, dict) else shift_row[1]
+                    
+                    if break_start and break_end:
+                        # Converti timedelta in minuti
+                        if hasattr(break_start, 'total_seconds'):
+                            bs_min = int(break_start.total_seconds()) // 60
+                            be_min = int(break_end.total_seconds()) // 60
+                        else:
+                            # Stringa HH:MM
+                            bs_parts = str(break_start)[:5].split(':')
+                            be_parts = str(break_end)[:5].split(':')
+                            bs_min = int(bs_parts[0]) * 60 + int(bs_parts[1])
+                            be_min = int(be_parts[0]) * 60 + int(be_parts[1])
+                        
+                        pausa_minima_turno = be_min - bs_min
+                        if pausa_minima_turno > 0:
+                            result['pausa_blocco_minimo_minuti'] = pausa_minima_turno
+                            result['pausa_incremento_minuti'] = 0  # Nessun incremento, usa esattamente la pausa del turno
+                            result['pausa_tolleranza_minuti'] = 0  # Nessuna tolleranza
+                            result['pausa_source'] = 'shift'
+                            app.logger.info(f"Pausa da turno per {username}: {pausa_minima_turno} min (day {day_of_week})")
+                        else:
+                            # Pausa turno = 0, usa default
+                            result['pausa_blocco_minimo_minuti'] = global_rules.get('pausa_blocco_minimo_minuti', 30)
+                            result['pausa_incremento_minuti'] = global_rules.get('pausa_incremento_minuti', 15)
+                            result['pausa_tolleranza_minuti'] = global_rules.get('pausa_tolleranza_minuti', 5)
+                    else:
+                        # No break definito nel turno, usa globali
+                        result['pausa_blocco_minimo_minuti'] = global_rules.get('pausa_blocco_minimo_minuti', 30)
+                        result['pausa_incremento_minuti'] = global_rules.get('pausa_incremento_minuti', 15)
+                        result['pausa_tolleranza_minuti'] = global_rules.get('pausa_tolleranza_minuti', 5)
+                else:
+                    # Nessun turno per oggi, usa globali
+                    result['pausa_blocco_minimo_minuti'] = global_rules.get('pausa_blocco_minimo_minuti', 30)
+                    result['pausa_incremento_minuti'] = global_rules.get('pausa_incremento_minuti', 15)
+                    result['pausa_tolleranza_minuti'] = global_rules.get('pausa_tolleranza_minuti', 5)
+            except Exception as e:
+                app.logger.warning(f"Errore lettura pausa da turno per {username}: {e}")
+                result['pausa_blocco_minimo_minuti'] = global_rules.get('pausa_blocco_minimo_minuti', 30)
+                result['pausa_incremento_minuti'] = global_rules.get('pausa_incremento_minuti', 15)
+                result['pausa_tolleranza_minuti'] = global_rules.get('pausa_tolleranza_minuti', 5)
+        
+        return result
+    else:
+        # Nessuna regola gruppo: usa globali con rounding_mode='single'
+        return {
+            'source': 'global',
+            'group_id': None,
+            'rounding_mode': 'single',
+            'flessibilita_ingresso_minuti': global_rules.get('anticipo_max_minuti', 30),
+            'flessibilita_uscita_minuti': 30,
+            'arrotondamento_giornaliero_minuti': 15,
+            'arrotondamento_giornaliero_tipo': 'floor',
+            'oltre_flessibilita_action': 'allow',
+            **global_rules
+        }
+
+
 def get_timbratura_rules(db) -> dict:
     """Ottiene le regole timbrature dal database."""
     ensure_timbratura_rules_table(db)
@@ -15184,6 +16132,15 @@ def admin_timbratura_rules_page() -> ResponseReturnValue:
     if not session.get("is_admin"):
         abort(403)
     return render_template("admin_timbratura_rules.html", is_admin=True)
+
+
+@app.get("/admin/group-timbratura-rules")
+@login_required
+def admin_group_timbratura_rules_page() -> ResponseReturnValue:
+    """Pagina configurazione regole timbrature per gruppo (solo admin)."""
+    if not session.get("is_admin"):
+        abort(403)
+    return render_template("admin_group_timbratura_rules.html", is_admin=True)
 
 
 @app.get("/api/admin/timbratura-rules")
@@ -15263,6 +16220,720 @@ def api_save_timbratura_rules():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  API REGOLE TIMBRATURE PER GRUPPO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/admin/group-timbratura-rules")
+@login_required
+def api_get_all_group_timbratura_rules():
+    """Restituisce tutte le regole timbrature per gruppo."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    db = get_db()
+    ensure_group_timbratura_rules_table(db)
+    ensure_user_groups_table(db)
+    
+    # Ottieni tutti i gruppi con eventuali regole
+    rows = db.execute("""
+        SELECT g.id, g.name, g.description,
+               r.id as rule_id, r.rounding_mode, r.flessibilita_ingresso_minuti,
+               r.flessibilita_uscita_minuti, r.arrotondamento_giornaliero_minuti,
+               r.arrotondamento_giornaliero_tipo, r.oltre_flessibilita_action,
+               r.usa_regole_pausa_standard, r.is_active as rule_active
+        FROM user_groups g
+        LEFT JOIN group_timbratura_rules r ON g.id = r.group_id
+        WHERE g.is_active = 1
+        ORDER BY g.name
+    """).fetchall()
+    
+    result = []
+    for row in rows:
+        if isinstance(row, dict):
+            item = {
+                'group_id': row['id'],
+                'group_name': row['name'],
+                'group_description': row['description'],
+                'has_rules': row['rule_id'] is not None,
+                'rules': None
+            }
+            if row['rule_id']:
+                item['rules'] = {
+                    'id': row['rule_id'],
+                    'rounding_mode': row['rounding_mode'],
+                    'flessibilita_ingresso_minuti': row['flessibilita_ingresso_minuti'],
+                    'flessibilita_uscita_minuti': row['flessibilita_uscita_minuti'],
+                    'arrotondamento_giornaliero_minuti': row['arrotondamento_giornaliero_minuti'],
+                    'arrotondamento_giornaliero_tipo': row['arrotondamento_giornaliero_tipo'],
+                    'oltre_flessibilita_action': row['oltre_flessibilita_action'],
+                    'usa_regole_pausa_standard': bool(row['usa_regole_pausa_standard']),
+                    'is_active': bool(row['rule_active'])
+                }
+        else:
+            item = {
+                'group_id': row[0],
+                'group_name': row[1],
+                'group_description': row[2],
+                'has_rules': row[3] is not None,
+                'rules': None
+            }
+            if row[3]:
+                item['rules'] = {
+                    'id': row[3],
+                    'rounding_mode': row[4],
+                    'flessibilita_ingresso_minuti': row[5],
+                    'flessibilita_uscita_minuti': row[6],
+                    'arrotondamento_giornaliero_minuti': row[7],
+                    'arrotondamento_giornaliero_tipo': row[8],
+                    'oltre_flessibilita_action': row[9],
+                    'usa_regole_pausa_standard': bool(row[10]),
+                    'is_active': bool(row[11])
+                }
+        result.append(item)
+    
+    return jsonify(result)
+
+
+@app.get("/api/admin/group-timbratura-rules/<int:group_id>")
+@login_required
+def api_get_group_timbratura_rules(group_id: int):
+    """Restituisce le regole timbrature per un gruppo specifico."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    db = get_db()
+    rules = get_group_timbratura_rules(db, group_id)
+    
+    if rules:
+        return jsonify(rules)
+    else:
+        # Ritorna valori di default per nuovo inserimento
+        return jsonify({
+            'group_id': group_id,
+            'rounding_mode': 'single',
+            'flessibilita_ingresso_minuti': 30,
+            'flessibilita_uscita_minuti': 30,
+            'arrotondamento_giornaliero_minuti': 15,
+            'arrotondamento_giornaliero_tipo': 'floor',
+            'oltre_flessibilita_action': 'allow',
+            'usa_regole_pausa_standard': True,
+            'is_new': True
+        })
+
+
+@app.post("/api/admin/group-timbratura-rules/<int:group_id>")
+@login_required
+def api_save_group_timbratura_rules(group_id: int):
+    """Salva o aggiorna le regole timbrature per un gruppo."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati mancanti"}), 400
+    
+    db = get_db()
+    ensure_group_timbratura_rules_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Verifica che il gruppo esista
+    group_row = db.execute(
+        f"SELECT id FROM user_groups WHERE id = {placeholder}",
+        (group_id,)
+    ).fetchone()
+    if not group_row:
+        return jsonify({"error": "Gruppo non trovato"}), 404
+    
+    # Validazione
+    rounding_mode = data.get('rounding_mode', 'single')
+    if rounding_mode not in ('single', 'daily'):
+        return jsonify({"error": "rounding_mode deve essere 'single' o 'daily'"}), 400
+    
+    flessibilita_ingresso = int(data.get('flessibilita_ingresso_minuti', 30))
+    flessibilita_uscita = int(data.get('flessibilita_uscita_minuti', 30))
+    arrot_giornaliero = int(data.get('arrotondamento_giornaliero_minuti', 15))
+    
+    arrot_tipo = data.get('arrotondamento_giornaliero_tipo', 'floor')
+    if arrot_tipo not in ('floor', 'ceil', 'nearest'):
+        return jsonify({"error": "arrotondamento_giornaliero_tipo deve essere 'floor', 'ceil' o 'nearest'"}), 400
+    
+    oltre_action = data.get('oltre_flessibilita_action', 'allow')
+    if oltre_action not in ('allow', 'warn', 'block'):
+        return jsonify({"error": "oltre_flessibilita_action deve essere 'allow', 'warn' o 'block'"}), 400
+    
+    usa_pausa_std = 1 if data.get('usa_regole_pausa_standard', True) else 0
+    is_active = 1 if data.get('is_active', True) else 0
+    
+    now = now_ms()
+    user = session.get('user')
+    
+    # Verifica se esiste già una regola per questo gruppo
+    existing = db.execute(
+        f"SELECT id FROM group_timbratura_rules WHERE group_id = {placeholder}",
+        (group_id,)
+    ).fetchone()
+    
+    if existing:
+        # Update
+        db.execute(f"""
+            UPDATE group_timbratura_rules SET
+                rounding_mode = {placeholder},
+                flessibilita_ingresso_minuti = {placeholder},
+                flessibilita_uscita_minuti = {placeholder},
+                arrotondamento_giornaliero_minuti = {placeholder},
+                arrotondamento_giornaliero_tipo = {placeholder},
+                oltre_flessibilita_action = {placeholder},
+                usa_regole_pausa_standard = {placeholder},
+                is_active = {placeholder},
+                updated_ts = {placeholder},
+                updated_by = {placeholder}
+            WHERE group_id = {placeholder}
+        """, (rounding_mode, flessibilita_ingresso, flessibilita_uscita, arrot_giornaliero,
+              arrot_tipo, oltre_action, usa_pausa_std, is_active, now, user, group_id))
+    else:
+        # Insert
+        db.execute(f"""
+            INSERT INTO group_timbratura_rules 
+                (group_id, rounding_mode, flessibilita_ingresso_minuti, flessibilita_uscita_minuti,
+                 arrotondamento_giornaliero_minuti, arrotondamento_giornaliero_tipo,
+                 oltre_flessibilita_action, usa_regole_pausa_standard, is_active,
+                 created_ts, updated_ts, updated_by)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
+                    {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        """, (group_id, rounding_mode, flessibilita_ingresso, flessibilita_uscita, arrot_giornaliero,
+              arrot_tipo, oltre_action, usa_pausa_std, is_active, now, now, user))
+    
+    db.commit()
+    app.logger.info("Admin %s ha salvato regole timbratura per gruppo %s: mode=%s", user, group_id, rounding_mode)
+    return jsonify({"success": True})
+
+
+@app.delete("/api/admin/group-timbratura-rules/<int:group_id>")
+@login_required
+def api_delete_group_timbratura_rules(group_id: int):
+    """Elimina le regole timbrature per un gruppo (torna a usare quelle globali)."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    db.execute(
+        f"DELETE FROM group_timbratura_rules WHERE group_id = {placeholder}",
+        (group_id,)
+    )
+    db.commit()
+    
+    app.logger.info("Admin %s ha eliminato regole timbratura per gruppo %s", session.get('user'), group_id)
+    return jsonify({"success": True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  RILEVAMENTO EXTRA TURNO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _detect_extra_turno(
+    ora_timbrata: str,
+    ora_mod: str,
+    tipo: str,
+    turno_start: str = None,
+    turno_end: str = None,
+    rules: dict = None
+) -> Optional[dict]:
+    """
+    Rileva se una timbratura genera Extra Turno.
+    
+    LOGICA:
+    - INGRESSO (inizio_giornata): Se l'ora timbrata è PRIMA di (turno_start - anticipo_max)
+      → Extra Turno anticipato. I minuti extra sono da ora_timbrata a (turno_start - anticipo_max)
+    
+    - USCITA (fine_giornata): Se l'ora arrotondata (ora_mod) è DOPO fine_turno
+      → Extra Turno posticipato. I minuti extra sono da fine_turno a ora_mod
+    
+    Args:
+        ora_timbrata: orario originale timbrato (HH:MM:SS o HH:MM)
+        ora_mod: orario arrotondato (HH:MM:SS o HH:MM)
+        tipo: tipo timbratura (inizio_giornata, fine_giornata)
+        turno_start: orario inizio turno (HH:MM) - richiesto per ingresso
+        turno_end: orario fine turno (HH:MM) - richiesto per uscita
+        rules: dizionario con le regole (se None, usa default)
+    
+    Returns:
+        dict con dettagli Extra Turno se rilevato, None altrimenti
+        {
+            "extra_type": "before_shift" | "after_shift",
+            "extra_minutes": int,
+            "turno_time": str (HH:MM),
+            "ora_timbrata": str,
+            "ora_mod": str
+        }
+    """
+    if tipo not in ('inizio_giornata', 'fine_giornata'):
+        return None
+    
+    if rules is None:
+        rules = {
+            'anticipo_max_minuti': 30,
+            'tolleranza_ritardo_minuti': 5,
+            'arrotondamento_ingresso_minuti': 15,
+            'arrotondamento_uscita_minuti': 15
+        }
+    
+    # Converte ora timbrata in minuti
+    parts = ora_timbrata.split(':')
+    timbrata_min = int(parts[0]) * 60 + int(parts[1])
+    
+    # Converte ora_mod in minuti
+    mod_parts = ora_mod.split(':')
+    mod_min = int(mod_parts[0]) * 60 + int(mod_parts[1])
+    
+    if tipo == 'inizio_giornata' and turno_start:
+        # INGRESSO: Extra Turno se timbro PRIMA di (turno_start - anticipo_max)
+        turno_parts = turno_start.split(':')
+        turno_min = int(turno_parts[0]) * 60 + int(turno_parts[1])
+        anticipo_max = rules.get('anticipo_max_minuti', 30)
+        
+        # Soglia: turno_start - anticipo_max
+        soglia_min = turno_min - anticipo_max
+        
+        app.logger.info(
+            "_detect_extra_turno INGRESSO: timbrata_min=%s, turno_min=%s, anticipo_max=%s, soglia_min=%s, check=%s",
+            timbrata_min, turno_min, anticipo_max, soglia_min, timbrata_min < soglia_min
+        )
+        
+        if timbrata_min < soglia_min:
+            # Extra Turno anticipato!
+            # I minuti extra sono calcolati dall'ora_mod (già arrotondata) all'inizio del turno
+            # L'ora_mod usa arrotondamento in eccesso per l'ingresso (sfavorevole al dipendente)
+            # quindi i minuti extra saranno coerenti con l'orario mostrato
+            
+            # Usa l'ora_mod per calcolare i minuti extra (coerenza con il valore mostrato)
+            mod_parts_inner = ora_mod.split(':')
+            mod_min_inner = int(mod_parts_inner[0]) * 60 + int(mod_parts_inner[1])
+            
+            # Extra minuti = dall'ora_mod (arrotondata in eccesso) all'inizio del turno
+            extra_minutes = turno_min - mod_min_inner
+            
+            if extra_minutes > 0:
+                h_soglia = soglia_min // 60
+                m_soglia = soglia_min % 60
+                return {
+                    "extra_type": "before_shift",
+                    "extra_minutes": extra_minutes,
+                    "turno_time": turno_start,
+                    "soglia_time": f"{h_soglia:02d}:{m_soglia:02d}",
+                    "ora_timbrata": ora_timbrata,
+                    "ora_mod": ora_mod
+                }
+    
+    elif tipo == 'fine_giornata' and turno_end:
+        # USCITA: Extra Turno se ora_mod > fine_turno (+ flessibilità se daily mode)
+        turno_parts = turno_end.split(':')
+        turno_end_min = int(turno_parts[0]) * 60 + int(turno_parts[1])
+        
+        # Per modalità daily, considera la flessibilità uscita
+        rounding_mode = rules.get('rounding_mode', 'single')
+        flessibilita_uscita = 0
+        if rounding_mode == 'daily':
+            flessibilita_uscita = rules.get('flessibilita_uscita_minuti', 30)
+        
+        # Soglia per Extra Turno = fine turno + flessibilità
+        soglia_extra = turno_end_min + flessibilita_uscita
+        
+        app.logger.info(
+            "_detect_extra_turno USCITA: timbrata_min=%s, mod_min=%s, turno_end_min=%s, flessibilita=%s, soglia_extra=%s, check=%s",
+            timbrata_min, mod_min, turno_end_min, flessibilita_uscita, soglia_extra, mod_min > soglia_extra
+        )
+        
+        if mod_min > soglia_extra:
+            # Extra Turno posticipato!
+            # I minuti extra partono dalla soglia (fine turno + flessibilità)
+            extra_minutes = mod_min - soglia_extra
+            
+            if extra_minutes > 0:
+                return {
+                    "extra_type": "after_shift",
+                    "extra_minutes": extra_minutes,
+                    "turno_time": turno_end,
+                    "ora_timbrata": ora_timbrata,
+                    "ora_mod": ora_mod,
+                    "flessibilita_usata": flessibilita_uscita
+                }
+    
+    return None
+
+
+def _create_auto_extra_turno_request(
+    db: DatabaseLike,
+    username: str,
+    date_str: str,
+    extra_data: dict,
+    notes: str = ""
+) -> Optional[int]:
+    """
+    Crea automaticamente una richiesta di Extra Turno quando rilevato.
+    
+    Args:
+        db: connessione database
+        username: username dell'utente
+        date_str: data in formato YYYY-MM-DD
+        extra_data: dati Extra Turno da _detect_extra_turno
+        notes: note opzionali
+    
+    Returns:
+        ID della richiesta creata, o None se errore
+    """
+    try:
+        ensure_user_requests_table(db)
+        overtime_type_id = get_overtime_request_type_id(db)
+        
+        now_ts = int(time.time() * 1000)
+        
+        # Prepara extra_data con tutti i dettagli
+        # Mappa i campi per compatibilità con il frontend admin_user_requests
+        extra_type = extra_data.get("extra_type")
+        ora_timbrata = extra_data.get("ora_timbrata", "")[:5] if extra_data.get("ora_timbrata") else ""
+        ora_mod = extra_data.get("ora_mod", "")[:5] if extra_data.get("ora_mod") else ""
+        planned_start = extra_data.get("planned_start", "")
+        planned_end = extra_data.get("planned_end", "")
+        
+        request_extra_data = {
+            "extra_type": extra_type,
+            "extra_minutes": extra_data.get("extra_minutes"),
+            "turno_time": extra_data.get("turno_time"),
+            "ora_timbrata": extra_data.get("ora_timbrata"),
+            "ora_mod": extra_data.get("ora_mod"),
+            "soglia_time": extra_data.get("soglia_time"),
+            "auto_detected": True,
+            "overtime_type": extra_type,
+            # Campi per visualizzazione nel riepilogo admin
+            "planned_start": planned_start,
+            "planned_end": planned_end,
+            # Per ingresso anticipato: actual_start = ora_timbrata, actual_end = TBD
+            # Per uscita posticipata: actual_start = TBD, actual_end = ora_timbrata
+            "actual_start": ora_timbrata if extra_type == "before_shift" else "",
+            "actual_end": ora_timbrata if extra_type == "after_shift" else "",
+            "rounded_start": ora_mod if extra_type == "before_shift" else "",
+            "rounded_end": ora_mod if extra_type == "after_shift" else "",
+            # Minuti extra per tipo
+            "extra_minutes_before": extra_data.get("extra_minutes") if extra_type == "before_shift" else 0,
+            "extra_minutes_after": extra_data.get("extra_minutes") if extra_type == "after_shift" else 0,
+        }
+        extra_data_json = json.dumps(request_extra_data)
+        
+        total_minutes = extra_data.get("extra_minutes", 0)
+        
+        placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+        
+        db.execute(f"""
+            INSERT INTO user_requests 
+            (user_id, username, request_type_id, date_from, date_to, value_amount, 
+             notes, cdc, attachment_path, tratte, extra_data, status, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                    {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 'pending', {placeholder}, {placeholder})
+        """, (0, username, overtime_type_id, date_str, date_str, total_minutes, 
+              notes, None, None, None, extra_data_json, now_ts, now_ts))
+        
+        # Recupera l'ID appena inserito
+        if DB_VENDOR == "mysql":
+            row = db.execute("SELECT LAST_INSERT_ID() as id").fetchone()
+        else:
+            row = db.execute("SELECT last_insert_rowid() as id").fetchone()
+        
+        request_id = row['id'] if isinstance(row, dict) else row[0]
+        
+        db.commit()
+        
+        app.logger.info(
+            "Auto-created Extra Turno request: id=%s, user=%s, date=%s, type=%s, minutes=%s",
+            request_id, username, date_str, extra_data.get("extra_type"), total_minutes
+        )
+        
+        # Notifica admin
+        _send_overtime_notification_to_admins(db, username, date_str, total_minutes)
+        
+        return request_id
+        
+    except Exception as e:
+        app.logger.error(f"Errore creazione richiesta Extra Turno automatica: {e}")
+        return None
+
+
+def _create_flex_request(
+    db, 
+    username: str, 
+    date_str: str, 
+    tipo: str, 
+    ora_timbrata: str, 
+    ora_mod: str,
+    diff_minutes: int,
+    message: str,
+    placeholder: str,
+    turno_start: str = None,
+    turno_end: str = None,
+    arrotondamento_minuti: int = 30
+) -> Optional[int]:
+    """
+    Crea automaticamente una richiesta di tipo "Fuori Flessibilità" quando
+    una timbratura viene registrata oltre la flessibilità consentita.
+    
+    Args:
+        db: connessione database
+        username: username dell'utente
+        date_str: data della timbratura (YYYY-MM-DD)
+        tipo: tipo timbratura (inizio_giornata, fine_giornata)
+        ora_timbrata: ora effettiva della timbratura
+        ora_mod: ora modificata/arrotondata
+        diff_minutes: minuti di differenza dal turno
+        message: messaggio descrittivo
+        placeholder: placeholder SQL (%s o ?)
+        turno_start: ora inizio turno (HH:MM)
+        turno_end: ora fine turno (HH:MM)
+        arrotondamento_minuti: minuti per arrotondamento (dalle regole gruppo)
+    
+    Returns:
+        ID della richiesta creata, o None se errore
+    """
+    try:
+        FLEX_TYPE_ID = 17  # ID del tipo "Fuori Flessibilità"
+        
+        now_ts = now_ms()
+        
+        # Note descrittive
+        tipo_label = "Ingresso" if tipo == "inizio_giornata" else "Uscita"
+        notes = f"{tipo_label} fuori flessibilità: {message}"
+        
+        # Extra data con dettagli
+        extra_data = {
+            "tipo_timbratura": tipo,
+            "ora_timbrata": ora_timbrata,
+            "ora_mod": ora_mod,
+            "diff_minutes": diff_minutes,
+            "turno_start": turno_start,
+            "turno_end": turno_end,
+            "arrotondamento_minuti": arrotondamento_minuti,
+            "auto_created": True,
+            "created_reason": "timbratura_fuori_flessibilita"
+        }
+        extra_data_json = json.dumps(extra_data)
+        
+        db.execute(f"""
+            INSERT INTO user_requests 
+            (user_id, username, request_type_id, date_from, date_to, value_amount, 
+             notes, cdc, attachment_path, tratte, extra_data, status, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                    {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 'pending', {placeholder}, {placeholder})
+        """, (0, username, FLEX_TYPE_ID, date_str, date_str, abs(diff_minutes), 
+              notes, None, None, None, extra_data_json, now_ts, now_ts))
+        
+        # Recupera l'ID appena inserito
+        if DB_VENDOR == "mysql":
+            row = db.execute("SELECT LAST_INSERT_ID() as id").fetchone()
+        else:
+            row = db.execute("SELECT last_insert_rowid() as id").fetchone()
+        
+        request_id = row['id'] if isinstance(row, dict) else row[0]
+        
+        db.commit()
+        
+        app.logger.info(
+            "Auto-created Fuori Flessibilità request: id=%s, user=%s, date=%s, tipo=%s, diff=%smin",
+            request_id, username, date_str, tipo, diff_minutes
+        )
+        
+        # Notifica admin
+        _send_flex_notification_to_admins(db, username, date_str, tipo, diff_minutes)
+        
+        return request_id
+        
+    except Exception as e:
+        app.logger.error(f"Errore creazione richiesta Fuori Flessibilità: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return None
+
+
+def _send_flex_notification_to_admins(db, username: str, date_str: str, tipo: str, diff_minutes: int):
+    """Invia notifica push agli admin per richiesta fuori flessibilità."""
+    try:
+        tipo_label = "Ingresso" if tipo == "inizio_giornata" else "Uscita"
+        direction = "ritardo" if diff_minutes > 0 else "anticipo"
+        
+        title = f"⏰ Timbratura fuori flessibilità"
+        body = f"{username}: {tipo_label} {abs(diff_minutes)} min di {direction} il {date_str}"
+        
+        # Recupera admin attivi
+        placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+        admins = db.execute(
+            f"SELECT username FROM app_users WHERE role IN ('admin', 'superadmin') AND is_active = 1"
+        ).fetchall()
+        
+        for admin_row in admins:
+            admin_username = admin_row['username'] if isinstance(admin_row, dict) else admin_row[0]
+            try:
+                send_push_notification(db, admin_username, title, body, data={"type": "flex_request"})
+            except Exception as e:
+                app.logger.debug(f"Push notification to {admin_username} failed: {e}")
+    except Exception as e:
+        app.logger.warning(f"Errore invio notifiche flex agli admin: {e}")
+
+
+def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start: str, turno_end: str, rules: dict, placeholder: str) -> str:
+    """
+    Calcola l'ora di fine giornata per il mode 'daily'.
+    
+    In modalità giornaliera, l'ora di uscita viene calcolata in modo che:
+    - Le ore nette risultino esattamente quelle del turno
+    - Considera l'ora di inizio effettiva e la pausa effettuata
+    
+    Formula: ora_mod_fine = ora_inizio + ore_turno + pausa
+    
+    Esempio:
+        - Turno: 09:00-18:00 (8h nette con 1h pausa)
+        - Inizio effettivo: 09:20
+        - Pausa: 60 min
+        - ora_mod_fine = 09:20 + 8h + 1h = 18:20
+    """
+    try:
+        # 1. Recupera l'ora di inizio giornata di oggi (ora_mod se presente)
+        inizio_row = db.execute(
+            f"""SELECT ora, ora_mod FROM timbrature 
+               WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'inizio_giornata'
+               ORDER BY created_ts ASC LIMIT 1""",
+            (username, today)
+        ).fetchone()
+        
+        if not inizio_row:
+            app.logger.warning(f"Daily mode: nessun inizio giornata trovato per {username} il {today}")
+            return ora if ':' in ora and ora.count(':') == 2 else f"{ora}:00"
+        
+        ora_inizio = inizio_row['ora_mod'] if isinstance(inizio_row, dict) else inizio_row[1]
+        if not ora_inizio:
+            ora_inizio = inizio_row['ora'] if isinstance(inizio_row, dict) else inizio_row[0]
+        
+        # Converti in stringa
+        if hasattr(ora_inizio, 'strftime'):
+            ora_inizio_str = ora_inizio.strftime("%H:%M")
+        elif hasattr(ora_inizio, 'total_seconds'):
+            total_sec = int(ora_inizio.total_seconds())
+            ora_inizio_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}"
+        else:
+            ora_inizio_str = str(ora_inizio)[:5]
+        
+        # 2. Calcola la pausa effettuata oggi (somma di tutte le pause chiuse)
+        pausa_minuti = 0
+        pause_rows = db.execute(
+            f"""SELECT tipo, ora, ora_mod FROM timbrature 
+               WHERE username = {placeholder} AND data = {placeholder} AND tipo IN ('inizio_pausa', 'fine_pausa')
+               ORDER BY created_ts ASC""",
+            (username, today)
+        ).fetchall()
+        
+        inizio_pausa_min = None
+        for row in pause_rows:
+            tipo_pausa = row['tipo'] if isinstance(row, dict) else row[0]
+            ora_p = row['ora_mod'] if isinstance(row, dict) else row[2]
+            if not ora_p:
+                ora_p = row['ora'] if isinstance(row, dict) else row[1]
+            
+            if hasattr(ora_p, 'strftime'):
+                ora_p_str = ora_p.strftime("%H:%M")
+            elif hasattr(ora_p, 'total_seconds'):
+                total_sec = int(ora_p.total_seconds())
+                ora_p_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}"
+            else:
+                ora_p_str = str(ora_p)[:5]
+            
+            p_parts = ora_p_str.split(':')
+            p_min = int(p_parts[0]) * 60 + int(p_parts[1])
+            
+            if tipo_pausa == 'inizio_pausa':
+                inizio_pausa_min = p_min
+            elif tipo_pausa == 'fine_pausa' and inizio_pausa_min is not None:
+                pausa_minuti += p_min - inizio_pausa_min
+                inizio_pausa_min = None
+        
+        # 3. Calcola le ore nette del turno
+        ore_turno_minuti = 480  # Default 8 ore
+        if turno_start and turno_end:
+            ts_parts = turno_start.split(':')
+            te_parts = turno_end.split(':')
+            ts_min = int(ts_parts[0]) * 60 + int(ts_parts[1])
+            te_min = int(te_parts[0]) * 60 + int(te_parts[1])
+            
+            # Ore lorde turno - pausa del turno (da employee_shifts)
+            ore_lorde_turno = te_min - ts_min
+            
+            # Recupera la pausa prevista dal turno (break_start/break_end)
+            pausa_turno_minuti = 0
+            try:
+                day_of_week = datetime.strptime(today, '%Y-%m-%d').weekday()
+                shift_row = db.execute(
+                    f"""SELECT break_start, break_end FROM employee_shifts 
+                       WHERE username = {placeholder} AND day_of_week = {placeholder}""",
+                    (username, day_of_week)
+                ).fetchone()
+                
+                if shift_row:
+                    break_start = shift_row['break_start'] if isinstance(shift_row, dict) else shift_row[0]
+                    break_end = shift_row['break_end'] if isinstance(shift_row, dict) else shift_row[1]
+                    
+                    if break_start and break_end:
+                        if hasattr(break_start, 'total_seconds'):
+                            bs_min = int(break_start.total_seconds()) // 60
+                        else:
+                            bs_parts = str(break_start)[:5].split(':')
+                            bs_min = int(bs_parts[0]) * 60 + int(bs_parts[1])
+                        
+                        if hasattr(break_end, 'total_seconds'):
+                            be_min = int(break_end.total_seconds()) // 60
+                        else:
+                            be_parts = str(break_end)[:5].split(':')
+                            be_min = int(be_parts[0]) * 60 + int(be_parts[1])
+                        
+                        pausa_turno_minuti = be_min - bs_min
+            except Exception as e:
+                app.logger.warning(f"Errore lettura pausa turno: {e}")
+            
+            ore_turno_minuti = ore_lorde_turno - pausa_turno_minuti
+        
+        # 4. Applica arrotondamento giornaliero alle ore nette (arrotonda per difetto)
+        blocco = rules.get('arrotondamento_giornaliero_minuti', 15)
+        tipo_arrot = rules.get('arrotondamento_giornaliero_tipo', 'floor')
+        
+        if tipo_arrot == 'floor':
+            ore_arrotondate = (ore_turno_minuti // blocco) * blocco
+        elif tipo_arrot == 'ceil':
+            ore_arrotondate = ((ore_turno_minuti + blocco - 1) // blocco) * blocco
+        else:  # round
+            ore_arrotondate = round(ore_turno_minuti / blocco) * blocco
+        
+        # 5. Calcola ora_mod_fine = ora_inizio + ore_arrotondate + pausa
+        inizio_parts = ora_inizio_str.split(':')
+        inizio_min = int(inizio_parts[0]) * 60 + int(inizio_parts[1])
+        
+        ora_fine_mod_min = inizio_min + ore_arrotondate + pausa_minuti
+        
+        h = ora_fine_mod_min // 60
+        m = ora_fine_mod_min % 60
+        ora_mod = f"{h:02d}:{m:02d}:00"
+        
+        app.logger.info(
+            f"Daily mode fine_giornata: inizio={ora_inizio_str}, pausa={pausa_minuti}min, "
+            f"ore_turno={ore_turno_minuti}min, ore_arrot={ore_arrotondate}min, "
+            f"ora_timbrata={ora}, ora_mod={ora_mod}"
+        )
+        
+        return ora_mod
+        
+    except Exception as e:
+        app.logger.error(f"Errore _calcola_ora_fine_daily: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return ora if ':' in ora and ora.count(':') == 2 else f"{ora}:00"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  CALCOLO ORA MODIFICATA (ora_mod)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -15278,19 +16949,55 @@ def calcola_ora_mod(ora_originale: str, tipo: str, turno_start: str = None, rule
     
     Returns:
         ora modificata (HH:MM:SS)
+    
+    Note:
+        Per gruppi con rounding_mode='daily', questa funzione restituisce l'ora originale
+        senza arrotondamento (l'arrotondamento viene fatto sul totale giornaliero).
     """
     if rules is None:
         rules = {
             'anticipo_max_minuti': 30,
             'tolleranza_ritardo_minuti': 5,
             'arrotondamento_ingresso_minuti': 15,
-            'arrotondamento_uscita_minuti': 15
+            'arrotondamento_uscita_minuti': 15,
+            'rounding_mode': 'single'
         }
     
     # Converte ora originale in minuti
     parts = ora_originale.split(':')
     ora_min = int(parts[0]) * 60 + int(parts[1])
     
+    # Se rounding_mode è 'daily', non arrotonda la singola timbrata
+    # Verifica solo la flessibilità
+    rounding_mode = rules.get('rounding_mode', 'single')
+    
+    if rounding_mode == 'daily':
+        # Modalità giornaliera: non arrotonda, verifica solo flessibilità
+        if turno_start and tipo == 'inizio_giornata':
+            turno_parts = turno_start.split(':')
+            turno_min = int(turno_parts[0]) * 60 + int(turno_parts[1])
+            flessibilita = rules.get('flessibilita_ingresso_minuti', 30)
+            
+            # Finestra flessibilità: [turno - fless, turno + fless]
+            oltre_action = rules.get('oltre_flessibilita_action', 'allow')
+            
+            diff = abs(ora_min - turno_min)
+            if diff <= flessibilita:
+                # Dentro la flessibilità: registra ora reale
+                return ora_originale if ':' in ora_originale and ora_originale.count(':') == 2 else f"{ora_originale}:00"
+            else:
+                # Fuori flessibilità: dipende dall'azione configurata
+                if oltre_action == 'block':
+                    # In teoria dovrebbe bloccare, ma qui restituiamo comunque l'ora
+                    # Il blocco va gestito a livello di API
+                    pass
+                # Per 'allow' e 'warn': registra ora reale
+                return ora_originale if ':' in ora_originale and ora_originale.count(':') == 2 else f"{ora_originale}:00"
+        
+        # Per fine_giornata e altri tipi: registra ora reale
+        return ora_originale if ':' in ora_originale and ora_originale.count(':') == 2 else f"{ora_originale}:00"
+    
+    # Modalità 'single': comportamento originale
     # Se c'è un turno e siamo in ingresso, prova normalizzazione
     if turno_start and tipo == 'inizio_giornata':
         turno_parts = turno_start.split(':')
@@ -15326,6 +17033,156 @@ def calcola_ora_mod(ora_originale: str, tipo: str, turno_start: str = None, rule
     h = ora_mod_min // 60
     m = ora_mod_min % 60
     return f"{h:02d}:{m:02d}:00"
+
+
+def calcola_ore_giornaliere_arrotondate(
+    ora_inizio: str,
+    ora_fine: str,
+    pausa_minuti: int,
+    rules: dict
+) -> dict:
+    """
+    Calcola le ore giornaliere con arrotondamento a fine giornata (daily mode).
+    
+    Args:
+        ora_inizio: orario inizio giornata (HH:MM o HH:MM:SS)
+        ora_fine: orario fine giornata (HH:MM o HH:MM:SS)
+        pausa_minuti: durata pausa in minuti
+        rules: regole del gruppo con rounding_mode='daily'
+    
+    Returns:
+        dict con:
+        - ore_lorde: minuti lordi (fine - inizio)
+        - ore_nette: minuti netti (lordi - pausa)
+        - ore_arrotondate: minuti arrotondati secondo regola
+        - ore_str: stringa formattata (es. "8:15")
+        - turno_base_minuti: durata turno base in minuti
+        - straordinario_lordo: minuti straordinario lordo (netto - turno)
+        - straordinario_arrotondato: minuti straordinario arrotondato
+        - blocco_minuti: blocco usato per arrotondamento
+        - blocchi_straordinario: numero blocchi di straordinario
+    """
+    # Parse orari
+    inizio_parts = ora_inizio.split(':')
+    fine_parts = ora_fine.split(':')
+    
+    inizio_min = int(inizio_parts[0]) * 60 + int(inizio_parts[1])
+    fine_min = int(fine_parts[0]) * 60 + int(fine_parts[1])
+    
+    # Calcola
+    ore_lorde = fine_min - inizio_min
+    ore_nette = ore_lorde - pausa_minuti
+    
+    # Arrotondamento
+    blocco = rules.get('arrotondamento_giornaliero_minuti', 15)
+    tipo_arrot = rules.get('arrotondamento_giornaliero_tipo', 'floor')
+    
+    # Turno base (default 8 ore = 480 minuti)
+    turno_base = rules.get('turno_base_minuti', 480)
+    
+    # Calcola straordinario lordo
+    straordinario_lordo = max(0, ore_nette - turno_base)
+    
+    # Arrotonda lo straordinario per blocchi
+    if straordinario_lordo > 0:
+        if tipo_arrot == 'floor':
+            blocchi = straordinario_lordo // blocco
+        elif tipo_arrot == 'ceil':
+            blocchi = (straordinario_lordo + blocco - 1) // blocco
+        else:  # nearest
+            blocchi = round(straordinario_lordo / blocco)
+        straordinario_arrotondato = blocchi * blocco
+    else:
+        blocchi = 0
+        straordinario_arrotondato = 0
+    
+    # Ore totali arrotondate = turno base + straordinario arrotondato (ma non superiore alle ore nette)
+    ore_arrotondate = min(turno_base + straordinario_arrotondato, ore_nette)
+    
+    # Se sotto il turno base, arrotonda anche quello
+    if ore_nette < turno_base:
+        if tipo_arrot == 'floor':
+            ore_arrotondate = (ore_nette // blocco) * blocco
+        elif tipo_arrot == 'ceil':
+            ore_arrotondate = ((ore_nette + blocco - 1) // blocco) * blocco
+        else:  # nearest
+            ore_arrotondate = round(ore_nette / blocco) * blocco
+    
+    # Formatta stringa
+    h = ore_arrotondate // 60
+    m = ore_arrotondate % 60
+    ore_str = f"{h}:{m:02d}"
+    
+    return {
+        'ore_lorde': ore_lorde,
+        'ore_nette': ore_nette,
+        'ore_arrotondate': ore_arrotondate,
+        'ore_str': ore_str,
+        'turno_base_minuti': turno_base,
+        'straordinario_lordo': straordinario_lordo,
+        'straordinario_arrotondato': straordinario_arrotondato,
+        'blocco_minuti': blocco,
+        'blocchi_straordinario': blocchi,
+        'tipo_arrotondamento': tipo_arrot
+    }
+
+
+def verifica_flessibilita_timbrata(
+    ora_timbrata: str,
+    tipo: str,
+    turno_start: str,
+    turno_end: str,
+    rules: dict
+) -> dict:
+    """
+    Verifica se una timbrata è dentro la flessibilità per gruppi con daily mode.
+    
+    Args:
+        ora_timbrata: orario timbrato (HH:MM o HH:MM:SS)
+        tipo: 'inizio_giornata' o 'fine_giornata'
+        turno_start: orario inizio turno (HH:MM)
+        turno_end: orario fine turno (HH:MM)
+        rules: regole del gruppo
+    
+    Returns:
+        dict con:
+        - within_flex: True se dentro flessibilità
+        - diff_minutes: differenza in minuti dal turno
+        - action: 'allow', 'warn', 'block'
+        - message: messaggio per l'utente
+    """
+    parts = ora_timbrata.split(':')
+    ora_min = int(parts[0]) * 60 + int(parts[1])
+    
+    if tipo == 'inizio_giornata' and turno_start:
+        turno_parts = turno_start.split(':')
+        turno_min = int(turno_parts[0]) * 60 + int(turno_parts[1])
+        flessibilita = rules.get('flessibilita_ingresso_minuti', 30)
+        diff = ora_min - turno_min  # positivo = ritardo, negativo = anticipo
+    elif tipo == 'fine_giornata' and turno_end:
+        turno_parts = turno_end.split(':')
+        turno_min = int(turno_parts[0]) * 60 + int(turno_parts[1])
+        flessibilita = rules.get('flessibilita_uscita_minuti', 30)
+        diff = ora_min - turno_min  # positivo = dopo turno, negativo = prima
+    else:
+        return {'within_flex': True, 'diff_minutes': 0, 'action': 'allow', 'message': ''}
+    
+    within_flex = abs(diff) <= flessibilita
+    action = rules.get('oltre_flessibilita_action', 'allow')
+    
+    message = ''
+    if not within_flex:
+        if diff > 0:
+            message = f"Timbrata {abs(diff)} minuti oltre la flessibilità"
+        else:
+            message = f"Timbrata {abs(diff)} minuti prima della flessibilità"
+    
+    return {
+        'within_flex': within_flex,
+        'diff_minutes': diff,
+        'action': action if not within_flex else 'allow',
+        'message': message
+    }
 
 
 def calcola_pausa_mod(inizio_pausa: str, fine_pausa: str, rules: dict = None) -> int:
@@ -15782,7 +17639,7 @@ def api_admin_request_types_list() -> ResponseReturnValue:
         ensure_request_types_table(db)
         
         rows = db.execute("""
-            SELECT id, name, value_type, external_id, description, active, sort_order, created_ts, updated_ts
+            SELECT id, name, value_type, external_id, abbreviation, description, active, sort_order, created_ts, updated_ts, is_giustificativo
             FROM request_types
             ORDER BY sort_order ASC, name ASC
         """).fetchall()
@@ -15801,11 +17658,13 @@ def api_admin_request_types_list() -> ResponseReturnValue:
                 "value_type": row["value_type"],
                 "value_type_label": VALUE_TYPE_LABELS.get(row["value_type"], row["value_type"]),
                 "external_id": row["external_id"],
+                "abbreviation": row["abbreviation"],
                 "description": row["description"],
                 "active": bool(row["active"]),
                 "sort_order": row["sort_order"],
                 "created_ts": row["created_ts"],
                 "updated_ts": row["updated_ts"],
+                "is_giustificativo": bool(row.get("is_giustificativo", False)),
             })
         else:
             types.append({
@@ -15814,11 +17673,13 @@ def api_admin_request_types_list() -> ResponseReturnValue:
                 "value_type": row[2],
                 "value_type_label": VALUE_TYPE_LABELS.get(row[2], row[2]),
                 "external_id": row[3],
-                "description": row[4],
-                "active": bool(row[5]),
-                "sort_order": row[6],
-                "created_ts": row[7],
-                "updated_ts": row[8],
+                "abbreviation": row[4],
+                "description": row[5],
+                "active": bool(row[6]),
+                "sort_order": row[7],
+                "created_ts": row[8],
+                "updated_ts": row[9],
+                "is_giustificativo": bool(row[10]) if len(row) > 10 else False,
             })
 
     return jsonify({"types": types, "value_types": VALUE_TYPE_LABELS})
@@ -15838,9 +17699,11 @@ def api_admin_request_types_create() -> ResponseReturnValue:
     name = (data.get("name") or "").strip()
     value_type = data.get("value_type", "hours")
     external_id = (data.get("external_id") or "").strip() or None
+    abbreviation = (data.get("abbreviation") or "").strip() or None
     description = (data.get("description") or "").strip() or None
     active = data.get("active", True)
     sort_order = data.get("sort_order", 0)
+    is_giustificativo = data.get("is_giustificativo", False)
 
     if not name:
         return jsonify({"error": "Il nome è obbligatorio"}), 400
@@ -15854,14 +17717,14 @@ def api_admin_request_types_create() -> ResponseReturnValue:
 
     if DB_VENDOR == "mysql":
         db.execute("""
-            INSERT INTO request_types (name, value_type, external_id, description, active, sort_order, created_ts, updated_ts)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (name, value_type, external_id, description, 1 if active else 0, sort_order, now_ms, now_ms))
+            INSERT INTO request_types (name, value_type, external_id, abbreviation, description, active, sort_order, created_ts, updated_ts, is_giustificativo)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (name, value_type, external_id, abbreviation, description, 1 if active else 0, sort_order, now_ms, now_ms, 1 if is_giustificativo else 0))
     else:
         db.execute("""
-            INSERT INTO request_types (name, value_type, external_id, description, active, sort_order, created_ts, updated_ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (name, value_type, external_id, description, 1 if active else 0, sort_order, now_ms, now_ms))
+            INSERT INTO request_types (name, value_type, external_id, abbreviation, description, active, sort_order, created_ts, updated_ts, is_giustificativo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (name, value_type, external_id, abbreviation, description, 1 if active else 0, sort_order, now_ms, now_ms, 1 if is_giustificativo else 0))
     
     db.commit()
 
@@ -15882,9 +17745,11 @@ def api_admin_request_types_update(type_id: int) -> ResponseReturnValue:
     name = (data.get("name") or "").strip()
     value_type = data.get("value_type", "hours")
     external_id = (data.get("external_id") or "").strip() or None
+    abbreviation = (data.get("abbreviation") or "").strip() or None
     description = (data.get("description") or "").strip() or None
     active = data.get("active", True)
     sort_order = data.get("sort_order", 0)
+    is_giustificativo = data.get("is_giustificativo", False)
 
     if not name:
         return jsonify({"error": "Il nome è obbligatorio"}), 400
@@ -15899,17 +17764,17 @@ def api_admin_request_types_update(type_id: int) -> ResponseReturnValue:
     if DB_VENDOR == "mysql":
         db.execute("""
             UPDATE request_types
-            SET name = %s, value_type = %s, external_id = %s, description = %s, 
-                active = %s, sort_order = %s, updated_ts = %s
+            SET name = %s, value_type = %s, external_id = %s, abbreviation = %s, description = %s, 
+                active = %s, sort_order = %s, updated_ts = %s, is_giustificativo = %s
             WHERE id = %s
-        """, (name, value_type, external_id, description, 1 if active else 0, sort_order, now_ms, type_id))
+        """, (name, value_type, external_id, abbreviation, description, 1 if active else 0, sort_order, now_ms, 1 if is_giustificativo else 0, type_id))
     else:
         db.execute("""
             UPDATE request_types
-            SET name = ?, value_type = ?, external_id = ?, description = ?, 
-                active = ?, sort_order = ?, updated_ts = ?
+            SET name = ?, value_type = ?, external_id = ?, abbreviation = ?, description = ?, 
+                active = ?, sort_order = ?, updated_ts = ?, is_giustificativo = ?
             WHERE id = ?
-        """, (name, value_type, external_id, description, 1 if active else 0, sort_order, now_ms, type_id))
+        """, (name, value_type, external_id, abbreviation, description, 1 if active else 0, sort_order, now_ms, 1 if is_giustificativo else 0, type_id))
     
     db.commit()
 
@@ -16236,6 +18101,40 @@ def api_admin_documents_create() -> ResponseReturnValue:
     return jsonify({"success": True, "message": "Documento caricato. Vai su 'Da Inviare' per inviare le notifiche."})
 
 
+@app.put("/api/admin/documents/<int:doc_id>")
+@login_required
+def api_admin_documents_update(doc_id: int) -> ResponseReturnValue:
+    """Aggiorna titolo e descrizione di un documento."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    db = get_db()
+    ensure_user_documents_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera il documento esistente
+    row = db.execute(f"SELECT id FROM user_documents WHERE id = {placeholder}", (doc_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Documento non trovato"}), 404
+    
+    data = request.get_json() or {}
+    title = data.get("title", "").strip()
+    description = data.get("description", "").strip()
+    
+    if not title:
+        return jsonify({"error": "Il titolo è obbligatorio"}), 400
+    
+    # Aggiorna il documento
+    db.execute(
+        f"UPDATE user_documents SET title = {placeholder}, description = {placeholder} WHERE id = {placeholder}",
+        (title, description, doc_id)
+    )
+    db.commit()
+    
+    return jsonify({"success": True, "message": "Documento aggiornato"})
+
+
 @app.delete("/api/admin/documents/<int:doc_id>")
 @login_required
 def api_admin_documents_delete(doc_id: int) -> ResponseReturnValue:
@@ -16296,8 +18195,8 @@ def api_admin_documents_notify(doc_id: int) -> ResponseReturnValue:
     else:
         category, title, target_all, target_users_json = row[0], row[1], row[2], row[3] or "[]"
     
-    # Invia le notifiche
-    count = _send_document_notifications(db, category, title, bool(target_all), target_users_json)
+    # Invia le notifiche (passa doc_id per URL diretto)
+    count = _send_document_notifications(db, category, title, bool(target_all), target_users_json, doc_id)
     
     # Aggiorna notified_at
     if count > 0:
@@ -16733,6 +18632,22 @@ def admin_user_requests_page() -> ResponseReturnValue:
     )
 
 
+@app.get("/api/admin/user-requests/pending-count")
+@login_required
+def api_admin_pending_requests_count() -> ResponseReturnValue:
+    """Restituisce il conteggio delle richieste in attesa."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    db = get_db()
+    ensure_user_requests_table(db)
+    
+    row = db.execute("SELECT COUNT(*) as cnt FROM user_requests WHERE status = 'pending'").fetchone()
+    count = row["cnt"] if isinstance(row, Mapping) else row[0]
+    
+    return jsonify({"count": count})
+
+
 @app.get("/api/admin/user-requests")
 @login_required
 def api_admin_user_requests_list() -> ResponseReturnValue:
@@ -16848,8 +18763,180 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
             }
         
         requests.append(req_item)
+    
+    # Per le richieste di tipo "timbratura", aggiungi i dati del turno previsto
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    for req in requests:
+        if req.get("value_type") == "timbratura":
+            req_username = req.get("username")
+            date_from = req.get("date_from")
+            app.logger.info(f"Cerco turno per {req_username} - date_from={date_from}")
+            if req_username and date_from:
+                # Converti date_from in data e giorno della settimana
+                try:
+                    if hasattr(date_from, 'weekday'):
+                        check_date = date_from
+                    else:
+                        check_date = datetime.strptime(str(date_from)[:10], "%Y-%m-%d")
+                    day_of_week = check_date.weekday()
+                    app.logger.info(f"day_of_week={day_of_week} per data {date_from}")
+                    
+                    # Cerca il turno da employee_shifts
+                    shift_row = db.execute(f"""
+                        SELECT start_time, end_time, break_start, break_end, location_name
+                        FROM employee_shifts
+                        WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1
+                    """, (req_username, day_of_week)).fetchone()
+                    
+                    app.logger.info(f"shift_row trovato: {shift_row}")
+                    if shift_row:
+                        if isinstance(shift_row, Mapping):
+                            turno_info = {
+                                "start_time": str(shift_row['start_time'])[:5] if shift_row.get('start_time') else None,
+                                "end_time": str(shift_row['end_time'])[:5] if shift_row.get('end_time') else None,
+                                "break_start": str(shift_row['break_start'])[:5] if shift_row.get('break_start') else None,
+                                "break_end": str(shift_row['break_end'])[:5] if shift_row.get('break_end') else None,
+                                "location_name": shift_row.get('location_name')
+                            }
+                        else:
+                            turno_info = {
+                                "start_time": str(shift_row[0])[:5] if shift_row[0] else None,
+                                "end_time": str(shift_row[1])[:5] if shift_row[1] else None,
+                                "break_start": str(shift_row[2])[:5] if shift_row[2] else None,
+                                "break_end": str(shift_row[3])[:5] if shift_row[3] else None,
+                                "location_name": shift_row[4] if len(shift_row) > 4 else None
+                            }
+                        req["turno_previsto"] = turno_info
+                except Exception as e:
+                    app.logger.warning(f"Errore recupero turno per {req_username}: {e}")
 
     return jsonify({"requests": requests})
+
+
+def _process_approved_mancata_timbratura(
+    db: DatabaseLike,
+    username: str,
+    date_from: str,
+    extra_data_str: str
+) -> dict:
+    """
+    Processa una richiesta di 'Mancata Timbratura' approvata.
+    
+    1. Inserisce la timbratura nella tabella 'timbrature'
+    2. Se CedolinoWeb è attivo, inserisce in 'cedolino_timbrature' e invia al webservice
+    
+    Args:
+        db: connessione database
+        username: username dell'utente
+        date_from: data della timbratura (YYYY-MM-DD)
+        extra_data_str: JSON con tipo_timbratura, ora_timbratura, motivazione
+    
+    Returns:
+        dict con risultato operazione
+    """
+    result = {
+        "inserted_timbratura": False,
+        "cedolino_sent": False,
+        "cedolino_error": None
+    }
+    
+    # Parse extra_data
+    try:
+        extra_data = json.loads(extra_data_str) if extra_data_str else {}
+    except:
+        extra_data = {}
+    
+    tipo_timbratura = extra_data.get("tipo_timbratura")  # ingresso/uscita/pausa_in/pausa_out
+    ora_timbratura = extra_data.get("ora_timbratura")    # HH:MM
+    motivazione = extra_data.get("motivazione", "")
+    
+    if not tipo_timbratura or not ora_timbratura:
+        result["error"] = "Dati timbratura mancanti"
+        return result
+    
+    # Formatta data come stringa YYYY-MM-DD
+    if hasattr(date_from, 'strftime'):
+        date_str = date_from.strftime("%Y-%m-%d")
+    else:
+        date_str = str(date_from)[:10]
+    
+    # Mappa tipo timbratura utente -> tipo interno
+    TIPO_MAP = {
+        "ingresso": "inizio_giornata",
+        "uscita": "fine_giornata",
+        "pausa_in": "inizio_pausa",
+        "pausa_out": "fine_pausa"
+    }
+    tipo_interno = TIPO_MAP.get(tipo_timbratura, tipo_timbratura)
+    
+    # Mappa tipo interno -> timeframe CedolinoWeb
+    TIPO_TO_TIMEFRAME = {
+        'inizio_giornata': TIMEFRAME_INIZIO_GIORNATA,  # 1
+        'inizio_pausa': TIMEFRAME_INIZIO_PAUSA,        # 4
+        'fine_pausa': TIMEFRAME_FINE_PAUSA,            # 5
+        'fine_giornata': TIMEFRAME_FINE_GIORNATA,      # 8
+    }
+    timeframe_id = TIPO_TO_TIMEFRAME.get(tipo_interno)
+    
+    # Formatta ora con secondi
+    ora_full = f"{ora_timbratura}:00" if len(ora_timbratura) == 5 else ora_timbratura
+    
+    now_ts = now_ms()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # 1. Inserisci nella tabella 'timbrature'
+    try:
+        db.execute(f"""
+            INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method, gps_lat, gps_lon, location_name)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        """, (username, tipo_interno, date_str, ora_full, ora_full, now_ts, "manual_request", None, None, "Mancata Timbratura"))
+        result["inserted_timbratura"] = True
+        app.logger.info(f"Mancata Timbratura: inserita timbratura {tipo_interno} per {username} alle {ora_full} del {date_str}")
+    except Exception as e:
+        app.logger.error(f"Mancata Timbratura: errore inserimento timbrature - {e}")
+        result["error"] = f"Errore inserimento timbratura: {e}"
+        return result
+    
+    # 2. Se CedolinoWeb è attivo, invia la timbrata
+    settings = get_cedolino_settings()
+    if settings and timeframe_id:
+        try:
+            # Recupera display_name per il log
+            user_row = db.execute(
+                f"SELECT display_name FROM app_users WHERE username = {placeholder}",
+                (username,)
+            ).fetchone()
+            display_name = username
+            if user_row:
+                display_name = (user_row['display_name'] if isinstance(user_row, dict) else user_row[0]) or username
+            
+            # Usa la funzione esistente per inviare a CedolinoWeb
+            success, external_id, error, request_url = send_timbrata_utente(
+                db=db,
+                username=username,
+                member_name=display_name,
+                timeframe_id=timeframe_id,
+                data_riferimento=date_str,
+                ora_originale=ora_full,
+                ora_modificata=ora_full,
+                overtime_request_id=None  # Non bloccare, è già approvata
+            )
+            
+            if success:
+                result["cedolino_sent"] = True
+                result["cedolino_external_id"] = external_id
+                app.logger.info(f"Mancata Timbratura: inviata a CedolinoWeb per {username} (external_id={external_id})")
+            else:
+                result["cedolino_error"] = error
+                app.logger.warning(f"Mancata Timbratura: errore CedolinoWeb per {username} - {error}")
+        except Exception as e:
+            result["cedolino_error"] = str(e)
+            app.logger.error(f"Mancata Timbratura: eccezione CedolinoWeb - {e}")
+    else:
+        result["cedolino_sent"] = None  # CedolinoWeb non configurato
+    
+    db.commit()
+    return result
 
 
 def _update_timbrature_with_confirmed_times(
@@ -16935,7 +19022,7 @@ def _update_timbrature_with_confirmed_times(
                   AND timeframe_id = 1
             """, (rounded_start, username, date_str))
     
-    # Aggiorna la timbrata di FINE giornata (timeframe_id = 2)
+    # Aggiorna la timbrata di FINE giornata (timeframe_id = 8)
     if rounded_end:
         if session_id:
             db.execute(f"""
@@ -16943,7 +19030,7 @@ def _update_timbrature_with_confirmed_times(
                 SET ora_modificata = {placeholder}, synced_ts = NULL
                 WHERE username = {placeholder} 
                   AND data_riferimento = {placeholder}
-                  AND timeframe_id = 2
+                  AND timeframe_id = 8
                   AND session_id = {placeholder}
             """, (rounded_end, username, date_str, session_id))
         else:
@@ -16952,7 +19039,7 @@ def _update_timbrature_with_confirmed_times(
                 SET ora_modificata = {placeholder}, synced_ts = NULL
                 WHERE username = {placeholder} 
                   AND data_riferimento = {placeholder}
-                  AND timeframe_id = 2
+                  AND timeframe_id = 8
             """, (rounded_end, username, date_str))
     
     db.commit()
@@ -16973,10 +19060,12 @@ def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
     confirmed_value = data.get("confirmed_value")  # Valore confermato (per straordinari)
     rounded_start = data.get("rounded_start")  # Orario arrotondato inizio confermato
     rounded_end = data.get("rounded_end")  # Orario arrotondato fine confermato
+    flex_type = data.get("flex_type")  # Per distinguere "fuori_flessibilita"
+    rounded_time = data.get("rounded_time")  # Orario singolo per fuori flessibilità
     
     app.logger.info(
         f"Review request: status={status}, confirmed_value={confirmed_value}, "
-        f"rounded_start={rounded_start}, rounded_end={rounded_end}"
+        f"rounded_start={rounded_start}, rounded_end={rounded_end}, flex_type={flex_type}, rounded_time={rounded_time}"
     )
     
     if status not in ("approved", "rejected"):
@@ -17116,6 +19205,48 @@ def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
                 f"confermato={rounded_start}-{rounded_end}"
             )
     
+    # Se è Fuori Flessibilità, gestisci l'aggiornamento della timbratura
+    flex_result = None
+    if flex_type == "fuori_flessibilita" and rounded_time:
+        try:
+            app.logger.info(f"Processing Fuori Flessibilità: request_id={request_id}, status={status}, rounded_time={rounded_time}")
+            flex_result = _process_fuori_flessibilita(
+                db, request_id, target_username, date_from, status, rounded_time, extra_data_str
+            )
+            app.logger.info(f"Fuori Flessibilità result: {flex_result}")
+        except Exception as e:
+            import traceback
+            app.logger.error(f"Errore processing Fuori Flessibilità: {e}\n{traceback.format_exc()}")
+            flex_result = {"error": str(e)}
+    
+    # Se è uno straordinario (minutes) o Extra Turno, sincronizza le timbrature bloccate
+    cedolino_debug = None
+    is_overtime = (value_type == "minutes" or type_name == "Extra Turno") and flex_type != "fuori_flessibilita"
+    app.logger.info(f"DEBUG: value_type={value_type}, type_name={type_name}, status={status}, is_overtime={is_overtime}")
+    if is_overtime:
+        try:
+            app.logger.info(f"DEBUG: Calling _sync_overtime_blocked_timbrature for request {request_id}")
+            cedolino_debug = _sync_overtime_blocked_timbrature(db, request_id, status, extra_data_str)
+            app.logger.info(f"DEBUG: cedolino_debug result = {cedolino_debug}")
+        except Exception as e:
+            import traceback
+            app.logger.error(f"Errore sync overtime: {e}\n{traceback.format_exc()}")
+            cedolino_debug = {"error": str(e)}
+    
+    # Se è una Mancata Timbratura approvata, inserisci la timbratura e invia a CedolinoWeb
+    timbratura_result = None
+    if value_type == "timbratura" and status == "approved":
+        try:
+            app.logger.info(f"Processing approved Mancata Timbratura for request {request_id}")
+            timbratura_result = _process_approved_mancata_timbratura(
+                db, target_username, date_from, extra_data_str
+            )
+            app.logger.info(f"Mancata Timbratura result: {timbratura_result}")
+        except Exception as e:
+            import traceback
+            app.logger.error(f"Errore processing Mancata Timbratura: {e}\n{traceback.format_exc()}")
+            timbratura_result = {"error": str(e)}
+    
     # Invia notifica push all'utente
     _send_request_review_notification(
         db, target_username, type_name, status, review_notes,
@@ -17125,7 +19256,64 @@ def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
     )
     
     status_label = "approvata parzialmente" if is_partial_approval else ("approvata" if status == "approved" else "respinta")
-    return jsonify({"ok": True, "message": f"Richiesta {status_label} con successo"})
+    response = {
+        "ok": True, 
+        "message": f"Richiesta {status_label} con successo",
+        "debug": {
+            "value_type": value_type,
+            "type_name": type_name,
+            "is_overtime": is_overtime,
+            "status": status,
+            "flex_type": flex_type
+        }
+    }
+    if cedolino_debug:
+        response["cedolino_debug"] = cedolino_debug
+    if timbratura_result:
+        response["timbratura_result"] = timbratura_result
+    if flex_result:
+        response["flex_result"] = flex_result
+    return jsonify(response)
+
+
+@app.delete("/api/admin/user-requests/<int:request_id>")
+@login_required
+def api_admin_user_request_delete(request_id: int) -> ResponseReturnValue:
+    """Elimina una richiesta utente (protetto da password)."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    
+    data = request.get_json() or {}
+    password = data.get("password", "")
+    
+    # Password di sicurezza per eliminazione
+    DELETE_PASSWORD = "225524"
+    
+    if password != DELETE_PASSWORD:
+        return jsonify({"error": "Password non corretta"}), 403
+    
+    db = get_db()
+    ensure_user_requests_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Verifica che la richiesta esista
+    existing = db.execute(
+        f"SELECT id, username, status FROM user_requests WHERE id = {placeholder}",
+        (request_id,)
+    ).fetchone()
+    
+    if not existing:
+        return jsonify({"error": "Richiesta non trovata"}), 404
+    
+    # Elimina la richiesta
+    db.execute(f"DELETE FROM user_requests WHERE id = {placeholder}", (request_id,))
+    db.commit()
+    
+    username = existing["username"] if isinstance(existing, Mapping) else existing[1]
+    app.logger.info(f"Richiesta {request_id} eliminata da {session.get('user')} (utente: {username})")
+    
+    return jsonify({"ok": True, "message": "Richiesta eliminata con successo"})
 
 
 # =====================================================
@@ -17180,6 +19368,426 @@ def user_notifications_page() -> ResponseReturnValue:
     )
 
 
+@app.route("/user/storico-timbrature")
+@login_required
+def user_storico_timbrature_page() -> ResponseReturnValue:
+    """Pagina utente per visualizzare lo storico delle timbrature per mese."""
+    db = get_db()
+    magazzino_enabled = is_module_enabled(db, "magazzino")
+    return render_template(
+        "user_storico_timbrature.html",
+        username=session.get("user"),
+        user_display=session.get("user_display", session.get("user")),
+        user_initials=session.get("user_initials", "U"),
+        user_role=session.get("user_role", "Utente"),
+        magazzino_enabled=magazzino_enabled,
+    )
+
+
+@app.get("/api/user/storico-timbrature")
+@login_required
+def api_user_storico_timbrature() -> ResponseReturnValue:
+    """Restituisce lo storico delle timbrature dell'utente per un mese specifico."""
+    username = session.get("user")
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    # Parametri: year e month (default: mese corrente)
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+    
+    if not year or not month:
+        today = datetime.now()
+        year = year or today.year
+        month = month or today.month
+    
+    print(f"[storico-timbrature] User: {username}, Year: {year}, Month: {month}")
+    
+    # Calcola primo e ultimo giorno del mese
+    first_day = f"{year:04d}-{month:02d}-01"
+    if month == 12:
+        last_day = f"{year+1:04d}-01-01"
+    else:
+        last_day = f"{year:04d}-{month+1:02d}-01"
+    
+    db = get_db()
+    ensure_timbrature_table(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Recupera tutte le timbrature del mese
+    rows = db.execute(f"""
+        SELECT id, tipo, data, ora, ora_mod, created_ts, method, location_name
+        FROM timbrature
+        WHERE username = {placeholder}
+          AND data >= {placeholder}
+          AND data < {placeholder}
+        ORDER BY data ASC, ora ASC
+    """, (username, first_day, last_day)).fetchall()
+    
+    print(f"[storico-timbrature] Trovate {len(rows)} timbrature per {username}")
+    
+    # Helper per formattare ora in HH:MM
+    def format_ora(ora_val):
+        if not ora_val:
+            return None
+        ora_str = str(ora_val)
+        # Gestisce formati come "9:30:00" o "09:30:00" o timedelta
+        if ':' in ora_str:
+            parts = ora_str.split(':')
+            if len(parts) >= 2:
+                return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+        return ora_str[:5]
+    
+    # Raggruppa per giorno
+    days_data = {}
+    for row in rows:
+        if isinstance(row, Mapping):
+            data = str(row["data"])
+            timbratura = {
+                "id": row["id"],
+                "tipo": row["tipo"],
+                "ora": format_ora(row["ora"]),
+                "ora_mod": format_ora(row.get("ora_mod")),
+                "method": row.get("method"),
+                "location": row.get("location_name"),
+            }
+        else:
+            data = str(row[2])
+            timbratura = {
+                "id": row[0],
+                "tipo": row[1],
+                "ora": format_ora(row[3]),
+                "ora_mod": format_ora(row[4]) if len(row) > 4 else None,
+                "method": row[5] if len(row) > 5 else None,
+                "location": row[7] if len(row) > 7 else None,
+            }
+        
+        if data not in days_data:
+            days_data[data] = []
+        days_data[data].append(timbratura)
+    
+    # Recupera le richieste dell'utente per il mese (solo giustificativi approvati)
+    requests_by_date = {}
+    
+    # Recupera anche le richieste "Fuori Flessibilità" (qualunque stato) per mostrare i motivi delle normalizzazioni
+    fuori_flex_by_date = {}
+    try:
+        # Query per richieste Fuori Flessibilità (tutte, non solo approvate)
+        fuori_flex_rows = db.execute(f"""
+            SELECT ur.id, ur.date_from, ur.status, ur.notes, ur.review_notes, ur.extra_data,
+                   ur.reviewed_by, ur.reviewed_ts
+            FROM user_requests ur
+            LEFT JOIN request_types rt ON ur.request_type_id = rt.id
+            WHERE ur.username = {placeholder}
+              AND rt.name = 'Fuori Flessibilità'
+              AND ur.date_from >= {placeholder}
+              AND ur.date_from < {placeholder}
+            ORDER BY ur.date_from ASC
+        """, (username, first_day, last_day)).fetchall()
+        
+        for req in fuori_flex_rows:
+            if isinstance(req, Mapping):
+                date_str = str(req["date_from"])[:10]
+                extra_data = {}
+                if req.get("extra_data"):
+                    try:
+                        extra_data = json.loads(req["extra_data"]) if isinstance(req["extra_data"], str) else req["extra_data"]
+                    except:
+                        pass
+                fuori_flex_data = {
+                    "id": req["id"],
+                    "status": req["status"],
+                    "notes": req.get("notes"),  # Contiene il motivo originale (es. "Fine Giornata fuori flessibilità: +41 minuti oltre la flessibilità")
+                    "review_notes": req.get("review_notes"),  # Note dell'admin quando approva/rifiuta
+                    "reviewed_by": req.get("reviewed_by"),
+                    "reviewed_ts": req.get("reviewed_ts"),
+                    "tipo_timbratura": extra_data.get("tipo_timbratura"),
+                    "ora_timbrata": extra_data.get("ora_timbrata"),
+                    "ora_finale": extra_data.get("ora_finale"),  # Orario approvato dall'admin
+                    "rounded_time": extra_data.get("rounded_time"),
+                    "turno_end": extra_data.get("turno_end"),
+                    "flessibilita": extra_data.get("flessibilita"),
+                    "diff_minuti": extra_data.get("diff_minuti"),
+                }
+            else:
+                date_str = str(req[1])[:10]
+                extra_data = {}
+                if req[5]:
+                    try:
+                        extra_data = json.loads(req[5]) if isinstance(req[5], str) else req[5]
+                    except:
+                        pass
+                fuori_flex_data = {
+                    "id": req[0],
+                    "status": req[2],
+                    "notes": req[3],
+                    "review_notes": req[4],
+                    "reviewed_by": req[6] if len(req) > 6 else None,
+                    "reviewed_ts": req[7] if len(req) > 7 else None,
+                    "tipo_timbratura": extra_data.get("tipo_timbratura"),
+                    "ora_timbrata": extra_data.get("ora_timbrata"),
+                    "ora_finale": extra_data.get("ora_finale"),
+                    "rounded_time": extra_data.get("rounded_time"),
+                    "turno_end": extra_data.get("turno_end"),
+                    "flessibilita": extra_data.get("flessibilita"),
+                    "diff_minuti": extra_data.get("diff_minuti"),
+                }
+            
+            if date_str not in fuori_flex_by_date:
+                fuori_flex_by_date[date_str] = []
+            fuori_flex_by_date[date_str].append(fuori_flex_data)
+    except Exception as e:
+        print(f"[storico-timbrature] Errore recupero richieste fuori flessibilità: {e}")
+    
+    try:
+        requests_rows = db.execute(f"""
+            SELECT ur.id, ur.request_type_id, ur.date_from, ur.date_to, ur.value_amount, 
+                   ur.notes, ur.status, ur.review_notes, rt.name as type_name, rt.abbreviation,
+                   ur.created_ts, ur.reviewed_ts, ur.reviewed_by
+            FROM user_requests ur
+            LEFT JOIN request_types rt ON ur.request_type_id = rt.id
+            WHERE ur.username = {placeholder}
+              AND ur.status = 'approved'
+              AND rt.is_giustificativo = 1
+              AND (
+                (ur.date_from >= {placeholder} AND ur.date_from < {placeholder})
+                OR (ur.date_to IS NOT NULL AND ur.date_to >= {placeholder} AND ur.date_to < {placeholder})
+                OR (ur.date_from < {placeholder} AND (ur.date_to IS NULL OR ur.date_to >= {placeholder}))
+              )
+            ORDER BY ur.date_from ASC
+        """, (username, first_day, last_day, first_day, last_day, first_day, first_day)).fetchall()
+        
+        # Mappa richieste per data
+        for req in requests_rows:
+            if isinstance(req, Mapping):
+                date_from = str(req["date_from"])
+                date_to = str(req["date_to"]) if req.get("date_to") else date_from
+                req_data = {
+                    "id": req["id"],
+                    "type_name": req.get("type_name") or "Richiesta",
+                    "abbreviation": req.get("abbreviation"),
+                    "value": float(req["value_amount"]) if req["value_amount"] else 0,
+                    "status": req["status"],
+                    "notes": req.get("notes"),
+                    "review_notes": req.get("review_notes"),
+                    "created_ts": req.get("created_ts"),
+                    "reviewed_ts": req.get("reviewed_ts"),
+                    "reviewed_by": req.get("reviewed_by"),
+                }
+            else:
+                date_from = str(req[2])
+                date_to = str(req[3]) if req[3] else date_from
+                req_data = {
+                    "id": req[0],
+                    "type_name": req[8] if len(req) > 8 and req[8] else "Richiesta",
+                    "abbreviation": req[9] if len(req) > 9 else None,
+                    "value": float(req[4]) if req[4] else 0,
+                    "status": req[6],
+                    "notes": req[5],
+                    "review_notes": req[7],
+                    "created_ts": req[10] if len(req) > 10 else None,
+                    "reviewed_ts": req[11] if len(req) > 11 else None,
+                    "reviewed_by": req[12] if len(req) > 12 else None,
+                }
+            
+            # Aggiungi la richiesta a ogni giorno nel range
+            try:
+                start = datetime.strptime(date_from[:10], "%Y-%m-%d")
+                end = datetime.strptime(date_to[:10], "%Y-%m-%d")
+                current = start
+                while current <= end:
+                    date_str = current.strftime("%Y-%m-%d")
+                    if date_str not in requests_by_date:
+                        requests_by_date[date_str] = []
+                    requests_by_date[date_str].append(req_data)
+                    current += timedelta(days=1)
+            except:
+                pass
+    except Exception as e:
+        # Se la tabella non esiste o c'è un errore, ignora le richieste
+        print(f"[storico-timbrature] Errore recupero richieste: {e}")
+    
+    # Converti in formato per il calendario
+    # Recupera le regole di timbratura specifiche dell'utente (considera il gruppo)
+    user_rules = get_user_timbratura_rules(db, username)
+    rounding_mode = user_rules.get('rounding_mode', 'single')
+    
+    # Recupera il turno dell'utente da employee_shifts (per mostrare nel riepilogo)
+    user_shift = None
+    try:
+        ensure_employee_shifts_table(db)
+        # Prendo il turno del lunedì come riferimento (day_of_week=0)
+        shift_row = db.execute(f"""
+            SELECT start_time, end_time, break_start, break_end
+            FROM employee_shifts
+            WHERE username = {placeholder} AND is_active = 1
+            ORDER BY day_of_week ASC
+            LIMIT 1
+        """, (username,)).fetchone()
+        
+        if shift_row:
+            if isinstance(shift_row, Mapping):
+                user_shift = {
+                    "start": str(shift_row['start_time'])[:5] if shift_row['start_time'] else None,
+                    "end": str(shift_row['end_time'])[:5] if shift_row['end_time'] else None,
+                    "break_start": str(shift_row['break_start'])[:5] if shift_row['break_start'] else None,
+                    "break_end": str(shift_row['break_end'])[:5] if shift_row['break_end'] else None,
+                }
+            else:
+                user_shift = {
+                    "start": str(shift_row[0])[:5] if shift_row[0] else None,
+                    "end": str(shift_row[1])[:5] if shift_row[1] else None,
+                    "break_start": str(shift_row[2])[:5] if shift_row[2] else None,
+                    "break_end": str(shift_row[3])[:5] if shift_row[3] else None,
+                }
+    except Exception as e:
+        print(f"[storico-timbrature] Errore recupero turno utente: {e}")
+    
+    # Calcola ore lavorate per ogni giorno
+    timbrature_by_day = {}
+    debug_calcs = []  # Per debug
+    for data in sorted(days_data.keys()):
+        timbrature_list = days_data[data]
+        
+        # Calcola ore lavorate
+        ora_inizio = None
+        ora_fine = None
+        pausa_minuti = 0
+        inizio_pausa = None
+        
+        for t in timbrature_list:
+            tipo = t.get("tipo", "")
+            ora = t.get("ora_mod") or t.get("ora")
+            
+            if tipo == "inizio_giornata" and not ora_inizio:
+                ora_inizio = ora
+            elif tipo == "fine_giornata":
+                ora_fine = ora
+            elif tipo == "inizio_pausa":
+                inizio_pausa = ora
+            elif tipo == "fine_pausa" and inizio_pausa:
+                try:
+                    h1, m1 = map(int, inizio_pausa.split(':')[:2])
+                    h2, m2 = map(int, ora.split(':')[:2])
+                    pausa_minuti += (h2 * 60 + m2) - (h1 * 60 + m1)
+                except Exception as e:
+                    print(f"[storico] Errore calcolo pausa: {e} ({inizio_pausa} -> {ora})")
+                inizio_pausa = None
+        
+        # Calcola ore nette
+        ore_lavorate = None
+        calcolo_dettagli = None  # Dettagli per UI
+        if ora_inizio and ora_fine:
+            try:
+                h1, m1 = map(int, ora_inizio.split(':')[:2])
+                h2, m2 = map(int, ora_fine.split(':')[:2])
+                total_minutes = (h2 * 60 + m2) - (h1 * 60 + m1) - pausa_minuti
+                
+                # Se rounding_mode è 'daily', applica arrotondamento giornaliero
+                if rounding_mode == 'daily' and total_minutes > 0:
+                    result = calcola_ore_giornaliere_arrotondate(
+                        ora_inizio, ora_fine, pausa_minuti, user_rules
+                    )
+                    ore_lavorate = result['ore_str']
+                    
+                    # Calcola pausa prevista dal turno (da break_start e break_end)
+                    pausa_turno_minuti = 60  # Default 1 ora
+                    if user_shift and user_shift.get('break_start') and user_shift.get('break_end'):
+                        try:
+                            bs_h, bs_m = map(int, user_shift['break_start'].split(':')[:2])
+                            be_h, be_m = map(int, user_shift['break_end'].split(':')[:2])
+                            pausa_turno_minuti = (be_h * 60 + be_m) - (bs_h * 60 + bs_m)
+                        except:
+                            pass
+                    
+                    # Salva dettagli per il frontend
+                    calcolo_dettagli = {
+                        "ore_lorde_minuti": result['ore_lorde'],
+                        "ore_nette_minuti": result['ore_nette'],
+                        "ore_arrotondate_minuti": result['ore_arrotondate'],
+                        "turno_base_minuti": result['turno_base_minuti'],
+                        "straordinario_lordo_minuti": result['straordinario_lordo'],
+                        "straordinario_arrotondato_minuti": result['straordinario_arrotondato'],
+                        "blocco_minuti": result['blocco_minuti'],
+                        "blocchi_straordinario": result['blocchi_straordinario'],
+                        "tipo_arrotondamento": result['tipo_arrotondamento'],
+                        # Aggiungi dati turno per il riepilogo
+                        "turno_inizio": user_shift.get('start') if user_shift else None,
+                        "turno_fine": user_shift.get('end') if user_shift else None,
+                        "pausa_turno_minuti": pausa_turno_minuti,  # Pausa prevista dal turno
+                    }
+                    debug_calcs.append(f"{data}: {ora_inizio}->{ora_fine} pausa={pausa_minuti} netto={total_minutes}m => arrotondato={ore_lavorate}")
+                elif total_minutes > 0:
+                    ore_lavorate = f"{total_minutes // 60}:{total_minutes % 60:02d}"
+                    debug_calcs.append(f"{data}: {ora_inizio}->{ora_fine} pausa={pausa_minuti} => {ore_lavorate}")
+            except Exception as e:
+                print(f"[storico] Errore calcolo ore: {e} ({ora_inizio} -> {ora_fine})")
+        
+        timbrature_by_day[data] = {
+            "timbrature": timbrature_list,
+            "requests": requests_by_date.get(data, []),
+            "fuori_flessibilita": fuori_flex_by_date.get(data, []),  # Richieste fuori flessibilità per mostrare motivi
+            "ora_inizio": ora_inizio,
+            "ora_fine": ora_fine,
+            "pausa_minuti": pausa_minuti,
+            "ore_lavorate": ore_lavorate,
+            "calcolo_dettagli": calcolo_dettagli  # Dettagli arrotondamento per UI
+        }
+    
+    # Aggiungi anche le richieste per giorni senza timbrature
+    all_requests = []
+    for date_str, reqs in requests_by_date.items():
+        if date_str not in timbrature_by_day:
+            timbrature_by_day[date_str] = {
+                "timbrature": [],
+                "requests": reqs,
+                "ora_inizio": None,
+                "ora_fine": None,
+                "pausa_minuti": 0,
+                "ore_lavorate": None
+            }
+        for req in reqs:
+            req_copy = req.copy()
+            req_copy["data"] = date_str
+            all_requests.append(req_copy)
+    
+    # Debug: stampa le ore calcolate per i primi 5 giorni
+    if debug_calcs:
+        print(f"[storico-timbrature] Calcoli ore: {debug_calcs[:5]}...")
+    
+    arrotondamento_info = {
+        "rounding_mode": rounding_mode,
+        "source": user_rules.get('source', 'global'),
+        "ingresso": {
+            "minuti": user_rules.get("arrotondamento_ingresso_minuti", 15),
+            "tipo": user_rules.get("arrotondamento_ingresso_tipo", "~")
+        },
+        "uscita": {
+            "minuti": user_rules.get("arrotondamento_uscita_minuti", 15),
+            "tipo": user_rules.get("arrotondamento_uscita_tipo", "~")
+        }
+    }
+    
+    # Per rounding_mode daily, aggiungi info sulla flessibilità
+    if rounding_mode == 'daily':
+        arrotondamento_info["flessibilita_ingresso"] = user_rules.get("flessibilita_ingresso_minuti", 30)
+        arrotondamento_info["flessibilita_uscita"] = user_rules.get("flessibilita_uscita_minuti", 30)
+        arrotondamento_info["arrotondamento_giornaliero"] = {
+            "minuti": user_rules.get("arrotondamento_giornaliero_minuti", 15),
+            "tipo": user_rules.get("arrotondamento_giornaliero_tipo", "floor")
+        }
+    
+    return jsonify({
+        "success": True,
+        "year": year,
+        "month": month,
+        "timbrature_by_day": timbrature_by_day,
+        "requests": all_requests,
+        "arrotondamento": arrotondamento_info
+    })
+
+
 @app.route("/user/documents")
 @login_required
 def user_documents_page() -> ResponseReturnValue:
@@ -17211,7 +19819,8 @@ def api_user_documents_list() -> ResponseReturnValue:
     db = get_db()
     ensure_user_documents_table(db)
     
-    # Recupera documenti visibili all'utente (target_all=1 o username in target_users)
+    # Recupera documenti visibili all'utente (solo quelli già inviati: notified_at IS NOT NULL)
+    # E che sono destinati all'utente (target_all=1 o username in target_users)
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     
     rows = db.execute(f"""
@@ -17219,8 +19828,8 @@ def api_user_documents_list() -> ResponseReturnValue:
                CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END as is_read
         FROM user_documents d
         LEFT JOIN user_documents_read r ON d.id = r.document_id AND r.username = {placeholder}
-        WHERE d.target_all = 1 
-           OR (d.target_users IS NOT NULL AND d.target_users LIKE {placeholder})
+        WHERE d.notified_at IS NOT NULL
+          AND (d.target_all = 1 OR (d.target_users IS NOT NULL AND d.target_users LIKE {placeholder}))
         ORDER BY d.created_at DESC
     """, (username, f'%"{username}"%')).fetchall()
     
@@ -17471,6 +20080,48 @@ def api_user_requests_list() -> ResponseReturnValue:
             requests.append(req_item)
 
     return jsonify({"requests": requests})
+
+
+@app.put("/api/user/requests/<int:request_id>/notes")
+@login_required
+def api_user_request_update_notes(request_id: int) -> ResponseReturnValue:
+    """Aggiorna le note di una richiesta utente (solo se pending e di proprietà dell'utente)."""
+    username = session.get("user", "")
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    
+    data = request.get_json() or {}
+    notes = (data.get("notes") or "").strip()
+    
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Verifica che la richiesta esista, sia dell'utente e sia pending
+    row = db.execute(
+        f"SELECT id, username, status FROM user_requests WHERE id = {placeholder}",
+        (request_id,)
+    ).fetchone()
+    
+    if not row:
+        return jsonify({"error": "Richiesta non trovata"}), 404
+    
+    req_username = row['username'] if isinstance(row, dict) else row[1]
+    req_status = row['status'] if isinstance(row, dict) else row[2]
+    
+    if req_username != username:
+        return jsonify({"error": "Non autorizzato"}), 403
+    
+    if req_status != 'pending':
+        return jsonify({"error": "Impossibile modificare una richiesta già processata"}), 400
+    
+    # Aggiorna le note
+    db.execute(
+        f"UPDATE user_requests SET notes = {placeholder}, updated_ts = {placeholder} WHERE id = {placeholder}",
+        (notes, now_ms(), request_id)
+    )
+    db.commit()
+    
+    return jsonify({"ok": True, "message": "Note aggiornate"})
 
 
 @app.post("/api/user/requests")
@@ -17927,37 +20578,346 @@ def api_user_overtime_create() -> ResponseReturnValue:
     # Notifica admin
     _send_overtime_notification_to_admins(db, username, date_str, total_minutes)
     
-    return jsonify({"ok": True, "message": "Richiesta straordinario inviata"})
+    return jsonify({"ok": True, "message": "Richiesta Extra Turno inviata"})
 
 
-def _sync_overtime_blocked_timbrature(db: DatabaseLike, overtime_request_id: int) -> int:
+def _process_fuori_flessibilita(
+    db: DatabaseLike,
+    request_id: int,
+    username: str,
+    date_from: str,
+    status: str,
+    rounded_time: str,
+    extra_data_str: str = None
+) -> dict:
     """
-    Sincronizza le timbrature che erano bloccate in attesa della revisione di uno straordinario.
-    Chiamata dopo che una richiesta di straordinario viene approvata o respinta.
+    Elabora una richiesta Fuori Flessibilità approvata o respinta.
+    
+    - Se APPROVATA: aggiorna la timbratura con l'orario arrotondato sull'ora reale
+    - Se RESPINTA: mantiene l'orario calcolato sul turno (già salvato)
     
     Args:
         db: connessione database
-        overtime_request_id: ID della richiesta straordinario revisionata
+        request_id: ID della richiesta
+        username: username dell'utente
+        date_from: data della timbratura
+        status: 'approved' o 'rejected'
+        rounded_time: orario confermato (per approvate) o orario turno (per respinte)
+        extra_data_str: JSON con i dettagli della richiesta
     
     Returns:
-        Numero di timbrature sincronizzate con successo
+        Dict con info di debug
+    """
+    result = {"request_id": request_id, "status": status, "updated": False}
+    
+    try:
+        # Parsing extra_data
+        extra_data = {}
+        if extra_data_str:
+            try:
+                extra_data = json.loads(extra_data_str) if isinstance(extra_data_str, str) else extra_data_str
+            except:
+                pass
+        
+        tipo_timbratura = extra_data.get("tipo_timbratura", "fine_giornata")
+        ora_timbrata = extra_data.get("ora_timbrata")
+        ora_mod_originale = extra_data.get("ora_mod")
+        
+        app.logger.info(
+            "Fuori Flessibilità: processing request %s, status=%s, tipo=%s, rounded_time=%s, ora_mod_originale=%s",
+            request_id, status, tipo_timbratura, rounded_time, ora_mod_originale
+        )
+        
+        # Determina quale ora usare per l'aggiornamento
+        if status == 'approved':
+            # APPROVATA: usa l'orario confermato dall'admin (basato sull'ora reale arrotondata)
+            ora_da_usare = rounded_time
+        else:
+            # RESPINTA: usa l'orario calcolato sul turno (già presente in ora_mod)
+            ora_da_usare = ora_mod_originale or rounded_time
+        
+        if not ora_da_usare:
+            app.logger.warning("Fuori Flessibilità: nessun orario disponibile per request %s", request_id)
+            return {"request_id": request_id, "error": "Nessun orario disponibile"}
+        
+        # Costruisci il datetime completo
+        ora_da_usare_clean = ora_da_usare if len(ora_da_usare) == 5 else ora_da_usare[:5]
+        datetime_str = f"{date_from} {ora_da_usare_clean}:00"
+        
+        placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+        
+        # Aggiorna extra_data con il rounded_time finale per visualizzazione nella card
+        extra_data["ora_finale"] = ora_da_usare_clean
+        extra_data_updated = json.dumps(extra_data)
+        db.execute(f"""
+            UPDATE user_requests SET extra_data = {placeholder} WHERE id = {placeholder}
+        """, (extra_data_updated, request_id))
+        
+        # Aggiorna la tabella timbrature (per il dettaglio giornata)
+        timbratura_updated = db.execute(f"""
+            UPDATE timbrature 
+            SET ora_mod = {placeholder}
+            WHERE username = {placeholder} AND data = {placeholder} AND tipo = {placeholder}
+        """, (ora_da_usare_clean, username, date_from, tipo_timbratura)).rowcount
+        
+        if timbratura_updated:
+            app.logger.info(
+                "Fuori Flessibilità: aggiornata timbrature per %s, data=%s, tipo=%s, ora_mod=%s",
+                username, date_from, tipo_timbratura, ora_da_usare_clean
+            )
+            result["timbrature_updated"] = True
+        
+        # Trova la timbratura da aggiornare in cedolino_timbrature
+        timbratura_row = db.execute(f"""
+            SELECT id, ora_modificata, synced_ts 
+            FROM cedolino_timbrature 
+            WHERE username = {placeholder} AND data_riferimento = {placeholder}
+            ORDER BY id DESC LIMIT 1
+        """, (username, date_from)).fetchone()
+        
+        if timbratura_row:
+            timbr_id = timbratura_row['id'] if isinstance(timbratura_row, Mapping) else timbratura_row[0]
+            synced_ts = timbratura_row['synced_ts'] if isinstance(timbratura_row, Mapping) else timbratura_row[2]
+            
+            # Aggiorna ora_modificata
+            db.execute(f"""
+                UPDATE cedolino_timbrature 
+                SET ora_modificata = {placeholder}, synced_ts = NULL
+                WHERE id = {placeholder}
+            """, (datetime_str, timbr_id))
+            
+            result["cedolino_timbr_id"] = timbr_id
+            result["updated"] = True
+            result["ora_finale"] = ora_da_usare_clean
+            
+            app.logger.info(
+                "Fuori Flessibilità: aggiornata cedolino_timbrature id=%s, ora_modificata=%s",
+                timbr_id, datetime_str
+            )
+            
+            # Se approvata, invia subito a CedolinoWeb
+            if status == 'approved':
+                try:
+                    cedolino_result = _resync_flex_to_cedolino(db, timbr_id, datetime_str)
+                    result["cedolino_sync"] = cedolino_result
+                except Exception as e:
+                    app.logger.error(f"Errore sync CedolinoWeb per flex: {e}")
+                    result["cedolino_sync_error"] = str(e)
+        
+        db.commit()
+        return result
+        
+    except Exception as e:
+        import traceback
+        app.logger.error(f"Errore in _process_fuori_flessibilita: {e}\n{traceback.format_exc()}")
+        return {"request_id": request_id, "error": str(e)}
+
+
+def _resync_flex_to_cedolino(db: DatabaseLike, timbr_id: int, new_ora_modificata: str) -> dict:
+    """
+    Invia a CedolinoWeb la timbratura aggiornata per Fuori Flessibilità.
+    Usa call_cedolino_webservice con tutti i parametri corretti.
+    
+    Args:
+        timbr_id: ID della riga in cedolino_timbrature
+        new_ora_modificata: Nuovo orario modificato (HH:MM o HH:MM:SS)
     """
     settings = get_cedolino_settings()
     if not settings:
-        return 0
+        return {"error": "CedolinoWeb non configurato"}
     
     endpoint = settings.get("endpoint") or CEDOLINO_WEB_ENDPOINT
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     
+    # Recupera i dati della timbratura
+    row = db.execute(f"""
+        SELECT external_id, timeframe_id, data_riferimento, ora_originale, username
+        FROM cedolino_timbrature 
+        WHERE id = {placeholder}
+    """, (timbr_id,)).fetchone()
+    
+    if not row:
+        return {"error": "Timbratura non trovata"}
+    
+    if isinstance(row, Mapping):
+        external_id = row.get("external_id")
+        timeframe_id = row.get("timeframe_id")
+        data_rif = row.get("data_riferimento")
+        ora_originale = row.get("ora_originale")
+        username = row.get("username")
+    else:
+        external_id = row[0]
+        timeframe_id = row[1]
+        data_rif = row[2]
+        ora_originale = row[3]
+        username = row[4]
+    
+    # Converti data_riferimento in stringa se è un oggetto date
+    if hasattr(data_rif, 'strftime'):
+        data_rif = data_rif.strftime("%Y-%m-%d")
+    else:
+        data_rif = str(data_rif)
+    
+    # Converti ora_originale se è timedelta
+    if isinstance(ora_originale, timedelta):
+        total_secs = int(ora_originale.total_seconds())
+        h, remainder = divmod(total_secs, 3600)
+        m, s = divmod(remainder, 60)
+        ora_originale = f"{h:02d}:{m:02d}:{s:02d}"
+    else:
+        ora_originale = str(ora_originale)
+    
+    # Normalizza new_ora_modificata - potrebbe essere solo HH:MM o già con data
+    new_ora_modificata = str(new_ora_modificata)
+    
+    # Se contiene già la data (es. "2026-01-17 19:00:00"), estrai solo l'ora
+    if " " in new_ora_modificata and len(new_ora_modificata) > 10:
+        # Formato "YYYY-MM-DD HH:MM:SS" - prendi solo l'ora
+        new_ora_modificata = new_ora_modificata.split(" ")[1]
+    
+    # Aggiungi secondi se mancano (HH:MM -> HH:MM:00)
+    if len(new_ora_modificata) == 5:  # HH:MM
+        new_ora_modificata = f"{new_ora_modificata}:00"
+    
+    # Costruisci data_originale e data_modificata complete
+    data_originale = f"{data_rif} {ora_originale}"
+    data_modificata = f"{data_rif} {new_ora_modificata}"
+    
+    # Recupera gruppo_id esterno
+    external_group_id = get_external_group_id_for_username(db, username)
+    
+    app.logger.info(
+        "CedolinoWeb Flex resync: timbr_id=%s, external_id=%s, timeframe=%s, data_rif=%s, ora_orig=%s, ora_mod=%s, gruppo=%s",
+        timbr_id, external_id, timeframe_id, data_rif, ora_originale, new_ora_modificata, external_group_id
+    )
+    
+    # Chiama il webservice con tutti i parametri
+    success, error, request_url = call_cedolino_webservice(
+        external_id, timeframe_id, data_rif, data_originale, data_modificata, endpoint, external_group_id
+    )
+    
+    now_ts = int(datetime.now().timestamp() * 1000)
+    
+    if success:
+        # Aggiorna synced_ts e resetta sync_error e overtime_request_id
+        db.execute(f"""
+            UPDATE cedolino_timbrature 
+            SET synced_ts = {placeholder},
+                sync_error = NULL, overtime_request_id = NULL
+            WHERE id = {placeholder}
+        """, (now_ts, timbr_id))
+        db.commit()
+        
+        app.logger.info(f"CedolinoWeb Flex sync OK: timbr_id={timbr_id}")
+        
+        return {
+            "success": True,
+            "url": request_url
+        }
+    else:
+        app.logger.error(f"CedolinoWeb Flex sync FAILED: timbr_id={timbr_id}, error={error}")
+        return {"error": error, "url": request_url}
+
+
+def _sync_overtime_blocked_timbrature(
+    db: DatabaseLike, 
+    overtime_request_id: int,
+    request_status: str = None,
+    extra_data_passed: str = None
+) -> dict:
+    """
+    Sincronizza le timbrature che erano bloccate in attesa della revisione di uno straordinario.
+    Chiamata dopo che una richiesta di straordinario viene approvata o respinta.
+    
+    - Se APPROVATA: invia la timbrata con l'orario arrotondato (Extra Turno)
+    - Se RESPINTA: invia la timbrata con l'orario del turno pianificato (no Extra Turno)
+    
+    Args:
+        db: connessione database
+        overtime_request_id: ID della richiesta straordinario revisionata
+        request_status: status della richiesta (passed from caller to avoid re-query)
+        extra_data_passed: extra_data della richiesta (passed from caller)
+    
+    Returns:
+        Dict con info di debug sulla sincronizzazione
+    """
+    app.logger.warning(
+        "DEBUG SYNC: INIZIO _sync_overtime_blocked_timbrature - overtime_request_id=%s, request_status=%r, extra_data_passed=%r",
+        overtime_request_id, request_status, extra_data_passed[:200] if extra_data_passed else None
+    )
+    
+    settings = get_cedolino_settings()
+    if not settings:
+        return {"synced_count": 0, "error": "CedolinoWeb non configurato"}
+    
+    endpoint = settings.get("endpoint") or CEDOLINO_WEB_ENDPOINT
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    # Usa i dati passati dal chiamante oppure fai una query
+    if request_status is None or extra_data_passed is None:
+        request_row = db.execute(f"""
+            SELECT status, extra_data FROM user_requests WHERE id = {placeholder}
+        """, (overtime_request_id,)).fetchone()
+        
+        if not request_row:
+            return {"synced_count": 0, "error": "Richiesta non trovata"}
+        
+        if isinstance(request_row, Mapping):
+            request_status = request_row.get("status")
+            extra_data_str = request_row.get("extra_data")
+        else:
+            request_status = request_row[0]
+            extra_data_str = request_row[1]
+    else:
+        extra_data_str = extra_data_passed
+    
+    app.logger.info(
+        "CedolinoWeb _sync_overtime: overtime_request_id=%s, request_status=%s",
+        overtime_request_id, request_status
+    )
+    
+    # Estrai i dati del turno pianificato
+    planned_start = None
+    planned_end = None
+    extra_type = None
+    
+    if extra_data_str:
+        try:
+            extra_data = json.loads(extra_data_str) if isinstance(extra_data_str, str) else extra_data_str
+            planned_start = extra_data.get("planned_start")
+            planned_end = extra_data.get("planned_end")
+            extra_type = extra_data.get("extra_type")
+            app.logger.info(
+                "CedolinoWeb: overtime %s - status=%s, extra_type=%s, planned_start=%s, planned_end=%s",
+                overtime_request_id, request_status, extra_type, planned_start, planned_end
+            )
+        except Exception as e:
+            app.logger.error("CedolinoWeb: errore parsing extra_data per overtime %s: %s", overtime_request_id, e)
+    
     # Recupera le timbrature bloccate per questo straordinario
-    rows = db.execute(f"""
-        SELECT id, external_id, timeframe_id, data_riferimento, ora_originale, ora_modificata, username
-        FROM cedolino_timbrature
-        WHERE overtime_request_id = {placeholder} AND synced_ts IS NULL
-    """, (overtime_request_id,)).fetchall()
+    # Nota: includiamo anche quelle già sincronizzate se stiamo respingendo (per correggerle)
+    if request_status == 'rejected':
+        # Per le respinte, recupera TUTTE le timbrature associate, anche quelle già sincronizzate
+        rows = db.execute(f"""
+            SELECT id, external_id, timeframe_id, data_riferimento, ora_originale, ora_modificata, username, synced_ts
+            FROM cedolino_timbrature
+            WHERE overtime_request_id = {placeholder}
+        """, (overtime_request_id,)).fetchall()
+        app.logger.info("CedolinoWeb: REJECTED - cercando tutte le timbrature per overtime_request_id=%s, trovate %d", 
+                       overtime_request_id, len(rows) if rows else 0)
+    else:
+        # Per le approvate, solo quelle non ancora sincronizzate
+        rows = db.execute(f"""
+            SELECT id, external_id, timeframe_id, data_riferimento, ora_originale, ora_modificata, username, synced_ts
+            FROM cedolino_timbrature
+            WHERE overtime_request_id = {placeholder} AND synced_ts IS NULL
+        """, (overtime_request_id,)).fetchall()
+        app.logger.info("CedolinoWeb: APPROVED - cercando timbrature non sincronizzate per overtime_request_id=%s, trovate %d", 
+                       overtime_request_id, len(rows) if rows else 0)
     
     if not rows:
-        return 0
+        app.logger.warning("CedolinoWeb: nessuna timbratura trovata per overtime_request_id=%s", overtime_request_id)
+        return {"synced_count": 0, "error": "Nessuna timbratura trovata"}
     
     synced_count = 0
     for row in rows:
@@ -17995,16 +20955,87 @@ def _sync_overtime_blocked_timbrature(db: DatabaseLike, overtime_request_id: int
         else:
             ora_modificata = str(ora_mod) if ora_mod else ora_originale
         
+        # Se RESPINTA: usa l'orario del turno pianificato invece dell'extra
+        ora_modificata_originale = ora_modificata  # Salva il valore originale per il log
+        if request_status == 'rejected':
+            app.logger.info(
+                "CedolinoWeb: Richiesta RESPINTA - extra_type=%s, planned_start=%s, planned_end=%s, ora_mod_attuale=%s",
+                extra_type, planned_start, planned_end, ora_modificata
+            )
+            # Determina quale orario usare in base al tipo di extra turno
+            if extra_type == 'before_shift' and planned_start:
+                # Ingresso anticipato respinto: usa l'orario di inizio turno
+                ora_modificata = f"{planned_start}:00" if len(planned_start) == 5 else planned_start
+                app.logger.info(
+                    "CedolinoWeb: Extra Turno RESPINTO (before_shift) - uso orario turno %s invece di %s",
+                    ora_modificata, ora_modificata_originale
+                )
+            elif extra_type == 'after_shift' and planned_end:
+                # Uscita posticipata respinta: usa l'orario di fine turno
+                ora_modificata = f"{planned_end}:00" if len(planned_end) == 5 else planned_end
+                app.logger.info(
+                    "CedolinoWeb: Extra Turno RESPINTO (after_shift) - uso orario turno %s invece di %s",
+                    ora_modificata, ora_modificata_originale
+                )
+            else:
+                app.logger.warning(
+                    "CedolinoWeb: Extra Turno RESPINTO ma mancano dati - extra_type=%s, planned_start=%s, planned_end=%s",
+                    extra_type, planned_start, planned_end
+                )
+            
+            # Aggiorna anche il record cedolino_timbrature con l'ora corretta
+            if ora_modificata != ora_modificata_originale:
+                if DB_VENDOR == "mysql":
+                    db.execute(
+                        "UPDATE cedolino_timbrature SET ora_modificata = %s WHERE id = %s",
+                        (ora_modificata, timbrata_id)
+                    )
+                else:
+                    db.execute(
+                        "UPDATE cedolino_timbrature SET ora_modificata = ? WHERE id = ?",
+                        (ora_modificata, timbrata_id)
+                    )
+                
+                # Aggiorna anche la tabella timbrature per mostrare l'ora corretta nello storico
+                # Converte timeframe_id in tipo timbratura
+                tipo_map = {1: 'inizio_giornata', 4: 'inizio_pausa', 5: 'fine_pausa', 8: 'fine_giornata'}
+                tipo_timbratura = tipo_map.get(timeframe_id)
+                
+                if tipo_timbratura and username:
+                    # Solo ore e minuti per ora_mod
+                    ora_mod_short = ora_modificata[:5] if len(ora_modificata) >= 5 else ora_modificata
+                    if DB_VENDOR == "mysql":
+                        db.execute(
+                            """UPDATE timbrature SET ora_mod = %s 
+                               WHERE username = %s AND data = %s AND tipo = %s""",
+                            (ora_mod_short, username, data_riferimento, tipo_timbratura)
+                        )
+                    else:
+                        db.execute(
+                            """UPDATE timbrature SET ora_mod = ? 
+                               WHERE username = ? AND data = ? AND tipo = ?""",
+                            (ora_mod_short, username, data_riferimento, tipo_timbratura)
+                        )
+                    app.logger.info(
+                        "CedolinoWeb: aggiornato timbrature.ora_mod=%s per user=%s, data=%s, tipo=%s",
+                        ora_mod_short, username, data_riferimento, tipo_timbratura
+                    )
+        
         # Componi data_originale e data_modificata
         data_originale = f"{data_riferimento} {ora_originale}"
         data_modificata = f"{data_riferimento} {ora_modificata}"
+        
+        app.logger.warning(
+            "DEBUG SYNC: PRIMA DI CALL WEBSERVICE - data_originale=%s, data_modificata=%s, ora_originale=%s, ora_modificata=%s",
+            data_originale, data_modificata, ora_originale, ora_modificata
+        )
         
         # Recupera external_group_id se possibile
         external_group_id = get_external_group_id_for_username(db, username) if username else None
         
         app.logger.info(
-            "CedolinoWeb: sincronizzazione timbrata %s bloccata per straordinario %s",
-            timbrata_id, overtime_request_id
+            "CedolinoWeb: sincronizzazione timbrata %s bloccata per straordinario %s (status=%s)",
+            timbrata_id, overtime_request_id, request_status
         )
         
         success, error, _url = call_cedolino_webservice(
@@ -18040,7 +21071,17 @@ def _sync_overtime_blocked_timbrature(db: DatabaseLike, overtime_request_id: int
     if rows:
         db.commit()
     
-    return synced_count
+    # Ritorna dati di debug
+    return {
+        "synced_count": synced_count,
+        "request_status": request_status,
+        "extra_type": extra_type,
+        "planned_start": planned_start,
+        "planned_end": planned_end,
+        "rows_found": len(rows) if rows else 0,
+        "last_ora_modificata": ora_modificata if rows else None,
+        "last_ora_originale": ora_originale if rows else None
+    }
 
 
 @app.put("/api/admin/overtime/<int:overtime_id>")
@@ -18110,7 +21151,7 @@ def api_admin_overtime_review(overtime_id: int) -> ResponseReturnValue:
     _send_overtime_review_notification(db, target_username, ot_date, ot_minutes, status, review_notes)
     
     status_label = "approvata" if status == "approved" else "respinta"
-    return jsonify({"ok": True, "message": f"Richiesta straordinario {status_label}"})
+    return jsonify({"ok": True, "message": f"Richiesta Extra Turno {status_label}"})
 
 
 @app.get("/api/user/check-overtime")
@@ -18387,7 +21428,7 @@ def _find_planned_shift(db, username: str, date_str: str) -> dict | None:
 
 
 def _send_overtime_notification_to_admins(db, username: str, date: str, minutes: int):
-    """Invia notifica push agli admin per nuova richiesta straordinario."""
+    """Invia notifica push agli admin per nuova richiesta Extra Turno."""
     try:
         hours = minutes // 60
         mins = minutes % 60
@@ -18405,30 +21446,30 @@ def _send_overtime_notification_to_admins(db, username: str, date: str, minutes:
                 send_push_notification(
                     db,
                     admin_username,
-                    "⏰ Nuova Richiesta Straordinario",
-                    f"{username} ha richiesto {time_str} di straordinario per {date}",
+                    "⏰ Nuova Richiesta Extra Turno",
+                    f"{username} ha richiesto {time_str} di Extra Turno per {date}",
                     url="/admin/overtime",
                     tag=f"overtime-request-{username}-{date}"
                 )
             except Exception as e:
                 app.logger.warning(f"Errore invio notifica admin {admin_username}: {e}")
     except Exception as e:
-        app.logger.error(f"Errore invio notifiche straordinario agli admin: {e}")
+        app.logger.error(f"Errore invio notifiche Extra Turno agli admin: {e}")
 
 
 def _send_overtime_review_notification(db, username: str, date: str, minutes: int, status: str, notes: str):
-    """Invia notifica push all'utente per esito richiesta straordinario."""
+    """Invia notifica push all'utente per esito richiesta Extra Turno."""
     try:
         hours = minutes // 60
         mins = minutes % 60
         time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins} minuti"
         
         if status == "approved":
-            title = "✅ Straordinario Approvato"
-            body = f"Il tuo straordinario di {time_str} del {date} è stato approvato"
+            title = "✅ Extra Turno Approvato"
+            body = f"Il tuo Extra Turno di {time_str} del {date} è stato approvato"
         else:
-            title = "❌ Straordinario Rifiutato"
-            body = f"Il tuo straordinario di {time_str} del {date} è stato rifiutato"
+            title = "❌ Extra Turno Rifiutato"
+            body = f"Il tuo Extra Turno di {time_str} del {date} è stato rifiutato"
         
         if notes:
             body += f". Note: {notes}"
@@ -18458,9 +21499,9 @@ def _send_overtime_review_notification(db, username: str, date: str, minutes: in
             """, (username, title, body, "/user/requests", f"overtime-review-{date}", now_ts, "overtime_review"))
         db.commit()
         
-        app.logger.info(f"Notifica revisione straordinario inviata a {username}")
+        app.logger.info(f"Notifica revisione Extra Turno inviata a {username}")
     except Exception as e:
-        app.logger.error(f"Errore invio notifica revisione straordinario: {e}")
+        app.logger.error(f"Errore invio notifica revisione Extra Turno: {e}")
 
 
 if __name__ == "__main__":

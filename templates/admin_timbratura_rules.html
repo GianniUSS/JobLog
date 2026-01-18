@@ -235,6 +235,17 @@
         .menu-item.danger:hover {
             background: rgba(102, 126, 234, 0.1);
         }
+        .menu-badge {
+            background: #ef4444;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: auto;
+            min-width: 18px;
+            text-align: center;
+        }
 
         .header-user {
             display: flex; align-items: center; gap: 8px;
@@ -513,13 +524,17 @@
             <div class="menu-divider"></div>
             <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
             <a href="/admin/documents" class="menu-item">📄 Documenti</a>
-            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <a href="/admin/user-requests" class="menu-item">
+                📥 Richieste
+                <span class="menu-badge" id="pendingRequestsBadge" style="display: none;"></span>
+            </a>
             <div class="menu-divider"></div>
             <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
             <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
             <a href="/admin/users" class="menu-item">👥 Utenti</a>
             <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
             <a href="/admin/timbratura-rules" class="menu-item active">⚡ Regole Timbrature</a>
+            <a href="/admin/group-timbratura-rules" class="menu-item">🏢 Regole per Gruppo</a>
             <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
             <div class="menu-divider"></div>
             <a href="/logout" class="menu-item danger">🚪 Logout</a>
@@ -844,6 +859,17 @@
             el.addEventListener('input', updateExamples);
             el.addEventListener('change', updateExamples);
         });
+
+        // Carica contatore richieste pendenti
+        fetch('/api/admin/user-requests/pending-count')
+            .then(r => r.json())
+            .then(data => {
+                const badge = document.getElementById('pendingRequestsBadge');
+                if (badge && data.count > 0) {
+                    badge.textContent = data.count;
+                    badge.style.display = 'inline-block';
+                }
+            }).catch(() => {});
 
         // Init
         loadRules();

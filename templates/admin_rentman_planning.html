@@ -232,6 +232,17 @@
         }
         .menu-item.danger { color: var(--danger); }
         .menu-item.danger:hover { background: rgba(102, 126, 234, 0.1); }
+        .menu-badge {
+            background: #ef4444;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: auto;
+            min-width: 18px;
+            text-align: center;
+        }
 
         .header-user {
             display: flex; align-items: center; gap: 8px;
@@ -879,6 +890,37 @@
             width: fit-content;
         }
 
+        /* Note operatore */
+        .note-icon {
+            font-size: 12px;
+            margin-left: 4px;
+            opacity: 0.8;
+        }
+        .operator-notes {
+            margin-top: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            max-width: 280px;
+        }
+        .note-crew, .note-planner {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        .note-crew {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--brand);
+            border-left: 3px solid var(--brand);
+        }
+        .note-planner {
+            background: rgba(168, 85, 247, 0.12);
+            color: var(--purple);
+            border-left: 3px solid var(--purple);
+        }
+
         /* Empty state */
         .empty-state {
             padding: 60px 20px;
@@ -1363,7 +1405,10 @@
             <div class="menu-divider"></div>
             <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
             <a href="/admin/documents" class="menu-item">📄 Documenti</a>
-            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <a href="/admin/user-requests" class="menu-item">
+                📥 Richieste
+                <span class="menu-badge" id="pendingRequestsBadge" style="display: none;"></span>
+            </a>
             <div class="menu-divider"></div>
             <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
             <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
@@ -1796,7 +1841,10 @@
                             break_end: saved.break_end,
                             break_minutes: saved.break_minutes,
                             sent_to_webservice: saved.sent_to_webservice,
-                            sent_ts: saved.sent_ts
+                            sent_ts: saved.sent_ts,
+                            // Note: usa quelle di Rentman se presenti, altrimenti dal DB
+                            remark: p.remark || saved.remark || '',
+                            remark_planner: p.remark_planner || saved.remark_planner || ''
                         };
                     }
                     return p;
@@ -1872,15 +1920,26 @@
 
             let html = '';
             grouped.forEach((group, key) => {
+                // Raccogli le note uniche del gruppo (per mostrarle nell'header se comuni)
+                const uniqueRemarks = [...new Set(group.items.map(p => p.remark).filter(r => r && r.trim()))];
+                const uniqueRemarksPlanners = [...new Set(group.items.map(p => p.remark_planner).filter(r => r && r.trim()))];
+                const hasGroupNotes = uniqueRemarks.length > 0 || uniqueRemarksPlanners.length > 0;
+                
                 // Header gruppo progetto
                 html += `<tr class="project-row">
                     <td colspan="7">
-                        <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                             <span style="font-weight: 700;">${escapeHtml(group.name || 'Progetto N/D')}</span>
                             ${group.code ? `<span style="color: var(--muted); font-weight: 500; font-size: 11px;">${escapeHtml(group.code)}</span>` : ''}
                             <span class="project-badge">${group.items.length} operatori</span>
                             ${group.location ? `<span class="project-location">📍 ${escapeHtml(group.location)}</span>` : ''}
                         </div>
+                        ${hasGroupNotes ? `
+                            <div class="project-notes" style="margin-top: 6px;">
+                                ${uniqueRemarks.map(r => `<span class="note-crew" style="margin-right: 12px;">👷 ${escapeHtml(r)}</span>`).join('')}
+                                ${uniqueRemarksPlanners.map(r => `<span class="note-planner" style="margin-right: 12px;">📋 ${escapeHtml(r)}</span>`).join('')}
+                            </div>
+                        ` : ''}
                     </td>
                 </tr>`;
                 
@@ -1899,7 +1958,7 @@
                         gpsInfo = hasGroupLocation ? `📍 ${escapeHtml(p.gps_timbratura_location.substring(0,20))}` : '⚠️ N/D';
                     }
                     
-                    // Costruisce la riga
+                    // Costruisce la riga (le note sono mostrate nell'header del gruppo)
                     html += `<tr class="${p.sent_to_webservice ? 'sent' : ''} ${p.is_modified ? 'modified' : ''}" 
                                 data-idx="${idx}" data-project="${escapeHtml(key)}">
                         <td class="col-check center">
@@ -2992,6 +3051,17 @@
 
         // Carica automaticamente i dati salvati all'avvio
         initPage();
+
+        // Carica contatore richieste pendenti
+        fetch('/api/admin/user-requests/pending-count')
+            .then(r => r.json())
+            .then(data => {
+                const badge = document.getElementById('pendingRequestsBadge');
+                if (badge && data.count > 0) {
+                    badge.textContent = data.count;
+                    badge.style.display = 'inline-block';
+                }
+            }).catch(() => {});
 
     })();
     </script>

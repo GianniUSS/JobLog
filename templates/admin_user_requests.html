@@ -286,6 +286,22 @@
         }
         .menu-item.danger { color: var(--danger); }
         .menu-item.danger:hover { background: rgba(102, 126, 234, 0.1); }
+        
+        .menu-badge {
+            background: #ef4444;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: auto;
+            min-width: 18px;
+            text-align: center;
+        }
+        .menu-item.active .menu-badge {
+            background: rgba(255,255,255,0.9);
+            color: #ef4444;
+        }
 
         .header-user {
             display: flex; align-items: center; gap: 8px;
@@ -657,8 +673,16 @@
         .btn-primary:hover { filter: brightness(1.1); }
         .btn-success { background: var(--success); color: white; }
         .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { filter: brightness(1.1); }
+        .btn-sm { padding: 4px 8px !important; font-size: 12px !important; min-width: auto !important; }
         .btn-ghost { background: transparent; color: var(--text-muted); }
         .btn-ghost:hover { background: var(--bg-soft); }
+
+        .request-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
 
         /* Empty state */
         .empty-state {
@@ -821,7 +845,10 @@
             <div class="menu-divider"></div>
             <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
             <a href="/admin/documents" class="menu-item">📄 Documenti</a>
-            <a href="/admin/user-requests" class="menu-item active">📥 Richieste</a>
+            <a href="/admin/user-requests" class="menu-item active">
+                📥 Richieste
+                <span class="menu-badge" id="pendingRequestsBadge" style="display: none;"></span>
+            </a>
             <div class="menu-divider"></div>
             <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
             <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
@@ -843,7 +870,7 @@
             </div>
         </div>
         <div class="header-actions">
-            <button class="header-icon-btn" onclick="refreshData()" title="Aggiorna">↻</button>
+            <button class="header-icon-btn" onclick="loadRequests()" title="Aggiorna">↻</button>
             <button class="header-icon-btn" onclick="toggleTheme()" title="Tema">🌓</button>
             <div class="header-user">
                 <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
@@ -897,25 +924,14 @@
             </div>
             <div class="modal-body">
                 <div class="summary-box" id="reviewSummary"></div>
-                <!-- Campi modifica orari arrotondati per straordinario -->
+                <!-- Campo modifica orario arrotondato per Extra Turno -->
                 <div class="form-group" id="overtimeTimesGroup" style="display: none;">
-                    <label class="form-label">⏱️ Orario Arrotondato</label>
+                    <label class="form-label" id="overtimeTimeLabel">⏱️ Orario Arrotondato (Ingresso)</label>
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                        <input type="time" class="form-input" id="overtimeRoundedStart" style="width: 120px; font-size: 16px; font-weight: 600; text-align: center;">
-                        <span style="color: var(--text-muted);">-</span>
-                        <input type="time" class="form-input" id="overtimeRoundedEnd" style="width: 120px; font-size: 16px; font-weight: 600; text-align: center;">
+                        <input type="time" class="form-input" id="overtimeRoundedStart" style="width: 140px; font-size: 16px; font-weight: 600; text-align: center;">
+                        <input type="hidden" id="overtimeRoundedEnd">
                     </div>
-                    <small style="color: var(--text-muted); margin-top: 4px; display: block;">Puoi modificare gli orari - i minuti si aggiorneranno automaticamente</small>
-                </div>
-                <!-- Campo modifica minuti per straordinario -->
-                <div class="form-group" id="overtimeEditGroup" style="display: none;">
-                    <label class="form-label">⏱️ Minuti da confermare</label>
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <input type="number" class="form-input" id="overtimeMinutes" min="0" step="15" style="width: 120px; font-size: 18px; font-weight: 600; text-align: center;">
-                        <span style="color: var(--text-muted);">minuti</span>
-                        <span id="overtimeFormatted" style="color: var(--brand); font-weight: 600;"></span>
-                    </div>
-                    <small style="color: var(--text-muted); margin-top: 4px; display: block;">Puoi modificare il valore prima di approvare</small>
+                    <small style="color: var(--text-muted); margin-top: 4px; display: block;">Puoi modificare l'orario per l'approvazione</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Note di revisione (opzionale)</label>
@@ -964,12 +980,29 @@
             const m = roundedMin % 60;
             return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
         }
+        
+        // Carica contatore richieste pendenti per il menu
+        function loadPendingRequestsCount() {
+            fetch('/api/admin/user-requests/pending-count')
+                .then(r => r.json())
+                .then(data => {
+                    const badge = document.getElementById('pendingRequestsBadge');
+                    if (badge && data.count > 0) {
+                        badge.textContent = data.count;
+                        badge.style.display = 'inline-block';
+                    } else if (badge) {
+                        badge.style.display = 'none';
+                    }
+                })
+                .catch(() => {});
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             loadRequests();
             loadRequestTypes();
             setupEventListeners();
             loadTheme();
+            loadPendingRequestsCount();
         });
 
         function setupEventListeners() {
@@ -1100,6 +1133,8 @@
                     Revisiona
                 </button>` : `<span class="request-time">📅 ${createdDate}</span>`;
 
+            const deleteBtn = `<button class="btn btn-danger btn-sm" onclick="deleteRequest(${r.id})" title="Elimina richiesta" style="margin-left: 8px; padding: 4px 8px; font-size: 12px;">🗑️</button>`;
+
             let notesHtml = '';
             if (r.notes) {
                 notesHtml = `<div class="request-notes">💬 ${r.notes}</div>`;
@@ -1126,50 +1161,88 @@
                     </div>`;
             }
             
-            // Dettagli straordinario (extra_data)
+            // Dettagli Extra Turno o Fuori Flessibilità (extra_data)
             let overtimeHtml = '';
             if (r.value_type === 'minutes' && r.extra_data) {
                 const ed = r.extra_data;
-                const sourceLabels = {
-                    'rentman': '📅 Da pianificazione Rentman',
-                    'manual': '✏️ Turno manuale',
-                    'employee_shift': '🏢 Turno impiegato'
-                };
-                const source = sourceLabels[ed.shift_source] || '📝 Inserito manualmente';
                 
-                // Formatta i minuti totali
-                const totalMins = r.value || 0;
-                const hours = Math.floor(totalMins / 60);
-                const mins = totalMins % 60;
-                const totalFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                // Funzione per rimuovere i secondi (HH:MM:SS -> HH:MM)
+                const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
                 
-                // Usa orari arrotondati salvati o calcolali al volo
-                const roundedStart = ed.rounded_start || roundTime(ed.actual_start, 'up');
-                const roundedEnd = ed.rounded_end || roundTime(ed.actual_end, 'down');
-                
-                overtimeHtml = `
-                    <div class="request-overtime-details">
-                        <div class="overtime-header">⏱️ Riepilogo Straordinario</div>
-                        <div class="overtime-grid">
-                            <div class="overtime-box">
-                                <div class="overtime-box-label">🗓️ Turno Pianificato</div>
-                                <div class="overtime-box-value">${ed.planned_start || '--:--'} - ${ed.planned_end || '--:--'}</div>
+                // Distingui tra Fuori Flessibilità (request_type_id=17) e Extra Turno (request_type_id=9)
+                if (r.request_type_id === 17) {
+                    // FUORI FLESSIBILITÀ
+                    const turnoStart = formatTime(ed.turno_start);
+                    const turnoEnd = formatTime(ed.turno_end);
+                    const oraTimbrata = formatTime(ed.ora_timbrata);
+                    // Usa ora_finale se presente (dopo approvazione), altrimenti ora_mod
+                    const oraArrotondata = formatTime(ed.ora_finale || ed.ora_mod);
+                    const tipoLabel = ed.tipo_timbratura === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
+                    
+                    overtimeHtml = `
+                        <div class="request-overtime-details">
+                            <div class="overtime-header">⚠️ Riepilogo Fuori Flessibilità</div>
+                            <div class="overtime-grid">
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">🗓️ Turno Pianificato</div>
+                                    <div class="overtime-box-value">${turnoStart} - ${turnoEnd}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">📝 Timbrata Originale</div>
+                                    <div class="overtime-box-value">${oraTimbrata}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">⏰ Timbrata Arrotondata</div>
+                                    <div class="overtime-box-value">${oraArrotondata}</div>
+                                </div>
                             </div>
-                            <div class="overtime-box">
-                                <div class="overtime-box-label">📝 Timbrate Originali</div>
-                                <div class="overtime-box-value">${ed.actual_start || '--:--'} - ${ed.actual_end || '--:--'}</div>
+                            <div class="overtime-diff">
+                                <div class="overtime-diff-item">⏱️ ${tipoLabel} fuori flessibilità: <span class="overtime-diff-badge" style="background: #f59e0b;">+${ed.diff_minutes || 0} min</span></div>
                             </div>
-                            <div class="overtime-box">
-                                <div class="overtime-box-label">⏰ Timbrate Arrotondate</div>
-                                <div class="overtime-box-value">${roundedStart} - ${roundedEnd}</div>
+                            <div class="overtime-source">${ed.auto_created ? '📝 Inserito manualmente • Rilevato automaticamente' : '📝 Inserito manualmente'}</div>
+                        </div>`;
+                } else {
+                    // EXTRA TURNO
+                    const sourceLabels = {
+                        'rentman': '📅 Da pianificazione Rentman',
+                        'manual': '✏️ Turno manuale',
+                        'employee_shift': '🏢 Turno impiegato'
+                    };
+                    const source = sourceLabels[ed.shift_source] || '📝 Inserito manualmente';
+                    
+                    const totalMins = r.value || 0;
+                    const hours = Math.floor(totalMins / 60);
+                    const mins = totalMins % 60;
+                    const totalFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                    
+                    // Timbrata originale (es. 00:27) e arrotondata (es. 00:30)
+                    const actualStart = formatTime(ed.actual_start || ed.ora_timbrata);
+                    const roundedTimbratura = formatTime(ed.ora_mod || ed.rounded_start) || roundTime(actualStart, 'up');
+                    
+                    overtimeHtml = `
+                        <div class="request-overtime-details">
+                            <div class="overtime-header">⏱️ Riepilogo Extra Turno</div>
+                            <div class="overtime-grid">
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">🗓️ Turno Pianificato</div>
+                                    <div class="overtime-box-value">${formatTime(ed.planned_start)} - ${formatTime(ed.planned_end)}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">📝 Timbrata Originale</div>
+                                    <div class="overtime-box-value">${actualStart}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">⏰ Timbrata Arrotondata</div>
+                                    <div class="overtime-box-value">${roundedTimbratura}</div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="overtime-diff">
-                            ${ed.extra_minutes_before > 0 ? `<div class="overtime-diff-item">⬆️ Ingresso anticipato: <span class="overtime-diff-badge">+${ed.extra_minutes_before} min</span></div>` : ''}
-                            ${ed.extra_minutes_after > 0 ? `<div class="overtime-diff-item">⬇️ Uscita posticipata: <span class="overtime-diff-badge">+${ed.extra_minutes_after} min</span></div>` : ''}
-                        </div>
-                        <div class="overtime-source">${source}${ed.auto_detected ? ' • Rilevato automaticamente' : ''}</div>
-                    </div>`;
+                            <div class="overtime-diff">
+                                ${ed.extra_minutes_before > 0 ? `<div class="overtime-diff-item">⬆️ Ingresso anticipato: <span class="overtime-diff-badge">+${ed.extra_minutes_before} min</span></div>` : ''}
+                                ${ed.extra_minutes_after > 0 ? `<div class="overtime-diff-item">⬇️ Uscita posticipata: <span class="overtime-diff-badge">+${ed.extra_minutes_after} min</span></div>` : ''}
+                            </div>
+                            <div class="overtime-source">${source}${ed.auto_detected ? ' • Rilevato automaticamente' : ''}</div>
+                        </div>`;
+                }
             }
             
             // Dettagli permesso con orari (extra_data)
@@ -1248,7 +1321,10 @@
                         ${r.value ? r.value + ' ' + valueUnit : '-'}
                     </div>
                     <span class="request-status ${statusClass}">${statusLabels[r.status]}</span>
-                    ${actionBtn}
+                    <div class="request-actions">
+                        ${actionBtn}
+                        ${deleteBtn}
+                    </div>
                     ${permissionHtml}
                     ${timbraturaHtml}
                     ${cdcHtml}
@@ -1287,43 +1363,120 @@
             const dateFrom = formatDate(r.date_from);
             const dateTo = r.date_to && r.date_to !== r.date_from ? ` → ${formatDate(r.date_to)}` : '';
 
-            // Se è straordinario, mostra anche i dettagli del turno
+            // Se è Extra Turno o Fuori Flessibilità, mostra i dettagli
             let extraInfo = '';
             const overtimeTimesGroup = document.getElementById('overtimeTimesGroup');
-            const overtimeEditGroup = document.getElementById('overtimeEditGroup');
-            const overtimeMinutesInput = document.getElementById('overtimeMinutes');
             const overtimeRoundedStart = document.getElementById('overtimeRoundedStart');
             const overtimeRoundedEnd = document.getElementById('overtimeRoundedEnd');
             
-            if (r.value_type === 'minutes' && r.extra_data) {
+            // Gestione FUORI FLESSIBILITÀ (request_type_id = 17)
+            if (r.request_type_id === 17 && r.extra_data) {
                 const ed = r.extra_data;
+                const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
                 
-                // Calcola orari arrotondati se non presenti nel database
-                const roundedStart = ed.rounded_start || roundTime(ed.actual_start, 'up');
-                const roundedEnd = ed.rounded_end || roundTime(ed.actual_end, 'down');
+                // Dati dalla richiesta
+                const oraTimbrata = formatTime(ed.ora_timbrata);
+                const oraModTurno = formatTime(ed.ora_mod);  // Ora calcolata sul turno (RESPINGI)
+                const turnoStart = formatTime(ed.turno_start);
+                const turnoEnd = formatTime(ed.turno_end);
+                const diffMinutes = ed.diff_minutes || 0;
+                const tipoTimbratura = ed.tipo_timbratura || 'fine_giornata';
+                const tipoLabel = tipoTimbratura === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
+                
+                // Prendi arrotondamento dalle regole del gruppo (salvato in extra_data)
+                const arrotondamentoMinuti = ed.arrotondamento_minuti || 30;
+                
+                // Calcola ora approvata (ora reale arrotondata per difetto)
+                // Esempio con 30min: 19:09 → 19:00
+                const oraApprova = roundTime(oraTimbrata, 'down', arrotondamentoMinuti);
                 
                 extraInfo = `
-                    <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${ed.planned_start || '--:--'} - ${ed.planned_end || '--:--'}</span></div>
-                    <div class="summary-row"><span class="summary-label">Effettivo</span><span class="summary-value">${ed.actual_start || '--:--'} - ${ed.actual_end || '--:--'}</span></div>
-                    <div class="summary-row"><span class="summary-label">Arrotondato</span><span class="summary-value">${roundedStart} - ${roundedEnd}</span></div>
+                    <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${turnoStart} - ${turnoEnd}</span></div>
+                    <div class="summary-row"><span class="summary-label">Timbrata originale</span><span class="summary-value">${oraTimbrata}</span></div>
+                    <div class="summary-row"><span class="summary-label">Timbrata arrotondata</span><span class="summary-value">${oraModTurno}</span></div>
+                    <hr style="margin: 8px 0; border-color: #e9ecef;">
+                    <div class="summary-row" style="background: #d4edda; padding: 4px 8px; border-radius: 4px;">
+                        <span class="summary-label" style="color: #155724;">✅ Se APPROVI</span>
+                        <span class="summary-value" style="color: #155724; font-weight: bold;">${oraApprova}</span>
+                    </div>
+                    <div class="summary-row" style="background: #f8d7da; padding: 4px 8px; border-radius: 4px; margin-top: 4px;">
+                        <span class="summary-label" style="color: #721c24;">❌ Se RESPINGI</span>
+                        <span class="summary-value" style="color: #721c24; font-weight: bold;">${oraModTurno}</span>
+                    </div>
                 `;
                 
-                // Popola i campi orari arrotondati modificabili
-                overtimeRoundedStart.value = roundedStart || '';
-                overtimeRoundedEnd.value = roundedEnd || '';
+                // Mostra il campo per modificare l'orario
+                const overtimeTimeLabel = document.getElementById('overtimeTimeLabel');
+                if (overtimeTimeLabel) overtimeTimeLabel.textContent = `⏱️ Orario Arrotondato (${tipoLabel})`;
+                if (overtimeRoundedStart) overtimeRoundedStart.value = oraApprova || '';
                 
-                // Salva i dati del turno pianificato per il ricalcolo
-                overtimeTimesGroup.dataset.plannedStart = ed.planned_start || '';
-                overtimeTimesGroup.dataset.plannedEnd = ed.planned_end || '';
+                if (overtimeTimesGroup) {
+                    overtimeTimesGroup.dataset.oraModTurno = oraModTurno;
+                    overtimeTimesGroup.dataset.flexType = 'fuori_flessibilita';
+                    overtimeTimesGroup.style.display = 'block';
+                }
+            }
+            // Gestione EXTRA TURNO (request_type_id = 9)
+            else if (r.request_type_id === 9 && r.extra_data) {
+                const ed = r.extra_data;
                 
-                // Mostra campi orari e minuti
-                overtimeTimesGroup.style.display = 'block';
-                overtimeEditGroup.style.display = 'block';
-                overtimeMinutesInput.value = r.value || 0;
-                updateOvertimeFormatted();
+                // Funzione per rimuovere i secondi (HH:MM:SS -> HH:MM)
+                const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
+                
+                // Timbrata originale (es. 00:27)
+                const actualStart = formatTime(ed.actual_start || ed.ora_timbrata);
+                // Timbrata arrotondata (es. 00:30) - arrotondamento ai 15 min
+                const roundedTimbratura = formatTime(ed.ora_mod || ed.rounded_start) || roundTime(actualStart, 'up');
+                // Turno pianificato
+                const plannedStart = formatTime(ed.planned_start);
+                const plannedEnd = formatTime(ed.planned_end);
+                
+                // Preview orari per APPROVA/RESPINGI
+                const oraApprova = ed.extra_type === 'before_shift' 
+                    ? roundedTimbratura 
+                    : (ed.rounded_end || roundedTimbratura);
+                const oraRespingi = ed.extra_type === 'before_shift' 
+                    ? plannedStart 
+                    : plannedEnd;
+                
+                extraInfo = `
+                    <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${plannedStart} - ${plannedEnd}</span></div>
+                    <div class="summary-row"><span class="summary-label">Timbrata originale</span><span class="summary-value">${actualStart}</span></div>
+                    <div class="summary-row"><span class="summary-label">Timbrata arrotondata</span><span class="summary-value">${roundedTimbratura}</span></div>
+                    <hr style="margin: 8px 0; border-color: #e9ecef;">
+                    <div class="summary-row" style="background: #d4edda; padding: 4px 8px; border-radius: 4px;">
+                        <span class="summary-label" style="color: #155724;">✅ Se APPROVI</span>
+                        <span class="summary-value" style="color: #155724; font-weight: bold;">${oraApprova}</span>
+                    </div>
+                    <div class="summary-row" style="background: #f8d7da; padding: 4px 8px; border-radius: 4px; margin-top: 4px;">
+                        <span class="summary-label" style="color: #721c24;">❌ Se RESPINGI</span>
+                        <span class="summary-value" style="color: #721c24; font-weight: bold;">${oraRespingi}</span>
+                    </div>
+                `;
+                
+                // Popola il campo orario arrotondato (solo quello rilevante)
+                const overtimeTimeLabel = document.getElementById('overtimeTimeLabel');
+                if (ed.extra_type === 'before_shift') {
+                    // Ingresso anticipato
+                    if (overtimeTimeLabel) overtimeTimeLabel.textContent = '⏱️ Orario Arrotondato (Ingresso)';
+                    if (overtimeRoundedStart) overtimeRoundedStart.value = roundedTimbratura || '';
+                    if (overtimeRoundedEnd) overtimeRoundedEnd.value = '';
+                } else {
+                    // Uscita posticipata
+                    if (overtimeTimeLabel) overtimeTimeLabel.textContent = '⏱️ Orario Arrotondato (Uscita)';
+                    if (overtimeRoundedStart) overtimeRoundedStart.value = ed.rounded_end || roundedTimbratura || '';
+                    if (overtimeRoundedEnd) overtimeRoundedEnd.value = '';
+                }
+                
+                // Salva i dati del turno pianificato per il submit
+                if (overtimeTimesGroup) {
+                    overtimeTimesGroup.dataset.plannedStart = plannedStart;
+                    overtimeTimesGroup.dataset.plannedEnd = plannedEnd;
+                    overtimeTimesGroup.dataset.extraType = ed.extra_type || '';
+                    overtimeTimesGroup.style.display = 'block';
+                }
             } else {
-                overtimeTimesGroup.style.display = 'none';
-                overtimeEditGroup.style.display = 'none';
+                if (overtimeTimesGroup) overtimeTimesGroup.style.display = 'none';
             }
 
             // Se è un permesso (request_type_id = 3), mostra anche gli orari
@@ -1345,7 +1498,21 @@
                     'pausa_out': '🟡 Fine Pausa'
                 };
                 const tipoLabel = tipoLabels[ed.tipo_timbratura] || ed.tipo_timbratura;
+                
+                // Mostra turno previsto se disponibile
+                let turnoInfo = '';
+                if (r.turno_previsto) {
+                    const tp = r.turno_previsto;
+                    const turnoOrario = tp.start_time && tp.end_time ? `${tp.start_time} - ${tp.end_time}` : 'Non definito';
+                    const turnoLocation = tp.location_name ? ` (${tp.location_name})` : '';
+                    turnoInfo = `<div class="summary-row" style="background: #e3f2fd; padding: 4px 8px; border-radius: 4px; margin-bottom: 4px;">
+                        <span class="summary-label" style="color: #1565c0;">📅 Turno Previsto</span>
+                        <span class="summary-value" style="color: #1565c0; font-weight: 600;">${turnoOrario}${turnoLocation}</span>
+                    </div>`;
+                }
+                
                 timbraturaInfo = `
+                    ${turnoInfo}
                     <div class="summary-row"><span class="summary-label">Tipo Timbratura</span><span class="summary-value">${tipoLabel}</span></div>
                     <div class="summary-row"><span class="summary-label">Orario</span><span class="summary-value">${ed.ora_timbratura || '--:--'}</span></div>
                     ${ed.motivazione ? `<div class="summary-row"><span class="summary-label">Motivazione</span><span class="summary-value">${ed.motivazione}</span></div>` : ''}
@@ -1366,20 +1533,16 @@
             document.getElementById('reviewModal').classList.add('open');
         }
         
-        function updateOvertimeFormatted() {
-            const mins = parseInt(document.getElementById('overtimeMinutes').value) || 0;
-            const hours = Math.floor(mins / 60);
-            const m = mins % 60;
-            const formatted = hours > 0 ? `= ${hours}h ${m}m` : `= ${m} min`;
-            document.getElementById('overtimeFormatted').textContent = formatted;
-        }
-        
         function recalculateOvertimeMinutes() {
+            // Ricalcola i minuti basandosi sugli orari arrotondati modificati
+            // (utilizzato per aggiornare la UI se necessario in futuro)
             const timesGroup = document.getElementById('overtimeTimesGroup');
+            if (!timesGroup) return;
+            
             const plannedStart = timesGroup.dataset.plannedStart;
             const plannedEnd = timesGroup.dataset.plannedEnd;
-            const roundedStart = document.getElementById('overtimeRoundedStart').value;
-            const roundedEnd = document.getElementById('overtimeRoundedEnd').value;
+            const roundedStart = document.getElementById('overtimeRoundedStart')?.value;
+            const roundedEnd = document.getElementById('overtimeRoundedEnd')?.value;
             
             if (!plannedStart || !plannedEnd || !roundedStart || !roundedEnd) return;
             
@@ -1399,12 +1562,10 @@
             const extraAfter = Math.max(0, roundedEndMin - plannedEndMin); // Uscito dopo
             const totalExtra = extraBefore + extraAfter;
             
-            document.getElementById('overtimeMinutes').value = totalExtra;
-            updateOvertimeFormatted();
+            console.log('Ricalcolo minuti:', { extraBefore, extraAfter, totalExtra });
         }
         
         // Event listener per aggiornamento live
-        document.getElementById('overtimeMinutes')?.addEventListener('input', updateOvertimeFormatted);
         document.getElementById('overtimeRoundedStart')?.addEventListener('change', recalculateOvertimeMinutes);
         document.getElementById('overtimeRoundedEnd')?.addEventListener('change', recalculateOvertimeMinutes);
 
@@ -1417,27 +1578,38 @@
             if (!currentRequestId) return;
 
             const notes = document.getElementById('reviewNotes').value.trim();
-            const overtimeEditGroup = document.getElementById('overtimeEditGroup');
             const overtimeTimesGroup = document.getElementById('overtimeTimesGroup');
             
             // Prepara payload
             const payload = { status, review_notes: notes };
             
-            // Se è straordinario, includi i minuti modificati e gli orari arrotondati
-            if (overtimeEditGroup.style.display !== 'none') {
-                const confirmedMinutes = parseInt(document.getElementById('overtimeMinutes').value) || 0;
-                payload.confirmed_value = confirmedMinutes;
+            // Se è Extra Turno o Fuori Flessibilità (overtimeTimesGroup visibile), includi gli orari
+            if (overtimeTimesGroup && overtimeTimesGroup.style.display !== 'none') {
+                const flexType = overtimeTimesGroup.dataset.flexType;
                 
-                // Includi anche gli orari arrotondati modificati
-                console.log('DEBUG: overtimeTimesGroup=', overtimeTimesGroup, 'display=', overtimeTimesGroup?.style?.display);
-                if (overtimeTimesGroup && overtimeTimesGroup.style.display !== 'none') {
-                    payload.rounded_start = document.getElementById('overtimeRoundedStart').value;
-                    payload.rounded_end = document.getElementById('overtimeRoundedEnd').value;
-                    console.log('DEBUG: Adding rounded times to payload:', payload.rounded_start, payload.rounded_end);
+                if (flexType === 'fuori_flessibilita') {
+                    // FUORI FLESSIBILITÀ
+                    if (status === 'rejected') {
+                        // RESPINTO: usa ora_mod (orario calcolato sul turno)
+                        payload.rounded_time = overtimeTimesGroup.dataset.oraModTurno || '';
+                    } else {
+                        // APPROVATO: usa l'orario arrotondato dall'input
+                        payload.rounded_time = document.getElementById('overtimeRoundedStart')?.value || '';
+                    }
+                    payload.flex_type = 'fuori_flessibilita';
+                } else {
+                    // EXTRA TURNO
+                    if (status === 'rejected') {
+                        // RESPINTO: usa gli orari del turno pianificato
+                        payload.rounded_start = overtimeTimesGroup.dataset.plannedStart || '';
+                        payload.rounded_end = overtimeTimesGroup.dataset.plannedEnd || '';
+                    } else {
+                        // APPROVATO: usa gli orari arrotondati (extra turno)
+                        payload.rounded_start = document.getElementById('overtimeRoundedStart')?.value || '';
+                        payload.rounded_end = document.getElementById('overtimeRoundedEnd')?.value || '';
+                    }
                 }
             }
-            
-            console.log('DEBUG: Final payload:', JSON.stringify(payload));
             
             try {
                 const res = await fetch(`/api/admin/user-requests/${currentRequestId}`, {
@@ -1446,9 +1618,10 @@
                     body: JSON.stringify(payload)
                 });
 
+                const result = await res.json();
+                
                 if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || 'Errore nella revisione');
+                    throw new Error(result.error || 'Errore nella revisione');
                 }
 
                 closeModal();
@@ -1468,6 +1641,34 @@
             toast.textContent = message;
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
+        }
+
+        async function deleteRequest(requestId) {
+            const password = prompt('Inserisci la password per eliminare questa richiesta:');
+            if (!password) return;
+            
+            if (!confirm('Sei sicuro di voler eliminare questa richiesta? L\'operazione non è reversibile.')) {
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/api/admin/user-requests/${requestId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+
+                const result = await res.json();
+                
+                if (!res.ok) {
+                    throw new Error(result.error || 'Errore nell\'eliminazione');
+                }
+
+                loadRequests();
+                showToast('Richiesta eliminata con successo', 'success');
+            } catch (err) {
+                showToast(err.message, 'danger');
+            }
         }
     </script>
     <script src="{{ static_version('js/admin_update_system.js') }}"></script>

@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Regole Timbrature per Gruppo · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (prefersDark ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --bg-card: #0f172a;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --purple: #a855f7;
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --bg-card: #ffffff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --border: rgba(15, 23, 42, 0.1);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --purple: #9333ea;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .hidden { display: none !important; }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            color: #f8fafc;
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .header-title { color: white; }
+        .header-title h1 { font-size: 20px; font-weight: 700; margin: 0; }
+        .header-title p { font-size: 13px; opacity: 0.85; margin: 0; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-icon-btn {
+            width: 40px; height: 40px;
+            border: none; border-radius: 10px;
+            background: rgba(255,255,255,0.12);
+            color: white; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.2); }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header-user-avatar {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .header-user-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        @media (max-width: 600px) {
+            .header-user-name { display: none; }
+        }
+
+        /* Menu Overlay */
+        .menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 210;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .menu-overlay.open { opacity: 1; visibility: visible; }
+
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 320px;
+            max-width: 92vw;
+            height: 100vh;
+            background: var(--bg-card);
+            z-index: 220;
+            box-shadow: 2px 0 24px rgba(0,0,0,0.5);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transform: translateX(-105%);
+            transition: transform 0.24s ease;
+        }
+        .side-menu.open { transform: translateX(0); }
+        .side-menu-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .side-menu-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .side-menu-avatar {
+            width: 48px; height: 48px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #667eea, #4f46e5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 700;
+            color: white;
+        }
+        .side-menu-brand-text {
+            display: flex;
+            flex-direction: column;
+        }
+        .side-menu-title { font-weight: 700; font-size: 16px; }
+        .side-menu-subtitle { font-size: 12px; color: var(--muted); }
+        .side-menu-close {
+            width: 36px; height: 36px;
+            border: none; border-radius: 8px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .menu-items {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 10px;
+            text-decoration: none;
+            color: var(--text);
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        .menu-item:hover { background: var(--bg-soft); }
+        .menu-item.active { background: var(--brand); color: white; }
+        .menu-item.danger { color: var(--danger); }
+        .menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 8px 0;
+        }
+
+        /* Main Content */
+        main {
+            flex: 1;
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .page-title {
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+        .page-subtitle {
+            color: var(--muted);
+            font-size: 15px;
+            margin-bottom: 24px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0 0 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .card-description {
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        /* Groups List */
+        .groups-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .group-item {
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .group-item:hover {
+            border-color: var(--brand);
+            transform: translateY(-2px);
+        }
+        .group-item.has-rules {
+            border-left: 4px solid var(--success);
+        }
+        .group-item.no-rules {
+            border-left: 4px solid var(--muted);
+        }
+        .group-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .group-name {
+            font-weight: 700;
+            font-size: 16px;
+        }
+        .group-desc {
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .group-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-badge.custom {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+        }
+        .status-badge.default {
+            background: var(--bg-panel);
+            color: var(--muted);
+        }
+        .mode-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .mode-badge.single {
+            background: rgba(168, 85, 247, 0.15);
+            color: var(--purple);
+        }
+        .mode-badge.daily {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--brand);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+            padding: 16px;
+        }
+        .modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal {
+            background: var(--bg-card);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: scale(0.9);
+            transition: transform 0.3s;
+        }
+        .modal-overlay.open .modal {
+            transform: scale(1);
+        }
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0;
+        }
+        .modal-close {
+            width: 36px; height: 36px;
+            border: none; border-radius: 8px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .modal-body {
+            padding: 24px;
+        }
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+        .form-group .hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+        .form-input, .form-select {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 15px;
+            transition: border-color 0.2s;
+        }
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 500px) {
+            .form-row { grid-template-columns: 1fr; }
+        }
+
+        /* Radio Cards */
+        .radio-cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        @media (max-width: 500px) {
+            .radio-cards { grid-template-columns: 1fr; }
+        }
+        .radio-card {
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .radio-card:hover {
+            border-color: var(--brand);
+        }
+        .radio-card.selected {
+            border-color: var(--brand);
+            background: rgba(56, 189, 248, 0.08);
+        }
+        .radio-card input {
+            display: none;
+        }
+        .radio-card-title {
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .radio-card-desc {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        /* Checkbox */
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--brand);
+        }
+        .checkbox-label {
+            font-size: 14px;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: var(--brand);
+            color: white;
+        }
+        .btn-primary:hover {
+            background: var(--brand-strong);
+        }
+        .btn-secondary {
+            background: var(--bg-soft);
+            color: var(--text);
+        }
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+        }
+        .btn-danger:hover {
+            background: var(--danger);
+            color: white;
+        }
+
+        /* Info Box */
+        .info-box {
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .info-box strong {
+            color: var(--brand);
+        }
+
+        /* Daily Mode Options */
+        .daily-options {
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 16px;
+        }
+        .daily-options.hidden {
+            display: none;
+        }
+        .daily-options h4 {
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0 0 16px 0;
+            color: var(--brand);
+        }
+
+        /* Example in Modal */
+        .example-preview {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .example-preview h5 {
+            font-size: 13px;
+            font-weight: 600;
+            margin: 0 0 12px 0;
+            color: var(--muted);
+        }
+        .example-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+        .example-row .time {
+            font-family: monospace;
+            background: var(--bg-soft);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .example-row .arrow { color: var(--muted); }
+        .example-row .result { color: var(--success); font-weight: 600; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 14px;
+            z-index: 400;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+        }
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        .toast.success {
+            background: var(--success);
+            color: white;
+        }
+        .toast.error {
+            background: var(--danger);
+            color: white;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+    
+    <nav class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-brand">
+                <span class="side-menu-avatar">JL</span>
+                <div class="side-menu-brand-text">
+                    <span class="side-menu-title">JobLog Admin</span>
+                    <span class="side-menu-subtitle">Pannello Amministrazione</span>
+                </div>
+            </div>
+            <button class="side-menu-close" onclick="closeMenu()">✕</button>
+        </div>
+        <div class="menu-items">
+            <a href="/admin" class="menu-item">📊 Dashboard</a>
+            <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/group-planning" class="menu-item">📆 Planning Gruppo</a>
+            <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
+            <a href="/admin/rentman-planning" class="menu-item">📋 Pianificazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
+            <a href="/admin/documents" class="menu-item">📄 Documenti</a>
+            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <div class="menu-divider"></div>
+            <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
+            <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
+            <a href="/admin/users" class="menu-item">👥 Utenti</a>
+            <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
+            <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+            <a href="/admin/group-timbratura-rules" class="menu-item active">🏢 Regole per Gruppo</a>
+            <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
+            <div class="menu-divider"></div>
+            <a href="/logout" class="menu-item danger">🚪 Logout</a>
+        </div>
+    </nav>
+
+    <header>
+        <div class="header-left">
+            <button class="header-icon-btn" onclick="toggleMenu()" title="Menu">☰</button>
+            <div class="header-title">
+                <h1>Regole per Gruppo</h1>
+                <p>Configurazione avanzata</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="header-icon-btn" onclick="toggleTheme()" title="Tema">🌓</button>
+            <div class="header-user">
+                <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
+                <span class="header-user-name">{{ session.get('user', 'Utente') }}</span>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <h1 class="page-title">🏢 Regole Timbrature per Gruppo</h1>
+        <p class="page-subtitle">Configura regole specifiche per ogni gruppo di utenti</p>
+
+        <div class="info-box">
+            <strong>ℹ️ Come funziona:</strong> I gruppi senza regole personalizzate usano le 
+            <a href="/admin/timbratura-rules" style="color: var(--brand);">regole globali</a>. 
+            Puoi configurare regole specifiche per gruppi che necessitano di logiche diverse 
+            (es. arrotondamento giornaliero per ufficio).
+        </div>
+
+        <div class="card">
+            <h2 class="card-title">📋 Gruppi e Regole</h2>
+            <div id="groupsList" class="groups-list">
+                <div class="loading">Caricamento gruppi...</div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Configurazione -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Configura Regole</h2>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editGroupId">
+                
+                <!-- Modo Arrotondamento -->
+                <div class="form-group">
+                    <label>Modalità Arrotondamento</label>
+                    <div class="radio-cards">
+                        <label class="radio-card" id="cardSingle">
+                            <input type="radio" name="roundingMode" value="single" checked>
+                            <div class="radio-card-title">⏱️ Singola Timbrata</div>
+                            <div class="radio-card-desc">
+                                Arrotonda ogni timbrata singolarmente (in eccesso ingresso, in difetto uscita).
+                                Usa le regole globali.
+                            </div>
+                        </label>
+                        <label class="radio-card" id="cardDaily">
+                            <input type="radio" name="roundingMode" value="daily">
+                            <div class="radio-card-title">📅 Fine Giornata</div>
+                            <div class="radio-card-desc">
+                                Registra ore reali, arrotonda il totale giornaliero a fine turno.
+                                Ideale per ufficio con flessibilità.
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Opzioni Daily Mode -->
+                <div class="daily-options hidden" id="dailyOptions">
+                    <h4>⚙️ Opzioni Arrotondamento Giornaliero</h4>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Flessibilità Ingresso</label>
+                            <input type="number" class="form-input" id="flessIngresso" min="0" max="120" value="30">
+                            <span class="hint">Minuti di flessibilità rispetto al turno</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Flessibilità Uscita</label>
+                            <input type="number" class="form-input" id="flessUscita" min="0" max="120" value="30">
+                            <span class="hint">Minuti di flessibilità rispetto al turno</span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Blocco Arrotondamento</label>
+                            <select class="form-select" id="arrotGiornaliero">
+                                <option value="5">5 minuti</option>
+                                <option value="10">10 minuti</option>
+                                <option value="15" selected>15 minuti</option>
+                                <option value="30">30 minuti</option>
+                            </select>
+                            <span class="hint">Arrotonda il totale a blocchi di X minuti</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Tipo Arrotondamento</label>
+                            <select class="form-select" id="arrotTipo">
+                                <option value="floor">In difetto (sfavorevole)</option>
+                                <option value="ceil">In eccesso (favorevole)</option>
+                                <option value="nearest">Al più vicino</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Se timbrata oltre flessibilità</label>
+                        <select class="form-select" id="oltreFless">
+                            <option value="allow">Consenti (registra ora reale)</option>
+                            <option value="warn">Consenti con avviso</option>
+                            <option value="block">Blocca timbratura</option>
+                        </select>
+                    </div>
+
+                    <div class="example-preview">
+                        <h5>📖 Esempio (turno 09:00-18:00, pausa 1h)</h5>
+                        <div id="exampleDaily">
+                            <div class="example-row">
+                                <span>Ingresso:</span>
+                                <span class="time">08:47</span>
+                                <span class="arrow">→</span>
+                                <span>OK (entro flessibilità)</span>
+                            </div>
+                            <div class="example-row">
+                                <span>Uscita:</span>
+                                <span class="time">18:08</span>
+                                <span class="arrow">→</span>
+                                <span>OK (entro flessibilità)</span>
+                            </div>
+                            <div class="example-row">
+                                <span>Lordo:</span>
+                                <span class="time">9h 21m</span>
+                                <span>- pausa 1h =</span>
+                                <span class="time">8h 21m</span>
+                            </div>
+                            <div class="example-row">
+                                <span>Arrotondato:</span>
+                                <span class="result" id="exampleResult">8h 15m</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 20px;">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="usaPausaStd" checked>
+                        <span class="checkbox-label">Usa regole pausa standard (da impostazioni globali)</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" id="btnDelete" onclick="deleteRules()" style="margin-right: auto;">
+                    🗑️ Rimuovi Regole
+                </button>
+                <button class="btn btn-secondary" onclick="closeModal()">Annulla</button>
+                <button class="btn btn-primary" onclick="saveRules()">💾 Salva</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let groupsData = [];
+
+        // Menu
+        function toggleMenu() {
+            document.getElementById('sideMenu').classList.toggle('open');
+            document.getElementById('menuOverlay').classList.toggle('open');
+        }
+        function closeMenu() {
+            document.getElementById('sideMenu').classList.remove('open');
+            document.getElementById('menuOverlay').classList.remove('open');
+        }
+
+        // Theme
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.dataset.theme;
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+        }
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Load Groups
+        async function loadGroups() {
+            try {
+                const res = await fetch('/api/admin/group-timbratura-rules');
+                if (!res.ok) throw new Error('Errore caricamento');
+                groupsData = await res.json();
+                renderGroups();
+            } catch (err) {
+                document.getElementById('groupsList').innerHTML = 
+                    '<div class="loading" style="color: var(--danger);">Errore: ' + err.message + '</div>';
+            }
+        }
+
+        function renderGroups() {
+            const container = document.getElementById('groupsList');
+            if (groupsData.length === 0) {
+                container.innerHTML = '<div class="loading">Nessun gruppo configurato. Vai su Gruppi per crearne uno.</div>';
+                return;
+            }
+
+            container.innerHTML = groupsData.map(g => {
+                const hasRules = g.has_rules && g.rules;
+                const mode = hasRules ? g.rules.rounding_mode : 'single';
+                const modeLabel = mode === 'daily' ? 'Giornaliero' : 'Singola';
+                
+                return `
+                    <div class="group-item ${hasRules ? 'has-rules' : 'no-rules'}" onclick="editGroup(${g.group_id})">
+                        <div class="group-info">
+                            <div class="group-name">${g.group_name}</div>
+                            <div class="group-desc">${g.group_description || 'Nessuna descrizione'}</div>
+                        </div>
+                        <div class="group-status">
+                            ${hasRules ? `<span class="mode-badge ${mode}">${modeLabel}</span>` : ''}
+                            <span class="status-badge ${hasRules ? 'custom' : 'default'}">
+                                ${hasRules ? '✓ Personalizzato' : 'Default'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Modal
+        function openModal() {
+            document.getElementById('modalOverlay').classList.add('open');
+        }
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('open');
+        }
+
+        function editGroup(groupId) {
+            const group = groupsData.find(g => g.group_id === groupId);
+            if (!group) return;
+
+            document.getElementById('editGroupId').value = groupId;
+            document.getElementById('modalTitle').textContent = 'Regole: ' + group.group_name;
+
+            const hasRules = group.has_rules && group.rules;
+            document.getElementById('btnDelete').style.display = hasRules ? 'block' : 'none';
+
+            // Popola form
+            if (hasRules) {
+                const r = group.rules;
+                document.querySelector(`input[name="roundingMode"][value="${r.rounding_mode}"]`).checked = true;
+                document.getElementById('flessIngresso').value = r.flessibilita_ingresso_minuti || 30;
+                document.getElementById('flessUscita').value = r.flessibilita_uscita_minuti || 30;
+                document.getElementById('arrotGiornaliero').value = r.arrotondamento_giornaliero_minuti || 15;
+                document.getElementById('arrotTipo').value = r.arrotondamento_giornaliero_tipo || 'floor';
+                document.getElementById('oltreFless').value = r.oltre_flessibilita_action || 'allow';
+                document.getElementById('usaPausaStd').checked = r.usa_regole_pausa_standard !== false;
+            } else {
+                document.querySelector('input[name="roundingMode"][value="single"]').checked = true;
+                document.getElementById('flessIngresso').value = 30;
+                document.getElementById('flessUscita').value = 30;
+                document.getElementById('arrotGiornaliero').value = 15;
+                document.getElementById('arrotTipo').value = 'floor';
+                document.getElementById('oltreFless').value = 'allow';
+                document.getElementById('usaPausaStd').checked = true;
+            }
+
+            updateRadioCards();
+            updateDailyExample();
+            openModal();
+        }
+
+        function updateRadioCards() {
+            const mode = document.querySelector('input[name="roundingMode"]:checked').value;
+            document.getElementById('cardSingle').classList.toggle('selected', mode === 'single');
+            document.getElementById('cardDaily').classList.toggle('selected', mode === 'daily');
+            document.getElementById('dailyOptions').classList.toggle('hidden', mode !== 'daily');
+        }
+
+        function updateDailyExample() {
+            const blocco = parseInt(document.getElementById('arrotGiornaliero').value);
+            const tipo = document.getElementById('arrotTipo').value;
+            
+            // Simula: 8h 21m
+            const totalMinutes = 8 * 60 + 21;
+            let rounded;
+            
+            if (tipo === 'floor') {
+                rounded = Math.floor(totalMinutes / blocco) * blocco;
+            } else if (tipo === 'ceil') {
+                rounded = Math.ceil(totalMinutes / blocco) * blocco;
+            } else {
+                rounded = Math.round(totalMinutes / blocco) * blocco;
+            }
+            
+            const h = Math.floor(rounded / 60);
+            const m = rounded % 60;
+            document.getElementById('exampleResult').textContent = `${h}h ${m.toString().padStart(2, '0')}m`;
+        }
+
+        // Event listeners
+        document.querySelectorAll('input[name="roundingMode"]').forEach(input => {
+            input.addEventListener('change', updateRadioCards);
+        });
+        document.getElementById('arrotGiornaliero').addEventListener('change', updateDailyExample);
+        document.getElementById('arrotTipo').addEventListener('change', updateDailyExample);
+
+        // Save
+        async function saveRules() {
+            const groupId = document.getElementById('editGroupId').value;
+            const mode = document.querySelector('input[name="roundingMode"]:checked').value;
+            
+            const data = {
+                rounding_mode: mode,
+                flessibilita_ingresso_minuti: parseInt(document.getElementById('flessIngresso').value),
+                flessibilita_uscita_minuti: parseInt(document.getElementById('flessUscita').value),
+                arrotondamento_giornaliero_minuti: parseInt(document.getElementById('arrotGiornaliero').value),
+                arrotondamento_giornaliero_tipo: document.getElementById('arrotTipo').value,
+                oltre_flessibilita_action: document.getElementById('oltreFless').value,
+                usa_regole_pausa_standard: document.getElementById('usaPausaStd').checked,
+                is_active: true
+            };
+
+            try {
+                const res = await fetch(`/api/admin/group-timbratura-rules/${groupId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Errore salvataggio');
+                }
+                
+                showToast('Regole salvate con successo!');
+                closeModal();
+                loadGroups();
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
+
+        // Delete
+        async function deleteRules() {
+            const groupId = document.getElementById('editGroupId').value;
+            
+            if (!confirm('Vuoi rimuovere le regole personalizzate per questo gruppo?\n\nIl gruppo tornerà a usare le regole globali.')) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/admin/group-timbratura-rules/${groupId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!res.ok) throw new Error('Errore eliminazione');
+                
+                showToast('Regole rimosse. Il gruppo usa ora le regole globali.');
+                closeModal();
+                loadGroups();
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
+
+        // Init
+        loadGroups();
+    </script>
+</body>
+</html>

@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Storico Timbrature - JOBLog</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f8fafc;
+            --brand: #667eea;
+            --brand-light: #818cf8;
+            --brand-dark: #4f46e5;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+            --success: #10b981;
+            --success-bg: #d1fae5;
+            --warning: #f59e0b;
+            --warning-bg: #fef3c7;
+            --danger: #ef4444;
+            --danger-bg: #fee2e2;
+            --info: #3b82f6;
+            --info-bg: #dbeafe;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --brand: #818cf8;
+            --brand-light: #a5b4fc;
+            --brand-dark: #6366f1;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #334155;
+            --border-light: #1e293b;
+            --success-bg: rgba(16, 185, 129, 0.2);
+            --warning-bg: rgba(245, 158, 11, 0.2);
+            --danger-bg: rgba(239, 68, 68, 0.2);
+            --info-bg: rgba(59, 130, 246, 0.2);
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding-bottom: calc(var(--safe-bottom) + 20px);
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+            padding: calc(var(--safe-top) + 12px) 16px 12px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+            pointer-events: none;
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+        }
+        
+        .hamburger-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius-sm);
+            border: none;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .hamburger-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .header-title {
+            flex: 1;
+            text-align: center;
+        }
+        
+        .header-title h1 {
+            font-size: 18px;
+            font-weight: 700;
+            color: white;
+        }
+        
+        .header-title p {
+            font-size: 11px;
+            color: rgba(255,255,255,0.8);
+        }
+        
+        .refresh-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius-sm);
+            border: none;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .refresh-btn.spinning i {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Month Navigation */
+        .month-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .month-nav-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .month-nav-btn:hover {
+            background: var(--brand);
+            color: white;
+            border-color: var(--brand);
+        }
+        
+        .month-display {
+            text-align: center;
+        }
+        
+        .month-display .month {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .month-display .year {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        /* Stats */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--brand);
+        }
+        
+        .stat-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        
+        /* Calendar */
+        .calendar-container {
+            padding: 12px;
+        }
+        
+        .calendar {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            border: 1px solid var(--border-light);
+        }
+        
+        .calendar-header {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+        }
+        
+        .calendar-header-day {
+            padding: 10px 4px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: white;
+        }
+        
+        .calendar-header-day.weekend {
+            background: rgba(0,0,0,0.15);
+        }
+        
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            border-top: 1px solid var(--border-light);
+        }
+        
+        .calendar-day {
+            min-height: 52px;
+            border-bottom: 1px solid var(--border-light);
+            border-right: 1px solid var(--border-light);
+            padding: 4px 2px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+            position: relative;
+            box-sizing: border-box;
+        }
+        
+        .calendar-day:nth-child(7n) {
+            border-right: none;
+        }
+        
+        .calendar-grid > .calendar-day:nth-last-child(-n+7) {
+            border-bottom: none;
+        }
+        
+        .calendar-day:hover:not(.empty) {
+            background: var(--bg-card-hover);
+            transform: scale(1.02);
+        }
+        
+        .calendar-day:active:not(.empty) {
+            transform: scale(0.98);
+        }
+        
+        .calendar-day.empty {
+            background: var(--border-light);
+            cursor: default;
+        }
+        
+        .calendar-day.weekend {
+            background: rgba(239, 68, 68, 0.04);
+        }
+        
+        .calendar-day.weekend .day-number {
+            color: var(--danger);
+        }
+        
+        .calendar-day.today .day-number {
+            background: var(--brand);
+            color: white;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .day-number {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            line-height: 1;
+        }
+        
+        .day-hours {
+            font-size: 14px;
+            font-weight: 800;
+            padding: 3px 6px;
+            border-radius: 4px;
+            margin-top: 1px;
+            white-space: nowrap;
+            letter-spacing: -0.5px;
+        }
+        
+        .day-hours.complete,
+        .day-hours.partial,
+        .day-hours.missing {
+            background: transparent;
+            color: var(--text-primary);
+        }
+        
+        .day-hours.request {
+            background: transparent;
+            color: var(--info);
+            font-size: 11px;
+        }
+        
+        /* Legend */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            padding: 10px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            margin: 12px;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+        
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+        }
+        
+        .legend-color.complete { background: var(--success-bg); border: 1px solid var(--success); }
+        .legend-color.partial { background: var(--warning-bg); border: 1px solid var(--warning); }
+        .legend-color.missing { background: var(--danger-bg); border: 1px solid var(--danger); }
+        .legend-color.request { background: var(--info-bg); border: 1px solid var(--info); }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: var(--radius) var(--radius) 0 0;
+            width: 100%;
+            max-width: 500px;
+            max-height: 85vh;
+            overflow-y: auto;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+            padding-bottom: var(--safe-bottom);
+        }
+        
+        .modal-overlay.active .modal-content {
+            transform: translateY(0);
+        }
+        
+        .modal-header {
+            padding: 16px 20px;
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        
+        .modal-header h3 {
+            font-size: 17px;
+            font-weight: 700;
+            color: white;
+        }
+        
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .modal-close:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .modal-body {
+            padding: 16px;
+        }
+        
+        /* Detail Sections */
+        .detail-section {
+            margin-bottom: 16px;
+        }
+        
+        .detail-section:last-child {
+            margin-bottom: 0;
+        }
+        
+        .detail-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .detail-section-title i {
+            color: var(--brand);
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+            margin-bottom: 4px;
+        }
+        
+        .detail-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .detail-value {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .detail-value.success { color: var(--success); }
+        .detail-value.warning { color: var(--warning); }
+        .detail-value.danger { color: var(--danger); }
+        .detail-value.info { color: var(--info); }
+        .detail-value.muted { color: var(--text-muted); font-size: 12px; }
+        
+        /* Timbrature in Modal */
+        .timbratura-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+            margin-bottom: 4px;
+        }
+        
+        .timbratura-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+        
+        .timbratura-icon.entrata { background: var(--success-bg); color: var(--success); }
+        .timbratura-icon.uscita { background: var(--danger-bg); color: var(--danger); }
+        .timbratura-icon.pausa { background: var(--warning-bg); color: var(--warning); }
+        
+        .timbratura-info { flex: 1; }
+        .timbratura-tipo { font-size: 12px; font-weight: 600; }
+        .timbratura-details { font-size: 10px; color: var(--text-muted); }
+        .timbratura-ora { font-size: 15px; font-weight: 700; }
+        
+        /* Ora originale e modifica */
+        .timbratura-item.has-modifica {
+            background: linear-gradient(135deg, var(--bg) 0%, rgba(56, 189, 248, 0.05) 100%);
+            border-left: 2px solid var(--info);
+        }
+        .timbratura-originale {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 4px;
+        }
+        .ora-originale {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        .modifica-badge {
+            font-size: 9px;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .modifica-badge.success {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        .modifica-badge.danger {
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+        
+        /* Request Badge */
+        .request-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            background: var(--info-bg);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            color: var(--info);
+            margin-bottom: 4px;
+        }
+        
+        /* Empty State */
+        .empty-day {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-muted);
+        }
+        
+        .empty-day i {
+            font-size: 28px;
+            margin-bottom: 8px;
+            opacity: 0.5;
+        }
+        
+        /* Side Menu Overlay */
+        .side-menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 600;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        .side-menu-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        /* Side Menu */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: -320px;
+            width: 300px;
+            max-width: 85vw;
+            height: 100vh;
+            height: 100dvh;
+            background: var(--bg-card);
+            z-index: 700;
+            transition: left 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+        }
+        .side-menu.active {
+            left: 0;
+        }
+        .side-menu-header {
+            padding: 20px;
+            padding-top: calc(20px + env(safe-area-inset-top, 0px));
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+        }
+        .side-menu-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .side-menu-user-info {
+            flex: 1;
+        }
+        .side-menu-user-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: white;
+        }
+        .side-menu-user-role {
+            font-size: 13px;
+            color: rgba(255,255,255,0.8);
+        }
+        .side-menu-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        .menu-section {
+            margin-bottom: 24px;
+        }
+        .menu-section-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            padding: 0 8px;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 14px;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+        .menu-item:hover {
+            background: var(--bg);
+        }
+        .menu-item.active {
+            background: rgba(102, 126, 234, 0.15);
+            color: var(--brand);
+            font-weight: 600;
+        }
+        .menu-item .icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+        .menu-item.danger {
+            color: var(--danger);
+        }
+        .notification-toggle-menu {
+            display: flex;
+            align-items: center;
+        }
+        .notification-toggle-menu .toggle-switch {
+            margin-left: auto;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 28px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 28px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: var(--success);
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(22px);
+        }
+        .side-menu-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+        .side-menu-footer img {
+            max-width: 120px;
+            max-height: 40px;
+            object-fit: contain;
+            opacity: 0.8;
+        }
+        
+        /* Loading */
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .loading i {
+            font-size: 28px;
+            margin-bottom: 10px;
+            animation: spin 1s linear infinite;
+            color: var(--brand);
+        }
+    </style>
+</head>
+<body>
+    <!-- Side Menu Overlay -->
+    <div class="side-menu-overlay" id="sideMenuOverlay" onclick="closeMenu()"></div>
+    
+    <!-- Side Menu -->
+    <div class="side-menu" id="sideMenu">
+        <div class="side-menu-header">
+            <div class="side-menu-avatar">{{ user_initials }}</div>
+            <div class="side-menu-user-info">
+                <div class="side-menu-user-name">{{ user_display }}</div>
+                <div class="side-menu-user-role">{{ user_role|default('Utente', true) }}</div>
+            </div>
+        </div>
+        
+        <div class="side-menu-content">
+            <div class="menu-section">
+                <div class="menu-section-title">📋 Menu</div>
+                <a href="{{ url_for('home') }}" class="menu-item">
+                    <span class="icon">🏠</span>
+                    <span>Home Timbrature</span>
+                </a>
+                <a href="{{ url_for('user_turni_page') }}" class="menu-item">
+                    <span class="icon">📅</span>
+                    <span>I Miei Turni</span>
+                </a>
+                <a href="{{ url_for('user_requests_page') }}" class="menu-item">
+                    <span class="icon">📝</span>
+                    <span>Richieste</span>
+                </a>
+                <a href="{{ url_for('user_documents_page') }}" class="menu-item">
+                    <span class="icon">📄</span>
+                    <span>Documenti</span>
+                </a>
+                <a href="/user/notifications" class="menu-item">
+                    <span class="icon">🔔</span>
+                    <span>Storico Notifiche</span>
+                </a>
+                <a href="/user/storico-timbrature" class="menu-item active">
+                    <span class="icon">🕐</span>
+                    <span>Storico Timbrature</span>
+                </a>
+                {% if magazzino_enabled %}
+                <a href="{{ url_for('magazzino_home') }}" class="menu-item">
+                    <span class="icon">📦</span>
+                    <span>Magazzino</span>
+                </a>
+                {% endif %}
+            </div>
+            
+            <div class="menu-section">
+                <div class="menu-section-title">⚙️ Impostazioni</div>
+                <div class="menu-item" onclick="toggleTheme(); closeMenu();">
+                    <span class="icon">🌙</span>
+                    <span>Tema Scuro</span>
+                </div>
+            </div>
+            
+            <div class="menu-section">
+                <a href="{{ url_for('logout') }}" class="menu-item danger">
+                    <span class="icon">🚪</span>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </div>
+        
+        {% if company_logo %}
+        <div class="side-menu-footer">
+            <img src="{{ company_logo }}" alt="Logo Azienda">
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <button class="hamburger-btn" id="hamburgerBtn">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-title">
+                <h1>Storico Timbrature</h1>
+                <p>Calendario mensile</p>
+            </div>
+            <button class="refresh-btn" id="refreshBtn">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        </div>
+    </header>
+    
+    <!-- Month Navigation -->
+    <div class="month-nav">
+        <button class="month-nav-btn" id="prevMonth">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <div class="month-display">
+            <div class="month" id="currentMonth">Gennaio</div>
+            <div class="year" id="currentYear">2026</div>
+        </div>
+        <button class="month-nav-btn" id="nextMonth">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+    </div>
+    
+    <!-- Stats Bar -->
+    <div class="stats-bar" id="statsBar">
+        <div class="stat-item">
+            <div class="stat-value" id="statDays">-</div>
+            <div class="stat-label">Giorni</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="statHours">-</div>
+            <div class="stat-label">Ore Tot.</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="statAvg">-</div>
+            <div class="stat-label">Media</div>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <main id="mainContent">
+        <div class="loading">
+            <i class="fas fa-spinner"></i>
+            <span>Caricamento...</span>
+        </div>
+    </main>
+    
+    <!-- Day Detail Modal -->
+    <div class="modal-overlay" id="dayModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Dettagli Giorno</h3>
+                <button class="modal-close" id="modalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modalBody">
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Theme
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        
+        // State
+        let currentDate = new Date();
+        let timbratureData = {};
+        let requestsData = [];
+        
+        const monthNames = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+                           'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+        const dayNames = ['LU', 'MA', 'ME', 'GI', 'VE', 'SA', 'DO'];
+        const dayNamesFull = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+        
+        // DOM Elements
+        const sideMenu = document.getElementById('sideMenu');
+        const sideMenuOverlay = document.getElementById('sideMenuOverlay');
+        const hamburgerBtn = document.getElementById('hamburgerBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const prevMonthBtn = document.getElementById('prevMonth');
+        const nextMonthBtn = document.getElementById('nextMonth');
+        const currentMonthEl = document.getElementById('currentMonth');
+        const currentYearEl = document.getElementById('currentYear');
+        const mainContent = document.getElementById('mainContent');
+        const dayModal = document.getElementById('dayModal');
+        const modalClose = document.getElementById('modalClose');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalBody = document.getElementById('modalBody');
+        
+        // Side Menu
+        hamburgerBtn.addEventListener('click', () => {
+            sideMenu.classList.add('active');
+            sideMenuOverlay.classList.add('active');
+        });
+        
+        function closeMenu() {
+            sideMenu.classList.remove('active');
+            sideMenuOverlay.classList.remove('active');
+        }
+        
+        sideMenuOverlay.addEventListener('click', closeMenu);
+        
+        // Theme Toggle
+        function toggleTheme() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            if (currentTheme === 'dark') {
+                body.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+            } else {
+                body.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+        
+        // Month Navigation
+        prevMonthBtn.addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            updateDisplay();
+            loadData();
+        });
+        
+        nextMonthBtn.addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            updateDisplay();
+            loadData();
+        });
+        
+        refreshBtn.addEventListener('click', () => {
+            loadData();
+        });
+        
+        // Update Display
+        function updateDisplay() {
+            currentMonthEl.textContent = monthNames[currentDate.getMonth()];
+            currentYearEl.textContent = currentDate.getFullYear();
+        }
+        
+        // Load Data
+        async function loadData() {
+            refreshBtn.classList.add('spinning');
+            mainContent.innerHTML = `
+                <div class="loading">
+                    <i class="fas fa-spinner"></i>
+                    <span>Caricamento...</span>
+                </div>
+            `;
+            
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth() + 1;
+            
+            try {
+                const response = await fetch(`/api/user/storico-timbrature?year=${year}&month=${month}&_t=${Date.now()}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    timbratureData = data.timbrature_by_day || {};
+                    requestsData = data.requests || [];
+                    window.arrotondamentoRules = data.arrotondamento || null;
+                    console.log('Dati ricevuti:', Object.keys(timbratureData));
+                    console.log('Regole arrotondamento:', window.arrotondamentoRules);
+                    renderCalendar();
+                } else {
+                    mainContent.innerHTML = `
+                        <div class="loading">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span>Errore: ${data.error || 'Impossibile caricare i dati'}</span>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Errore:', error);
+                mainContent.innerHTML = `
+                    <div class="loading">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <span>Errore di connessione</span>
+                    </div>
+                `;
+            }
+            
+            refreshBtn.classList.remove('spinning');
+        }
+        
+        // Render Calendar
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            const today = new Date();
+            
+            // First day (Monday = 0, Sunday = 6)
+            const firstDay = new Date(year, month, 1).getDay();
+            const startOffset = firstDay === 0 ? 6 : firstDay - 1;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            
+            // Calculate totals
+            let totalMinutes = 0;
+            let daysWorked = 0;
+            
+            Object.values(timbratureData).forEach(dayData => {
+                if (dayData.ore_lavorate) {
+                    const [h, m] = dayData.ore_lavorate.split(':').map(Number);
+                    totalMinutes += h * 60 + m;
+                    daysWorked++;
+                }
+            });
+            
+            const totalHours = Math.floor(totalMinutes / 60);
+            const totalMins = totalMinutes % 60;
+            const avgMinutes = daysWorked > 0 ? Math.round(totalMinutes / daysWorked) : 0;
+            const avgHours = Math.floor(avgMinutes / 60);
+            const avgMins = avgMinutes % 60;
+            
+            // Update stats
+            document.getElementById('statDays').textContent = daysWorked;
+            document.getElementById('statHours').textContent = `${totalHours}:${String(totalMins).padStart(2, '0')}`;
+            document.getElementById('statAvg').textContent = `${avgHours}:${String(avgMins).padStart(2, '0')}`;
+            
+            // Build calendar
+            let html = `
+                <div class="calendar-container">
+                    <div class="calendar">
+                        <div class="calendar-header">
+                            ${dayNames.map((day, i) => `
+                                <div class="calendar-header-day ${i >= 5 ? 'weekend' : ''}">${day}</div>
+                            `).join('')}
+                        </div>
+                        <div class="calendar-grid">
+            `;
+            
+            // Empty cells
+            for (let i = 0; i < startOffset; i++) {
+                html += `<div class="calendar-day empty"></div>`;
+            }
+            
+            // Days
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayOfWeek = new Date(year, month, day).getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                const isToday = today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
+                const dayData = timbratureData[dateStr];
+                const hasData = dayData && dayData.timbrature && dayData.timbrature.length > 0;
+                
+                // Debug per primo giorno
+                if (day === 1) {
+                    console.log('Cerco dateStr:', dateStr, 'trovato:', dayData, 'hasData:', hasData);
+                }
+                
+                // Requests - filtra solo quelle confermate (approved)
+                const dayRequests = requestsData.filter(r => {
+                    const reqDate = r.data_inizio || r.data;
+                    return reqDate === dateStr;
+                });
+                // Filtra richieste confermate
+                const confirmedRequests = dayRequests.filter(r => r.status === 'approved');
+                const hasConfirmedRequest = confirmedRequests.length > 0;
+                
+                let classes = ['calendar-day'];
+                if (isWeekend) classes.push('weekend');
+                if (isToday) classes.push('today');
+                
+                let hoursHtml = '';
+                // Se c'è una richiesta confermata, mostra l'abbreviazione invece delle ore
+                if (hasConfirmedRequest) {
+                    const req = confirmedRequests[0];
+                    const displayText = req.abbreviation || req.type_name?.substring(0, 4) || 'REQ';
+                    hoursHtml = `<div class="day-hours request">${displayText}</div>`;
+                } else if (hasData && dayData.ore_lavorate) {
+                    const [h, m] = dayData.ore_lavorate.split(':').map(Number);
+                    const mins = h * 60 + m;
+                    let hoursClass = 'complete';
+                    if (mins < 480) hoursClass = 'partial';
+                    if (mins < 240) hoursClass = 'missing';
+                    hoursHtml = `<div class="day-hours ${hoursClass}">${dayData.ore_lavorate}</div>`;
+                } else if (!isWeekend) {
+                    const isPast = new Date(year, month, day) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                    if (isPast) {
+                        hoursHtml = `<div class="day-hours missing">—</div>`;
+                    }
+                }
+                
+                html += `
+                    <div class="${classes.join(' ')}" onclick="showDayDetail('${dateStr}')">
+                        <div class="day-number">${day}</div>
+                        ${hoursHtml}
+                    </div>
+                `;
+            }
+            
+            // Remaining empty cells
+            const totalCells = startOffset + daysInMonth;
+            const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+            for (let i = 0; i < remainingCells; i++) {
+                html += `<div class="calendar-day empty"></div>`;
+            }
+            
+            html += `
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            mainContent.innerHTML = html;
+        }
+        
+        // Show Day Detail
+        function showDayDetail(dateStr) {
+            console.log('showDayDetail called with:', dateStr);
+            console.log('dayModal element:', dayModal);
+            console.log('timbratureData:', timbratureData);
+            
+            const dayData = timbratureData[dateStr];
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
+            const dayName = dayNamesFull[date.getDay()];
+            
+            modalTitle.textContent = `${dayName} ${day} ${monthNames[month - 1]}`;
+            
+            const dayRequests = requestsData.filter(r => {
+                const reqDate = r.data_inizio || r.data;
+                return reqDate === dateStr;
+            });
+            
+            if ((!dayData || !dayData.timbrature || dayData.timbrature.length === 0) && dayRequests.length === 0) {
+                modalBody.innerHTML = `
+                    <div class="empty-day">
+                        <i class="fas fa-calendar-times"></i>
+                        <p>Nessuna timbratura registrata</p>
+                    </div>
+                `;
+            } else {
+                let html = '';
+                
+                // Funzione helper per formattare timestamp
+                const formatTimestamp = (ts) => {
+                    if (!ts) return null;
+                    // Se ts è in secondi (10 cifre), moltiplica per 1000
+                    const ms = ts > 9999999999 ? ts : ts * 1000;
+                    const date = new Date(ms);
+                    const dateStr = date.toLocaleDateString('it-IT');
+                    const timeStr = date.toLocaleTimeString('it-IT');
+                    return `${dateStr} ${timeStr}`;
+                };
+                
+                // Helper functions
+                const formatMinutes = (m) => {
+                    const h = Math.floor(m / 60);
+                    const min = m % 60;
+                    return `${h}:${min.toString().padStart(2, '0')}`;
+                };
+                
+                const formatTime = (t) => {
+                    if (!t) return '';
+                    const parts = t.split(':');
+                    return parts[0] + ':' + parts[1];
+                };
+                
+                // ═══════════════════════════════════════════════════════════
+                // TURNO PREVISTO (all'inizio di tutto)
+                // ═══════════════════════════════════════════════════════════
+                const calc = dayData?.calcolo_dettagli;
+                if (calc && calc.turno_inizio && calc.turno_fine) {
+                    const pausaTurnoMin = calc.pausa_turno_minuti || 60;
+                    const turnoInizio = formatTime(calc.turno_inizio);
+                    const turnoFine = formatTime(calc.turno_fine);
+                    html += `<div class="detail-section" style="background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 100%); border-radius: 12px; padding: 12px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <div style="font-size: 12px; color: #666; font-weight: 600;"><i class="fas fa-briefcase"></i> TURNO PREVISTO</div>
+                                <div style="font-size: 18px; font-weight: 700; color: #333; margin-top: 4px;">${turnoInizio} - ${turnoFine}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 11px; color: #888;">pausa ${formatMinutes(pausaTurnoMin)}</div>
+                                <div style="font-size: 16px; font-weight: 600; color: var(--primary);">${formatMinutes(calc.turno_base_minuti)}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                }
+                
+                // Requests (giustificativi)
+                if (dayRequests.length > 0) {
+                    html += `<div class="detail-section">
+                        <div class="detail-section-title"><i class="fas fa-paper-plane"></i> Richieste</div>`;
+                    dayRequests.forEach(req => {
+                        // Badge con tipo e stato
+                        html += `<div class="request-badge" style="margin-bottom: 8px;">
+                            <i class="fas fa-check-circle"></i>
+                            <strong>${req.type_name || req.tipo || 'Richiesta'}</strong>
+                        </div>`;
+                        
+                        // Dettagli della richiesta
+                        if (req.value) {
+                            html += `<div class="detail-row">
+                                <div class="detail-label">Valore</div>
+                                <div class="detail-value">${req.value}</div>
+                            </div>`;
+                        }
+                        
+                        if (req.notes) {
+                            html += `<div class="detail-row">
+                                <div class="detail-label">Note</div>
+                                <div class="detail-value muted" style="font-size: 12px;">${req.notes}</div>
+                            </div>`;
+                        }
+                        
+                        // Data creazione richiesta
+                        if (req.created_ts) {
+                            html += `<div class="detail-row">
+                                <div class="detail-label"><i class="fas fa-calendar-plus"></i> Richiesta il</div>
+                                <div class="detail-value muted">${formatTimestamp(req.created_ts)}</div>
+                            </div>`;
+                        }
+                        
+                        // Data e chi ha approvato
+                        if (req.reviewed_by) {
+                            let approvalInfo = req.reviewed_by;
+                            if (req.reviewed_ts) {
+                                approvalInfo += ` (${formatTimestamp(req.reviewed_ts)})`;
+                            }
+                            html += `<div class="detail-row">
+                                <div class="detail-label"><i class="fas fa-user-check"></i> Approvato da</div>
+                                <div class="detail-value success">${approvalInfo}</div>
+                            </div>`;
+                        }
+                        
+                        // Note della revisione
+                        if (req.review_notes) {
+                            html += `<div class="detail-row">
+                                <div class="detail-label">Note approvazione</div>
+                                <div class="detail-value muted" style="font-size: 12px; font-style: italic;">"${req.review_notes}"</div>
+                            </div>`;
+                        }
+                    });
+                    html += `</div>`;
+                }
+                
+                // Timbrature
+                if (dayData && dayData.timbrature && dayData.timbrature.length > 0) {
+                    html += `<div class="detail-section">
+                        <div class="detail-section-title"><i class="fas fa-clock"></i> Timbrature</div>`;
+                    
+                    dayData.timbrature.forEach(t => {
+                        let iconClass = 'pausa';
+                        let icon = 'fa-coffee';
+                        if (t.tipo.toLowerCase().includes('inizio') && !t.tipo.toLowerCase().includes('pausa')) {
+                            iconClass = 'entrata';
+                            icon = 'fa-sign-in-alt';
+                        } else if (t.tipo.toLowerCase().includes('fine') && !t.tipo.toLowerCase().includes('pausa')) {
+                            iconClass = 'uscita';
+                            icon = 'fa-sign-out-alt';
+                        }
+                        
+                        const tipoLabels = {
+                            'inizio_giornata': 'Inizio Giornata',
+                            'fine_giornata': 'Fine Giornata',
+                            'inizio_pausa': 'Inizio Pausa',
+                            'fine_pausa': 'Fine Pausa'
+                        };
+                        
+                        const oraDisplay = t.ora_mod || t.ora;
+                        const hasModifica = t.ora_mod && t.ora_mod !== t.ora;
+                        
+                        // Calcola differenza in minuti se c'è modifica
+                        let modificaInfo = '';
+                        if (hasModifica) {
+                            const [h1, m1] = t.ora.split(':').map(Number);
+                            const [h2, m2] = t.ora_mod.split(':').map(Number);
+                            const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                            const sign = diff >= 0 ? '+' : '';
+                            const diffClass = diff >= 0 ? 'success' : 'danger';
+                            modificaInfo = `<div class="timbratura-originale">
+                                <span class="ora-originale">Originale: ${t.ora}</span>
+                                <span class="modifica-badge ${diffClass}">${sign}${diff}m</span>
+                            </div>`;
+                        }
+                        
+                        html += `<div class="timbratura-item ${hasModifica ? 'has-modifica' : ''}">
+                            <div class="timbratura-icon ${iconClass}">
+                                <i class="fas ${icon}"></i>
+                            </div>
+                            <div class="timbratura-info">
+                                <div class="timbratura-tipo">${tipoLabels[t.tipo] || t.tipo}</div>
+                                <div class="timbratura-details">${t.method || ''} ${t.location_name ? '• ' + t.location_name : ''}</div>
+                                ${modificaInfo}
+                            </div>
+                            <div class="timbratura-ora">${oraDisplay}</div>
+                        </div>`;
+                    });
+                    
+                    html += `</div>`;
+                    
+                    // Sezione Normalizzazione rimossa - ora le info sono nel Riepilogo
+                    const hasFuoriFlex = dayData.fuori_flessibilita && dayData.fuori_flessibilita.length > 0;
+                    
+                    // Summary (PRIMA delle autorizzazioni)
+                    if (dayData.ore_lavorate) {
+                        html += `<div class="detail-section">`;
+                        
+                        // Se ci sono dettagli del calcolo, mostra il breakdown completo
+                        const calcRiepilogo = dayData.calcolo_dettagli;
+                        if (calcRiepilogo) {
+                            // ═══════════════════════════════════════════════════════════
+                            // TIMBRATURE REGISTRATE - calcolo ore lorde dalle timbrature originali
+                            // ═══════════════════════════════════════════════════════════
+                            const inizioT = dayData.timbrature?.find(t => t.tipo === 'inizio_giornata');
+                            const fineT = dayData.timbrature?.find(t => t.tipo === 'fine_giornata');
+                            
+                            html += `<div style="font-size: 12px; color: #666; font-weight: 600; margin-bottom: 6px;">
+                                <i class="fas fa-fingerprint"></i> TIMBRATURE REGISTRATE
+                            </div>`;
+                            
+                            if (inizioT) {
+                                html += `<div class="detail-row">
+                                    <div class="detail-label" style="padding-left: 15px;">Ingresso</div>
+                                    <div class="detail-value">${inizioT.ora}</div>
+                                </div>`;
+                            }
+                            if (fineT) {
+                                html += `<div class="detail-row">
+                                    <div class="detail-label" style="padding-left: 15px;">Uscita</div>
+                                    <div class="detail-value">${fineT.ora}</div>
+                                </div>`;
+                            }
+                            
+                            // Calcola ore lorde direttamente dalle timbrature originali
+                            let oreLordeMinuti = 0;
+                            if (inizioT && fineT) {
+                                const [h1, m1] = inizioT.ora.split(':').map(Number);
+                                const [h2, m2] = fineT.ora.split(':').map(Number);
+                                oreLordeMinuti = (h2 * 60 + m2) - (h1 * 60 + m1);
+                            }
+                            
+                            html += `<div class="detail-row">
+                                <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-clock"></i> Ore lorde</div>
+                                <div class="detail-value muted">${formatMinutes(oreLordeMinuti)}</div>
+                            </div>`;
+                            
+                            // Pausa effettiva
+                            if (dayData.pausa_minuti) {
+                                html += `<div class="detail-row">
+                                    <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-coffee"></i> Pausa effettiva</div>
+                                    <div class="detail-value warning">-${formatMinutes(dayData.pausa_minuti)}</div>
+                                </div>`;
+                            }
+                            
+                            // Ore nette (lorde - pausa)
+                            const oreNetteCalcolate = oreLordeMinuti - (dayData.pausa_minuti || 0);
+                            html += `<div class="detail-row">
+                                <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-equals"></i> Ore nette</div>
+                                <div class="detail-value info">${formatMinutes(oreNetteCalcolate)}</div>
+                            </div>`;
+                            
+                            // ═══════════════════════════════════════════════════════════
+                            // REGOLE APPLICATE
+                            // ═══════════════════════════════════════════════════════════
+                            const rules = window.arrotondamentoRules || {};
+                            
+                            html += `<div style="border-top: 1px dashed #ddd; margin: 12px 0;"></div>`;
+                            html += `<div style="font-size: 12px; color: #666; font-weight: 600; margin-bottom: 6px;">
+                                <i class="fas fa-cog"></i> REGOLE APPLICATE
+                            </div>`;
+                            
+                            if (rules.flessibilita_ingresso || rules.flessibilita_uscita) {
+                                html += `<div class="detail-row">
+                                    <div class="detail-label" style="padding-left: 15px;">Flessibilità ingresso</div>
+                                    <div class="detail-value muted">±${rules.flessibilita_ingresso || 0} min</div>
+                                </div>`;
+                                html += `<div class="detail-row">
+                                    <div class="detail-label" style="padding-left: 15px;">Flessibilità uscita</div>
+                                    <div class="detail-value muted">±${rules.flessibilita_uscita || 0} min</div>
+                                </div>`;
+                            }
+                            
+                            // Blocco straordinario
+                            const tipoLabel = calcRiepilogo.tipo_arrotondamento === 'floor' ? 'per difetto' : 
+                                             calcRiepilogo.tipo_arrotondamento === 'ceil' ? 'per eccesso' : 'più vicino';
+                            html += `<div class="detail-row">
+                                <div class="detail-label" style="padding-left: 15px;">Blocco straordinario</div>
+                                <div class="detail-value muted">${calcRiepilogo.blocco_minuti} min (${tipoLabel})</div>
+                            </div>`;
+                            
+                            // ═══════════════════════════════════════════════════════════
+                            // CALCOLO ORE
+                            // ═══════════════════════════════════════════════════════════
+                            html += `<div style="border-top: 1px dashed #ddd; margin: 12px 0;"></div>`;
+                            html += `<div style="font-size: 12px; color: #666; font-weight: 600; margin-bottom: 6px;">
+                                <i class="fas fa-calculator"></i> CALCOLO ORE
+                            </div>`;
+                            
+                            // Extra turno (ore in più rispetto al turno, già normalizzato con blocco)
+                            const extraTurnoLordo = Math.max(0, oreNetteCalcolate - calcRiepilogo.turno_base_minuti);
+                            const blocco = calcRiepilogo.blocco_minuti || 30;
+                            const tipoArr = calcRiepilogo.tipo_arrotondamento || 'floor';
+                            let extraTurnoNormalizzato = 0;
+                            if (extraTurnoLordo > 0) {
+                                if (tipoArr === 'floor') {
+                                    extraTurnoNormalizzato = Math.floor(extraTurnoLordo / blocco) * blocco;
+                                } else if (tipoArr === 'ceil') {
+                                    extraTurnoNormalizzato = Math.ceil(extraTurnoLordo / blocco) * blocco;
+                                } else {
+                                    extraTurnoNormalizzato = Math.round(extraTurnoLordo / blocco) * blocco;
+                                }
+                            }
+                            html += `<div class="detail-row">
+                                <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-plus-circle"></i> Extra turno</div>
+                                <div class="detail-value ${extraTurnoNormalizzato > 0 ? 'info' : 'muted'}">${formatMinutes(extraTurnoNormalizzato)}</div>
+                            </div>`;
+                            
+                            // Extra turno confermato (straordinario effettivamente conteggiato)
+                            const extraConfermato = calcRiepilogo.straordinario_arrotondato_minuti || 0;
+                            html += `<div class="detail-row">
+                                <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-check-circle"></i> Extra turno confermato</div>
+                                <div class="detail-value ${extraConfermato > 0 ? 'success' : 'muted'}">${formatMinutes(extraConfermato)}</div>
+                            </div>`;
+                            
+                            // Ore in meno (se lavorate meno del turno)
+                            if (oreNetteCalcolate < calcRiepilogo.turno_base_minuti) {
+                                const deficit = calcRiepilogo.turno_base_minuti - oreNetteCalcolate;
+                                html += `<div class="detail-row">
+                                    <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-minus-circle"></i> Ore in meno</div>
+                                    <div class="detail-value warning">-${formatMinutes(deficit)}</div>
+                                </div>`;
+                            }
+                            
+                            // ═══════════════════════════════════════════════════════════
+                            // TOTALE FINALE
+                            // ═══════════════════════════════════════════════════════════
+                            html += `<div style="border-top: 2px solid var(--primary); margin: 12px 0;"></div>`;
+                            html += `<div class="detail-row" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 10px; border-radius: 8px;">
+                                <div class="detail-label"><i class="fas fa-check-double"></i> <strong>TOTALE GIORNATA</strong></div>
+                                <div class="detail-value success" style="font-size: 20px; font-weight: bold;">${dayData.ore_lavorate}</div>
+                            </div>`;
+                            
+                        } else {
+                            // Senza dettagli calcolo, mostra solo il riepilogo base
+                            html += `<div class="detail-row">
+                                <div class="detail-label"><i class="fas fa-hourglass-half"></i> Ore lavorate</div>
+                                <div class="detail-value success">${dayData.ore_lavorate}</div>
+                            </div>`;
+                            
+                            if (dayData.pausa_minuti) {
+                                const formatMinutes = (m) => {
+                                    const h = Math.floor(m / 60);
+                                    const min = m % 60;
+                                    return `${h}:${min.toString().padStart(2, '0')}`;
+                                };
+                                html += `<div class="detail-row">
+                                    <div class="detail-label"><i class="fas fa-coffee"></i> Pausa</div>
+                                    <div class="detail-value warning">${formatMinutes(dayData.pausa_minuti)}</div>
+                                </div>`;
+                            }
+                        }
+                        
+                        html += `</div>`;
+                    }
+                    
+                    // Sezione Fuori Flessibilità - Mostra richieste e loro stato (ALLA FINE)
+                    if (hasFuoriFlex) {
+                        html += `<div class="detail-section">
+                            <div class="detail-section-title"><i class="fas fa-exclamation-triangle"></i> Autorizzazioni Orario Extra</div>`;
+                        
+                        dayData.fuori_flessibilita.forEach(ff => {
+                            const statusLabels = {
+                                'pending': '⏳ In attesa',
+                                'approved': '✅ Approvato',
+                                'rejected': '❌ Rifiutato'
+                            };
+                            const statusColors = {
+                                'pending': 'warning',
+                                'approved': 'success',
+                                'rejected': 'danger'
+                            };
+                            const tipoTimbrLabels = {
+                                'inizio_giornata': 'Ingresso',
+                                'fine_giornata': 'Uscita',
+                                'inizio_pausa': 'Inizio Pausa',
+                                'fine_pausa': 'Fine Pausa'
+                            };
+                            
+                            // Stato della richiesta
+                            html += `<div class="detail-row">
+                                <div class="detail-label">Stato</div>
+                                <div class="detail-value ${statusColors[ff.status] || 'info'}">${statusLabels[ff.status] || ff.status}</div>
+                            </div>`;
+                            
+                            // Tipo timbratura
+                            if (ff.tipo_timbratura) {
+                                html += `<div class="detail-row">
+                                    <div class="detail-label">Tipo</div>
+                                    <div class="detail-value">${tipoTimbrLabels[ff.tipo_timbratura] || ff.tipo_timbratura}</div>
+                                </div>`;
+                            }
+                            
+                            // Motivo originale (dalla nota della richiesta)
+                            if (ff.notes) {
+                                html += `<div class="detail-row">
+                                    <div class="detail-label">Motivo</div>
+                                    <div class="detail-value warning" style="font-size: 12px;">${ff.notes}</div>
+                                </div>`;
+                            }
+                            
+                            // Info orario timbrato
+                            if (ff.ora_timbrata) {
+                                // Rimuovi secondi se presenti (20:31:21 → 20:31)
+                                const oraTimbrata = ff.ora_timbrata.split(':').slice(0, 2).join(':');
+                                html += `<div class="detail-row">
+                                    <div class="detail-label">Orario</div>
+                                    <div class="detail-value info">Timbrato: ${oraTimbrata}</div>
+                                </div>`;
+                                
+                                // Orario confermato (quello usato per il calcolo/cedolino)
+                                // Se approvato: ora_finale dell'admin
+                                // Se rifiutato: rounded_time (normalizzato dal sistema) o cerca dalla timbratura
+                                let oraConfermata = null;
+                                if (ff.status === 'approved' && ff.ora_finale) {
+                                    oraConfermata = ff.ora_finale;
+                                } else if (ff.status === 'rejected') {
+                                    // Per rifiutati, usa rounded_time o cerca l'ora_mod dalla timbratura corrispondente
+                                    oraConfermata = ff.rounded_time;
+                                    if (!oraConfermata && dayData.timbrature) {
+                                        const timb = dayData.timbrature.find(t => t.tipo === ff.tipo_timbratura);
+                                        if (timb && timb.ora_mod) {
+                                            oraConfermata = timb.ora_mod;
+                                        }
+                                    }
+                                }
+                                
+                                // Mostra sempre l'orario confermato per approvati/rifiutati
+                                if (oraConfermata) {
+                                    const label = ff.status === 'approved' ? 'Confermato' : 'Normalizzato';
+                                    const colorClass = ff.status === 'approved' ? 'success' : 'warning';
+                                    html += `<div class="detail-row">
+                                        <div class="detail-label">${label}</div>
+                                        <div class="detail-value ${colorClass}" style="font-weight: 600;">${oraConfermata}</div>
+                                    </div>`;
+                                }
+                            }
+                            
+                            // Info turno e flessibilità
+                            if (ff.turno_end && ff.flessibilita) {
+                                html += `<div class="detail-row">
+                                    <div class="detail-label">Limite Flessibilità</div>
+                                    <div class="detail-value muted">Turno: ${ff.turno_end} ± ${ff.flessibilita} min</div>
+                                </div>`;
+                            }
+                            
+                            // Note dell'admin (se presenti)
+                            if (ff.review_notes) {
+                                html += `<div class="detail-row">
+                                    <div class="detail-label">Note Admin</div>
+                                    <div class="detail-value" style="font-size: 12px; font-style: italic;">"${ff.review_notes}"</div>
+                                </div>`;
+                            }
+                            
+                            // Chi ha approvato/rifiutato
+                            if (ff.reviewed_by && ff.status !== 'pending') {
+                                let reviewInfo = ff.reviewed_by;
+                                if (ff.reviewed_ts) {
+                                    // reviewed_ts è in millisecondi se > 10 cifre, altrimenti in secondi
+                                    const ts = ff.reviewed_ts > 9999999999 ? ff.reviewed_ts : ff.reviewed_ts * 1000;
+                                    const reviewDate = new Date(ts);
+                                    const dateStr = reviewDate.toLocaleDateString('it-IT');
+                                    const timeStr = reviewDate.toLocaleTimeString('it-IT'); // HH:MM:SS
+                                    reviewInfo += ` (${dateStr} ${timeStr})`;
+                                }
+                                html += `<div class="detail-row">
+                                    <div class="detail-label">${ff.status === 'approved' ? 'Approvato da' : 'Rifiutato da'}</div>
+                                    <div class="detail-value muted">${reviewInfo}</div>
+                                </div>`;
+                            }
+                        });
+                        
+                        html += `</div>`;
+                    }
+                }
+                
+                modalBody.innerHTML = html;
+            }
+            
+            dayModal.classList.add('active');
+        }
+        
+        // Close Modal
+        modalClose.addEventListener('click', () => {
+            dayModal.classList.remove('active');
+        });
+        
+        dayModal.addEventListener('click', (e) => {
+            if (e.target === dayModal) {
+                dayModal.classList.remove('active');
+            }
+        });
+        
+        // Init
+        updateDisplay();
+        loadData();
+    </script>
+</body>
+</html>

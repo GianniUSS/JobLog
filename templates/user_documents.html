@@ -583,9 +583,188 @@
             color: var(--text-secondary);
             line-height: 1.4;
             display: -webkit-box;
-            -webkit-line-clamp: 2;
+            -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
             overflow: hidden;
+        }
+        
+        /* Document Detail Modal */
+        .document-detail-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg);
+            z-index: 10000;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .document-detail-overlay.active {
+            display: flex;
+        }
+        
+        .document-detail-header {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            padding-top: calc(var(--safe-top) + 12px);
+            background: var(--brand);
+            gap: 12px;
+        }
+        
+        .document-detail-close {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 1.2rem;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        .document-detail-close:active {
+            transform: scale(0.95);
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .document-detail-header-title {
+            color: white;
+            font-size: 0.95rem;
+            font-weight: 600;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-align: center;
+        }
+        
+        .document-detail-share {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 1.1rem;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        .document-detail-share:active {
+            transform: scale(0.95);
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .document-detail-content {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 20px;
+            padding-bottom: calc(var(--safe-bottom) + 20px);
+        }
+        
+        .document-detail-category {
+            display: inline-block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            margin-bottom: 16px;
+        }
+        
+        .document-detail-category.circolare {
+            background: var(--info-bg);
+            color: var(--info);
+        }
+        
+        .document-detail-category.comunicazione {
+            background: var(--warning-bg);
+            color: var(--warning);
+        }
+        
+        .document-detail-category.busta_paga {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        
+        .document-detail-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            line-height: 1.3;
+        }
+        
+        .document-detail-date {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .document-detail-body {
+            font-size: 1rem;
+            color: var(--text-primary);
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .document-detail-attachment {
+            margin-top: 24px;
+            padding: 16px;
+            background: var(--bg-card-hover);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+        }
+        
+        .document-detail-attachment-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .document-detail-attachment-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 14px 20px;
+            background: var(--brand);
+            color: white;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .document-detail-attachment-btn:hover {
+            background: var(--brand-dark);
+            transform: translateY(-1px);
+        }
+        
+        .document-detail-attachment-btn:active {
+            transform: translateY(0);
         }
         
         .document-footer {
@@ -959,6 +1138,10 @@
                     <span class="icon">🔔</span>
                     <span>Storico Notifiche</span>
                 </a>
+                <a href="/user/storico-timbrature" class="menu-item">
+                    <span class="icon">🕐</span>
+                    <span>Storico Timbrature</span>
+                </a>
                 {% if magazzino_enabled %}
                 <a href="{{ url_for('magazzino_home') }}" class="menu-item">
                     <span class="icon">📦</span>
@@ -1122,11 +1305,31 @@
                 updateStats();
                 renderDocuments();
                 
+                // Controlla se c'è un documento da aprire dall'URL (da notifica push)
+                checkUrlDocumentParam();
+                
             } catch (error) {
                 console.error('Errore:', error);
                 showToast('Errore nel caricamento dei documenti');
             } finally {
                 refreshBtn.classList.remove('loading');
+            }
+        }
+        
+        // Controlla parametro URL per aprire documento specifico
+        function checkUrlDocumentParam() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const docId = urlParams.get('doc');
+            if (docId) {
+                // Rimuovi il parametro dall'URL senza ricaricare
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, newUrl);
+                
+                // Apri il documento
+                const docIdNum = parseInt(docId);
+                if (docIdNum && allDocuments.some(d => d.id === docIdNum)) {
+                    setTimeout(() => openDocument(docIdNum), 300);
+                }
             }
         }
         
@@ -1264,17 +1467,18 @@
         // Current file for viewer
         let currentFileUrl = null;
         let currentFileTitle = null;
+        let currentDocument = null;
         
-        // Open document
+        // Open document - shows detail modal
         async function openDocument(docId) {
             // Get document first
             const doc = allDocuments.find(d => d.id === docId);
             if (!doc) return;
             
-            // If has file, open in viewer immediately
-            if (doc.file_url) {
-                viewFile(doc.file_url, doc.title);
-            }
+            currentDocument = doc;
+            
+            // Show document detail modal
+            showDocumentDetail(doc);
             
             // Mark as read (async, don't wait)
             try {
@@ -1283,12 +1487,110 @@
                 // Update local data after API call
                 doc.read = true;
                 updateStats();
-                // Only re-render if viewer is not open (avoid visual glitch)
-                if (!document.getElementById('fileViewerOverlay').classList.contains('active')) {
-                    renderDocuments();
-                }
             } catch (error) {
                 console.error('Errore:', error);
+            }
+        }
+        
+        // Show document detail modal
+        function showDocumentDetail(doc) {
+            const overlay = document.getElementById('documentDetailOverlay');
+            const categoryEl = document.getElementById('documentDetailCategory');
+            const titleEl = document.getElementById('documentDetailTitle');
+            const dateEl = document.getElementById('documentDetailDate');
+            const bodyEl = document.getElementById('documentDetailBody');
+            const attachmentEl = document.getElementById('documentDetailAttachment');
+            
+            // Set category
+            categoryEl.textContent = getCategoryLabel(doc.category);
+            categoryEl.className = 'document-detail-category ' + doc.category;
+            
+            // Set title
+            titleEl.textContent = doc.title;
+            
+            // Set date
+            dateEl.innerHTML = `<i class="fas fa-calendar-alt"></i> ${formatDateFull(doc.created_at)}`;
+            
+            // Set description/body
+            if (doc.description) {
+                bodyEl.textContent = doc.description;
+                bodyEl.style.display = 'block';
+            } else {
+                bodyEl.style.display = 'none';
+            }
+            
+            // Set attachment if present
+            if (doc.file_url) {
+                attachmentEl.style.display = 'block';
+                attachmentEl.innerHTML = `
+                    <div class="document-detail-attachment-label">
+                        <i class="fas fa-paperclip"></i>
+                        Allegato disponibile
+                    </div>
+                    <button class="document-detail-attachment-btn" onclick="viewFile('${doc.file_url}', '${escapeHtml(doc.title)}')">
+                        <i class="fas fa-eye"></i>
+                        Visualizza allegato
+                    </button>
+                `;
+            } else {
+                attachmentEl.style.display = 'none';
+            }
+            
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        // Close document detail modal
+        function closeDocumentDetail() {
+            const overlay = document.getElementById('documentDetailOverlay');
+            overlay.classList.remove('active');
+            document.body.style.overflow = '';
+            currentDocument = null;
+            
+            // Re-render to update read status
+            renderDocuments();
+        }
+        
+        // Format date full
+        function formatDateFull(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('it-IT', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        
+        // Share document detail
+        async function shareDocumentDetail() {
+            if (!currentDocument) return;
+            
+            if (!navigator.share) {
+                showToast('Condivisione non supportata su questo dispositivo');
+                return;
+            }
+            
+            try {
+                const shareData = {
+                    title: currentDocument.title,
+                    text: currentDocument.description || currentDocument.title
+                };
+                
+                if (currentDocument.file_url) {
+                    shareData.url = window.location.origin + currentDocument.file_url;
+                }
+                
+                await navigator.share(shareData);
+                showToast('Contenuto condiviso');
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Errore condivisione:', error);
+                    showToast('Errore durante la condivisione');
+                }
             }
         }
         
@@ -1615,6 +1917,26 @@
             checkPushStatus();
         });
     </script>
+    
+    <!-- Document Detail Modal -->
+    <div class="document-detail-overlay" id="documentDetailOverlay">
+        <div class="document-detail-header">
+            <button class="document-detail-close" onclick="closeDocumentDetail()">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <div class="document-detail-header-title">Dettaglio documento</div>
+            <button class="document-detail-share" onclick="shareDocumentDetail()">
+                <i class="fas fa-share-alt"></i>
+            </button>
+        </div>
+        <div class="document-detail-content">
+            <div class="document-detail-category" id="documentDetailCategory">Circolare</div>
+            <h1 class="document-detail-title" id="documentDetailTitle">Titolo documento</h1>
+            <div class="document-detail-date" id="documentDetailDate"></div>
+            <div class="document-detail-body" id="documentDetailBody"></div>
+            <div class="document-detail-attachment" id="documentDetailAttachment" style="display: none;"></div>
+        </div>
+    </div>
     
     <!-- File Viewer Modal -->
     <div class="file-viewer-overlay" id="fileViewerOverlay">

@@ -273,6 +273,17 @@
         .menu-item.active { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #fff; }
         .menu-item.danger { color: #ef4444; }
         .menu-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+        .menu-badge {
+            background: #ef4444;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: auto;
+            min-width: 18px;
+            text-align: center;
+        }
         .menu-divider {
             height: 1px;
             background: rgba(148, 163, 184, 0.4);
@@ -600,7 +611,10 @@
             <div class="menu-divider"></div>
             <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
             <a href="/admin/documents" class="menu-item">📄 Documenti</a>
-            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <a href="/admin/user-requests" class="menu-item">
+                📥 Richieste
+                <span class="menu-badge" id="pendingRequestsBadge" style="display: none;"></span>
+            </a>
             <div class="menu-divider"></div>
             <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
             <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
@@ -627,22 +641,21 @@
                     <label for="dateInputEnd">Data fine</label>
                     <input id="dateInputEnd" type="date" />
                 </div>
-                <button id="applyDate" class="btn-apply">Applica Filtri</button>
-            </div>
-            
-            <!-- Informazioni Utile -->
-            <div class="filter-card">
-                <h3>Statistiche Rapide</h3>
-                <div class="filter-group" style="gap: 16px;">
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <span style="font-size: 12px; color: var(--muted); font-weight: 700;">Oggi</span>
-                        <span id="quickStatToday" style="font-size: 14px; font-weight: 600;">-</span>
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <span style="font-size: 12px; color: var(--muted); font-weight: 700;">Questa settimana</span>
-                        <span id="quickStatWeek" style="font-size: 14px; font-weight: 600;">-</span>
-                    </div>
+                <div class="filter-group">
+                    <label for="projectFilter">Progetto</label>
+                    <select id="projectFilter" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border, #e2e8f0); background: white; font-size: 14px;">
+                        <option value="">Tutti i progetti</option>
+                    </select>
                 </div>
+                <div class="filter-group">
+                    <label for="sourceFilter">Fonte</label>
+                    <select id="sourceFilter" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border, #e2e8f0); background: white; font-size: 14px;">
+                        <option value="">Tutti</option>
+                        <option value="Squadra">🏗️ Squadra</option>
+                        <option value="Magazzino">📦 Magazzino</option>
+                    </select>
+                </div>
+                <button id="applyDate" class="btn-apply">Applica Filtri</button>
             </div>
         </aside>
 
@@ -662,6 +675,59 @@
                     <span class="stat-unit">registro ore</span>
                     <p class="status" style="margin-top: 8px;">Team attuale</p>
                 </div>
+                <div class="stat-card" id="combinedCard" style="display: none;">
+                    <h4>🔄 Totale MAG+SQUADRA</h4>
+                    <div class="stat-value" id="hoursCombined" style="color: var(--primary, #6366f1);">-</div>
+                    <span class="stat-unit">ore combinate</span>
+                    <p class="status" id="combinedProject" style="margin-top: 8px; font-weight: 600;"></p>
+                </div>
+                
+                <!-- Statistiche Progetto (dentro la griglia) -->
+                <div class="stat-card" id="projectStatsSection" style="display: none;">
+                    <h4>📊 Statistiche Progetto</h4>
+                    <div style="display: flex; align-items: center; gap: 20px; margin-top: 12px;">
+                        <!-- Sinistra: Ore Pianificate -->
+                        <div style="flex: 1;">
+                            <span style="font-size: 10px; color: var(--muted); text-transform: uppercase;">Pianificate</span>
+                            <div id="hoursPlanned" style="font-size: 22px; font-weight: 700; color: var(--info, #3b82f6);">-</div>
+                        </div>
+                        <!-- Centro: Ore Realizzate -->
+                        <div style="flex: 1;">
+                            <span style="font-size: 10px; color: var(--muted); text-transform: uppercase;">Realizzate</span>
+                            <div id="hoursRealized" style="font-size: 22px; font-weight: 700; color: var(--success, #22c55e);">-</div>
+                            <div id="hoursRemaining" style="font-size: 9px; color: var(--muted); margin-top: 2px;">-</div>
+                        </div>
+                        <!-- Destra: Torta più grande -->
+                        <div style="display: flex; align-items: flex-start; gap: 12px; flex: 1.5;">
+                            <div id="pieChart" style="width: 75px; height: 75px; border-radius: 50%; flex-shrink: 0;"></div>
+                            <div id="pieLegend" style="flex: 1; max-height: 80px; overflow-y: auto; font-size: 10px; line-height: 1.4;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sessioni Aperte -->
+            <div class="sessions-section" id="openSessionsSection">
+                <h2>🟢 Sessioni Aperte</h2>
+                <div class="table-responsive">
+                    <table id="openSessionsTable">
+                        <thead>
+                            <tr>
+                                <th>Progetto</th>
+                                <th>Utente</th>
+                                <th>Attività</th>
+                                <th>Note</th>
+                                <th>Stato</th>
+                                <th>Inizio</th>
+                                <th>Tempo</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div id="openSessionsEmpty" class="empty-state" style="display:none;">
+                    <p>Nessuna sessione attiva al momento.</p>
+                </div>
             </div>
 
             <!-- Sessioni Table -->
@@ -677,6 +743,7 @@
                                 <th>Utente</th>
                                 <th>Attività</th>
                                 <th>Note</th>
+                                <th>Pause</th>
                                 <th>Inizio</th>
                                 <th>Fine</th>
                                 <th>Ore</th>
@@ -698,7 +765,8 @@
             dayUrl: "{{ url_for('api_admin_day_sessions') }}",
             exportUrl: "{{ url_for('api_admin_day_sessions_export_xlsx') }}",
             sessionsUrl: "{{ url_for('admin_sessions_page') }}",
-            homeUrl: "{{ url_for('home') }}"
+            homeUrl: "{{ url_for('home') }}",
+            openSessionsUrl: "{{ url_for('api_admin_open_sessions') }}"
         };
     </script>
     <script>
@@ -729,6 +797,17 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closeMenu();
         });
+        
+        // Carica contatore richieste pendenti
+        fetch('/api/admin/user-requests/pending-count')
+            .then(r => r.json())
+            .then(data => {
+                const badge = document.getElementById('pendingRequestsBadge');
+                if (badge && data.count > 0) {
+                    badge.textContent = data.count;
+                    badge.style.display = 'inline-block';
+                }
+            }).catch(() => {});
     </script>
     <script src="{{ static_version('js/admin_update_system.js') }}"></script>
     <script type="module" src="{{ static_version('js/admin_dashboard.js') }}"></script>

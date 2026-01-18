@@ -1,8 +1,8 @@
-// Service Worker Version: v2026.01.10 - Updated: 2026-01-09T16:30:00Z
-const CACHE_NAME = 'joblog-v2026.01.10';
-const STATIC_CACHE = 'joblog-static-v40';
-const DYNAMIC_CACHE = 'joblog-dynamic-v40';
-const API_CACHE = 'joblog-api-v35';
+// Service Worker Version: v2026.01.17 - Updated: 2026-01-17T20:00:00Z
+const CACHE_NAME = 'joblog-v2026.01.17b';
+const STATIC_CACHE = 'joblog-static-v41';
+const DYNAMIC_CACHE = 'joblog-dynamic-v41';
+const API_CACHE = 'joblog-api-v36';
 const BG_SYNC_TAG = 'joblog-sync-queue';
 const QUEUE_DB = 'joblog-sync-db';
 const QUEUE_STORE = 'requests';
@@ -80,6 +80,12 @@ self.addEventListener('fetch', (event) => {
 
     // Skip cross-origin requests
     if (url.origin !== location.origin) {
+        return;
+    }
+
+    // /api/ping deve SEMPRE andare alla rete senza cache (per check online status)
+    if (url.pathname === '/api/ping') {
+        event.respondWith(fetch(request));
         return;
     }
 

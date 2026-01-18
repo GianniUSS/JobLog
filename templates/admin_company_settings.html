@@ -288,6 +288,17 @@
         }
         .menu-item.danger { color: var(--danger); }
         .menu-item.danger:hover { background: rgba(102, 126, 234, 0.1); }
+        .menu-badge {
+            background: #ef4444;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: auto;
+            min-width: 18px;
+            text-align: center;
+        }
 
         .header-user {
             display: flex; align-items: center; gap: 8px;
@@ -700,7 +711,10 @@
             <div class="menu-divider"></div>
             <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
             <a href="/admin/documents" class="menu-item">📄 Documenti</a>
-            <a href="/admin/user-requests" class="menu-item">📥 Richieste</a>
+            <a href="/admin/user-requests" class="menu-item">
+                📥 Richieste
+                <span class="menu-badge" id="pendingRequestsBadge" style="display: none;"></span>
+            </a>
             <div class="menu-divider"></div>
             <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
             <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
@@ -964,24 +978,24 @@
                 Gestione Straordinari
             </h2>
             <p style="color: var(--muted); margin-bottom: 16px; font-size: 14px;">
-                Configura le regole per il rilevamento e la gestione degli straordinari
+                Configura le regole per il rilevamento e la gestione degli Extra Turni
             </p>
             
             <div class="form-group" style="margin-bottom: 16px;">
-                <label class="form-label">Soglia Minima Straordinario (minuti)</label>
+                <label class="form-label">Soglia Minima Extra Turno (minuti)</label>
                 <input type="number" class="form-input" id="overtimeThreshold" value="15" min="5" max="120" style="max-width: 150px;">
-                <span class="form-hint">Differenza minima tra orario pianificato e effettivo per considerare lo straordinario</span>
+                <span class="form-hint">Differenza minima tra orario pianificato e effettivo per considerare l'Extra Turno</span>
             </div>
 
             <div class="form-group" style="margin-bottom: 16px;">
-                <label class="form-label">Arrotondamento Straordinari</label>
+                <label class="form-label">Arrotondamento Extra Turno</label>
                 <select class="form-input" id="overtimeRounding" style="max-width: 200px;">
                     <option value="1">Al minuto</option>
                     <option value="5">Ogni 5 minuti</option>
                     <option value="15" selected>Ogni 15 minuti</option>
                     <option value="30">Ogni 30 minuti</option>
                 </select>
-                <span class="form-hint">Come arrotondare i minuti di straordinario</span>
+                <span class="form-hint">Come arrotondare i minuti di Extra Turno</span>
             </div>
 
             <div class="modules-grid">
@@ -1524,6 +1538,17 @@
                 e.returnValue = '';
             }
         });
+
+        // Carica contatore richieste pendenti
+        fetch('/api/admin/user-requests/pending-count')
+            .then(r => r.json())
+            .then(data => {
+                const badge = document.getElementById('pendingRequestsBadge');
+                if (badge && data.count > 0) {
+                    badge.textContent = data.count;
+                    badge.style.display = 'inline-block';
+                }
+            }).catch(() => {});
 
         // Init
         loadSettings();

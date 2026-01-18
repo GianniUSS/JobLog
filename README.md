@@ -1,13 +1,19 @@
 TODO
->Le richieste  di tipo permesso  (da migliorare)
->Chiusra automatica  quando non timbrano la chiusura 
+>Le richieste  di tipo permesso  (da migliorare) mettere dalle alle 
+
 >Menu Magazzino velocizzare l'avvio
->Menu storico timbraturee per mese  daa creare 
->Gestione timbratura manuale con processo di approvazione
+>Menu storico timbrature per mese (fatto)
+>Gestione timbratura manuale con processo di approvazione (fatto)
 >aadmin/dashboard problemi su inizio/fine  (pausa )
 >admin/activity-analysis da sistemare e migliorare 
-
-
+>modulo magazzino resta selezionato il progetto (fatto)
+>Gestione Documenti le circolari e cominicazioni non si vedono
+>flusso pulsanti timbratura
+>messaggio di fuori flessibilita
+>Opzioni configurabili per gruppo (es. diversa flessibilità)
+>Notifiche push all'admin per nuove richieste
+>Report delle timbrature fuori flessibilità
+motivo della normalizzazione (tolleranza, arrotondamento>da migliorare
 
 # JobLOG (Starter)
 
@@ -44,7 +50,7 @@ Suggerimenti rapidi:
 Gli account vengono salvati nella tabella `app_users` del database configurato (SQLite di default o MySQL/MariaDB se abilitato). Lo script `manage_users.py` utilizza automaticamente le stesse impostazioni definite in `config.json` o tramite variabili `JOBLOG_DB_*`.
 
 - Elenca utenti: `python manage_users.py list`
-- Crea un account: `python manage_users.py create USERNAME --name "Nome Cognome" --role supervisor`
+- Crea un account: `python manage_users.py create USERNAME --name "Nome Cognome" --role supervisor`ython simulate_january_timbrature.py
 - Aggiorna password: `python manage_users.py set-password USERNAME`
 - Cambia ruolo: `python manage_users.py set-role USERNAME admin`
 - Abilita/Disabilita: `python manage_users.py activate USERNAME` / `python manage_users.py deactivate USERNAME`

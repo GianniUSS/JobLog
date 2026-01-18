@@ -587,6 +587,13 @@ header {
   display: flex;
   flex-direction: column;
   line-height: 1.3;
+  align-items: flex-start;
+  justify-content: center;
+}
+.history-item .time .time-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 .history-item .time .ora-originale {
   opacity: 0.6;
@@ -607,10 +614,25 @@ header {
   color: var(--green);
   font-weight: 600;
 }
+.history-item .pausa-durata-row {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  margin-left: 0;
+  display: block;
+  width: 100%;
+}
+.history-item .pausa-durata-row .ora-mod {
+  color: var(--green);
+  font-weight: 600;
+}
 .history-item .type {
   color: var(--text-secondary);
   align-self: center;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .history-item .dot {
   width: 8px;
@@ -647,6 +669,9 @@ header {
   padding-left: 12px;
   margin-left: -3px;
 }
+.history-item.pending-confirmation {
+  border-left: 3px solid #f97316;
+}
 .overtime-info-row {
   display: flex;
   align-items: center;
@@ -657,6 +682,10 @@ header {
   color: #92400e;
   background: linear-gradient(90deg, rgba(251, 191, 36, 0.15), transparent);
   border-bottom: 1px solid var(--border);
+}
+.overtime-info-row.pending-confirmation {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.15), transparent);
+  color: #9a3412;
 }
 .overtime-info-row .overtime-icon {
   font-size: 14px;
@@ -710,6 +739,22 @@ header {
 }
 .history-item .method-badge.qr {
   opacity: 0.7;
+}
+
+/* Badge supervisor - per timbrature create dal caposquadra */
+.history-item .supervisor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: white;
+  border-radius: 10px;
+  margin-left: 6px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
 }
 
 .history-item.offline-pending {
@@ -894,29 +939,50 @@ header {
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 .turno-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  font-weight: 700;
-  opacity: 0.85;
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  z-index: 2;
-  position: relative;
+  display: none; /* Rimosso - ora usiamo direttamente il nome progetto */
 }
 .turno-project {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   z-index: 2;
   position: relative;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.3px;
+}
+.turno-badges-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.turno-badge-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.turno-badge-pausa {
+  background: rgba(255,140,0,0.9);
+  color: white;
+}
+.turno-badge-note {
+  background: rgba(255,193,7,0.9);
+  color: #333;
+  animation: pulse-note 2s infinite;
+}
+.turno-badge-note:hover {
+  background: rgba(255,193,7,1);
+  transform: scale(1.05);
 }
 .turno-details {
   display: grid;
@@ -956,18 +1022,84 @@ header {
   border-radius: 6px;
 }
 .turno-pausa-badge {
-  position: absolute;
-  top: 10px;
-  right: 60px;
-  white-space: nowrap;
-  font-size: 11px;
+  display: none; /* Ora gestito tramite turno-badges-row */
+}
+.turno-note-btn {
+  display: none; /* Ora gestito tramite turno-badges-row */
+}
+@keyframes pulse-note {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,193,7,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(255,193,7,0); }
+}
+/* Modal Note Turno */
+.note-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.note-modal.open {
+  display: flex;
+}
+.note-container {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border-radius: 20px;
+  padding: 24px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.note-title {
+  font-size: 20px;
   font-weight: 700;
   color: white;
-  background: rgba(255,140,0,0.95);
-  padding: 4px 10px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.note-section {
+  background: rgba(255,255,255,0.08);
   border-radius: 12px;
-  z-index: 4;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.note-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.note-section-text {
+  font-size: 14px;
+  color: white;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.note-close {
+  width: 100%;
+  padding: 14px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 12px;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all 0.2s ease;
+}
+.note-close:hover {
+  background: rgba(255,255,255,0.2);
 }
 .turno-timbratura {
   width: 100%;
@@ -1635,6 +1767,10 @@ header {
         <span class="icon">🔔</span>
         <span>Storico Notifiche</span>
       </a>
+      <a href="/user/storico-timbrature" class="menu-item">
+        <span class="icon">🕐</span>
+        <span>Storico Timbrature</span>
+      </a>
       {% if magazzino_enabled %}
       <a href="{{ url_for('magazzino_home') }}" class="menu-item">
         <span class="icon">📦</span>
@@ -1742,14 +1878,19 @@ header {
   <!-- Box Turno Oggi -->
   <div class="turno-box" id="turnoBox" style="display:none;">
     <span class="turno-counter" id="turnoCounter" style="display:none;">1/1</span>
-    <div class="turno-header">
-      <span>📅</span> Il tuo turno oggi
-    </div>
-    <span id="turnoPausaBadge" class="turno-pausa-badge" style="display:none;"></span>
     <div class="turno-nav">
       <button class="turno-nav-btn" id="turnoPrevBtn" onclick="navigateTurno(-1)" style="display:none;">‹</button>
       <div class="turno-content">
         <div class="turno-project" id="turnoProject">-</div>
+        <!-- Riga badge pausa e note -->
+        <div class="turno-badges-row" id="turnoBadgesRow" style="display:none;">
+          <span class="turno-badge-item turno-badge-pausa" id="turnoBadgePausa" style="display:none;">
+            ⏸️ Pausa <span id="turnoBadgePausaText">30min</span>
+          </span>
+          <span class="turno-badge-item turno-badge-note" id="turnoBadgeNote" onclick="showTurnoNotes()" style="display:none;">
+            📝 Note
+          </span>
+        </div>
         <div class="turno-details">
           <!-- Orario -->
           <div class="turno-detail turno-detail-row" id="turnoOrarioRow">
@@ -1861,6 +2002,25 @@ header {
   </div>
 </div>
 
+<!-- Note Turno Modal -->
+<div class="note-modal" id="noteModal">
+  <div class="note-container">
+    <h2 class="note-title">📝 Note sul Turno</h2>
+    <div id="noteRemark" class="note-section" style="display:none;">
+      <div class="note-section-label">📋 Note progetto</div>
+      <div class="note-section-text" id="noteRemarkText"></div>
+    </div>
+    <div id="notePlanner" class="note-section" style="display:none;">
+      <div class="note-section-label">👤 Note pianificatore</div>
+      <div class="note-section-text" id="notePlannerText"></div>
+    </div>
+    <div id="noteEmpty" class="note-section" style="display:none;">
+      <div class="note-section-text" style="text-align:center; color: rgba(255,255,255,0.5);">Nessuna nota disponibile</div>
+    </div>
+    <button class="note-close" onclick="closeNoteModal()">Chiudi</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- QR Scanner Library -->
@@ -1878,6 +2038,46 @@ let todayTimbrature = [];
 let pendingOvertime = null;  // Straordinario in attesa di revisione
 let html5QrcodeScanner = null;
 let pendingTimbraturaType = null;  // Tipo di timbratura in attesa di conferma QR
+let currentTurnoNotes = { note: null, note_planner: null };  // Note del turno corrente
+
+// Funzioni per Note Turno
+function showTurnoNotes() {
+  const modal = document.getElementById('noteModal');
+  const remarkSection = document.getElementById('noteRemark');
+  const plannerSection = document.getElementById('notePlanner');
+  const emptySection = document.getElementById('noteEmpty');
+  const remarkText = document.getElementById('noteRemarkText');
+  const plannerText = document.getElementById('notePlannerText');
+  
+  // Resetta
+  remarkSection.style.display = 'none';
+  plannerSection.style.display = 'none';
+  emptySection.style.display = 'none';
+  
+  let hasNotes = false;
+  
+  if (currentTurnoNotes.note) {
+    remarkText.textContent = currentTurnoNotes.note;
+    remarkSection.style.display = 'block';
+    hasNotes = true;
+  }
+  
+  if (currentTurnoNotes.note_planner) {
+    plannerText.textContent = currentTurnoNotes.note_planner;
+    plannerSection.style.display = 'block';
+    hasNotes = true;
+  }
+  
+  if (!hasNotes) {
+    emptySection.style.display = 'block';
+  }
+  
+  modal.classList.add('open');
+}
+
+function closeNoteModal() {
+  document.getElementById('noteModal').classList.remove('open');
+}
 
 // Aggiorna orologio
 function updateClock() {
@@ -2308,10 +2508,19 @@ async function confirmGpsLocation() {
       }
       
       loadTimbrature();
-      // Check straordinario dopo fine giornata
-      if (tipo === 'fine_giornata') {
-        setTimeout(() => checkOvertimeAfterCheckout(), 1500);
+      
+      // Se è stato rilevato un Extra Turno, mostra il popup
+      if (data.extra_turno && data.extra_turno.detected) {
+        setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
       }
+      // Se è stato rilevato Fuori Flessibilità, mostra il popup
+      else if (data.flex_warning && data.flex_warning.detected) {
+        setTimeout(() => showFlexWarningPopup(data.flex_warning), 500);
+      }
+      // Check straordinario dopo fine giornata (vecchia logica, ora gestita sopra)
+      // if (tipo === 'fine_giornata') {
+      //   setTimeout(() => checkOvertimeAfterCheckout(), 1500);
+      // }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
       // Mostra anche l'URL di debug in caso di errore
@@ -2371,9 +2580,14 @@ async function registerTimbraturaDirectly(tipo) {
       }
       
       loadTimbrature();
-      // Check straordinario dopo fine giornata
-      if (tipo === 'fine_giornata') {
-        setTimeout(() => checkOvertimeAfterCheckout(), 1500);
+      
+      // Se è stato rilevato un Extra Turno, mostra il popup
+      if (data.extra_turno && data.extra_turno.detected) {
+        setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
+      }
+      // Se è stato rilevato Fuori Flessibilità, mostra il popup
+      else if (data.flex_warning && data.flex_warning.detected) {
+        setTimeout(() => showFlexWarningPopup(data.flex_warning), 500);
       }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
@@ -2614,9 +2828,14 @@ async function onScanSuccess(decodedText, decodedResult) {
     } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
       loadTimbrature();
-      // Check straordinario dopo fine giornata
-      if (tipo === 'fine_giornata') {
-        setTimeout(() => checkOvertimeAfterCheckout(), 1500);
+      
+      // Se è stato rilevato un Extra Turno, mostra il popup
+      if (data.extra_turno && data.extra_turno.detected) {
+        setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
+      }
+      // Se è stato rilevato Fuori Flessibilità, mostra il popup
+      else if (data.flex_warning && data.flex_warning.detected) {
+        setTimeout(() => showFlexWarningPopup(data.flex_warning), 500);
       }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
@@ -2651,9 +2870,40 @@ function updateUI() {
       offline_ts: item.ts
     }));
   
-  // Combina e ordina per ora
+  // Ordine logico dei tipi di timbratura (per risolvere parità di orario)
+  const TIPO_ORDER = {
+    'inizio_giornata': 1,
+    'inizio_pausa': 2,
+    'fine_pausa': 3,
+    'fine_giornata': 4
+  };
+  
+  // Combina e ordina per ora (crescente per logica interna)
   const allTimbrature = [...todayTimbrature.map(t => ({...t, offline: false})), ...offlineToday]
-    .sort((a, b) => a.ora.localeCompare(b.ora));
+    .sort((a, b) => {
+      // Ordina per ora in formato HH:MM:SS o HH:MM
+      const oraA = (a.ora || '').padEnd(8, ':00');
+      const oraB = (b.ora || '').padEnd(8, ':00');
+      const cmp = oraA.localeCompare(oraB);
+      // In caso di parità, ordina per tipo logico
+      if (cmp === 0) {
+        return (TIPO_ORDER[a.tipo] || 99) - (TIPO_ORDER[b.tipo] || 99);
+      }
+      return cmp;
+    });
+  
+  // Per lo storico, ordine decrescente (più recente in alto)
+  const allTimbratureDisplay = [...allTimbrature].sort((a, b) => {
+    // Normalizza ora con zero-padding (es: "9:20" -> "09:20")
+    const oraA = (a.ora || '00:00').split(':').map(p => p.padStart(2, '0')).join(':');
+    const oraB = (b.ora || '00:00').split(':').map(p => p.padStart(2, '0')).join(':');
+    const cmp = oraB.localeCompare(oraA);  // b-a per decrescente
+    // In caso di parità, ordina per tipo logico (inverso per decrescente)
+    if (cmp === 0) {
+      return (TIPO_ORDER[b.tipo] || 99) - (TIPO_ORDER[a.tipo] || 99);
+    }
+    return cmp;
+  });
   
   const hasStarted = allTimbrature.some(t => t.tipo === 'inizio_giornata');
   const hasEnded = allTimbrature.some(t => t.tipo === 'fine_giornata');
@@ -2662,7 +2912,7 @@ function updateUI() {
 
   // Pulsanti - abilitati in base allo stato (la validazione QR avviene al click)
   document.getElementById('btnStartDay').disabled = hasStarted;
-  document.getElementById('btnEndDay').disabled = !hasStarted || hasEnded;
+  document.getElementById('btnEndDay').disabled = !hasStarted || hasEnded || inPause;
   
   // Check marks
   document.getElementById('checkStart').className = 'check' + (hasStarted ? ' done' : '');
@@ -2674,12 +2924,12 @@ function updateUI() {
   document.getElementById('btnStartPause').disabled = !hasStarted || hasEnded || inPause;
   document.getElementById('btnEndPause').disabled = !inPause;
 
-  // Storico
+  // Storico (ordine decrescente - più recente in alto)
   const historyList = document.getElementById('historyList');
-  if (allTimbrature.length === 0) {
+  if (allTimbratureDisplay.length === 0) {
     historyList.innerHTML = '<li class="empty-history">Nessuna timbratura registrata</li>';
   } else {
-    historyList.innerHTML = allTimbrature.map((t, idx) => {
+    historyList.innerHTML = allTimbratureDisplay.map((t, idx) => {
       const info = TIMBRATURA_TYPES[t.tipo] || { label: t.tipo, dotClass: 'start' };
       // Mostra ora originale e ora modificata se diversa
       let oraDisplay = t.ora;
@@ -2693,10 +2943,20 @@ function updateUI() {
         syncIcon = '<span class="sync-status synced" title="Sincronizzata">✓</span>';
       }
       
-      // Badge straordinario in attesa (solo per fine_giornata)
+      // Badge Extra Turno in attesa - per qualsiasi timbratura con pending_extra_turno
       let overtimeRow = '';
       let hasOvertimeClass = '';
-      if (t.tipo === 'fine_giornata' && pendingOvertime) {
+      
+      // Verifica se questa timbratura è in attesa di conferma Extra Turno
+      if (t.pending_extra_turno) {
+        hasOvertimeClass = 'has-overtime pending-confirmation';
+        overtimeRow = `
+          <div class="overtime-info-row pending-confirmation">
+            <span class="overtime-icon">⏳</span>
+            <span class="overtime-text">In attesa conferma Extra Turno</span>
+          </div>
+        `;
+      } else if (t.tipo === 'fine_giornata' && pendingOvertime) {
         const mins = pendingOvertime.minutes || 0;
         const h = Math.floor(mins / 60);
         const m = mins % 60;
@@ -2705,15 +2965,17 @@ function updateUI() {
         overtimeRow = `
           <div class="overtime-info-row">
             <span class="overtime-icon">⏳</span>
-            <span class="overtime-text">Straordinario in attesa</span>
+            <span class="overtime-text">Extra Turno in attesa</span>
             <span class="overtime-time">${timeStr}</span>
           </div>
         `;
       }
       
       if (t.tipo === 'fine_pausa') {
-        // Per fine_pausa, trova l'inizio_pausa corrispondente e mostra durata
-        const inizioPausa = [...allTimbrature].slice(0, idx).reverse().find(x => x.tipo === 'inizio_pausa');
+        // Per fine_pausa, trova l'inizio_pausa corrispondente (quello con ora < fine_pausa)
+        // Usiamo allTimbrature (ordine crescente) per trovare l'ultimo inizio_pausa prima di questa fine
+        const finePausaOra = t.ora;
+        const inizioPausa = [...allTimbrature].filter(x => x.tipo === 'inizio_pausa' && x.ora < finePausaOra).pop();
         if (inizioPausa) {
           const inizioMin = parseInt(inizioPausa.ora.split(':')[0]) * 60 + parseInt(inizioPausa.ora.split(':')[1]);
           const fineMin = parseInt(t.ora.split(':')[0]) * 60 + parseInt(t.ora.split(':')[1]);
@@ -2725,12 +2987,19 @@ function updateUI() {
           const durataConteggiata = fineModMin - inizioModMin;
           
           if (durataConteggiata !== durataEffettiva) {
-            extraInfo = ` <span class="pausa-durata">(${durataEffettiva} min → <span class="ora-mod">${durataConteggiata} min</span>)</span>`;
+            // Mostra durata su riga separata sotto l'orario
+            extraInfo = `<div class="pausa-durata-row">(${durataEffettiva} min → <span class="ora-mod">${durataConteggiata} min</span>)</div>`;
           } else {
-            extraInfo = ` <span class="pausa-durata">(${durataEffettiva} min)</span>`;
+            extraInfo = `<div class="pausa-durata-row">(${durataEffettiva} min)</div>`;
           }
         }
-      } else if (t.ora_mod && t.ora_mod !== t.ora) {
+        
+        // Mostra ora barrata anche per fine_pausa se ora_mod è diversa
+        if (t.ora_mod && t.ora_mod !== t.ora) {
+          oraDisplay = `<span class="ora-originale">${t.ora}</span><span class="ora-mod">${t.ora_mod}</span>`;
+        }
+      } else if (t.ora_mod && t.ora_mod !== t.ora && t.rounding_mode !== 'daily') {
+        // Mostra ora barrata SOLO se NON è modalità daily (arrotondamento a fine giornata)
         oraDisplay = `<span class="ora-originale">${t.ora}</span><span class="ora-mod">${t.ora_mod}</span>`;
       }
       
@@ -2742,12 +3011,23 @@ function updateUI() {
         locationInfo = '<span class="method-badge qr" title="QR Code">📱</span>';
       }
       
+      // Badge supervisor se la timbratura è stata creata da un caposquadra
+      let supervisorBadge = '';
+      if (t.method === 'supervisor') {
+        supervisorBadge = `<span class="supervisor-badge" title="Registrata dal Supervisor">👷 Supervisor</span>`;
+      }
+      
+      // Per fine_pausa, extraInfo va su riga separata sotto il tipo
+      const pausaDurataInfo = (t.tipo === 'fine_pausa' && extraInfo) ? extraInfo : '';
+      const inlineExtraInfo = (t.tipo !== 'fine_pausa' && extraInfo) ? extraInfo : '';
+      
       return `
         <li class="history-item ${t.offline ? 'offline-pending' : ''} ${hasOvertimeClass}">
           <span class="dot ${info.dotClass}"></span>
           <span class="time">${oraDisplay}</span>
-          <span class="type">${info.label}${extraInfo}</span>
+          <span class="type">${info.label}${pausaDurataInfo}${inlineExtraInfo}</span>
           ${locationInfo}
+          ${supervisorBadge}
           ${syncIcon}
         </li>
         ${overtimeRow}
@@ -2843,11 +3123,36 @@ function displayTurno(index) {
   // Priorità: timbratura_location (sede GPS configurata) > location_name (location progetto)
   currentShiftLocationName = turno.timbratura_location || turno.location_name || null;
   
-  // Progetto
-  let projectText = turno.project_name || 'Progetto';
-  if (turno.project_code) {
-    projectText += ` (${turno.project_code})`;
+  // Memorizza le note del turno corrente
+  currentTurnoNotes = {
+    note: turno.note || null,
+    note_planner: turno.note_planner || null
+  };
+  
+  // Gestione badge row (pausa e note)
+  const badgesRow = document.getElementById('turnoBadgesRow');
+  const badgePausa = document.getElementById('turnoBadgePausa');
+  const badgePausaText = document.getElementById('turnoBadgePausaText');
+  const badgeNote = document.getElementById('turnoBadgeNote');
+  
+  let hasPausa = false;
+  let hasNote = currentTurnoNotes.note || currentTurnoNotes.note_planner;
+  
+  // Pausa prevista
+  if (turno.break_start && turno.break_end) {
+    badgePausaText.textContent = `${turno.break_start}-${turno.break_end}`;
+    hasPausa = true;
+  } else if (turno.break_minutes && turno.break_minutes > 0) {
+    badgePausaText.textContent = `${turno.break_minutes}min`;
+    hasPausa = true;
   }
+  
+  badgePausa.style.display = hasPausa ? 'inline-flex' : 'none';
+  badgeNote.style.display = hasNote ? 'inline-flex' : 'none';
+  badgesRow.style.display = (hasPausa || hasNote) ? 'flex' : 'none';
+  
+  // Progetto - nome diretto senza "Progetto"
+  let projectText = turno.project_name || '-';
   document.getElementById('turnoProject').textContent = projectText;
   
   // Orario
@@ -2861,18 +3166,6 @@ function displayTurno(index) {
       orarioText = `${turno.hours}h previste`;
     }
     document.getElementById('turnoOrarioText').textContent = orarioText;
-  }
-  
-  // Pausa prevista (badge in alto)
-  const pausaBadge = document.getElementById('turnoPausaBadge');
-  if (turno.break_start && turno.break_end) {
-    pausaBadge.textContent = `☕ ${turno.break_start}-${turno.break_end}`;
-    pausaBadge.style.display = 'block';
-  } else if (turno.break_minutes && turno.break_minutes > 0) {
-    pausaBadge.textContent = `☕ ${turno.break_minutes}min`;
-    pausaBadge.style.display = 'block';
-  } else {
-    pausaBadge.style.display = 'none';
   }
   
   // Funzione/Ruolo
@@ -3365,7 +3658,7 @@ async function subscribeToPush() {
     // Registra service worker se non già fatto
     let registration = await navigator.serviceWorker.getRegistration();
     if (!registration) {
-      registration = await navigator.serviceWorker.register('/sw.js?v=2026.01.08e');
+      registration = await navigator.serviceWorker.register('/sw.js?v=2026.01.17b');
       await navigator.serviceWorker.ready;
     }
     
@@ -3452,7 +3745,7 @@ if (localStorage.getItem('theme') === 'dark') {
 
 // Registra service worker per PWA
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js?v=2026.01.08e')
+  navigator.serviceWorker.register('/sw.js?v=2026.01.17b')
     .then(reg => console.log('Service Worker registrato'))
     .catch(err => console.warn('Service Worker fallito:', err));
     
@@ -3473,40 +3766,56 @@ if ('serviceWorker' in navigator) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  OFFLINE / ONLINE EVENTS
+//  OFFLINE / ONLINE STATUS - Basato SOLO su /api/ping, ignora navigator.onLine
+//  (navigator.onLine dà falsi negativi quando CDN esterni falliscono)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-window.addEventListener('online', () => {
-  console.log('[Network] Online');
-  document.getElementById('offline-bar')?.remove();
-  showToast('✅ Connessione ripristinata', 'success');
-  // Sincronizza timbrature offline
-  syncOfflineTimbrature();
-  // Aggiorna lista timbrature dal server
-  setTimeout(loadTimbrature, 1000);
-});
+let isReallyOnline = true; // Assumiamo online finché non verifichiamo
 
-window.addEventListener('offline', () => {
-  console.log('[Network] Offline');
-  // Mostra barra offline se non esiste già
-  if (!document.getElementById('offline-bar')) {
+// Verifica lo stato reale chiamando il server
+async function checkRealOnlineStatus() {
+  try {
+    const response = await fetch('/api/ping', { 
+      method: 'GET', 
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Aggiorna UI in base allo stato online/offline
+function updateOnlineUI(online, showToast = false) {
+  const existingBar = document.getElementById('offline-bar');
+  
+  if (!online && !existingBar) {
     const bar = document.createElement('div');
     bar.id = 'offline-bar';
     bar.className = 'offline-bar';
     bar.innerHTML = '📴 Sei offline - Le timbrature verranno salvate in locale';
     document.body.prepend(bar);
+    if (showToast) {
+      window.showToast?.('📴 Connessione persa - Modalità offline', 'warning');
+    }
+  } else if (online && existingBar) {
+    existingBar.remove();
+    if (showToast) {
+      window.showToast?.('✅ Connessione ripristinata', 'success');
+      syncOfflineTimbrature();
+      setTimeout(loadTimbrature, 1000);
+    }
   }
-  showToast('📴 Connessione persa - Modalità offline', 'warning');
-});
-
-// Mostra barra offline se già offline all'avvio
-if (!navigator.onLine) {
-  const bar = document.createElement('div');
-  bar.id = 'offline-bar';
-  bar.className = 'offline-bar';
-  bar.innerHTML = '📴 Sei offline - Le timbrature verranno salvate in locale';
-  document.body.prepend(bar);
+  
+  isReallyOnline = online;
 }
+
+// Check iniziale - senza toast
+checkRealOnlineStatus().then(online => updateOnlineUI(online, false));
+
+// NON usiamo più window.addEventListener('online'/'offline') perché 
+// navigator.onLine dà falsi positivi/negativi con CDN esterni che falliscono
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  PWA INSTALL PROMPT
@@ -3987,12 +4296,12 @@ function showOvertimeModal(overtimeData) {
         </style>
         <div class="modal-content">
             <div class="modal-icon">⏱️</div>
-            <h3>Straordinario Rilevato</h3>
+            <h3>Extra Turno Rilevato</h3>
             <p style="color:#64748b;margin:0 0 16px;">Hai lavorato oltre il turno pianificato</p>
             
             <div class="time-highlight">
                 <div class="value">${timeStr}</div>
-                <div class="label">${typeLabels[overtimeData.overtime_type] || 'Straordinario'}</div>
+                <div class="label">${typeLabels[overtimeData.overtime_type] || 'Extra Turno'}</div>
             </div>
             
             <div class="details">
@@ -4030,6 +4339,478 @@ function showOvertimeModal(overtimeData) {
 function closeOvertimeModal() {
     const modal = document.getElementById('overtimeModal');
     if (modal) modal.remove();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// POPUP EXTRA TURNO (mostrato dopo timbratura con Extra Turno rilevato)
+// ═══════════════════════════════════════════════════════════════════
+function showExtraTurnoPopup(extraTurnoData, tipo) {
+    // Rimuovi popup esistente se presente
+    const existingPopup = document.getElementById('extraTurnoPopup');
+    if (existingPopup) existingPopup.remove();
+    
+    const minutes = extraTurnoData.minutes || 0;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} minuti`;
+    
+    const typeLabels = {
+        before_shift: 'Ingresso anticipato',
+        after_shift: 'Uscita posticipata'
+    };
+    const typeLabel = typeLabels[extraTurnoData.type] || 'Extra Turno';
+    
+    const tipoLabel = tipo === 'inizio_giornata' ? 'Inizio Giornata' : 'Fine Giornata';
+    
+    const requestId = extraTurnoData.request_id || null;
+    
+    const popup = document.createElement('div');
+    popup.id = 'extraTurnoPopup';
+    popup.dataset.requestId = requestId;
+    popup.innerHTML = `
+        <style>
+            #extraTurnoPopup {
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.6);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                padding: 20px;
+                animation: fadeIn 0.3s ease;
+            }
+            #extraTurnoPopup .popup-content {
+                background: white;
+                border-radius: 20px;
+                max-width: 380px;
+                width: 100%;
+                padding: 28px;
+                text-align: center;
+                animation: slideUp 0.3s ease;
+            }
+            #extraTurnoPopup .popup-icon {
+                width: 70px;
+                height: 70px;
+                background: linear-gradient(135deg, #10b981, #059669);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 16px;
+                font-size: 2rem;
+            }
+            #extraTurnoPopup h3 {
+                margin: 0 0 8px;
+                font-size: 1.25rem;
+                color: #1e293b;
+            }
+            #extraTurnoPopup .subtitle {
+                color: #64748b;
+                margin: 0 0 16px;
+                font-size: 0.9rem;
+            }
+            #extraTurnoPopup .time-box {
+                background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+                padding: 16px;
+                border-radius: 12px;
+                margin: 16px 0;
+            }
+            #extraTurnoPopup .time-box .value {
+                font-size: 2rem;
+                font-weight: 700;
+                color: #047857;
+            }
+            #extraTurnoPopup .time-box .label {
+                font-size: 0.85rem;
+                color: #065f46;
+                margin-top: 4px;
+            }
+            #extraTurnoPopup .info-text {
+                font-size: 0.85rem;
+                color: #64748b;
+                margin: 16px 0;
+                padding: 12px;
+                background: #f8fafc;
+                border-radius: 8px;
+                border-left: 3px solid #f59e0b;
+            }
+            #extraTurnoPopup .motivation-section {
+                margin: 16px 0;
+                text-align: left;
+            }
+            #extraTurnoPopup .motivation-label {
+                font-size: 0.85rem;
+                font-weight: 600;
+                color: #374151;
+                margin-bottom: 8px;
+                display: block;
+            }
+            #extraTurnoPopup .motivation-label .required {
+                color: #ef4444;
+            }
+            #extraTurnoPopup .motivation-input {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e5e7eb;
+                border-radius: 10px;
+                font-size: 0.95rem;
+                resize: none;
+                transition: border-color 0.2s;
+                box-sizing: border-box;
+            }
+            #extraTurnoPopup .motivation-input:focus {
+                outline: none;
+                border-color: #10b981;
+            }
+            #extraTurnoPopup .motivation-input.error {
+                border-color: #ef4444;
+            }
+            #extraTurnoPopup .error-msg {
+                color: #ef4444;
+                font-size: 0.8rem;
+                margin-top: 6px;
+                display: none;
+            }
+            #extraTurnoPopup .btn-ok {
+                width: 100%;
+                padding: 14px;
+                background: linear-gradient(135deg, #10b981, #059669);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                margin-top: 8px;
+            }
+            #extraTurnoPopup .btn-ok:active {
+                transform: scale(0.98);
+            }
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        </style>
+        <div class="popup-content">
+            <div class="popup-icon">⏱️</div>
+            <h3>Extra Turno Rilevato!</h3>
+            <p class="subtitle">${tipoLabel} registrata con successo</p>
+            
+            <div class="time-box">
+                <div class="value">${timeStr}</div>
+                <div class="label">${typeLabel}</div>
+            </div>
+            
+            <div class="info-text">
+                ⏳ È stata creata automaticamente una richiesta di Extra Turno. 
+                Verrà inviata all'amministratore per l'approvazione.
+            </div>
+            
+            <div class="motivation-section">
+                <label class="motivation-label">
+                    Motivazione <span class="required">*</span>
+                </label>
+                <textarea id="extraTurnoMotivation" class="motivation-input" 
+                    rows="3" placeholder="Indica il motivo dell'extra turno..." 
+                    maxlength="500"></textarea>
+                <div id="extraTurnoMotivationError" class="error-msg">
+                    La motivazione è obbligatoria
+                </div>
+            </div>
+            
+            <button class="btn-ok" onclick="submitExtraTurnoMotivation()">Conferma</button>
+        </div>
+    `;
+    
+    document.body.appendChild(popup);
+    
+    // Focus sul campo motivazione
+    setTimeout(() => {
+        document.getElementById('extraTurnoMotivation')?.focus();
+    }, 300);
+}
+
+function closeExtraTurnoPopup() {
+    const popup = document.getElementById('extraTurnoPopup');
+    if (popup) popup.remove();
+}
+
+async function submitExtraTurnoMotivation() {
+    const popup = document.getElementById('extraTurnoPopup');
+    if (!popup) return;
+    
+    const requestId = popup.dataset.requestId;
+    const motivationInput = document.getElementById('extraTurnoMotivation');
+    const errorMsg = document.getElementById('extraTurnoMotivationError');
+    const motivation = motivationInput?.value.trim() || '';
+    
+    // Validazione
+    if (!motivation) {
+        motivationInput.classList.add('error');
+        errorMsg.style.display = 'block';
+        motivationInput.focus();
+        return;
+    }
+    
+    motivationInput.classList.remove('error');
+    errorMsg.style.display = 'none';
+    
+    // Disabilita il bottone durante l'invio
+    const btn = popup.querySelector('.btn-ok');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Invio...';
+    
+    try {
+        // Aggiorna la richiesta con la motivazione
+        const res = await fetch(`/api/user/requests/${requestId}/notes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes: motivation })
+        });
+        
+        if (res.ok) {
+            closeExtraTurnoPopup();
+            showToast('✅ Motivazione salvata', 'success');
+            await loadTimbrature();
+        } else {
+            const data = await res.json();
+            showToast(data.error || 'Errore salvataggio motivazione', 'error');
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (err) {
+        console.error('Errore salvataggio motivazione:', err);
+        showToast('Errore di connessione', 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// POPUP FUORI FLESSIBILITÀ
+// ═══════════════════════════════════════════════════════════════════
+function showFlexWarningPopup(flexData) {
+    // Rimuovi popup esistente se presente
+    const existingPopup = document.getElementById('flexWarningPopup');
+    if (existingPopup) existingPopup.remove();
+    
+    const message = flexData.message || 'Timbratura fuori flessibilità';
+    const requestId = flexData.request_id || null;
+    const tipoLabel = flexData.tipo === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
+    
+    const popup = document.createElement('div');
+    popup.id = 'flexWarningPopup';
+    popup.dataset.requestId = requestId;
+    popup.innerHTML = `
+        <style>
+            #flexWarningPopup {
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.6);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                padding: 20px;
+                animation: fadeIn 0.3s ease;
+            }
+            #flexWarningPopup .popup-content {
+                background: white;
+                border-radius: 20px;
+                max-width: 380px;
+                width: 100%;
+                padding: 28px;
+                text-align: center;
+                animation: slideUp 0.3s ease;
+            }
+            #flexWarningPopup .popup-icon {
+                width: 70px;
+                height: 70px;
+                background: linear-gradient(135deg, #f59e0b, #d97706);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 16px;
+                font-size: 2rem;
+            }
+            #flexWarningPopup h3 {
+                margin: 0 0 8px;
+                font-size: 1.25rem;
+                color: #1e293b;
+            }
+            #flexWarningPopup .subtitle {
+                color: #64748b;
+                margin: 0 0 16px;
+                font-size: 0.9rem;
+            }
+            #flexWarningPopup .warning-box {
+                background: linear-gradient(135deg, #fef3c7, #fde68a);
+                padding: 16px;
+                border-radius: 12px;
+                margin: 16px 0;
+                border-left: 4px solid #f59e0b;
+            }
+            #flexWarningPopup .warning-box .message {
+                font-size: 0.95rem;
+                color: #92400e;
+                font-weight: 500;
+            }
+            #flexWarningPopup .info-text {
+                font-size: 0.85rem;
+                color: #64748b;
+                margin: 16px 0;
+                padding: 12px;
+                background: #f8fafc;
+                border-radius: 8px;
+                border-left: 3px solid #f59e0b;
+            }
+            #flexWarningPopup .motivation-section {
+                margin: 16px 0;
+                text-align: left;
+            }
+            #flexWarningPopup .motivation-label {
+                font-size: 0.85rem;
+                font-weight: 600;
+                color: #374151;
+                margin-bottom: 8px;
+                display: block;
+            }
+            #flexWarningPopup .motivation-label .required {
+                color: #ef4444;
+            }
+            #flexWarningPopup .motivation-input {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e5e7eb;
+                border-radius: 10px;
+                font-size: 0.95rem;
+                resize: none;
+                transition: border-color 0.2s;
+                box-sizing: border-box;
+            }
+            #flexWarningPopup .motivation-input:focus {
+                outline: none;
+                border-color: #f59e0b;
+            }
+            #flexWarningPopup .motivation-input.error {
+                border-color: #ef4444;
+            }
+            #flexWarningPopup .error-msg {
+                color: #ef4444;
+                font-size: 0.8rem;
+                margin-top: 6px;
+                display: none;
+            }
+            #flexWarningPopup .btn-ok {
+                width: 100%;
+                padding: 14px;
+                background: linear-gradient(135deg, #f59e0b, #d97706);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                margin-top: 8px;
+            }
+            #flexWarningPopup .btn-ok:active {
+                transform: scale(0.98);
+            }
+        </style>
+        <div class="popup-content">
+            <div class="popup-icon">⚠️</div>
+            <h3>Fuori Flessibilità</h3>
+            <p class="subtitle">${tipoLabel} registrato oltre l'orario consentito</p>
+            
+            <div class="warning-box">
+                <div class="message">${message}</div>
+            </div>
+            
+            <div class="info-text">
+                ⏳ È stata creata automaticamente una richiesta di autorizzazione. 
+                Verrà inviata all'amministratore per l'approvazione.
+            </div>
+            
+            <div class="motivation-section">
+                <label class="motivation-label">
+                    Motivazione <span class="required">*</span>
+                </label>
+                <textarea id="flexWarningMotivation" class="motivation-input" 
+                    rows="3" placeholder="Indica il motivo della timbratura fuori orario..." 
+                    maxlength="500"></textarea>
+                <div id="flexWarningMotivationError" class="error-msg">
+                    La motivazione è obbligatoria
+                </div>
+            </div>
+            
+            <button class="btn-ok" onclick="submitFlexWarningMotivation()">Conferma</button>
+        </div>
+    `;
+    
+    document.body.appendChild(popup);
+    
+    // Focus sul campo motivazione
+    setTimeout(() => {
+        document.getElementById('flexWarningMotivation')?.focus();
+    }, 300);
+}
+
+function closeFlexWarningPopup() {
+    const popup = document.getElementById('flexWarningPopup');
+    if (popup) popup.remove();
+}
+
+async function submitFlexWarningMotivation() {
+    const popup = document.getElementById('flexWarningPopup');
+    if (!popup) return;
+    
+    const requestId = popup.dataset.requestId;
+    const motivationInput = document.getElementById('flexWarningMotivation');
+    const errorMsg = document.getElementById('flexWarningMotivationError');
+    const motivation = motivationInput?.value.trim() || '';
+    
+    // Validazione
+    if (!motivation) {
+        motivationInput.classList.add('error');
+        errorMsg.style.display = 'block';
+        motivationInput.focus();
+        return;
+    }
+    
+    motivationInput.classList.remove('error');
+    errorMsg.style.display = 'none';
+    
+    // Disabilita il bottone durante l'invio
+    const btn = popup.querySelector('.btn-ok');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Invio...';
+    
+    try {
+        // Aggiorna la richiesta con la motivazione
+        const res = await fetch(`/api/user/requests/${requestId}/notes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes: motivation })
+        });
+        
+        if (res.ok) {
+            closeFlexWarningPopup();
+            showToast('✅ Motivazione salvata', 'success');
+            await loadTimbrature();
+        } else {
+            const data = await res.json();
+            showToast(data.error || 'Errore salvataggio motivazione', 'error');
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (err) {
+        console.error('Errore salvataggio motivazione:', err);
+        showToast('Errore di connessione', 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
 }
 
 async function submitOvertimeRequest() {
@@ -4079,7 +4860,7 @@ async function submitOvertimeRequest() {
         
         if (result.ok) {
             closeOvertimeModal();
-            showToast('✅ Richiesta straordinario inviata', 'success');
+            showToast('✅ Richiesta Extra Turno inviata', 'success');
             // Ricarica le timbrature per mostrare il badge "in attesa"
             await loadTimbrature();
         } else {

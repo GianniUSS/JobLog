@@ -78,6 +78,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
 body.modal-open, body.menu-open { overflow: hidden; }
 header { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #f8fafc; padding: 16px 20px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 220; box-shadow: 0 4px 15px rgba(102,126,234,0.3); }
 .header-left { display:flex; align-items:center; gap:14px; }
+.header-right { display:flex; align-items:center; gap:10px; }
+.header-clock { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.95); background: rgba(255,255,255,0.15); padding: 8px 12px; border-radius: 10px; text-align: center; display: flex; flex-direction: column; gap: 2px; line-height: 1.2; }
+.header-clock-time { font-size: 16px; font-weight: 700; }
+.header-clock-date { font-size: 11px; font-weight: 500; opacity: 0.85; }
 .logo-title { font-weight: 700; font-size: 26px; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.1); }
 .header-icon-btn { width:52px; height:52px; border:none; border-radius:14px; background:rgba(255,255,255,0.18); color:white; font-size:24px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition: transform 0.05s ease, background 0.1s ease; touch-action: manipulation; user-select:none; -webkit-user-select:none; will-change: transform; }
 .header-icon-btn:active { background:rgba(255,255,255,0.4); transform: scale(0.9); }
@@ -690,6 +694,9 @@ header { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #
 <div class="header-left">
 <button id="menuToggle" class="header-icon-btn" aria-label="Apri menu">☰</button>
 <span class="logo-title">🔷 JOBlog</span>
+</div>
+<div class="header-right">
+<span id="headerClock" class="header-clock">--:--:--</span>
 </div>
 </header>
 
@@ -1367,6 +1374,26 @@ window.__SAVED_SUPERVISOR_PROJECT__ = {{ saved_supervisor_project|tojson|safe }}
 </script>
 <script src="{{ static_version('js/app.js') }}"></script>
 <script>
+// Header Clock
+(function initHeaderClock() {
+    const clockEl = document.getElementById('headerClock');
+    if (!clockEl) return;
+    const days = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+    const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    function updateClock() {
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        const dayName = days[now.getDay()];
+        const day = now.getDate();
+        const month = months[now.getMonth()];
+        clockEl.innerHTML = '<span class="header-clock-time">' + h + ':' + m + ':' + s + '</span><span class="header-clock-date">' + dayName + ' ' + day + ' ' + month + '</span>';
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+})();
+
 // PWA Service Worker Registration
 const SW_UPDATE_INTERVAL_MS = 60_000;
 let swUpdateIntervalId = null;
