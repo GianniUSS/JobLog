@@ -224,9 +224,13 @@
 
     // Sincronizza stato timer sul server per visibilità admin dashboard
     async function syncTimerToServer() {
-        if (!timer.running || !timer.proj) return;
+        if (!timer.running || !timer.proj) {
+            console.log('[MagTimer] Skip sync: timer not running or no proj', timer);
+            return;
+        }
+        console.log('[MagTimer] Syncing timer to server:', timer);
         try {
-            await fetch('/api/magazzino/timer', {
+            const res = await fetch('/api/magazzino/timer', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -241,8 +245,10 @@
                     pause_start_ts: timer.paused ? Date.now() : null
                 })
             });
+            const data = await res.json();
+            console.log('[MagTimer] Server response:', data);
         } catch (err) {
-            // Offline: ignora, il timer locale continua a funzionare
+            console.error('[MagTimer] Sync error:', err);
         }
     }
     
@@ -1164,6 +1170,8 @@
         selectedProj = timer.proj;
         selectedAct = timer.act;
         if (!timer.paused) startTick();
+        // Sincronizza timer esistente sul server (per visibilità admin)
+        syncTimerToServer();
     }
     
     fetchProjects(false);

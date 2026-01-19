@@ -205,16 +205,30 @@ function renderSessionsGrid(items) {
     });
 }
 
-function renderOpenSessionsGrid(items) {
+function renderOpenSessionsGrid(items, dateStart, dateEnd) {
     if (!openSessionsTableBody) return;
     openSessionsTableBody.innerHTML = '';
     
-    if (!items || !items.length) {
-        if (openSessionsEmptyEl) openSessionsEmptyEl.style.display = '';
+    // Filtra sessioni per range date
+    let filteredItems = items;
+    if (dateStart && dateEnd) {
+        const startDate = new Date(dateStart + 'T00:00:00');
+        const endDate = new Date(dateEnd + 'T23:59:59');
+        filteredItems = items.filter(it => {
+            if (!it.start_ts) return false;
+            const itemDate = new Date(it.start_ts);
+            return itemDate >= startDate && itemDate <= endDate;
+        });
+    }
+    
+    // Nascondi sezione se non ci sono sessioni filtrate
+    if (!filteredItems || !filteredItems.length) {
+        if (openSessionsEmptyEl) openSessionsEmptyEl.style.display = 'none';
         if (openSessionsSection) openSessionsSection.style.display = 'none';
         return;
     }
     
+    // Mostra sezione
     if (openSessionsEmptyEl) openSessionsEmptyEl.style.display = 'none';
     if (openSessionsSection) openSessionsSection.style.display = '';
     
@@ -234,11 +248,18 @@ function renderOpenSessionsGrid(items) {
         return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }
     
-    items.forEach((it) => {
+    filteredItems.forEach((it) => {
         const tr = document.createElement('tr');
         
         const tdDate = document.createElement('td');
         tdDate.textContent = formatDate(it.start_ts);
+        
+        const tdSource = document.createElement('td');
+        if (it.source === 'magazzino') {
+            tdSource.innerHTML = '<span style="color: var(--primary, #6366f1);">📦 Magazzino</span>';
+        } else {
+            tdSource.innerHTML = '<span style="color: var(--success, #22c55e);">👥 Squadra</span>';
+        }
         
         const tdProj = document.createElement('td'); 
         tdProj.textContent = it.project_code || '—';
@@ -284,7 +305,7 @@ function renderOpenSessionsGrid(items) {
             tdTime.style.color = 'var(--primary, #6366f1)';
         }
         
-        tr.append(tdDate, tdProj, tdUser, tdAct, tdNotes, tdStatus, tdStart, tdTime);
+        tr.append(tdDate, tdSource, tdProj, tdUser, tdAct, tdNotes, tdStatus, tdStart, tdTime);
         openSessionsTableBody.appendChild(tr);
     });
 }
@@ -408,9 +429,9 @@ async function loadData(dateStart, dateEnd) {
         const activityBreakdown = dayData.activity_breakdown || [];
         renderProjectStats(plannedMs, combinedTotalMs, activityBreakdown);
         
-        // Render sessioni aperte
+        // Render sessioni aperte (filtrate per range date)
         const openSessions = Array.isArray(openSessionsData.open_sessions) ? openSessionsData.open_sessions : [];
-        renderOpenSessionsGrid(openSessions);
+        renderOpenSessionsGrid(openSessions, dateStart, dateEnd);
         
         // Filtra solo le sessioni COMPLETATE (status !== 'running') per le Sessioni Registrate
         const completedTeamSessions = teamSessions.filter((s) => s.status === 'completed');
