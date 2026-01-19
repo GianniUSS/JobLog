@@ -12448,6 +12448,22 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
             app.logger.info("Migrazione ENUM value_type completata con successo")
         except Exception as e:
             app.logger.warning(f"Migrazione ENUM value_type: {e}")
+        
+        # Migrazione: aggiungi colonna abbreviation se non esiste
+        try:
+            db.execute("ALTER TABLE request_types ADD COLUMN abbreviation VARCHAR(10)")
+            db.commit()
+            app.logger.info("Migrazione: aggiunta colonna abbreviation a request_types")
+        except Exception:
+            pass  # Colonna già esiste
+        
+        # Migrazione: aggiungi colonna external_id se non esiste
+        try:
+            db.execute("ALTER TABLE request_types ADD COLUMN external_id VARCHAR(100)")
+            db.commit()
+            app.logger.info("Migrazione: aggiunta colonna external_id a request_types")
+        except Exception:
+            pass  # Colonna già esiste
     
     # Assicura che esista il tipo "Extra Turno" per le richieste automatiche
     _ensure_overtime_request_type(db)
