@@ -9647,6 +9647,245 @@ def admin_sessions_page() -> ResponseReturnValue:
     )
 
 
+@app.get("/admin/presenze")
+@login_required
+def admin_presenze_page() -> ResponseReturnValue:
+    """Pagina foglio presenze mensile."""
+    if not is_admin_or_supervisor():
+        abort(403)
+
+    return render_template("admin_presenze.html")
+
+
+@app.get("/api/admin/presenze/monthly")
+@login_required
+def api_admin_presenze_monthly() -> ResponseReturnValue:
+    """API per ottenere i dati presenze mensili di tutti i dipendenti."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "forbidden"}), 403
+
+    month = _coerce_int(request.args.get("month")) or datetime.now().month
+    year = _coerce_int(request.args.get("year")) or datetime.now().year
+    employee_filter = request.args.get("employee") or None
+
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    # Ottieni lista dipendenti
+    if employee_filter:
+        users_rows = db.execute(
+            f"SELECT username, display_name, crew_id FROM users WHERE username = {placeholder}",
+            (employee_filter,)
+        ).fetchall()
+    else:
+        users_rows = db.execute(
+            "SELECT username, display_name, crew_id FROM users WHERE role != 'admin' ORDER BY display_name, username"
+        ).fetchall()
+
+    # Calcola range date del mese
+    first_day = datetime(year, month, 1)
+    if month == 12:
+        last_day = datetime(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        last_day = datetime(year, month + 1, 1) - timedelta(days=1)
+    
+    start_ms = int(first_day.timestamp() * 1000)
+    end_ms = int((last_day + timedelta(days=1)).timestamp() * 1000)
+    start_date_str = first_day.strftime("%Y-%m-%d")
+    end_date_str = last_day.strftime("%Y-%m-%d")
+
+    employees_data = []
+
+    for user_row in users_rows:
+        username = user_row["username"]
+        display_name = user_row["display_name"] or username
+        crew_id = user_row["crew_id"]
+
+        # Dizionario per i giorni del mese
+        days_data = {}
+
+        # 1. Carica sessioni squadra (da build_session_rows o event_log)
+        try:
+            team_sessions = db.execute(
+                f"""
+                SELECT DATE(FROM_UNIXTIME(start_ts/1000)) as work_date, 
+                       SUM(net_ms) as total_ms
+                FROM (
+                    SELECT el.start_ts, 
+                           COALESCE(el.elapsed, 0) as net_ms
+                    FROM event_log el
+                    WHERE el.kind = 'stop_member' 
+                      AND el.member_key = {placeholder}
+                      AND el.start_ts >= {placeholder} 
+                      AND el.start_ts < {placeholder}
+                ) sub
+                GROUP BY work_date
+                """,
+                (username, start_ms, end_ms)
+            ).fetchall()
+        except Exception:
+            team_sessions = []
+
+        for sess in team_sessions:
+            if sess["work_date"]:
+                date_key = sess["work_date"].strftime("%Y-%m-%d") if hasattr(sess["work_date"], "strftime") else str(sess["work_date"])
+                minutes = int((sess["total_ms"] or 0) / 60000)
+                if minutes > 0:
+                    days_data[date_key] = {"type": "worked", "minutes": minutes}
+
+        # 2. Carica sessioni magazzino
+        try:
+            wh_sessions = db.execute(
+                f"""
+                SELECT DATE(FROM_UNIXTIME(created_ts/1000)) as work_date,
+                       SUM(elapsed_ms) as total_ms
+                FROM warehouse_sessions
+                WHERE username = {placeholder}
+                  AND created_ts >= {placeholder}
+                  AND created_ts < {placeholder}
+                GROUP BY work_date
+                """,
+                (username, start_ms, end_ms)
+            ).fetchall()
+        except Exception:
+            wh_sessions = []
+
+        for sess in wh_sessions:
+            if sess["work_date"]:
+                date_key = sess["work_date"].strftime("%Y-%m-%d") if hasattr(sess["work_date"], "strftime") else str(sess["work_date"])
+                minutes = int((sess["total_ms"] or 0) / 60000)
+                if date_key in days_data:
+                    days_data[date_key]["minutes"] = days_data[date_key].get("minutes", 0) + minutes
+                elif minutes > 0:
+                    days_data[date_key] = {"type": "worked", "minutes": minutes}
+
+        # 3. Carica richieste approvate (ferie, permessi, malattia)
+        try:
+            requests = db.execute(
+                f"""
+                SELECT ur.start_date, ur.end_date, ur.hours, rt.name as request_type, rt.abbreviation
+                FROM user_requests ur
+                JOIN request_types rt ON ur.request_type_id = rt.id
+                WHERE ur.username = {placeholder}
+                  AND ur.status = 'approved'
+                  AND ur.start_date <= {placeholder}
+                  AND ur.end_date >= {placeholder}
+                """,
+                (username, end_date_str, start_date_str)
+            ).fetchall()
+        except Exception:
+            requests = []
+
+        for req in requests:
+            req_type = (req["request_type"] or "").lower()
+            abbrev = req["abbreviation"] or ""
+            
+            # Determina tipo
+            if "feri" in req_type:
+                day_type = "ferie"
+            elif "permess" in req_type or "rol" in req_type.lower():
+                day_type = "permesso"
+            elif "malatt" in req_type:
+                day_type = "malattia"
+            else:
+                day_type = "permesso"  # Default
+
+            # Itera sui giorni della richiesta
+            start_d = req["start_date"]
+            end_d = req["end_date"]
+            if isinstance(start_d, str):
+                start_d = datetime.strptime(start_d, "%Y-%m-%d").date()
+            if isinstance(end_d, str):
+                end_d = datetime.strptime(end_d, "%Y-%m-%d").date()
+            
+            current = start_d
+            while current <= end_d:
+                if current.month == month and current.year == year:
+                    date_key = current.strftime("%Y-%m-%d")
+                    # Se c'è anche lavoro, aggiungi ore permesso parziale
+                    if date_key not in days_data or days_data[date_key].get("type") != "worked":
+                        days_data[date_key] = {"type": day_type}
+                        if req["hours"] and req["hours"] < 8:
+                            # Permesso parziale
+                            days_data[date_key]["minutes"] = int(req["hours"] * 60)
+                current += timedelta(days=1)
+
+        # 4. Carica ore da pianificazioni Rentman (se crew_id)
+        if crew_id:
+            try:
+                plannings = db.execute(
+                    f"""
+                    SELECT planning_date, SUM(hours_planned) as total_hours
+                    FROM rentman_plannings
+                    WHERE crew_id = {placeholder}
+                      AND planning_date >= {placeholder}
+                      AND planning_date <= {placeholder}
+                      AND is_obsolete = 0
+                    GROUP BY planning_date
+                    """,
+                    (crew_id, start_date_str, end_date_str)
+                ).fetchall()
+            except Exception:
+                plannings = []
+
+            for plan in plannings:
+                if plan["planning_date"]:
+                    date_key = plan["planning_date"].strftime("%Y-%m-%d") if hasattr(plan["planning_date"], "strftime") else str(plan["planning_date"])
+                    hours = float(plan["total_hours"] or 0)
+                    if hours > 0 and date_key not in days_data:
+                        days_data[date_key] = {"type": "worked", "minutes": int(hours * 60)}
+
+        # Trova matricola (se disponibile)
+        matricola = None
+        try:
+            mat_row = db.execute(
+                f"SELECT crew_id FROM users WHERE username = {placeholder}",
+                (username,)
+            ).fetchone()
+            if mat_row and mat_row["crew_id"]:
+                matricola = mat_row["crew_id"]
+        except Exception:
+            pass
+
+        employees_data.append({
+            "username": username,
+            "display_name": display_name,
+            "matricola": matricola,
+            "days": days_data
+        })
+
+    return jsonify({
+        "ok": True,
+        "month": month,
+        "year": year,
+        "employees": employees_data
+    })
+
+
+@app.get("/api/admin/employees")
+@login_required
+def api_admin_employees_list() -> ResponseReturnValue:
+    """Lista dipendenti per filtri."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    rows = db.execute(
+        "SELECT username, display_name, role, crew_id FROM users WHERE role != 'admin' ORDER BY display_name, username"
+    ).fetchall()
+
+    employees = []
+    for row in rows:
+        employees.append({
+            "username": row["username"],
+            "display_name": row["display_name"] or row["username"],
+            "role": row["role"],
+            "matricola": row["crew_id"]
+        })
+
+    return jsonify({"ok": True, "employees": employees})
+
+
 @app.get("/api/admin/magazzino/summary")
 @login_required
 def api_admin_magazzino_summary() -> ResponseReturnValue:

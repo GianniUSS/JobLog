@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foglio Presenze - JobLog Admin</title>
+    <link rel="stylesheet" href="{{ static_version('css/admin_common.css') }}">
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border-color: #475569;
+            --primary: #6366f1;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+        }
+        
+        [data-theme="light"] {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e2e8f0;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-color: #cbd5e1;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .page-header {
+            background: linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%);
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .page-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+        }
+        
+        .page-subtitle {
+            font-size: 13px;
+            color: rgba(255,255,255,0.8);
+            margin-top: 4px;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        /* Filtri */
+        .filters-bar {
+            background: var(--bg-secondary);
+            padding: 16px 30px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .filter-group label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        
+        .filter-group select,
+        .filter-group input {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 14px;
+            min-width: 120px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #4f46e5;
+        }
+        
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        
+        .btn-icon {
+            padding: 8px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border-radius: 6px;
+        }
+        
+        /* Legenda */
+        .legend-bar {
+            background: var(--bg-secondary);
+            padding: 12px 30px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        
+        /* Tabella Presenze */
+        .presenze-container {
+            padding: 20px 30px;
+            overflow-x: auto;
+        }
+        
+        .presenze-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            min-width: 1400px;
+        }
+        
+        .presenze-table th,
+        .presenze-table td {
+            border: 1px solid var(--border-color);
+            padding: 6px 4px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        
+        .presenze-table thead th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .presenze-table thead th.day-header {
+            min-width: 42px;
+            font-size: 11px;
+        }
+        
+        .presenze-table thead th.day-header .day-name {
+            font-size: 10px;
+            color: var(--text-secondary);
+            display: block;
+        }
+        
+        .presenze-table thead th.weekend {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        [data-theme="dark"] .presenze-table thead th.weekend {
+            background: #78350f;
+            color: #fef3c7;
+        }
+        
+        .presenze-table tbody tr:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .presenze-table .col-mat {
+            width: 50px;
+            font-weight: 600;
+        }
+        
+        .presenze-table .col-nome {
+            width: 180px;
+            text-align: left;
+            padding-left: 10px;
+            font-weight: 500;
+        }
+        
+        .presenze-table .col-totale {
+            width: 60px;
+            font-weight: 600;
+            background: var(--bg-tertiary);
+        }
+        
+        /* Celle giorno */
+        .cell-day {
+            min-width: 42px;
+            height: 32px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .cell-day.weekend {
+            background: #fef9e7;
+        }
+        
+        [data-theme="dark"] .cell-day.weekend {
+            background: rgba(120, 53, 15, 0.2);
+        }
+        
+        /* Codici e colori */
+        .cell-ore {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        
+        [data-theme="dark"] .cell-ore {
+            background: rgba(59, 130, 246, 0.3);
+            color: #93c5fd;
+        }
+        
+        .cell-ferie {
+            background: #fecaca;
+            color: #991b1b;
+            font-weight: 600;
+        }
+        
+        [data-theme="dark"] .cell-ferie {
+            background: rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+        }
+        
+        .cell-permesso {
+            background: #fed7aa;
+            color: #9a3412;
+            font-weight: 600;
+        }
+        
+        [data-theme="dark"] .cell-permesso {
+            background: rgba(249, 115, 22, 0.3);
+            color: #fdba74;
+        }
+        
+        .cell-malattia {
+            background: #e9d5ff;
+            color: #6b21a8;
+            font-weight: 600;
+        }
+        
+        [data-theme="dark"] .cell-malattia {
+            background: rgba(147, 51, 234, 0.3);
+            color: #d8b4fe;
+        }
+        
+        .cell-festivo {
+            background: #fef3c7;
+            color: #92400e;
+            font-weight: 600;
+        }
+        
+        [data-theme="dark"] .cell-festivo {
+            background: rgba(245, 158, 11, 0.3);
+            color: #fcd34d;
+        }
+        
+        .cell-straordinario {
+            background: #bbf7d0;
+            color: #166534;
+            font-weight: 600;
+        }
+        
+        [data-theme="dark"] .cell-straordinario {
+            background: rgba(34, 197, 94, 0.3);
+            color: #86efac;
+        }
+        
+        .cell-assente {
+            background: #f1f5f9;
+            color: #64748b;
+        }
+        
+        [data-theme="dark"] .cell-assente {
+            background: rgba(71, 85, 105, 0.3);
+            color: #94a3b8;
+        }
+        
+        /* Totali riga */
+        .cell-totale {
+            font-weight: 700;
+            background: var(--bg-tertiary);
+        }
+        
+        .cell-totale.over {
+            color: var(--success);
+        }
+        
+        .cell-totale.under {
+            color: var(--danger);
+        }
+        
+        /* Loading */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading-overlay.hidden {
+            display: none;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--bg-tertiary);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .filters-bar {
+                padding: 12px 16px;
+            }
+            
+            .presenze-container {
+                padding: 12px 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="page-header">
+        <div>
+            <h1 class="page-title">📋 Foglio Presenze</h1>
+            <p class="page-subtitle">Riepilogo mensile ore e assenze</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-icon" onclick="window.location.href='/admin'" title="Dashboard">
+                🏠
+            </button>
+            <button class="btn btn-icon" onclick="exportExcel()" title="Esporta Excel">
+                📥
+            </button>
+            <button class="btn btn-icon" id="themeToggle" title="Cambia tema">
+                🌙
+            </button>
+        </div>
+    </header>
+    
+    <!-- Filtri -->
+    <div class="filters-bar">
+        <div class="filter-group">
+            <label>Mese:</label>
+            <select id="filterMonth">
+                <option value="1">Gennaio</option>
+                <option value="2">Febbraio</option>
+                <option value="3">Marzo</option>
+                <option value="4">Aprile</option>
+                <option value="5">Maggio</option>
+                <option value="6">Giugno</option>
+                <option value="7">Luglio</option>
+                <option value="8">Agosto</option>
+                <option value="9">Settembre</option>
+                <option value="10">Ottobre</option>
+                <option value="11">Novembre</option>
+                <option value="12">Dicembre</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Anno:</label>
+            <select id="filterYear">
+                <option value="2025">2025</option>
+                <option value="2026" selected>2026</option>
+                <option value="2027">2027</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Dipendente:</label>
+            <select id="filterEmployee">
+                <option value="">Tutti</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" onclick="loadData()">
+            🔄 Carica
+        </button>
+    </div>
+    
+    <!-- Legenda -->
+    <div class="legend-bar">
+        <span style="font-weight: 600; margin-right: 10px;">Legenda:</span>
+        <div class="legend-item">
+            <div class="legend-color cell-ore">8:00</div>
+            <span>Ore lavorate</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color cell-ferie">F</div>
+            <span>Ferie</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color cell-permesso">P</div>
+            <span>Permesso</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color cell-malattia">M</div>
+            <span>Malattia</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color cell-festivo">FS</div>
+            <span>Festivo/Sabato</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color cell-straordinario">S</div>
+            <span>Straordinario</span>
+        </div>
+    </div>
+    
+    <!-- Tabella Presenze -->
+    <div class="presenze-container">
+        <table class="presenze-table" id="presenzeTable">
+            <thead id="tableHead">
+                <!-- Header generato dinamicamente -->
+            </thead>
+            <tbody id="tableBody">
+                <!-- Righe generate dinamicamente -->
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Loading -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+    
+    <script>
+        // === CONFIG ===
+        const DAYS_IT = ['Do', 'Lu', 'Ma', 'Me', 'Gi', 'Ve', 'Sa'];
+        const MONTHS_IT = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 
+                          'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+        
+        // === DOM ===
+        const filterMonth = document.getElementById('filterMonth');
+        const filterYear = document.getElementById('filterYear');
+        const filterEmployee = document.getElementById('filterEmployee');
+        const tableHead = document.getElementById('tableHead');
+        const tableBody = document.getElementById('tableBody');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        
+        // === STATE ===
+        let currentData = [];
+        let employees = [];
+        
+        // === INIT ===
+        document.addEventListener('DOMContentLoaded', () => {
+            // Imposta mese corrente
+            const now = new Date();
+            filterMonth.value = now.getMonth() + 1;
+            filterYear.value = now.getFullYear();
+            
+            // Carica dati
+            loadEmployees();
+            loadData();
+            
+            // Theme
+            initTheme();
+        });
+        
+        // === THEME ===
+        function initTheme() {
+            const saved = localStorage.getItem('joblog-theme') || 'dark';
+            document.documentElement.dataset.theme = saved;
+            updateThemeButton();
+        }
+        
+        function toggleTheme() {
+            const current = document.documentElement.dataset.theme || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.dataset.theme = next;
+            localStorage.setItem('joblog-theme', next);
+            updateThemeButton();
+        }
+        
+        function updateThemeButton() {
+            const btn = document.getElementById('themeToggle');
+            const theme = document.documentElement.dataset.theme || 'dark';
+            btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+        
+        document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+        
+        // === DATA LOADING ===
+        async function loadEmployees() {
+            try {
+                const res = await fetch('/api/admin/employees');
+                if (res.ok) {
+                    const data = await res.json();
+                    employees = data.employees || [];
+                    populateEmployeeFilter();
+                }
+            } catch (e) {
+                console.error('Errore caricamento dipendenti:', e);
+            }
+        }
+        
+        function populateEmployeeFilter() {
+            filterEmployee.innerHTML = '<option value="">Tutti</option>';
+            employees.forEach(emp => {
+                const opt = document.createElement('option');
+                opt.value = emp.username;
+                opt.textContent = emp.display_name || emp.username;
+                filterEmployee.appendChild(opt);
+            });
+        }
+        
+        async function loadData() {
+            const month = parseInt(filterMonth.value);
+            const year = parseInt(filterYear.value);
+            const employee = filterEmployee.value;
+            
+            showLoading(true);
+            
+            try {
+                const url = new URL('/api/admin/presenze/monthly', window.location.origin);
+                url.searchParams.set('month', month);
+                url.searchParams.set('year', year);
+                if (employee) url.searchParams.set('employee', employee);
+                
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                
+                const data = await res.json();
+                currentData = data.employees || [];
+                
+                renderTable(month, year);
+            } catch (e) {
+                console.error('Errore caricamento dati:', e);
+                alert('Errore nel caricamento dei dati');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // === RENDERING ===
+        function renderTable(month, year) {
+            const daysInMonth = new Date(year, month, 0).getDate();
+            
+            // Header
+            let headerHtml = `
+                <tr>
+                    <th class="col-mat">Mat.</th>
+                    <th class="col-nome">Dipendente</th>
+            `;
+            
+            for (let d = 1; d <= daysInMonth; d++) {
+                const date = new Date(year, month - 1, d);
+                const dayOfWeek = date.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                
+                headerHtml += `
+                    <th class="day-header ${isWeekend ? 'weekend' : ''}">
+                        <span class="day-name">${DAYS_IT[dayOfWeek]}</span>
+                        ${String(d).padStart(2, '0')}
+                    </th>
+                `;
+            }
+            
+            headerHtml += `
+                    <th class="col-totale">Tot. Ore</th>
+                </tr>
+            `;
+            
+            tableHead.innerHTML = headerHtml;
+            
+            // Body
+            let bodyHtml = '';
+            
+            if (currentData.length === 0) {
+                bodyHtml = `
+                    <tr>
+                        <td colspan="${daysInMonth + 3}" style="padding: 40px; text-align: center; color: var(--text-secondary);">
+                            Nessun dato disponibile per il periodo selezionato
+                        </td>
+                    </tr>
+                `;
+            } else {
+                currentData.forEach(emp => {
+                    bodyHtml += `
+                        <tr>
+                            <td class="col-mat">${emp.matricola || '-'}</td>
+                            <td class="col-nome">${emp.display_name || emp.username}</td>
+                    `;
+                    
+                    let totalMinutes = 0;
+                    
+                    for (let d = 1; d <= daysInMonth; d++) {
+                        const date = new Date(year, month - 1, d);
+                        const dayOfWeek = date.getDay();
+                        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                        const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                        
+                        const dayData = emp.days ? emp.days[dateKey] : null;
+                        
+                        let cellClass = 'cell-day';
+                        let cellContent = '';
+                        
+                        if (isWeekend) {
+                            cellClass += ' weekend';
+                        }
+                        
+                        if (dayData) {
+                            if (dayData.type === 'worked') {
+                                cellClass += ' cell-ore';
+                                cellContent = formatHoursMinutes(dayData.minutes);
+                                totalMinutes += dayData.minutes || 0;
+                            } else if (dayData.type === 'ferie') {
+                                cellClass += ' cell-ferie';
+                                cellContent = 'F';
+                            } else if (dayData.type === 'permesso') {
+                                cellClass += ' cell-permesso';
+                                cellContent = 'P';
+                                if (dayData.minutes) {
+                                    cellContent = formatHoursMinutes(dayData.minutes);
+                                    totalMinutes += dayData.minutes || 0;
+                                }
+                            } else if (dayData.type === 'malattia') {
+                                cellClass += ' cell-malattia';
+                                cellContent = 'M';
+                            } else if (dayData.type === 'festivo') {
+                                cellClass += ' cell-festivo';
+                                cellContent = 'FS';
+                            } else if (dayData.type === 'straordinario') {
+                                cellClass += ' cell-straordinario';
+                                cellContent = formatHoursMinutes(dayData.minutes);
+                                totalMinutes += dayData.minutes || 0;
+                            }
+                        } else if (isWeekend) {
+                            cellClass += ' cell-festivo';
+                            cellContent = 'FS';
+                        }
+                        
+                        bodyHtml += `<td class="${cellClass}">${cellContent}</td>`;
+                    }
+                    
+                    // Totale ore
+                    const totalHours = totalMinutes / 60;
+                    const expectedHours = 160; // ~40h/settimana * 4 settimane
+                    let totaleClass = 'cell-totale';
+                    if (totalHours > expectedHours) totaleClass += ' over';
+                    else if (totalHours < expectedHours * 0.9) totaleClass += ' under';
+                    
+                    bodyHtml += `
+                            <td class="${totaleClass}">${totalHours.toFixed(0)}</td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            tableBody.innerHTML = bodyHtml;
+        }
+        
+        // === HELPERS ===
+        function formatHoursMinutes(minutes) {
+            if (!minutes) return '';
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            if (m === 0) return `${h}:00`;
+            return `${h}:${String(m).padStart(2, '0')}`;
+        }
+        
+        function showLoading(show) {
+            loadingOverlay.classList.toggle('hidden', !show);
+        }
+        
+        function exportExcel() {
+            const month = filterMonth.value;
+            const year = filterYear.value;
+            window.location.href = `/api/admin/presenze/export?month=${month}&year=${year}&format=xlsx`;
+        }
+    </script>
+</body>
+</html>
