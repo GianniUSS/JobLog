@@ -6644,6 +6644,16 @@ def ensure_timbrature_table(db: DatabaseLike) -> None:
             db.commit()
         except Exception:
             pass  # Colonna già esistente
+    
+    # Migrazione: aggiungi colonna created_by se non esiste
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute("ALTER TABLE timbrature ADD COLUMN created_by VARCHAR(100) DEFAULT NULL")
+        else:
+            db.execute("ALTER TABLE timbrature ADD COLUMN created_by TEXT DEFAULT NULL")
+        db.commit()
+    except Exception:
+        pass  # Colonna già esistente
 
 
 def ensure_warehouse_activities_table(db: DatabaseLike) -> None:
