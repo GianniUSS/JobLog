@@ -15959,11 +15959,42 @@ CREATE TABLE IF NOT EXISTS group_timbratura_rules (
 
 def ensure_group_timbratura_rules_table(db):
     """Crea la tabella group_timbratura_rules se non esiste."""
-    if DB_VENDOR == "mysql":
-        db.execute(GROUP_TIMBRATURA_RULES_TABLE_MYSQL)
-    else:
-        db.execute(GROUP_TIMBRATURA_RULES_TABLE_SQLITE)
-    db.commit()
+    try:
+        # Prima assicura che user_groups esista
+        ensure_user_groups_table(db)
+        
+        if DB_VENDOR == "mysql":
+            db.execute(GROUP_TIMBRATURA_RULES_TABLE_MYSQL)
+        else:
+            db.execute(GROUP_TIMBRATURA_RULES_TABLE_SQLITE)
+        db.commit()
+    except Exception as e:
+        # Se fallisce per la foreign key, prova senza
+        app.logger.warning(f"ensure_group_timbratura_rules_table: {e}")
+        try:
+            if DB_VENDOR == "mysql":
+                # Crea senza foreign key
+                db.execute("""
+                    CREATE TABLE IF NOT EXISTS group_timbratura_rules (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        group_id INT NOT NULL,
+                        rounding_mode ENUM('single', 'daily') NOT NULL DEFAULT 'single',
+                        flessibilita_ingresso_minuti INT DEFAULT 30,
+                        flessibilita_uscita_minuti INT DEFAULT 30,
+                        arrotondamento_giornaliero_minuti INT DEFAULT 15,
+                        arrotondamento_giornaliero_tipo ENUM('floor', 'ceil', 'nearest') DEFAULT 'floor',
+                        oltre_flessibilita_action ENUM('allow', 'warn', 'block') DEFAULT 'allow',
+                        usa_regole_pausa_standard TINYINT(1) DEFAULT 1,
+                        is_active TINYINT(1) NOT NULL DEFAULT 1,
+                        created_ts BIGINT NOT NULL DEFAULT 0,
+                        updated_ts BIGINT NOT NULL DEFAULT 0,
+                        updated_by VARCHAR(100),
+                        UNIQUE KEY uk_group_rules (group_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+            db.commit()
+        except Exception as e2:
+            app.logger.error(f"ensure_group_timbratura_rules_table fallback: {e2}")
 
 
 def get_group_timbratura_rules(db, group_id: int) -> Optional[dict]:
