@@ -226,8 +226,19 @@ function renderOpenSessionsGrid(items) {
         return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
     
+    // Helper per formattare data
+    function formatDate(ts) {
+        if (!ts) return '—';
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return '—';
+        return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+    
     items.forEach((it) => {
         const tr = document.createElement('tr');
+        
+        const tdDate = document.createElement('td');
+        tdDate.textContent = formatDate(it.start_ts);
         
         const tdProj = document.createElement('td'); 
         tdProj.textContent = it.project_code || '—';
@@ -273,7 +284,7 @@ function renderOpenSessionsGrid(items) {
             tdTime.style.color = 'var(--primary, #6366f1)';
         }
         
-        tr.append(tdProj, tdUser, tdAct, tdNotes, tdStatus, tdStart, tdTime);
+        tr.append(tdDate, tdProj, tdUser, tdAct, tdNotes, tdStatus, tdStart, tdTime);
         openSessionsTableBody.appendChild(tr);
     });
 }

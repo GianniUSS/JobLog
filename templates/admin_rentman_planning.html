@@ -1713,16 +1713,14 @@
         }
 
         function getEffectiveHours(planning) {
-            // Calcola le ore effettive sottraendo la pausa
+            // Le ore pianificate dal DB sono GIÀ al netto della pausa
             let hoursPlanned = parseFloat(planning.hours_planned) || 0;
-            // Se > 100 è in secondi, convertilo in ore
+            // Se > 100 è in secondi (da Rentman API), convertilo in ore
             if (hoursPlanned > 100) {
                 hoursPlanned = hoursPlanned / 3600;
             }
-            // Sottrai la pausa (in minuti -> ore)
-            const breakMinutes = parseInt(planning.break_minutes) || 0;
-            const breakHours = breakMinutes / 60;
-            return Math.max(0, hoursPlanned - breakHours);
+            // NON sottrarre la pausa perché hours_planned è già al netto
+            return hoursPlanned;
         }
 
         function formatTransport(t) {
