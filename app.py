@@ -6474,6 +6474,44 @@ def magazzino_home() -> ResponseReturnValue:
     )
 
 
+# Tabella per tracciare i timer magazzino attivi lato server
+WAREHOUSE_ACTIVE_TIMERS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS warehouse_active_timers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(190) NOT NULL UNIQUE,
+    project_code VARCHAR(128) NOT NULL,
+    project_name VARCHAR(500),
+    activity_label VARCHAR(255) NOT NULL,
+    notes TEXT,
+    running TINYINT DEFAULT 1,
+    paused TINYINT DEFAULT 0,
+    start_ts BIGINT NOT NULL,
+    elapsed_ms BIGINT DEFAULT 0,
+    pause_start_ts BIGINT DEFAULT NULL,
+    updated_ts BIGINT NOT NULL,
+    INDEX idx_wh_timer_user (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+WAREHOUSE_ACTIVE_TIMERS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS warehouse_active_timers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    project_code TEXT NOT NULL,
+    project_name TEXT,
+    activity_label TEXT NOT NULL,
+    notes TEXT,
+    running INTEGER DEFAULT 1,
+    paused INTEGER DEFAULT 0,
+    start_ts INTEGER NOT NULL,
+    elapsed_ms INTEGER DEFAULT 0,
+    pause_start_ts INTEGER DEFAULT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wh_timer_user ON warehouse_active_timers(username);
+"""
+
+
 WAREHOUSE_ACTIVITIES_TABLE_MYSQL = """
 CREATE TABLE IF NOT EXISTS warehouse_activities (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -6719,6 +6757,24 @@ def ensure_warehouse_sessions_table(db: DatabaseLike) -> None:
             db.execute("ALTER TABLE warehouse_sessions ADD COLUMN intervals TEXT DEFAULT NULL")
             db.commit()
         except Exception:
+            pass
+
+
+def ensure_warehouse_active_timers_table(db: DatabaseLike) -> None:
+    """Crea tabella per tracciare i timer magazzino attivi."""
+    statement = (
+        WAREHOUSE_ACTIVE_TIMERS_TABLE_MYSQL
+        if DB_VENDOR == "mysql"
+        else WAREHOUSE_ACTIVE_TIMERS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
             pass
 
 
@@ -7371,6 +7427,98 @@ def api_magazzino_sessions_update(session_id: int) -> ResponseReturnValue:
         "end_ts": final_end,
         "intervals": current_intervals
     })
+
+
+@app.post("/api/magazzino/timer")
+@login_required
+def api_magazzino_timer_save() -> ResponseReturnValue:
+    """Salva/aggiorna lo stato del timer magazzino sul server."""
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    data = request.get_json(silent=True) or {}
+    project_code = _normalize_text(data.get("project_code")).upper()
+    project_name = _normalize_text(data.get("project_name"))
+    activity_label = _normalize_text(data.get("activity_label"))
+    notes = _normalize_text(data.get("notes"))
+    running = data.get("running", False)
+    paused = data.get("paused", False)
+    start_ts = _coerce_int(data.get("start_ts"))
+    elapsed_ms = _coerce_int(data.get("elapsed_ms")) or 0
+    pause_start_ts = _coerce_int(data.get("pause_start_ts"))
+
+    if not project_code or not activity_label or not start_ts:
+        return jsonify({"ok": False, "error": "missing_required_fields"}), 400
+
+    db = get_db()
+    ensure_warehouse_active_timers_table(db)
+    username = session.get("user")
+    now = now_ms()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    # Upsert: se esiste aggiorna, altrimenti inserisci
+    if DB_VENDOR == "mysql":
+        db.execute(
+            f"""
+            INSERT INTO warehouse_active_timers 
+            (username, project_code, project_name, activity_label, notes, running, paused, start_ts, elapsed_ms, pause_start_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            ON DUPLICATE KEY UPDATE
+                project_code = VALUES(project_code),
+                project_name = VALUES(project_name),
+                activity_label = VALUES(activity_label),
+                notes = VALUES(notes),
+                running = VALUES(running),
+                paused = VALUES(paused),
+                start_ts = VALUES(start_ts),
+                elapsed_ms = VALUES(elapsed_ms),
+                pause_start_ts = VALUES(pause_start_ts),
+                updated_ts = VALUES(updated_ts)
+            """,
+            (username, project_code, project_name, activity_label, notes, 1 if running else 0, 1 if paused else 0, start_ts, elapsed_ms, pause_start_ts, now)
+        )
+    else:
+        db.execute(
+            f"""
+            INSERT OR REPLACE INTO warehouse_active_timers 
+            (username, project_code, project_name, activity_label, notes, running, paused, start_ts, elapsed_ms, pause_start_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """,
+            (username, project_code, project_name, activity_label, notes, 1 if running else 0, 1 if paused else 0, start_ts, elapsed_ms, pause_start_ts, now)
+        )
+    
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/magazzino/timer")
+@login_required
+def api_magazzino_timer_clear() -> ResponseReturnValue:
+    """Rimuove il timer attivo dell'utente (quando ferma il timer)."""
+    guard = _magazzino_only()
+    if guard is not None:
+        return guard
+
+    db = get_db()
+    ensure_warehouse_active_timers_table(db)
+    username = session.get("user")
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    db.execute(
+        f"DELETE FROM warehouse_active_timers WHERE username = {placeholder}",
+        (username,)
+    )
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+    return jsonify({"ok": True})
 
 
 @app.route("/api/activities", methods=["GET", "POST"])
@@ -9673,6 +9821,7 @@ def api_admin_open_sessions() -> ResponseReturnValue:
         member_key = row["member_key"]
         
         open_sessions.append({
+            "source": "team",
             "member_key": member_key,
             "member_name": row["member_name"],
             "activity_id": row["activity_id"],
@@ -9684,6 +9833,40 @@ def api_admin_open_sessions() -> ResponseReturnValue:
             "elapsed_ms": elapsed,
             "pause_count": pause_counts.get(member_key, 0),
             "notes": row["activity_notes"] or "",
+        })
+
+    # Aggiungi timer attivi del magazzino
+    ensure_warehouse_active_timers_table(db)
+    wh_rows = db.execute(
+        """
+        SELECT username, project_code, project_name, activity_label, notes,
+               running, paused, start_ts, elapsed_ms, pause_start_ts, updated_ts
+        FROM warehouse_active_timers
+        ORDER BY updated_ts DESC
+        """
+    ).fetchall()
+    
+    for wh in wh_rows:
+        wh_elapsed = wh["elapsed_ms"] or 0
+        # Se il timer è running e non in pausa, calcola il tempo aggiuntivo
+        if wh["running"] and not wh["paused"] and wh["updated_ts"]:
+            wh_elapsed += (now - wh["updated_ts"])
+        # Se è in pausa, il tempo è già stato salvato in elapsed_ms
+        
+        open_sessions.append({
+            "source": "magazzino",
+            "member_key": f"wh_{wh['username']}",
+            "member_name": wh["username"],
+            "activity_id": wh["activity_label"],
+            "activity_label": f"{wh['activity_label']} (Magazzino)",
+            "project_code": wh["project_code"],
+            "project_name": wh["project_name"],
+            "running": bool(wh["running"]) and not bool(wh["paused"]),
+            "paused": bool(wh["paused"]),
+            "start_ts": wh["start_ts"],
+            "elapsed_ms": wh_elapsed,
+            "pause_count": 0,
+            "notes": wh["notes"] or "",
         })
 
     return jsonify({

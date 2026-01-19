@@ -208,6 +208,8 @@
         try {
             localStorage.setItem(TIMER_KEY, JSON.stringify(timer));
         } catch {}
+        // Salva anche sul server per visibilità admin
+        syncTimerToServer();
     }
     
     function clearTimerState() {
@@ -216,8 +218,41 @@
         selectedNotes = '';
         // Aggiorna pulsante note
         updateNotesButton();
+        // Rimuovi dal server
+        clearTimerFromServer();
     }
 
+    // Sincronizza stato timer sul server per visibilità admin dashboard
+    async function syncTimerToServer() {
+        if (!timer.running || !timer.proj) return;
+        try {
+            await fetch('/api/magazzino/timer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_code: timer.proj.code,
+                    project_name: timer.proj.name,
+                    activity_label: timer.act,
+                    notes: timer.notes || '',
+                    running: timer.running,
+                    paused: timer.paused,
+                    start_ts: timer.startedAt,
+                    elapsed_ms: timer.elapsed || 0,
+                    pause_start_ts: timer.paused ? Date.now() : null
+                })
+            });
+        } catch (err) {
+            // Offline: ignora, il timer locale continua a funzionare
+        }
+    }
+    
+    async function clearTimerFromServer() {
+        try {
+            await fetch('/api/magazzino/timer', { method: 'DELETE' });
+        } catch (err) {
+            // Ignora errori
+        }
+    }
     function rememberProject(code) {
         try { localStorage.setItem(LAST_PROJ_KEY, code || ''); } catch {}
     }
