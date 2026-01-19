@@ -12103,6 +12103,7 @@ CREATE TABLE IF NOT EXISTS request_types (
     description TEXT,
     active TINYINT(1) DEFAULT 1,
     sort_order INT DEFAULT 0,
+    is_giustificativo TINYINT(1) DEFAULT 0,
     created_ts BIGINT NOT NULL DEFAULT 0,
     updated_ts BIGINT NOT NULL DEFAULT 0,
     INDEX idx_request_type_active (active),
@@ -12120,6 +12121,7 @@ CREATE TABLE IF NOT EXISTS request_types (
     description TEXT,
     active INTEGER DEFAULT 1,
     sort_order INTEGER DEFAULT 0,
+    is_giustificativo INTEGER DEFAULT 0,
     created_ts INTEGER NOT NULL,
     updated_ts INTEGER NOT NULL
 );
@@ -12462,6 +12464,14 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
             db.execute("ALTER TABLE request_types ADD COLUMN external_id VARCHAR(100)")
             db.commit()
             app.logger.info("Migrazione: aggiunta colonna external_id a request_types")
+        except Exception:
+            pass  # Colonna già esiste
+        
+        # Migrazione: aggiungi colonna is_giustificativo se non esiste
+        try:
+            db.execute("ALTER TABLE request_types ADD COLUMN is_giustificativo TINYINT(1) DEFAULT 0")
+            db.commit()
+            app.logger.info("Migrazione: aggiunta colonna is_giustificativo a request_types")
         except Exception:
             pass  # Colonna già esiste
     
