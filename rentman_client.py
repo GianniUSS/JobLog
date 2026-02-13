@@ -756,3 +756,32 @@ class RentmanClient:
 
         data = payload.get("data") if isinstance(payload, dict) else None
         return data
+
+    def get_project_vehicles(self, project_id: int) -> List[Dict[str, Any]]:
+        """Recupera i veicoli assegnati a un progetto."""
+        logger.info("Rentman: recupero veicoli per progetto %s", project_id)
+        try:
+            items = self._get_all(f"/projects/{project_id}/projectvehicles")
+            logger.info("Rentman: trovati %s veicoli per progetto %s", len(items), project_id)
+            return items
+        except RentmanNotFound:
+            logger.info("Rentman: nessun veicolo per progetto %s", project_id)
+            return []
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo veicoli progetto %s", exc, project_id)
+            return []
+
+    def get_vehicle(self, vehicle_id: int) -> Optional[Dict[str, Any]]:
+        """Recupera i dettagli di un veicolo."""
+        logger.info("Rentman: recupero dettaglio vehicle %s", vehicle_id)
+        try:
+            payload = self._request("GET", f"/vehicles/{vehicle_id}")
+        except RentmanNotFound:
+            logger.info("Rentman: vehicle %s non trovato", vehicle_id)
+            return None
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo vehicle %s", exc, vehicle_id)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        return data

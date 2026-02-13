@@ -153,7 +153,7 @@ body {
 .container {
   max-width: 420px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 8px 16px 16px;
   padding-bottom: calc(80px + var(--safe-bottom));
 }
 header {
@@ -176,13 +176,26 @@ header {
 }
 .clock-section {
   text-align: center;
-  padding: 6px 0 10px;
+  padding: 0;
 }
 .clock {
-  font-size: 64px;
+  font-size: 42px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -2px;
+  letter-spacing: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.clock-icon {
+  display: inline-block;
+  font-size: 28px;
+  animation: clockTick 2s ease-in-out infinite;
+}
+@keyframes clockTick {
+  0%, 100% { transform: rotate(0deg); }
+  10% { transform: rotate(8deg); }
+  20% { transform: rotate(0deg); }
 }
 
 /* Scanner Modal */
@@ -548,10 +561,49 @@ header {
   font-size: 18px;
 }
 .history-section {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 900;
   background: var(--bg-card);
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 4px 16px var(--shadow);
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+  border-radius: 16px 16px 0 0;
+}
+.history-toggle {
+  width: 100%;
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+  border: none;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #fff;
+  border-radius: 16px 16px 0 0;
+}
+.history-toggle .history-arrow {
+  margin-left: auto;
+  font-size: 14px;
+  transition: transform 0.3s ease;
+  color: #fff;
+}
+.history-section.open .history-toggle .history-arrow {
+  transform: rotate(180deg);
+}
+.history-content {
+  max-height: 0;
+  overflow-y: auto;
+  transition: max-height 0.35s ease;
+}
+.history-section.open .history-content {
+  max-height: 50vh;
+  padding: 12px 16px 16px;
+}
+.history-spacer {
+  height: 56px;
 }
 .history-title {
   font-size: 16px;
@@ -700,6 +752,35 @@ header {
   border-radius: 10px;
   font-weight: 700;
   font-size: 11px;
+}
+
+/* Late Arrival Request */
+.late-arrival-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 6px 15px;
+  margin-top: -8px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.late-arrival-row.pending-confirmation {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.15), transparent);
+  color: #9a3412;
+}
+.late-arrival-row.approved {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.15), transparent);
+  color: #166534;
+}
+.late-arrival-row.registered {
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.15), transparent);
+  color: #92400e;
+}
+.late-arrival-row .overtime-icon {
+  font-size: 14px;
+}
+.late-arrival-row .overtime-text {
+  font-weight: 600;
 }
 
 /* Location badge - chip grande con contenuto su 2 righe */
@@ -1182,6 +1263,610 @@ header {
   opacity: 0.85;
   z-index: 2;
   position: relative;
+}
+
+/* Info Button */
+.turno-info-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  background: rgba(255,255,255,0.25);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255,255,255,0.4);
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  transition: background 0.2s, transform 0.15s;
+}
+.turno-info-btn:hover {
+  background: rgba(255,255,255,0.4);
+  transform: scale(1.1);
+}
+
+/* Crew Info Modal */
+.crew-info-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.crew-info-overlay.active {
+  display: flex;
+}
+.crew-info-modal {
+  background: white;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: crewInfoSlideIn 0.3s ease;
+}
+@keyframes crewInfoSlideIn {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.crew-info-modal * {
+  color: inherit !important;
+}
+.crew-info-header {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  padding: 16px 20px;
+  border-radius: 18px 18px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.crew-info-header * {
+  color: white !important;
+}
+.crew-info-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.crew-info-close {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white !important;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.crew-info-close:hover {
+  background: rgba(255,255,255,0.35);
+}
+.crew-info-body {
+  padding: 16px 20px;
+}
+.crew-info-section {
+  margin-bottom: 16px;
+}
+.crew-info-section:last-child {
+  margin-bottom: 0;
+}
+.crew-info-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.crew-member-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.crew-member-item.is-me {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.crew-member-item.is-leader {
+  background: #fffbeb;
+  border-color: #fbbf24;
+  border-width: 2px;
+}
+.crew-member-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.crew-member-item.is-me .crew-member-avatar {
+  background: #3b82f6;
+  color: white;
+}
+.crew-member-item.is-leader .crew-member-avatar {
+  background: #fbbf24;
+  color: white;
+}
+.crew-member-info {
+  flex: 1;
+  min-width: 0;
+}
+.crew-member-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crew-member-role {
+  font-size: 11px;
+  color: #94a3b8;
+}
+.crew-member-time {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.crew-leader-badge {
+  display: inline-block;
+  background: #fbbf24;
+  color: #92400e;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 4px;
+}
+.vehicle-info-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+.vehicle-info-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.vehicle-info-details {
+  flex: 1;
+  min-width: 0;
+}
+.vehicle-info-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #166534;
+}
+.vehicle-info-driver {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+.crew-info-loading {
+  text-align: center;
+  padding: 30px;
+  color: #94a3b8;
+}
+.crew-info-empty {
+  text-align: center;
+  padding: 20px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+/* Switch Activity Modal */
+.switch-activity-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+}
+.switch-activity-overlay.active {
+  display: flex;
+}
+.switch-activity-modal {
+  background: white;
+  border-radius: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  box-shadow: none;
+  animation: switchSlideIn 0.3s ease;
+}
+@keyframes switchSlideIn {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.switch-activity-modal * {
+  color: inherit !important;
+}
+.switch-activity-header {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  padding: 16px 20px;
+  border-radius: 18px 18px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.switch-activity-header * {
+  color: white !important;
+}
+.switch-activity-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.switch-activity-close {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white !important;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.switch-activity-close:hover {
+  background: rgba(255,255,255,0.35);
+}
+.switch-activity-body {
+  padding: 16px 20px;
+}
+.switch-activity-item {
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 14px;
+  padding: 14px 16px;
+  transition: all 0.2s ease;
+}
+.switch-activity-item:not(.current):hover {
+  background: #e3f2fd;
+  border-color: #2196F3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(33,150,243,0.15);
+}
+
+/* Numpad per cambio progetto */
+.numpad-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 10001;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.numpad-overlay.active {
+  display: flex;
+}
+.numpad-modal {
+  background: white;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 340px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: switchSlideIn 0.3s ease;
+  overflow: hidden;
+}
+.numpad-header {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white !important;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.numpad-header * { color: white !important; }
+.numpad-header h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.numpad-display {
+  padding: 16px 18px 8px;
+  text-align: center;
+}
+.numpad-display input {
+  width: 100%;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 12px;
+  color: #1a56db !important;
+  background: #f8faff;
+  outline: none;
+}
+.numpad-display input:focus {
+  border-color: #3b82f6;
+}
+.numpad-result {
+  padding: 0 18px 8px;
+  text-align: center;
+  min-height: 24px;
+}
+.numpad-result .found {
+  color: #16a34a !important;
+  font-weight: 600;
+  font-size: 13px;
+}
+.numpad-result .not-found {
+  color: #dc2626 !important;
+  font-weight: 600;
+  font-size: 13px;
+}
+.numpad-result .searching {
+  color: #888 !important;
+  font-size: 13px;
+}
+.numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 8px 18px;
+}
+.numpad-btn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e293b !important;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+.numpad-btn:active {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  transform: scale(0.95);
+}
+.numpad-btn.del {
+  background: #fef2f2;
+  color: #dc2626 !important;
+  border-color: #fecaca;
+}
+.numpad-btn.del:active {
+  background: #fee2e2;
+}
+.numpad-actions {
+  display: flex;
+  gap: 10px;
+  padding: 10px 18px 18px;
+}
+.numpad-actions button {
+  flex: 1;
+  padding: 13px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+}
+
+/* Popup note obbligatorie per attività Altro */
+.notes-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 10002;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.notes-overlay.active {
+  display: flex;
+}
+.notes-modal {
+  background: white;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: switchSlideIn 0.3s ease;
+  overflow: hidden;
+}
+.notes-header {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white !important;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.notes-header * { color: white !important; }
+.notes-header h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.notes-body {
+  padding: 18px;
+}
+.notes-body textarea {
+  width: 100%;
+  min-height: 100px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  color: #333;
+  background: #fefefe;
+}
+.notes-body textarea:focus {
+  border-color: #f59e0b;
+}
+.notes-body textarea.error {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+.notes-body .notes-hint {
+  font-size: 12px;
+  color: #888;
+  margin-top: 6px;
+}
+.notes-body .notes-error {
+  font-size: 12px;
+  color: #dc2626;
+  font-weight: 600;
+  margin-top: 6px;
+  display: none;
+}
+.notes-actions {
+  display: flex;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+.notes-actions button {
+  flex: 1;
+  padding: 13px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+}
+
+.switch-activity-item.current {
+  background: #e8f5e9;
+  border-color: #4CAF50;
+}
+.switch-activity-current {
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.switch-activity-current-icon {
+  font-size: 20px;
+}
+.switch-activity-current-info {
+  flex: 1;
+}
+.switch-activity-current-label {
+  font-size: 11px;
+  color: #92400e;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.switch-activity-current-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #78350f;
+}
+.switch-activity-list-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+.switch-activity-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.switch-activity-item:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  transform: translateX(4px);
+}
+.switch-activity-item:active {
+  transform: scale(0.98);
+}
+.switch-activity-item.current {
+  opacity: 0.5;
+  pointer-events: none;
+  background: #f1f5f9;
+}
+.switch-activity-item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: white !important;
+  flex-shrink: 0;
+}
+.switch-activity-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.switch-activity-item-project {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.switch-activity-item-detail {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+.switch-activity-item-arrow {
+  color: #cbd5e1;
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
 /* Dev Mode Toggle */
@@ -1872,12 +2557,13 @@ header {
 
 <div class="container">
   <div class="clock-section">
-    <div class="clock" id="clock">--:--:--</div>
+    <div class="clock"><span class="clock-icon">🕐</span><span id="clock">--:--:--</span></div>
   </div>
 
   <!-- Box Turno Oggi -->
   <div class="turno-box" id="turnoBox" style="display:none;">
     <span class="turno-counter" id="turnoCounter" style="display:none;">1/1</span>
+    <button class="turno-info-btn" id="turnoInfoBtn" onclick="openCrewInfoModal()" title="Info squadra" style="display:none;">ℹ</button>
     <div class="turno-nav">
       <button class="turno-nav-btn" id="turnoPrevBtn" onclick="navigateTurno(-1)" style="display:none;">‹</button>
       <div class="turno-content">
@@ -1894,6 +2580,7 @@ header {
         <div class="turno-details">
           <!-- Orario -->
           <div class="turno-detail turno-detail-row" id="turnoOrarioRow">
+            <span id="turnoProjectCode" style="font-weight:700; font-size:11px; background:rgba(255,255,255,0.25); padding:2px 6px; border-radius:6px; margin-right:14px; display:none;"></span>
             <span class="icon">🕐</span>
             <span id="turnoOrarioText" style="font-weight:600;">-</span>
           </div>
@@ -1918,15 +2605,9 @@ header {
 
   <div class="actions">
     <button class="action-btn start" id="btnStartDay" onclick="startTimbratura('inizio_giornata')">
-      <span class="icon">→</span>
-      <span>Inizio Giornata</span>
+      <span class="icon" id="iconStart">→</span>
+      <span id="labelStart">Inizio Giornata</span>
       <span class="check" id="checkStart"></span>
-    </button>
-    
-    <button class="action-btn end" id="btnEndDay" onclick="startTimbratura('fine_giornata')">
-      <span class="icon">←</span>
-      <span>Fine Giornata</span>
-      <span class="check" id="checkEnd"></span>
     </button>
     
     <div class="pause-row">
@@ -1939,13 +2620,104 @@ header {
         <span>Fine Pausa</span>
       </button>
     </div>
+    
+    <button class="action-btn end" id="btnEndDay" onclick="startTimbratura('fine_giornata')">
+      <span class="icon">←</span>
+      <span>Fine Giornata</span>
+      <span class="check" id="checkEnd"></span>
+    </button>
   </div>
 
-  <div class="history-section">
-    <h2 class="history-title">📋 Storico Timbrature Oggi:</h2>
+  <div class="history-spacer"></div>
+</div>
+
+<div class="history-section" id="historySection">
+  <button class="history-toggle" onclick="toggleHistory()">
+    📋 Storico Timbrature Oggi
+    <span class="history-arrow">▲</span>
+  </button>
+  <div class="history-content">
     <ul class="history-list" id="historyList">
       <li class="empty-history">Nessuna timbratura registrata</li>
     </ul>
+  </div>
+</div>
+
+<!-- Switch Activity Modal -->
+<div class="switch-activity-overlay" id="switchActivityOverlay" onclick="closeSwitchActivityModal(event)">
+  <div class="switch-activity-modal" onclick="event.stopPropagation()">
+    <div class="switch-activity-header">
+      <h3>🔄 Cambia Attività</h3>
+      <button class="switch-activity-close" onclick="closeSwitchActivityModal()">✕</button>
+    </div>
+    <div class="switch-activity-body" id="switchActivityBody">
+      <div class="crew-info-loading">Caricamento...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Numpad Cambio Progetto -->
+<div class="numpad-overlay" id="numpadOverlay" onclick="closeNumpad(event)">
+  <div class="numpad-modal" onclick="event.stopPropagation()">
+    <div class="numpad-header">
+      <h3>🔢 Numero Progetto</h3>
+      <button class="switch-activity-close" onclick="closeNumpad()">✕</button>
+    </div>
+    <div class="numpad-display">
+      <input type="text" id="numpadInput" readonly placeholder="---" maxlength="10">
+    </div>
+    <div class="numpad-result" id="numpadResult"></div>
+    <div class="numpad-grid">
+      <div class="numpad-btn" onclick="numpadPress('1')">1</div>
+      <div class="numpad-btn" onclick="numpadPress('2')">2</div>
+      <div class="numpad-btn" onclick="numpadPress('3')">3</div>
+      <div class="numpad-btn" onclick="numpadPress('4')">4</div>
+      <div class="numpad-btn" onclick="numpadPress('5')">5</div>
+      <div class="numpad-btn" onclick="numpadPress('6')">6</div>
+      <div class="numpad-btn" onclick="numpadPress('7')">7</div>
+      <div class="numpad-btn" onclick="numpadPress('8')">8</div>
+      <div class="numpad-btn" onclick="numpadPress('9')">9</div>
+      <div class="numpad-btn del" onclick="numpadDelete()">⌫</div>
+      <div class="numpad-btn" onclick="numpadPress('0')">0</div>
+      <div class="numpad-btn del" onclick="numpadClear()">C</div>
+    </div>
+    <div class="numpad-actions">
+      <button onclick="closeNumpad()" style="background:#f1f5f9;color:#666 !important;">Annulla</button>
+      <button id="numpadConfirmBtn" onclick="numpadConfirm()" style="background:#3b82f6;color:#fff !important;" disabled>Conferma</button>
+    </div>
+  </div>
+</div>
+
+<!-- Popup Note Obbligatorie per attività Altro -->
+<div class="notes-overlay" id="notesOverlay" onclick="closeNotesPopup(event)">
+  <div class="notes-modal" onclick="event.stopPropagation()">
+    <div class="notes-header">
+      <h3>📝 Note Obbligatorie</h3>
+      <button class="switch-activity-close" onclick="closeNotesPopup()">✕</button>
+    </div>
+    <div class="notes-body">
+      <p style="font-size:13px;color:#555;margin:0 0 10px;">Per l'attività <strong>"Altro"</strong> è necessario specificare cosa si sta facendo.</p>
+      <textarea id="notesTextarea" placeholder="Descrivi l'attività..." maxlength="500"></textarea>
+      <div class="notes-hint">Minimo 3 caratteri</div>
+      <div class="notes-error" id="notesError">⚠️ Inserisci una descrizione dell'attività</div>
+    </div>
+    <div class="notes-actions">
+      <button onclick="closeNotesPopup()" style="background:#f1f5f9;color:#666 !important;">Annulla</button>
+      <button id="notesConfirmBtn" onclick="confirmNotesAndProceed()" style="background:#f59e0b;color:#fff !important;">Conferma e Avvia</button>
+    </div>
+  </div>
+</div>
+
+<!-- Crew Info Modal -->
+<div class="crew-info-overlay" id="crewInfoOverlay" onclick="closeCrewInfoModal(event)">
+  <div class="crew-info-modal" onclick="event.stopPropagation()">
+    <div class="crew-info-header">
+      <h3 id="crewInfoTitle">ℹ️ Info Turno</h3>
+      <button class="crew-info-close" onclick="closeCrewInfoModal()">✕</button>
+    </div>
+    <div class="crew-info-body" id="crewInfoBody">
+      <div class="crew-info-loading">Caricamento...</div>
+    </div>
   </div>
 </div>
 
@@ -2077,6 +2849,11 @@ function showTurnoNotes() {
 
 function closeNoteModal() {
   document.getElementById('noteModal').classList.remove('open');
+}
+
+// Toggle storico timbrature
+function toggleHistory() {
+  document.getElementById('historySection').classList.toggle('open');
 }
 
 // Aggiorna orologio
@@ -2514,13 +3291,34 @@ async function confirmGpsLocation() {
         setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
       }
       // Se è stato rilevato Fuori Flessibilità, mostra il popup
-      else if (data.flex_warning && data.flex_warning.detected) {
-        setTimeout(() => showFlexWarningPopup(data.flex_warning), 500);
+      if (data.flex_warning && data.flex_warning.detected) {
+        setTimeout(() => showFlexWarningPopup(data.flex_warning), 600);
       }
-      // Check straordinario dopo fine giornata (vecchia logica, ora gestita sopra)
-      // if (tipo === 'fine_giornata') {
-      //   setTimeout(() => checkOvertimeAfterCheckout(), 1500);
-      // }
+      // Se è stato rilevato un Ritardo, mostra il popup
+      if (data.late_arrival && data.late_arrival.detected) {
+        const lateDelay = (data.extra_turno?.detected || data.flex_warning?.detected) ? 1200 : 600;
+        setTimeout(() => showLateArrivalPopup(data.late_arrival), lateDelay);
+      }
+      // Se è stata rilevata un'attività di produzione da avviare
+      if (data.production_activity && data.production_activity.detected && data.production_activity.action === 'start') {
+        if (data.late_arrival?.detected) {
+          _pendingProductionActivity = data.production_activity;
+        } else {
+          const delay = (data.extra_turno?.detected || data.flex_warning?.detected) ? 1800 : 500;
+          setTimeout(() => showProductionActivityPopup(data.production_activity), delay);
+        }
+      }
+      // Notifica azioni automatiche sul timer di produzione (pausa/resume/stop)
+      else if (data.production_activity && data.production_activity.action) {
+        const actionMessages = {
+          'paused': '⏸️ Attività in pausa',
+          'resumed': '▶️ Attività ripresa',
+          'stopped': '⏹️ Attività terminata e salvata'
+        };
+        if (actionMessages[data.production_activity.action]) {
+          setTimeout(() => showToast(actionMessages[data.production_activity.action], 'info'), 500);
+        }
+      }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
       // Mostra anche l'URL di debug in caso di errore
@@ -2586,8 +3384,35 @@ async function registerTimbraturaDirectly(tipo) {
         setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
       }
       // Se è stato rilevato Fuori Flessibilità, mostra il popup
-      else if (data.flex_warning && data.flex_warning.detected) {
-        setTimeout(() => showFlexWarningPopup(data.flex_warning), 500);
+      if (data.flex_warning && data.flex_warning.detected) {
+        setTimeout(() => showFlexWarningPopup(data.flex_warning), 600);
+      }
+      // Se è stato rilevato un Ritardo, mostra il popup
+      if (data.late_arrival && data.late_arrival.detected) {
+        const lateDelay = (data.extra_turno?.detected || data.flex_warning?.detected) ? 1200 : 600;
+        setTimeout(() => showLateArrivalPopup(data.late_arrival), lateDelay);
+      }
+      // Se è stata rilevata un'attività di produzione da avviare (mostrato SEMPRE, anche con altri popup)
+      if (data.production_activity && data.production_activity.detected && data.production_activity.action === 'start') {
+        if (data.late_arrival?.detected) {
+          // Se c'è anche il ritardo, salva l'attività e mostrala dopo chiusura popup ritardo
+          _pendingProductionActivity = data.production_activity;
+        } else {
+          // Delay maggiore se ci sono altri popup
+          const delay = (data.extra_turno?.detected || data.flex_warning?.detected) ? 1800 : 500;
+          setTimeout(() => showProductionActivityPopup(data.production_activity), delay);
+        }
+      }
+      // Notifica azioni automatiche sul timer di produzione (pausa/resume/stop)
+      else if (data.production_activity && data.production_activity.action) {
+        const actionMessages = {
+          'paused': '⏸️ Attività in pausa',
+          'resumed': '▶️ Attività ripresa',
+          'stopped': '⏹️ Attività terminata e salvata'
+        };
+        if (actionMessages[data.production_activity.action]) {
+          setTimeout(() => showToast(actionMessages[data.production_activity.action], 'info'), 500);
+        }
       }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
@@ -2609,6 +3434,203 @@ async function registerTimbraturaDirectly(tipo) {
     }
   }
   pendingTimbraturaType = null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// POPUP ATTIVITÀ PRODUZIONE
+// ═══════════════════════════════════════════════════════════════════
+
+function showProductionActivityPopup(activity) {
+  const timbraturaTs = activity.timbratura_ts || Date.now();
+  
+  // Prendi progetto e attività dal turno visualizzato sulla home (prioritario)
+  const turno = allTurni[currentTurnoIndex] || {};
+  const projectCode = turno.project_code || activity.project_code || '';
+  const projectName = turno.project_name || activity.project_name || projectCode;
+  const activityLabel = turno.function || activity.activity_label || 'Attività';
+  
+  // Lista attività predefinite magazzino
+  const ACTIVITIES = [
+    { code: 'Preparazione', icon: '📦', label: 'Preparazione' },
+    { code: 'Carico', icon: '🚚', label: 'Carico' },
+    { code: 'Scarico', icon: '📥', label: 'Scarico' },
+    { code: 'Controllo', icon: '🔍', label: 'Controllo' },
+    { code: 'Pulizia', icon: '🧹', label: 'Pulizia' },
+    { code: 'Verifica', icon: '✅', label: 'Verifica' },
+    { code: 'Manutenzione', icon: '🔧', label: 'Manutenzione' },
+    { code: 'Altro', icon: '📝', label: 'Altro' }
+  ];
+  
+  let listHtml = '<div id="productionActivityGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;display:none;">';
+  ACTIVITIES.forEach(a => {
+    listHtml += `
+      <div onclick="confirmStartProductionActivity('${escapeHtml(projectCode)}', '${escapeHtml(projectName)}', '${escapeHtml(a.code)}', ${timbraturaTs})"
+           style="background:var(--bg);border:2px solid var(--border);border-radius:14px;padding:16px 10px;cursor:pointer;transition:all 0.2s;text-align:center;"
+           onmouseover="this.style.borderColor='var(--brand)';this.style.background='#e3f2fd';this.style.transform='scale(1.03)'"
+           onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--bg)';this.style.transform='scale(1)'">
+        <div style="font-size:32px;margin-bottom:6px;">${a.icon}</div>
+        <div style="font-weight:600;font-size:13px;color:var(--text-primary);">${escapeHtml(a.label)}</div>
+      </div>`;
+  });
+  listHtml += '</div>';
+  
+  const html = `
+    <div id="productionActivityPopup" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;">
+      <div style="background:var(--bg-card);color:var(--text-primary);padding:24px;border-radius:16px;max-width:400px;width:100%;box-shadow:var(--shadow-lg);max-height:85vh;overflow-y:auto;">
+        <div style="text-align:center;margin-bottom:20px;">
+          <div style="font-size:48px;margin-bottom:12px;">🏭</div>
+          <h3 style="margin:0 0 8px;font-size:18px;font-weight:600;" id="productionPopupTitle">Avviare attività?</h3>
+          <p style="margin:0;color:var(--text-secondary);font-size:14px;" id="productionPopupSubtitle">Stai iniziando la giornata su un turno di produzione.</p>
+        </div>
+        
+        <div id="productionDefaultView">
+          <div style="background:var(--bg);padding:16px;border-radius:12px;margin-bottom:20px;">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">PROGETTO</div>
+            <div style="font-weight:600;font-size:15px;margin-bottom:12px;">${escapeHtml(projectName)}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">MANSIONE</div>
+            <div style="font-weight:600;font-size:15px;color:var(--brand);">${escapeHtml(activityLabel)}</div>
+          </div>
+          
+          <p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;text-align:center;">
+            Vuoi avviare automaticamente il timer per questa attività?
+          </p>
+          
+          <div style="display:flex;gap:12px;">
+            <button onclick="showProductionActivityGrid()" style="flex:1;padding:14px;background:var(--bg);color:var(--brand);border:2px solid var(--brand);border-radius:10px;font-weight:600;cursor:pointer;">
+              🔄 Cambia Attività
+            </button>
+            <button onclick="confirmStartProductionActivity('${escapeHtml(projectCode)}', '${escapeHtml(projectName)}', '${escapeHtml(activityLabel)}', ${timbraturaTs})" style="flex:1;padding:14px;background:var(--green);color:#fff;border:none;border-radius:10px;font-weight:600;cursor:pointer;">
+              Avvia ▶️
+            </button>
+          </div>
+        </div>
+        
+        ${listHtml}
+        
+        <button onclick="hideProductionActivityGrid()" style="width:100%;margin-top:14px;padding:12px;background:var(--bg);color:var(--text-secondary);border:1px solid var(--border);border-radius:10px;font-weight:600;cursor:pointer;display:none;" id="productionBackBtn">
+          ← Indietro
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function showProductionActivityGrid() {
+  document.getElementById('productionDefaultView').style.display = 'none';
+  document.getElementById('productionActivityGrid').style.display = 'grid';
+  document.getElementById('productionBackBtn').style.display = 'block';
+  document.getElementById('productionPopupTitle').textContent = 'Seleziona attività';
+  document.getElementById('productionPopupSubtitle').textContent = 'Scegli l\'attività da avviare.';
+}
+
+function hideProductionActivityGrid() {
+  document.getElementById('productionDefaultView').style.display = '';
+  document.getElementById('productionActivityGrid').style.display = 'none';
+  document.getElementById('productionBackBtn').style.display = 'none';
+  document.getElementById('productionPopupTitle').textContent = 'Avviare attività?';
+  document.getElementById('productionPopupSubtitle').textContent = 'Stai iniziando la giornata su un turno di produzione.';
+}
+
+function dismissProductionActivityPopup() {
+  const popup = document.getElementById('productionActivityPopup');
+  if (popup) popup.remove();
+}
+
+// --- Gestione note obbligatorie per attività "Altro" ---
+let _pendingNotesCallback = null;
+
+function openNotesPopup(callback) {
+  _pendingNotesCallback = callback;
+  const overlay = document.getElementById('notesOverlay');
+  const textarea = document.getElementById('notesTextarea');
+  const errorEl = document.getElementById('notesError');
+  textarea.value = '';
+  textarea.classList.remove('error');
+  errorEl.style.display = 'none';
+  overlay.classList.add('active');
+  setTimeout(() => textarea.focus(), 200);
+}
+
+function closeNotesPopup(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('notesOverlay').classList.remove('active');
+  _pendingNotesCallback = null;
+}
+
+function confirmNotesAndProceed() {
+  const textarea = document.getElementById('notesTextarea');
+  const errorEl = document.getElementById('notesError');
+  const notes = (textarea.value || '').trim();
+  
+  if (notes.length < 3) {
+    textarea.classList.add('error');
+    errorEl.style.display = 'block';
+    textarea.focus();
+    return;
+  }
+  
+  // Chiudi popup e chiama il callback con le note
+  document.getElementById('notesOverlay').classList.remove('active');
+  if (_pendingNotesCallback) {
+    _pendingNotesCallback(notes);
+    _pendingNotesCallback = null;
+  }
+}
+
+async function confirmStartProductionActivity(projectCode, projectName, activityLabel, startTs) {
+  // Se attività è "Altro" e non abbiamo note, chiedi prima le note
+  if (activityLabel.toLowerCase() === 'altro') {
+    // Non chiudiamo il popup originale ancora - mostriamo il notes popup sopra
+    openNotesPopup(async (notes) => {
+      dismissProductionActivityPopup();
+      await _doStartProductionActivity(projectCode, projectName, activityLabel, startTs, notes);
+    });
+    return;
+  }
+  
+  dismissProductionActivityPopup();
+  await _doStartProductionActivity(projectCode, projectName, activityLabel, startTs, null);
+}
+
+async function _doStartProductionActivity(projectCode, projectName, activityLabel, startTs, notes) {
+  console.log('[ProductionActivity] Avvio timer con:', { projectCode, projectName, activityLabel, startTs, notes });
+  
+  try {
+    const payload = {
+      project_code: projectCode,
+      project_name: projectName,
+      activity_label: activityLabel,
+      start_ts: startTs
+    };
+    if (notes) payload.notes = notes;
+    
+    const res = await fetch('/api/production/timer/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    const data = await res.json();
+    console.log('[ProductionActivity] Risposta server:', data);
+    
+    if (res.ok && data.ok) {
+      showToast('▶️ Attività avviata: ' + activityLabel, 'success');
+    } else {
+      showToast(data.error || 'Errore avvio attività', 'error');
+    }
+  } catch (err) {
+    console.error('Errore avvio attività:', err);
+    showToast('Errore di connessione', 'error');
+  }
+}
+
+// Helper per escape HTML
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
 }
 
 // 🧪 TEST PAYLOAD - Mostra popup con dettagli CedolinoWeb
@@ -2834,8 +3856,33 @@ async function onScanSuccess(decodedText, decodedResult) {
         setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
       }
       // Se è stato rilevato Fuori Flessibilità, mostra il popup
-      else if (data.flex_warning && data.flex_warning.detected) {
-        setTimeout(() => showFlexWarningPopup(data.flex_warning), 500);
+      if (data.flex_warning && data.flex_warning.detected) {
+        setTimeout(() => showFlexWarningPopup(data.flex_warning), 600);
+      }
+      // Se è stato rilevato un Ritardo, mostra il popup
+      if (data.late_arrival && data.late_arrival.detected) {
+        const lateDelay = (data.extra_turno?.detected || data.flex_warning?.detected) ? 1200 : 600;
+        setTimeout(() => showLateArrivalPopup(data.late_arrival), lateDelay);
+      }
+      // Se è stata rilevata un'attività di produzione da avviare
+      if (data.production_activity && data.production_activity.detected && data.production_activity.action === 'start') {
+        if (data.late_arrival?.detected) {
+          _pendingProductionActivity = data.production_activity;
+        } else {
+          const delay = (data.extra_turno?.detected || data.flex_warning?.detected) ? 1800 : 500;
+          setTimeout(() => showProductionActivityPopup(data.production_activity), delay);
+        }
+      }
+      // Notifica azioni automatiche sul timer di produzione (pausa/resume/stop)
+      else if (data.production_activity && data.production_activity.action) {
+        const actionMessages = {
+          'paused': '⏸️ Attività in pausa',
+          'resumed': '▶️ Attività ripresa',
+          'stopped': '⏹️ Attività terminata e salvata'
+        };
+        if (actionMessages[data.production_activity.action]) {
+          setTimeout(() => showToast(actionMessages[data.production_activity.action], 'info'), 500);
+        }
       }
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
@@ -2881,9 +3928,17 @@ function updateUI() {
   // Combina e ordina per ora (crescente per logica interna)
   const allTimbrature = [...todayTimbrature.map(t => ({...t, offline: false})), ...offlineToday]
     .sort((a, b) => {
-      // Ordina per ora in formato HH:MM:SS o HH:MM
-      const oraA = (a.ora || '').padEnd(8, ':00');
-      const oraB = (b.ora || '').padEnd(8, ':00');
+      // Normalizza ora con zero-padding (es: "9:20" -> "09:20:00")
+      const normalizeOra = (ora) => {
+        if (!ora) return '00:00:00';
+        const parts = ora.split(':');
+        const hh = (parts[0] || '00').padStart(2, '0');
+        const mm = (parts[1] || '00').padStart(2, '0');
+        const ss = (parts[2] || '00').padStart(2, '0');
+        return `${hh}:${mm}:${ss}`;
+      };
+      const oraA = normalizeOra(a.ora);
+      const oraB = normalizeOra(b.ora);
       const cmp = oraA.localeCompare(oraB);
       // In caso di parità, ordina per tipo logico
       if (cmp === 0) {
@@ -2914,9 +3969,28 @@ function updateUI() {
   document.getElementById('btnStartDay').disabled = hasStarted;
   document.getElementById('btnEndDay').disabled = !hasStarted || hasEnded || inPause;
   
+  // Se gruppo di produzione e ha già timbrato inizio, cambia il bottone in "Cambia Attività"
+  const btnStart = document.getElementById('btnStartDay');
+  if (timbraturaConfig.is_production_group && hasStarted && !hasEnded) {
+    btnStart.disabled = false;
+    document.getElementById('labelStart').textContent = 'Cambia Attività';
+    document.getElementById('iconStart').textContent = '🔄';
+    btnStart.onclick = function() { openSwitchActivityModal(); };
+    document.getElementById('checkStart').className = 'check done';
+    document.getElementById('checkStart').innerHTML = '✓';
+  } else {
+    if (!hasStarted) {
+      document.getElementById('labelStart').textContent = 'Inizio Giornata';
+      document.getElementById('iconStart').textContent = '→';
+    }
+    btnStart.onclick = function() { startTimbratura('inizio_giornata'); };
+  }
+  
   // Check marks
-  document.getElementById('checkStart').className = 'check' + (hasStarted ? ' done' : '');
-  document.getElementById('checkStart').innerHTML = hasStarted ? '✓' : '';
+  if (!(timbraturaConfig.is_production_group && hasStarted && !hasEnded)) {
+    document.getElementById('checkStart').className = 'check' + (hasStarted ? ' done' : '');
+    document.getElementById('checkStart').innerHTML = hasStarted ? '✓' : '';
+  }
   document.getElementById('checkEnd').className = 'check' + (hasEnded ? ' done' : '');
   document.getElementById('checkEnd').innerHTML = hasEnded ? '✓' : '';
   
@@ -2931,8 +4005,18 @@ function updateUI() {
   } else {
     historyList.innerHTML = allTimbratureDisplay.map((t, idx) => {
       const info = TIMBRATURA_TYPES[t.tipo] || { label: t.tipo, dotClass: 'start' };
-      // Mostra ora originale e ora modificata se diversa
-      let oraDisplay = t.ora;
+      // Mostra ora originale e ora modificata se diversa (solo HH:MM)
+      const formatHHMM = (ora) => {
+        if (!ora) return '';
+        const parts = String(ora).split(':');
+        if (parts.length >= 2) {
+          const hh = parts[0].padStart(2, '0');
+          const mm = parts[1].padStart(2, '0');
+          return `${hh}:${mm}`;
+        }
+        return ora;
+      };
+      let oraDisplay = formatHHMM(t.ora);
       let extraInfo = '';
       
       // Icona sync status
@@ -2950,10 +4034,12 @@ function updateUI() {
       // Verifica se questa timbratura è in attesa di conferma Extra Turno
       if (t.pending_extra_turno) {
         hasOvertimeClass = 'has-overtime pending-confirmation';
+        // Usa sync_error se disponibile, altrimenti messaggio generico
+        const waitMessage = t.sync_error || 'In attesa di revisione';
         overtimeRow = `
           <div class="overtime-info-row pending-confirmation">
             <span class="overtime-icon">⏳</span>
-            <span class="overtime-text">In attesa conferma Extra Turno</span>
+            <span class="overtime-text">${waitMessage}</span>
           </div>
         `;
       } else if (t.tipo === 'fine_giornata' && pendingOvertime) {
@@ -2969,6 +4055,38 @@ function updateUI() {
             <span class="overtime-time">${timeStr}</span>
           </div>
         `;
+      }
+      
+      // Badge Giustificazione Ritardo - per inizio_giornata con late_arrival_request
+      if (t.late_arrival_request && t.tipo === 'inizio_giornata') {
+        const lateReq = t.late_arrival_request;
+        let lateIcon = '⏰';
+        let lateText = '';
+        let lateClass = 'late-arrival-row';
+        
+        if (lateReq.status === 'pending') {
+          lateIcon = '⏳';
+          lateText = 'In attesa di revisione';
+          lateClass = 'late-arrival-row pending-confirmation';
+        } else if (lateReq.status === 'approved') {
+          lateIcon = '✅';
+          lateText = 'Giustificazione accettata';
+          lateClass = 'late-arrival-row approved';
+        } else if (lateReq.status === 'rejected') {
+          lateIcon = '⏰';
+          lateText = 'Ritardo registrato';
+          lateClass = 'late-arrival-row registered';
+        }
+        
+        if (lateText) {
+          hasOvertimeClass = hasOvertimeClass || 'has-late-request';
+          overtimeRow = `
+            <div class="${lateClass}">
+              <span class="overtime-icon">${lateIcon}</span>
+              <span class="overtime-text">${lateText}</span>
+            </div>
+          `;
+        }
       }
       
       if (t.tipo === 'fine_pausa') {
@@ -2995,12 +4113,12 @@ function updateUI() {
         }
         
         // Mostra ora barrata anche per fine_pausa se ora_mod è diversa
-        if (t.ora_mod && t.ora_mod !== t.ora) {
-          oraDisplay = `<span class="ora-originale">${t.ora}</span><span class="ora-mod">${t.ora_mod}</span>`;
+        if (t.ora_mod && formatHHMM(t.ora_mod) !== formatHHMM(t.ora)) {
+          oraDisplay = `<span class="ora-originale">${formatHHMM(t.ora)}</span><span class="ora-mod">${formatHHMM(t.ora_mod)}</span>`;
         }
-      } else if (t.ora_mod && t.ora_mod !== t.ora && t.rounding_mode !== 'daily') {
+      } else if (t.ora_mod && formatHHMM(t.ora_mod) !== formatHHMM(t.ora) && t.rounding_mode !== 'daily') {
         // Mostra ora barrata SOLO se NON è modalità daily (arrotondamento a fine giornata)
-        oraDisplay = `<span class="ora-originale">${t.ora}</span><span class="ora-mod">${t.ora_mod}</span>`;
+        oraDisplay = `<span class="ora-originale">${formatHHMM(t.ora)}</span><span class="ora-mod">${formatHHMM(t.ora_mod)}</span>`;
       }
       
       // Mostra location se presente (GPS)
@@ -3084,6 +4202,8 @@ async function loadTurno() {
       if (turnoOrario) turnoOrario.style.display = 'none';
       if (turnoFunzione) turnoFunzione.style.display = 'none';
       if (turnoBadge) turnoBadge.style.display = 'none';
+      const infoBtn = document.getElementById('turnoInfoBtn');
+      if (infoBtn) infoBtn.style.display = 'none';
       hideNavigation();
       console.warn("⚠️ Nessun turno disponibile");
       return;
@@ -3168,6 +4288,17 @@ function displayTurno(index) {
     document.getElementById('turnoOrarioText').textContent = orarioText;
   }
   
+  // Numero progetto
+  const projectCodeEl = document.getElementById('turnoProjectCode');
+  if (projectCodeEl) {
+    if (turno.project_code) {
+      projectCodeEl.textContent = 'P. ' + turno.project_code;
+      projectCodeEl.style.display = 'inline-block';
+    } else {
+      projectCodeEl.style.display = 'none';
+    }
+  }
+  
   // Funzione/Ruolo
   if (turno.function) {
     document.getElementById('turnoFunzioneText').textContent = turno.function;
@@ -3214,8 +4345,8 @@ function displayTurno(index) {
       const hasCoords = turno.timbratura_lat && turno.timbratura_lon;
       const warningText = !hasCoords ? ' ⚠️' : '';
       timbraturaItem.innerHTML = `
-        <span class="icon" title="Timbra presso: ${turno.timbratura_location}"><i class="fas fa-map-pin"></i></span>
-        <span class="value">Timbra in ${turno.timbratura_location}${warningText}</span>
+        <span class="icon" title="Timbra presso: ${turno.timbratura_location}"><i class="fas fa-clock"></i></span>
+        <span class="value">${turno.timbratura_location}${warningText}</span>
       `;
       timbraturaEl.appendChild(timbraturaItem);
       
@@ -3264,6 +4395,16 @@ function displayTurno(index) {
     badge.style.display = 'none';
   }
   
+  // Mostra bottone info se è un turno Rentman (ha project_code)
+  const infoBtn = document.getElementById('turnoInfoBtn');
+  if (infoBtn) {
+    if (turno.project_code && turno.source !== 'employee_shifts') {
+      infoBtn.style.display = 'flex';
+    } else {
+      infoBtn.style.display = 'none';
+    }
+  }
+  
   // Aggiorna counter e stato bottoni
   updateNavigation();
 }
@@ -3300,6 +4441,448 @@ function updateNavigation() {
   prevBtn.disabled = currentTurnoIndex === 0;
   nextBtn.disabled = currentTurnoIndex === allTurni.length - 1;
   counter.textContent = `${currentTurnoIndex + 1}/${allTurni.length}`;
+}
+
+// ═══ Crew Info Modal ═══
+async function openCrewInfoModal() {
+  const turno = allTurni[currentTurnoIndex];
+  if (!turno || !turno.project_code) return;
+
+  const overlay = document.getElementById('crewInfoOverlay');
+  const body = document.getElementById('crewInfoBody');
+  const title = document.getElementById('crewInfoTitle');
+
+  title.textContent = `ℹ️ ${turno.project_name || turno.project_code}`;
+  body.innerHTML = '<div class="crew-info-loading">⏳ Caricamento...</div>';
+  overlay.classList.add('active');
+
+  try {
+    const res = await fetch(`/api/user/turno-crew-info?project_code=${encodeURIComponent(turno.project_code)}`);
+    if (!res.ok) throw new Error('Errore caricamento');
+    const data = await res.json();
+
+    let html = '';
+
+    // Sezione Squadra
+    if (data.crew && data.crew.length > 0) {
+      html += `<div class="crew-info-section">
+        <div class="crew-info-section-title">👥 Squadra (${data.total_crew})</div>`;
+      data.crew.forEach(m => {
+        const initials = (m.crew_name || '?').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+        const timeStr = m.start && m.end ? `${m.start} - ${m.end}` : (m.start || '');
+        html += `<div class="crew-member-item ${m.is_me ? 'is-me' : ''} ${m.is_leader ? 'is-leader' : ''}">
+          <div class="crew-member-avatar">${initials}</div>
+          <div class="crew-member-info">
+            <div class="crew-member-name">
+              ${m.is_leader ? '<span style="font-size:16px;margin-right:4px;">⭐</span>' : ''}${escapeHtmlCI(m.crew_name)}${m.is_me ? ' (Tu)' : ''}
+            </div>
+            <div class="crew-member-role">${escapeHtmlCI(m.function || '—')}${m.location ? ' • ' + escapeHtmlCI(m.location) : ''}</div>
+          </div>
+          ${timeStr ? `<div class="crew-member-time">${timeStr}</div>` : ''}
+        </div>`;
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="crew-info-empty">Nessun collega trovato per questo turno</div>';
+    }
+
+    // Sezione Mezzi
+    if (data.vehicles && data.vehicles.length > 0) {
+      html += `<div class="crew-info-section">
+        <div class="crew-info-section-title">🚛 Mezzi (${data.total_vehicles})</div>`;
+      data.vehicles.forEach(v => {
+        html += `<div class="vehicle-info-item">
+          <div class="vehicle-info-icon">🚛</div>
+          <div class="vehicle-info-details">
+            <div class="vehicle-info-name">${escapeHtmlCI(v.vehicle_name)}</div>
+            <div class="vehicle-info-driver">${v.driver_name ? '🧑‍✈️ Autista: ' + escapeHtmlCI(v.driver_name) : '⚠️ Nessun autista assegnato'}</div>
+          </div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    body.innerHTML = html || '<div class="crew-info-empty">Nessuna informazione disponibile</div>';
+
+  } catch (err) {
+    console.error('Errore caricamento crew info:', err);
+    body.innerHTML = '<div class="crew-info-empty">❌ Errore nel caricamento delle informazioni</div>';
+  }
+}
+
+function closeCrewInfoModal(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('crewInfoOverlay').classList.remove('active');
+}
+
+function escapeHtmlCI(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ===== Switch Activity Modal (Produzione) =====
+async function openSwitchActivityModal() {
+  const overlay = document.getElementById('switchActivityOverlay');
+  const body = document.getElementById('switchActivityBody');
+  
+  // Reset override progetto e griglia
+  _switchOverrideProject = null;
+  _switchGridProject = null;
+  _switchCurrentProject = null;
+  
+  // Prendi il progetto corrente dal turno visualizzato
+  const turno = allTurni[currentTurnoIndex] || {};
+  const projectCode = turno.project_code || '';
+  const projectName = turno.project_name || 'Progetto';
+  const plannedFunction = turno.function || 'Attività';
+  
+  // Mostra loading
+  body.innerHTML = '<div style="text-align:center;padding:20px;color:#888;">Caricamento...</div>';
+  overlay.classList.add('active');
+  
+  // Recupera attività attiva dal server
+  let currentActivityLabel = '';
+  let currentProjectCode = '';
+  let currentProjectName = '';
+  let currentNotes = '';
+  try {
+    const res = await fetch('/api/production/timer');
+    const timerData = await res.json();
+    if (timerData.ok && timerData.active && timerData.timer) {
+      currentActivityLabel = timerData.timer.activity_label || '';
+      currentProjectCode = timerData.timer.project_code || '';
+      currentProjectName = timerData.timer.project_name || '';
+      currentNotes = timerData.timer.notes || '';
+      // Salva progetto in corso per uso in griglia
+      _switchCurrentProject = { code: currentProjectCode, name: currentProjectName };
+    }
+  } catch(e) { console.warn('Errore recupero timer attivo:', e); }
+  
+  // Lista attività predefinite magazzino
+  const ACTIVITIES = [
+    { code: 'Preparazione', icon: '📦', label: 'Preparazione' },
+    { code: 'Carico', icon: '🚚', label: 'Carico' },
+    { code: 'Scarico', icon: '📥', label: 'Scarico' },
+    { code: 'Controllo', icon: '🔍', label: 'Controllo' },
+    { code: 'Pulizia', icon: '🧹', label: 'Pulizia' },
+    { code: 'Verifica', icon: '✅', label: 'Verifica' },
+    { code: 'Manutenzione', icon: '🔧', label: 'Manutenzione' },
+    { code: 'Altro', icon: '📝', label: 'Altro' }
+  ];
+  
+  let html = '';
+  
+  // 0. Pulsante Cambia Progetto in alto a tutto
+  html += `<div style="margin-bottom:14px;">
+    <button onclick="openNumpad()" style="width:100%;background:#3b82f6;color:#fff !important;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(59,130,246,0.3);display:flex;align-items:center;justify-content:center;gap:8px;">
+      🔢 Cambia Progetto
+    </button>
+  </div>`;
+  
+  // 1. Card IN CORSO (progetto + mansione in corso) con Cambio Attività
+  if (currentActivityLabel) {
+    html += `<div style="background:#e8f5e9;border:1px solid #4CAF50;border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="font-size:20px;">▶️</div>
+        <div style="flex:1;">
+          <div style="font-size:11px;color:#388E3C;font-weight:600;">IN CORSO</div>
+          <div style="font-weight:600;font-size:14px;color:#1b5e20;">${escapeHtmlCI(currentActivityLabel)}</div>
+        </div>
+      </div>
+      ${currentProjectCode ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #a5d6a7;">
+        <div style="font-size:10px;color:#388E3C;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">PROGETTO</div>
+        <div style="font-weight:700;font-size:13px;color:#1a56db;">P. ${escapeHtmlCI(currentProjectCode)}</div>
+        ${currentProjectName ? `<div style="font-size:12px;color:#1b5e20;">${escapeHtmlCI(currentProjectName)}</div>` : ''}
+      </div>` : ''}
+      ${currentNotes ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #a5d6a7;">
+        <div style="font-size:10px;color:#388E3C;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">📝 NOTE</div>
+        <div style="font-size:13px;color:#2e7d32;font-style:italic;margin-top:2px;">${escapeHtmlCI(currentNotes)}</div>
+      </div>` : ''}
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid #a5d6a7;">
+        <button onclick="showSwitchActivityGrid('current')" style="width:100%;padding:10px;background:#fff;color:#388E3C;border:2px solid #4CAF50;border-radius:10px;font-weight:600;cursor:pointer;font-size:13px;">
+          🔄 Cambio Attività
+        </button>
+      </div>
+    </div>`;
+  }
+  
+  // 2. Card combinata: Progetto Pianificato + Mansione (font ridotti)
+  // Nascondo se l'attività in corso coincide con quella pianificata (stesso progetto + stessa mansione)
+  const isSameAsCurrent = currentProjectCode && projectCode && 
+                          currentProjectCode.toString() === projectCode.toString() && 
+                          currentActivityLabel && plannedFunction &&
+                          currentActivityLabel.toLowerCase().trim() === plannedFunction.toLowerCase().trim();
+  
+  console.log('DEBUG Switch Modal:', {
+    currentProjectCode, projectCode,
+    currentActivityLabel, plannedFunction,
+    isSameAsCurrent
+  });
+  
+  if (!isSameAsCurrent) {
+    html += `<div id="switchDefaultView">
+      <div style="background:#fff3e0;border:2px solid #f59e0b;border-radius:12px;padding:12px;margin-bottom:14px;box-shadow:0 2px 8px rgba(245,158,11,0.15);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+          <div style="font-size:18px;">⭐</div>
+          <div style="font-size:11px;color:#f59e0b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Progetto Pianificato</div>
+        </div>
+        ${projectCode ? `<div style="font-weight:700;font-size:13px;color:#1a56db;margin-bottom:1px;letter-spacing:0.3px;">P. ${escapeHtmlCI(projectCode)}</div>` : ''}
+        <div style="font-weight:500;font-size:11px;color:#1a1a1a;margin-bottom:8px;">${escapeHtmlCI(projectName)}</div>
+        <div style="font-size:10px;color:#888;margin-bottom:1px;">MANSIONE</div>
+        <div style="font-weight:700;font-size:13px;color:#f59e0b;margin-bottom:12px;">${escapeHtmlCI(plannedFunction)}</div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="confirmSwitchActivity('${escapeHtmlCI(projectCode)}', '${escapeHtmlCI(projectName)}', '${escapeHtmlCI(plannedFunction)}')" style="flex:1.3;padding:10px;background:#4CAF50;color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:12px;box-shadow:0 3px 12px rgba(76,175,80,0.3);">
+            ▶️ Avvia Mansione Pianificata
+          </button>
+          <button onclick="showSwitchActivityGrid('planned')" style="flex:1;padding:10px;background:#fff;color:#f59e0b;border:2px solid #f59e0b;border-radius:10px;font-weight:600;cursor:pointer;font-size:12px;">
+            🔄 Cambia Attività
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }
+  
+  // 3. Card Progetto Manuale (nascosta, appare dopo numpad)
+  html += `<div id="switchManualProjectCard" style="display:none;background:#e3f2fd;border:2px solid #42a5f5;border-radius:12px;padding:16px;margin-bottom:14px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <div style="font-size:24px;">🔢</div>
+      <div style="font-size:13px;color:#1e88e5;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Progetto Manuale</div>
+    </div>
+    <div id="switchManualProjectCode" style="font-weight:800;font-size:17px;color:#1a56db;margin-bottom:2px;letter-spacing:0.3px;"></div>
+    <div id="switchManualProjectName" style="font-weight:600;font-size:13px;color:#1a1a1a;margin-bottom:12px;"></div>
+    <button onclick="showSwitchActivityGrid('manual')" style="width:100%;padding:12px;background:#1e88e5;color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px;box-shadow:0 3px 12px rgba(30,136,229,0.3);">
+      🔄 Cambia Attività
+    </button>
+  </div>`;
+  
+  // 4. Griglia attività (nascosta)
+  html += '<div id="switchActivityGrid" style="display:none;">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+  ACTIVITIES.forEach(a => {
+    const isCurrent = currentActivityLabel.toLowerCase() === a.code.toLowerCase();
+    const isAltro = a.code.toLowerCase() === 'altro';
+    // "Altro" rimane cliccabile anche se in corso (per cambiare note)
+    const blocked = isCurrent && !isAltro;
+    html += `
+      <div class="switch-activity-item${isCurrent ? ' current' : ''}"
+           onclick="${blocked ? '' : `gridActivityClick('${escapeHtmlCI(a.code)}')`}"
+           data-activity="${escapeHtmlCI(a.code)}"
+           style="cursor:${blocked ? 'default' : 'pointer'};text-align:center;padding:16px 10px;position:relative;${blocked ? 'opacity:0.5;' : ''}">
+        <div style="font-size:32px;margin-bottom:6px;">${a.icon}</div>
+        <div style="font-weight:600;font-size:13px;">${escapeHtmlCI(a.label)}</div>
+        ${isCurrent ? '<div style="position:absolute;top:6px;right:8px;background:#4CAF50;color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;">IN CORSO</div>' : ''}
+      </div>`;
+  });
+  html += '</div>';
+  html += `<button onclick="hideSwitchActivityGrid()" style="width:100%;margin-top:12px;padding:12px;background:#f5f5f5;color:#666;border:1px solid #ddd;border-radius:10px;font-weight:600;cursor:pointer;">
+    ← Indietro
+  </button>`;
+  html += '</div>';
+  
+  body.innerHTML = html;
+}
+
+// Progetto corrente selezionato per la griglia attività
+let _switchGridProject = null; // { code, name }
+
+function gridActivityClick(activityLabel) {
+  if (!_switchGridProject) return;
+  confirmSwitchActivity(_switchGridProject.code, _switchGridProject.name, activityLabel);
+}
+
+function showSwitchActivityGrid(source) {
+  const turno = allTurni[currentTurnoIndex] || {};
+  if (source === 'manual' && _switchOverrideProject) {
+    _switchGridProject = { code: _switchOverrideProject.code, name: _switchOverrideProject.name };
+  } else if (source === 'current') {
+    // Usa il progetto in corso (dal timer attivo) — lo prendiamo dai dati già nel DOM
+    const curCodeEl = document.querySelector('#switchActivityBody [style*="IN CORSO"]');
+    // Fallback: usa il progetto del turno se non riusciamo a estrarlo
+    _switchGridProject = _switchCurrentProject || { code: turno.project_code || '', name: turno.project_name || '' };
+  } else {
+    _switchGridProject = { code: turno.project_code || '', name: turno.project_name || '' };
+  }
+  const dv = document.getElementById('switchDefaultView');
+  if (dv) dv.style.display = 'none';
+  const mc = document.getElementById('switchManualProjectCard');
+  if (mc) mc.style.display = 'none';
+  document.getElementById('switchActivityGrid').style.display = 'block';
+}
+
+function hideSwitchActivityGrid() {
+  const dv = document.getElementById('switchDefaultView');
+  if (dv) dv.style.display = '';
+  if (_switchOverrideProject) {
+    const mc = document.getElementById('switchManualProjectCard');
+    if (mc) mc.style.display = '';
+  }
+  document.getElementById('switchActivityGrid').style.display = 'none';
+}
+
+function closeSwitchActivityModal(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('switchActivityOverlay').classList.remove('active');
+}
+
+// ═══ Tastierino Numerico Cambio Progetto ═══
+let _numpadValue = '';
+let _numpadFoundProject = null;  // { project_code, project_name }
+let _numpadSearchTimer = null;
+
+function openNumpad() {
+  _numpadValue = '';
+  _numpadFoundProject = null;
+  document.getElementById('numpadInput').value = '';
+  document.getElementById('numpadResult').innerHTML = '';
+  document.getElementById('numpadConfirmBtn').disabled = true;
+  document.getElementById('numpadOverlay').classList.add('active');
+}
+
+function closeNumpad(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('numpadOverlay').classList.remove('active');
+  if (_numpadSearchTimer) { clearTimeout(_numpadSearchTimer); _numpadSearchTimer = null; }
+}
+
+function numpadPress(digit) {
+  if (_numpadValue.length >= 10) return;
+  _numpadValue += digit;
+  document.getElementById('numpadInput').value = _numpadValue;
+  _numpadFoundProject = null;
+  document.getElementById('numpadConfirmBtn').disabled = true;
+  // Auto-search dopo 500ms di inattività
+  if (_numpadSearchTimer) clearTimeout(_numpadSearchTimer);
+  _numpadSearchTimer = setTimeout(() => numpadSearch(), 500);
+}
+
+function numpadDelete() {
+  _numpadValue = _numpadValue.slice(0, -1);
+  document.getElementById('numpadInput').value = _numpadValue;
+  _numpadFoundProject = null;
+  document.getElementById('numpadConfirmBtn').disabled = true;
+  if (_numpadValue.length > 0) {
+    if (_numpadSearchTimer) clearTimeout(_numpadSearchTimer);
+    _numpadSearchTimer = setTimeout(() => numpadSearch(), 500);
+  } else {
+    document.getElementById('numpadResult').innerHTML = '';
+  }
+}
+
+function numpadClear() {
+  _numpadValue = '';
+  _numpadFoundProject = null;
+  document.getElementById('numpadInput').value = '';
+  document.getElementById('numpadResult').innerHTML = '';
+  document.getElementById('numpadConfirmBtn').disabled = true;
+  if (_numpadSearchTimer) { clearTimeout(_numpadSearchTimer); _numpadSearchTimer = null; }
+}
+
+async function numpadSearch() {
+  const code = _numpadValue.trim();
+  if (!code) return;
+  
+  const resultEl = document.getElementById('numpadResult');
+  resultEl.innerHTML = '<span class="searching">🔍 Ricerca...</span>';
+  
+  try {
+    const res = await fetch('/api/production/project-lookup?code=' + encodeURIComponent(code));
+    const data = await res.json();
+    
+    if (data.ok) {
+      _numpadFoundProject = { project_code: data.project_code, project_name: data.project_name };
+      resultEl.innerHTML = `<span class="found">✅ ${escapeHtmlCI(data.project_name)}</span>`;
+      document.getElementById('numpadConfirmBtn').disabled = false;
+    } else {
+      _numpadFoundProject = null;
+      resultEl.innerHTML = `<span class="not-found">❌ ${data.error || 'Non trovato'}</span>`;
+      document.getElementById('numpadConfirmBtn').disabled = true;
+    }
+  } catch (err) {
+    _numpadFoundProject = null;
+    resultEl.innerHTML = '<span class="not-found">❌ Errore di connessione</span>';
+    document.getElementById('numpadConfirmBtn').disabled = true;
+  }
+}
+
+function numpadConfirm() {
+  if (!_numpadFoundProject) return;
+  
+  const newCode = _numpadFoundProject.project_code;
+  const newName = _numpadFoundProject.project_name;
+  
+  closeNumpad();
+  
+  // Salva override progetto
+  _switchOverrideProject = { code: newCode, name: newName };
+  
+  // Mostra la card progetto manuale
+  const card = document.getElementById('switchManualProjectCard');
+  if (card) {
+    document.getElementById('switchManualProjectCode').textContent = 'P. ' + newCode;
+    document.getElementById('switchManualProjectName').textContent = newName;
+    card.style.display = '';
+  }
+  
+  showToast('📋 Progetto manuale aggiunto: P. ' + newCode, 'info');
+}
+
+// Progetto override per il modal switch (se l'utente ha cambiato progetto manualmente)
+let _switchOverrideProject = null;
+let _switchCurrentProject = null;
+
+async function confirmSwitchActivity(projectCode, projectName, activityLabel) {
+  // Se attività è "Altro", chiedi note obbligatorie prima di procedere
+  if (activityLabel.toLowerCase() === 'altro') {
+    openNotesPopup(async (notes) => {
+      closeSwitchActivityModal();
+      await _doSwitchActivity(projectCode, projectName, activityLabel, notes);
+    });
+    return;
+  }
+  
+  closeSwitchActivityModal();
+  await _doSwitchActivity(projectCode, projectName, activityLabel, null);
+}
+
+async function _doSwitchActivity(projectCode, projectName, activityLabel, notes) {
+  // Mostra feedback visivo
+  const btn = document.getElementById('btnStartDay');
+  const origLabel = document.getElementById('labelStart').textContent;
+  document.getElementById('labelStart').textContent = 'Cambio...';
+  btn.disabled = true;
+  
+  try {
+    const payload = {
+      project_code: projectCode,
+      project_name: projectName,
+      activity_label: activityLabel
+    };
+    if (notes) payload.notes = notes;
+    
+    const resp = await fetch('/api/production/timer/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    const data = await resp.json();
+    
+    if (data.ok) {
+      showToast('✅ Attività cambiata: ' + activityLabel);
+      // Ricarica le timbrature per aggiornare lo stato
+      await loadTimbrature();
+    } else {
+      showToast('❌ Errore: ' + (data.error || 'Cambio attività fallito'));
+    }
+  } catch (err) {
+    console.error('Errore switch attività:', err);
+    showToast('❌ Errore di rete');
+  } finally {
+    document.getElementById('labelStart').textContent = origLabel;
+    btn.disabled = false;
+  }
 }
 
 // Refresh page function
@@ -3728,15 +5311,38 @@ async function unsubscribeFromPush() {
 updateClock();
 updateDate();
 setInterval(updateClock, 1000);
-loadTimbrature();
-loadTurno();
-loadPushState(); // Carica stato notifiche
-loadTimbraturaConfig(); // Carica configurazione timbratura (QR/GPS)
 
-// Sync offline timbrature se online
-if (navigator.onLine) {
-  syncOfflineTimbrature();
-}
+// Prima carica la config, poi le timbrature (l'ordine è importante!)
+(async function initPage() {
+  await loadTimbraturaConfig(); // PRIMA la config
+  loadTimbrature(); // POI le timbrature (usa is_production_group)
+  loadTurno();
+  loadPushState();
+  
+  if (navigator.onLine) {
+    syncOfflineTimbrature();
+  }
+})();
+
+// Ricarica dati quando si torna alla pagina (da bfcache o navigazione)
+window.addEventListener('pageshow', async function(event) {
+  if (event.persisted) {
+    console.log('Pagina ripristinata da bfcache, ricarico dati...');
+    await loadTimbraturaConfig();
+    loadTimbrature();
+    loadTurno();
+  }
+});
+
+// Ricarica dati quando la tab diventa visibile
+document.addEventListener('visibilitychange', async function() {
+  if (document.visibilityState === 'visible') {
+    console.log('Tab tornata visibile, ricarico dati...');
+    await loadTimbraturaConfig();
+    loadTimbrature();
+    loadTurno();
+  }
+});
 
 // Tema
 if (localStorage.getItem('theme') === 'dark') {
@@ -4807,6 +6413,247 @@ async function submitFlexWarningMotivation() {
         }
     } catch (err) {
         console.error('Errore salvataggio motivazione:', err);
+        showToast('Errore di connessione', 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LATE ARRIVAL (Ritardo) - Modal per giustificazione
+// ═══════════════════════════════════════════════════════════════════════
+let _pendingProductionActivity = null; // Attività da mostrare dopo chiusura popup ritardo
+
+function showLateArrivalPopup(lateData) {
+    // Rimuovi popup esistente se presente
+    const existingPopup = document.getElementById('lateArrivalPopup');
+    if (existingPopup) existingPopup.remove();
+    
+    const lateMinutes = lateData.late_minutes || 0;
+    const turnoStart = lateData.turno_start || '';
+    const requestId = lateData.request_id || null;
+    
+    const popup = document.createElement('div');
+    popup.id = 'lateArrivalPopup';
+    popup.dataset.requestId = requestId;
+    popup.innerHTML = `
+        <style>
+            #lateArrivalPopup {
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.6);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                padding: 20px;
+                animation: fadeIn 0.3s ease;
+            }
+            #lateArrivalPopup .popup-content {
+                background: white;
+                border-radius: 20px;
+                max-width: 380px;
+                width: 100%;
+                padding: 28px;
+                text-align: center;
+                animation: slideUp 0.3s ease;
+            }
+            #lateArrivalPopup .popup-icon {
+                width: 70px;
+                height: 70px;
+                background: linear-gradient(135deg, #dc2626, #b91c1c);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 16px;
+                font-size: 2rem;
+            }
+            #lateArrivalPopup h3 {
+                margin: 0 0 8px;
+                font-size: 1.25rem;
+                color: #1e293b;
+            }
+            #lateArrivalPopup .subtitle {
+                color: #64748b;
+                margin: 0 0 16px;
+                font-size: 0.9rem;
+            }
+            #lateArrivalPopup .late-box {
+                background: linear-gradient(135deg, #fee2e2, #fecaca);
+                padding: 16px;
+                border-radius: 12px;
+                margin: 16px 0;
+                border-left: 4px solid #dc2626;
+            }
+            #lateArrivalPopup .late-box .time {
+                font-size: 1.8rem;
+                font-weight: 700;
+                color: #991b1b;
+                margin-bottom: 4px;
+            }
+            #lateArrivalPopup .late-box .message {
+                font-size: 0.9rem;
+                color: #7f1d1d;
+            }
+            #lateArrivalPopup .info-text {
+                font-size: 0.85rem;
+                color: #64748b;
+                margin: 16px 0;
+                padding: 12px;
+                background: #f8fafc;
+                border-radius: 8px;
+                border-left: 3px solid #dc2626;
+            }
+            #lateArrivalPopup .motivation-section {
+                margin: 16px 0;
+                text-align: left;
+            }
+            #lateArrivalPopup .motivation-label {
+                font-size: 0.85rem;
+                font-weight: 600;
+                color: #374151;
+                margin-bottom: 8px;
+                display: block;
+            }
+            #lateArrivalPopup .motivation-label .required {
+                color: #ef4444;
+            }
+            #lateArrivalPopup .motivation-input {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e5e7eb;
+                border-radius: 10px;
+                font-size: 0.95rem;
+                resize: none;
+                transition: border-color 0.2s;
+                box-sizing: border-box;
+            }
+            #lateArrivalPopup .motivation-input:focus {
+                outline: none;
+                border-color: #dc2626;
+            }
+            #lateArrivalPopup .motivation-input.error {
+                border-color: #ef4444;
+            }
+            #lateArrivalPopup .error-msg {
+                color: #ef4444;
+                font-size: 0.8rem;
+                margin-top: 6px;
+                display: none;
+            }
+            #lateArrivalPopup .btn-ok {
+                width: 100%;
+                padding: 14px;
+                background: linear-gradient(135deg, #dc2626, #b91c1c);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                margin-top: 8px;
+            }
+            #lateArrivalPopup .btn-ok:active {
+                transform: scale(0.98);
+            }
+        </style>
+        <div class="popup-content">
+            <div class="popup-icon">⏰</div>
+            <h3>Ritardo Rilevato</h3>
+            <p class="subtitle">Ingresso oltre l'orario previsto</p>
+            
+            <div class="late-box">
+                <div class="time">+${lateMinutes} min</div>
+                <div class="message">Orario previsto: ${turnoStart}</div>
+            </div>
+            
+            <div class="info-text">
+                📝 È richiesta una giustificazione per il ritardo. 
+                La richiesta verrà inviata all'amministratore per l'approvazione.
+            </div>
+            
+            <div class="motivation-section">
+                <label class="motivation-label">
+                    Motivo del ritardo <span class="required">*</span>
+                </label>
+                <textarea id="lateArrivalMotivation" class="motivation-input" 
+                    rows="3" placeholder="Es: Traffico intenso, problema con i mezzi pubblici..." 
+                    maxlength="500"></textarea>
+                <div id="lateArrivalMotivationError" class="error-msg">
+                    La motivazione è obbligatoria
+                </div>
+            </div>
+            
+            <button class="btn-ok" onclick="submitLateArrivalMotivation()">Conferma Giustificazione</button>
+        </div>
+    `;
+    
+    document.body.appendChild(popup);
+    
+    // Focus sul campo motivazione
+    setTimeout(() => {
+        document.getElementById('lateArrivalMotivation')?.focus();
+    }, 300);
+}
+
+function closeLateArrivalPopup() {
+    const popup = document.getElementById('lateArrivalPopup');
+    if (popup) popup.remove();
+}
+
+async function submitLateArrivalMotivation() {
+    const popup = document.getElementById('lateArrivalPopup');
+    if (!popup) return;
+    
+    const requestId = popup.dataset.requestId;
+    const motivationInput = document.getElementById('lateArrivalMotivation');
+    const errorMsg = document.getElementById('lateArrivalMotivationError');
+    const motivation = motivationInput?.value.trim() || '';
+    
+    // Validazione
+    if (!motivation) {
+        motivationInput.classList.add('error');
+        errorMsg.style.display = 'block';
+        motivationInput.focus();
+        return;
+    }
+    
+    motivationInput.classList.remove('error');
+    errorMsg.style.display = 'none';
+    
+    // Disabilita il bottone durante l'invio
+    const btn = popup.querySelector('.btn-ok');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Invio...';
+    
+    try {
+        // Aggiorna la richiesta con la motivazione
+        const res = await fetch(`/api/user/requests/${requestId}/notes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes: motivation })
+        });
+        
+        if (res.ok) {
+            closeLateArrivalPopup();
+            showToast('✅ Giustificazione salvata', 'success');
+            await loadTimbrature();
+            // Mostra popup attività di produzione se era in attesa
+            if (_pendingProductionActivity) {
+                const activity = _pendingProductionActivity;
+                _pendingProductionActivity = null;
+                setTimeout(() => showProductionActivityPopup(activity), 500);
+            }
+        } else {
+            const data = await res.json();
+            showToast(data.error || 'Errore salvataggio giustificazione', 'error');
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (err) {
+        console.error('Errore salvataggio giustificazione:', err);
         showToast('Errore di connessione', 'error');
         btn.disabled = false;
         btn.textContent = originalText;
