@@ -5690,6 +5690,43 @@ def api_timbratura_registra():
                     pass
             
             if planned_minutes > 0:
+                # Sottrai la pausa pianificata per ottenere le ore nette pianificate
+                # (worked_minutes sottrae solo le pause effettivamente timbraste)
+                try:
+                    ensure_employee_shifts_table(db)
+                    break_row = db.execute(
+                        f"""SELECT break_start, break_end FROM employee_shifts 
+                           WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1""",
+                        (username, day_of_week)
+                    ).fetchone()
+                    if break_row:
+                        _bs = break_row['break_start'] if isinstance(break_row, dict) else break_row[0]
+                        _be = break_row['break_end'] if isinstance(break_row, dict) else break_row[1]
+                        if _bs and _be:
+                            if hasattr(_bs, 'total_seconds'):
+                                _bs_min = int(_bs.total_seconds()) // 60
+                            elif hasattr(_bs, 'hour'):
+                                _bs_min = _bs.hour * 60 + _bs.minute
+                            else:
+                                _bs_parts = str(_bs)[:5].split(':')
+                                _bs_min = int(_bs_parts[0]) * 60 + int(_bs_parts[1])
+                            if hasattr(_be, 'total_seconds'):
+                                _be_min = int(_be.total_seconds()) // 60
+                            elif hasattr(_be, 'hour'):
+                                _be_min = _be.hour * 60 + _be.minute
+                            else:
+                                _be_parts = str(_be)[:5].split(':')
+                                _be_min = int(_be_parts[0]) * 60 + int(_be_parts[1])
+                            planned_break = _be_min - _bs_min
+                            if planned_break > 0:
+                                planned_minutes -= planned_break
+                                app.logger.info(
+                                    "Extra Turno: planned_minutes ridotto da %s a %s (pausa pianificata %s min)",
+                                    planned_minutes + planned_break, planned_minutes, planned_break
+                                )
+                except Exception:
+                    pass
+                
                 # Calcola ore effettivamente lavorate dal giorno
                 # Recupera tutte le timbrature del giorno (inclusa l'attuale fine_giornata)
                 timbrature_giorno = db.execute(
@@ -18844,9 +18881,49 @@ def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start
         except Exception as e:
             app.logger.warning(f"Errore lettura pausa turno: {e}")
         
-        # 3. Calcola ore EFFETTIVE lavorate (ore lorde - pausa turno)
+        # 2b. Verifica se la pausa è stata effettivamente timbrata
+        #     Se non timbrata, non sottrarre pause → le ore lorde = ore nette
+        pausa_effettiva = 0
+        try:
+            pausa_rows = db.execute(
+                f"""SELECT tipo, ora FROM timbrature 
+                   WHERE username = {placeholder} AND data = {placeholder} 
+                   AND tipo IN ('inizio_pausa', 'fine_pausa')
+                   ORDER BY ora ASC""",
+                (username, today)
+            ).fetchall()
+            
+            pausa_inizio_tmp = None
+            for pr in pausa_rows:
+                pr_tipo = pr['tipo'] if isinstance(pr, dict) else pr[0]
+                pr_ora = pr['ora'] if isinstance(pr, dict) else pr[1]
+                if hasattr(pr_ora, 'total_seconds'):
+                    pr_min = int(pr_ora.total_seconds()) // 60
+                elif hasattr(pr_ora, 'strftime'):
+                    pr_min = pr_ora.hour * 60 + pr_ora.minute
+                else:
+                    pr_parts = str(pr_ora)[:5].split(':')
+                    pr_min = int(pr_parts[0]) * 60 + int(pr_parts[1])
+                
+                if pr_tipo == 'inizio_pausa':
+                    pausa_inizio_tmp = pr_min
+                elif pr_tipo == 'fine_pausa' and pausa_inizio_tmp is not None:
+                    pausa_effettiva += (pr_min - pausa_inizio_tmp)
+                    pausa_inizio_tmp = None
+        except Exception as e:
+            app.logger.warning(f"Errore lettura pausa effettiva: {e}")
+        
+        # Usa la pausa effettiva se timbrata, altrimenti 0 (nessuna pausa sottratta)
+        if pausa_effettiva > 0:
+            pausa_da_usare = pausa_effettiva
+            app.logger.info(f"Daily mode: pausa effettiva timbrata = {pausa_effettiva} min")
+        else:
+            pausa_da_usare = 0
+            app.logger.info(f"Daily mode: nessuna pausa timbrata, pausa = 0 min (turno prevedeva {pausa_turno_minuti} min)")
+        
+        # 3. Calcola ore EFFETTIVE lavorate (ore lorde - pausa effettiva)
         ore_lorde_effettive = fine_min - inizio_min
-        ore_nette_effettive = ore_lorde_effettive - pausa_turno_minuti
+        ore_nette_effettive = ore_lorde_effettive - pausa_da_usare
         
         # 4. Applica arrotondamento giornaliero alle ore nette EFFETTIVE
         blocco = rules.get('arrotondamento_giornaliero_minuti', 15)
@@ -18863,8 +18940,8 @@ def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start
         if ore_arrotondate < 0:
             ore_arrotondate = 0
         
-        # 5. Calcola ora_mod_fine = ora_inizio + ore_arrotondate + pausa_turno
-        ora_fine_mod_min = inizio_min + ore_arrotondate + pausa_turno_minuti
+        # 5. Calcola ora_mod_fine = ora_inizio + ore_arrotondate + pausa_effettiva
+        ora_fine_mod_min = inizio_min + ore_arrotondate + pausa_da_usare
         
         h = ora_fine_mod_min // 60
         m = ora_fine_mod_min % 60
@@ -18872,9 +18949,9 @@ def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start
         
         app.logger.info(
             f"Daily mode fine_giornata: inizio={ora_inizio_str}, fine_effettiva={ora_fine_str}, "
-            f"pausa_turno={pausa_turno_minuti}min, ore_lorde={ore_lorde_effettive}min, "
-            f"ore_nette={ore_nette_effettive}min, ore_arrot={ore_arrotondate}min, "
-            f"ora_mod={ora_mod}"
+            f"pausa_turno_pianificata={pausa_turno_minuti}min, pausa_effettiva={pausa_da_usare}min, "
+            f"ore_lorde={ore_lorde_effettive}min, ore_nette={ore_nette_effettive}min, "
+            f"ore_arrot={ore_arrotondate}min, ora_mod={ora_mod}"
         )
         
         return ora_mod
