@@ -5797,36 +5797,41 @@ def api_timbratura_registra():
             # Usa le regole specifiche dell'utente (gruppo o globali)
             rules_for_late = get_user_timbratura_rules(db, username)
             
+            # Determina se il gruppo è di produzione
+            _is_production_late = False
+            try:
+                _user_grp = db.execute(
+                    f"SELECT g.is_production FROM app_users u JOIN user_groups g ON u.group_id = g.id WHERE u.username = {placeholder}",
+                    (username,)
+                ).fetchone()
+                _is_production_late = bool(
+                    (_user_grp['is_production'] if isinstance(_user_grp, dict) else _user_grp[0]) if _user_grp else False
+                )
+            except Exception:
+                pass
+            
             app.logger.info(
-                "Checking Late Arrival: user=%s, ora=%s, ora_mod=%s, turno_start=%s, threshold=%s",
-                username, ora, ora_mod, turno_start, rules_for_late.get('late_threshold_minutes', 15)
+                "Checking Late Arrival: user=%s, ora=%s, ora_mod=%s, turno_start=%s, threshold=%s, is_production=%s, flex=%s",
+                username, ora, ora_mod, turno_start, rules_for_late.get('late_threshold_minutes', 15),
+                _is_production_late, rules_for_late.get('flessibilita_ingresso_minuti', 0)
             )
             
             late_arrival_data = _detect_late_arrival(
                 ora_timbrata=ora,
                 ora_mod=ora_mod,
                 turno_start=turno_start,
-                rules=rules_for_late
+                rules=rules_for_late,
+                is_production=_is_production_late
             )
             
             if late_arrival_data:
-                # Aggiungi info is_production al late_data
-                try:
-                    _user_grp = db.execute(
-                        f"SELECT g.is_production FROM app_users u JOIN user_groups g ON u.group_id = g.id WHERE u.username = {placeholder}",
-                        (username,)
-                    ).fetchone()
-                    late_arrival_data['is_production'] = bool(
-                        (_user_grp['is_production'] if isinstance(_user_grp, dict) else _user_grp[0]) if _user_grp else False
-                    )
-                except Exception:
-                    late_arrival_data['is_production'] = False
+                late_arrival_data['is_production'] = _is_production_late
                 
                 app.logger.info(
-                    "Late Arrival rilevato per %s: late_minutes=%s, threshold=%s, is_production=%s",
+                    "Late Arrival rilevato per %s: late_minutes=%s, threshold_effettivo=%s, is_production=%s",
                     username, late_arrival_data.get("late_minutes"), 
                     late_arrival_data.get("threshold"),
-                    late_arrival_data.get("is_production")
+                    _is_production_late
                 )
                 
                 # Crea automaticamente la richiesta di Giustificazione Ritardo
@@ -18531,16 +18536,22 @@ def _detect_late_arrival(
     ora_timbrata: str,
     ora_mod: str,
     turno_start: str,
-    rules: dict
+    rules: dict,
+    is_production: bool = False
 ) -> Optional[dict]:
     """
     Rileva se una timbratura di inizio giornata è in ritardo rispetto al turno.
+    
+    Per gruppi ufficio (non produzione) con flessibilità, il ritardo scatta
+    solo se supera la flessibilità di ingresso.
+    Per gruppi produzione, usa late_threshold_minutes direttamente.
     
     Args:
         ora_timbrata: ora effettiva della timbratura (HH:MM o HH:MM:SS)
         ora_mod: ora modificata/normalizzata (HH:MM:SS)
         turno_start: ora inizio turno previsto (HH:MM)
-        rules: regole del gruppo con late_threshold_minutes
+        rules: regole del gruppo con late_threshold_minutes e flessibilita_ingresso_minuti
+        is_production: True se il gruppo è di produzione
     
     Returns:
         dict con late_minutes e threshold se ritardo rilevato, None altrimenti
@@ -18548,10 +18559,17 @@ def _detect_late_arrival(
     if not turno_start:
         return None
     
-    # Verifica se il controllo ritardi è attivo per questo gruppo
+    # Soglia base per il ritardo
     late_threshold = rules.get('late_threshold_minutes', 15)
     if late_threshold <= 0:
         return None  # Controllo ritardi disabilitato
+    
+    # Per gruppi ufficio (non produzione): il ritardo scatta solo oltre la flessibilità
+    flex_ingresso = rules.get('flessibilita_ingresso_minuti', 0)
+    if not is_production and flex_ingresso > 0:
+        effective_threshold = max(late_threshold, flex_ingresso)
+    else:
+        effective_threshold = late_threshold
     
     # Converti in minuti
     parts = ora_timbrata.split(':')
@@ -18566,20 +18584,22 @@ def _detect_late_arrival(
     if late_minutes <= 0:
         return None  # Non è in ritardo (arrivato in anticipo o puntuale)
     
-    if late_minutes < late_threshold:
-        return None  # Ritardo minore della soglia, non richiede giustificazione
+    if late_minutes <= effective_threshold:
+        app.logger.info(
+            f"Late arrival within tolerance: ora_timbrata={ora_timbrata}, turno_start={turno_start}, "
+            f"late_minutes={late_minutes}, effective_threshold={effective_threshold} "
+            f"(threshold={late_threshold}, flex={flex_ingresso}, is_production={is_production})"
+        )
+        return None  # Ritardo coperto dalla flessibilità o sotto soglia
     
     app.logger.info(
         f"Late arrival detected: ora_timbrata={ora_timbrata}, turno_start={turno_start}, "
-        f"late_minutes={late_minutes}, threshold={late_threshold}"
+        f"late_minutes={late_minutes}, effective_threshold={effective_threshold}"
     )
-    
-    # Includi info flessibilità per gruppi ufficio
-    flex_ingresso = rules.get('flessibilita_ingresso_minuti', 0)
     
     return {
         "late_minutes": late_minutes,
-        "threshold": late_threshold,
+        "threshold": effective_threshold,
         "turno_start": turno_start,
         "ora_timbrata": ora_timbrata,
         "ora_mod": ora_mod,
