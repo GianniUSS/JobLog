@@ -5810,10 +5810,23 @@ def api_timbratura_registra():
             )
             
             if late_arrival_data:
+                # Aggiungi info is_production al late_data
+                try:
+                    _user_grp = db.execute(
+                        f"SELECT g.is_production FROM app_users u JOIN user_groups g ON u.group_id = g.id WHERE u.username = {placeholder}",
+                        (username,)
+                    ).fetchone()
+                    late_arrival_data['is_production'] = bool(
+                        (_user_grp['is_production'] if isinstance(_user_grp, dict) else _user_grp[0]) if _user_grp else False
+                    )
+                except Exception:
+                    late_arrival_data['is_production'] = False
+                
                 app.logger.info(
-                    "Late Arrival rilevato per %s: late_minutes=%s, threshold=%s",
+                    "Late Arrival rilevato per %s: late_minutes=%s, threshold=%s, is_production=%s",
                     username, late_arrival_data.get("late_minutes"), 
-                    late_arrival_data.get("threshold")
+                    late_arrival_data.get("threshold"),
+                    late_arrival_data.get("is_production")
                 )
                 
                 # Crea automaticamente la richiesta di Giustificazione Ritardo
@@ -18561,12 +18574,16 @@ def _detect_late_arrival(
         f"late_minutes={late_minutes}, threshold={late_threshold}"
     )
     
+    # Includi info flessibilità per gruppi ufficio
+    flex_ingresso = rules.get('flessibilita_ingresso_minuti', 0)
+    
     return {
         "late_minutes": late_minutes,
         "threshold": late_threshold,
         "turno_start": turno_start,
         "ora_timbrata": ora_timbrata,
-        "ora_mod": ora_mod
+        "ora_mod": ora_mod,
+        "flessibilita_ingresso_minuti": flex_ingresso,
     }
 
 
@@ -18603,6 +18620,9 @@ def _create_late_arrival_request(
         notes = f"Ritardo di {late_minutes} minuti rispetto all'orario previsto ({turno_start})"
         
         # Extra data con dettagli
+        flex_ingresso = late_data.get("flessibilita_ingresso_minuti", 0)
+        is_production = late_data.get("is_production", False)
+        
         extra_data = {
             "tipo_timbratura": "inizio_giornata",
             "ora_timbrata": late_data["ora_timbrata"],
@@ -18611,7 +18631,9 @@ def _create_late_arrival_request(
             "late_minutes": late_minutes,
             "threshold": late_data["threshold"],
             "auto_created": True,
-            "created_reason": "late_arrival_detection"
+            "created_reason": "late_arrival_detection",
+            "is_production": is_production,
+            "flessibilita_ingresso_minuti": flex_ingresso,
         }
         extra_data_json = json.dumps(extra_data)
         
