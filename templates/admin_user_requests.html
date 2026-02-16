@@ -1249,7 +1249,10 @@
         function renderRequestCard(r) {
             console.log('Rendering request:', r.id, 'cdc:', r.cdc, 'attachment:', r.attachment_path);
             const statusClass = `status-${r.status}`;
-            const statusLabels = { pending: 'In attesa', approved: 'Approvata', rejected: 'Respinta' };
+            // Label personalizzate per Giustificazione Ritardo (type 19)
+            const statusLabels = r.request_type_id === 19
+                ? { pending: 'In attesa', approved: 'Giustificazione accettata', rejected: 'Ritardo registrato' }
+                : { pending: 'In attesa', approved: 'Approvata', rejected: 'Respinta' };
             const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km', minutes: 'min' };
             const valueUnit = valueUnits[r.value_type] || '';
             
@@ -1549,6 +1552,22 @@
 
             currentRequestId = id;
             document.getElementById('reviewNotes').value = '';
+
+            // Personalizza bottoni e label per tipo 19 (Giustificazione Ritardo)
+            const btnApprove = document.getElementById('btnApprove');
+            const btnReject = document.getElementById('btnReject');
+            const notesLabel = document.querySelector('#reviewNotes')?.previousElementSibling;
+            if (r.request_type_id === 19) {
+                btnApprove.innerHTML = '✅ Accetta giustificazione';
+                btnReject.innerHTML = '⏰ Registra ritardo';
+                btnReject.className = 'btn btn-warning';
+                if (notesLabel) notesLabel.textContent = 'Motivazione (minimo 10 caratteri)';
+            } else {
+                btnApprove.innerHTML = '✅ Approva';
+                btnReject.innerHTML = '❌ Respingi';
+                btnReject.className = 'btn btn-danger';
+                if (notesLabel) notesLabel.textContent = 'Note di revisione (opzionale)';
+            }
 
             const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km', minutes: 'min' };
             const valueUnit = valueUnits[r.value_type] || '';
@@ -1929,6 +1948,15 @@
             if (!currentRequestId) return;
 
             const notes = document.getElementById('reviewNotes').value.trim();
+            
+            // Per Giustificazione Ritardo (type 19), la motivazione deve avere almeno 10 caratteri
+            const currentReq = allRequests.find(req => req.id === currentRequestId);
+            if (currentReq && currentReq.request_type_id === 19 && notes.length < 10) {
+                showToast('La motivazione deve essere di almeno 10 caratteri', 'danger');
+                document.getElementById('reviewNotes').focus();
+                return;
+            }
+            
             const overtimeTimesGroup = document.getElementById('overtimeTimesGroup');
             
             // Prepara payload
@@ -1992,8 +2020,14 @@
                 closeModal();
                 loadRequests();
                 
-                const statusLabel = status === 'approved' ? 'approvata' : 'respinta';
-                showToast(`Richiesta ${statusLabel} con successo`, 'success');
+                // Messaggio personalizzato per Giustificazione Ritardo (type 19)
+                let toastMsg;
+                if (currentReq && currentReq.request_type_id === 19) {
+                    toastMsg = status === 'approved' ? 'Giustificazione accettata' : 'Ritardo registrato';
+                } else {
+                    toastMsg = status === 'approved' ? 'Richiesta approvata con successo' : 'Richiesta respinta';
+                }
+                showToast(toastMsg, 'success');
             } catch (err) {
                 console.error('❌ Errore revisione:', err);
                 showToast(err.message, 'danger');
