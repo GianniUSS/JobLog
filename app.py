@@ -18564,10 +18564,11 @@ def _detect_late_arrival(
     if late_threshold <= 0:
         return None  # Controllo ritardi disabilitato
     
-    # Per gruppi ufficio (non produzione): il ritardo scatta solo oltre la flessibilità
+    # Per gruppi ufficio (non produzione): flessibilità + threshold
+    # Es: turno 09:00, flex 30 min, threshold 15 min → ritardo solo dopo 09:45
     flex_ingresso = rules.get('flessibilita_ingresso_minuti', 0)
     if not is_production and flex_ingresso > 0:
-        effective_threshold = max(late_threshold, flex_ingresso)
+        effective_threshold = flex_ingresso + late_threshold
     else:
         effective_threshold = late_threshold
     
