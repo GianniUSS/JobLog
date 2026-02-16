@@ -1362,13 +1362,19 @@
                     const oraTimbrata = formatTime(ed.ora_timbrata);
                     const lateMinutes = ed.late_minutes || 0;
                     const flexMinuti = ed.flessibilita_ingresso_minuti || 0;
+                    const lateThreshold = ed.late_threshold_minutes || 15;
                     const isProduction = ed.is_production || false;
                     
-                    // Mostra flessibilità solo per operatori ufficio (non produzione)
+                    // Mostra flessibilità e tolleranza
                     const flexHtml = (!isProduction && flexMinuti > 0) ? `
                                 <div class="overtime-box">
                                     <div class="overtime-box-label">⏳ Flessibilità</div>
                                     <div class="overtime-box-value" style="color: #2563eb;">${flexMinuti} min</div>
+                                </div>` : '';
+                    const thresholdHtml = (lateThreshold > 0) ? `
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">🔔 Tolleranza</div>
+                                    <div class="overtime-box-value" style="color: #92400e;">${lateThreshold} min</div>
                                 </div>` : '';
                     
                     overtimeHtml = `
@@ -1388,6 +1394,7 @@
                                     <div class="overtime-box-value" style="font-weight: bold; color: #f59e0b;">${lateMinutes} min</div>
                                 </div>
                                 ${flexHtml}
+                                ${thresholdHtml}
                             </div>
                             <div class="overtime-source">${ed.auto_created ? '🤖 Rilevato automaticamente' : '📝 Inserito manualmente'}</div>
                         </div>`;
@@ -1775,6 +1782,7 @@
                 const turnoStart = formatTime(ed.turno_start);
                 const lateMinutes = ed.late_minutes || 0;
                 const threshold = ed.threshold || 15;
+                const lateThreshold = ed.late_threshold_minutes || 15;
                 const flexMinuti = ed.flessibilita_ingresso_minuti || 0;
                 const isProduction = ed.is_production || false;
                 
@@ -1782,10 +1790,14 @@
                 const flexRow = (!isProduction && flexMinuti > 0)
                     ? `<div class="summary-row"><span class="summary-label">⏳ Flessibilità ingresso</span><span class="summary-value" style="color: #2563eb; font-weight: 600;">${flexMinuti} minuti</span></div>`
                     : '';
+                const thresholdRow = (lateThreshold > 0)
+                    ? `<div class="summary-row"><span class="summary-label">🔔 Tolleranza ritardo</span><span class="summary-value" style="color: #92400e; font-weight: 600;">${lateThreshold} minuti</span></div>`
+                    : '';
                 
                 lateArrivalInfo = `
                     <div class="summary-row"><span class="summary-label">Turno previsto</span><span class="summary-value">${turnoStart}</span></div>
                     ${flexRow}
+                    ${thresholdRow}
                     <div class="summary-row"><span class="summary-label">Timbrata</span><span class="summary-value" style="font-weight: bold; color: #dc3545;">${oraTimbrata}</span></div>
                     <div class="summary-row"><span class="summary-label">Ritardo</span><span class="summary-value">${lateMinutes} minuti</span></div>
                     <hr style="margin: 8px 0; border-color: #e9ecef;">

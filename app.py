@@ -5790,6 +5790,7 @@ def api_timbratura_registra():
     # ═══════════════════════════════════════════════════════════════════════════
     late_arrival_request_id = None
     late_arrival_data = None
+    _is_production_late = False
     
     # Rileva ritardi SOLO per inizio_giornata (per tutti i gruppi)
     if tipo == 'inizio_giornata':
@@ -6043,8 +6044,11 @@ def api_timbratura_registra():
             "detected": True,
             "late_minutes": late_arrival_data.get("late_minutes"),
             "threshold": late_arrival_data.get("threshold"),
+            "late_threshold_minutes": late_arrival_data.get("late_threshold_minutes", 15),
             "turno_start": late_arrival_data.get("turno_start"),
-            "request_id": late_arrival_request_id
+            "request_id": late_arrival_request_id,
+            "flessibilita_ingresso_minuti": late_arrival_data.get("flessibilita_ingresso_minuti", 0),
+            "is_production": _is_production_late
         }
     
     # ═══════════════════════════════════════════════════════════════════
@@ -18601,6 +18605,7 @@ def _detect_late_arrival(
     return {
         "late_minutes": late_minutes,
         "threshold": effective_threshold,
+        "late_threshold_minutes": late_threshold,
         "turno_start": turno_start,
         "ora_timbrata": ora_timbrata,
         "ora_mod": ora_mod,
@@ -18651,6 +18656,7 @@ def _create_late_arrival_request(
             "turno_start": turno_start,
             "late_minutes": late_minutes,
             "threshold": late_data["threshold"],
+            "late_threshold_minutes": late_data.get("late_threshold_minutes", 15),
             "auto_created": True,
             "created_reason": "late_arrival_detection",
             "is_production": is_production,

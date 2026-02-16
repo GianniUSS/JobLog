@@ -6432,6 +6432,9 @@ function showLateArrivalPopup(lateData) {
     const lateMinutes = lateData.late_minutes || 0;
     const turnoStart = lateData.turno_start || '';
     const requestId = lateData.request_id || null;
+    const flexMinuti = lateData.flessibilita_ingresso_minuti || 0;
+    const lateThreshold = lateData.late_threshold_minutes || 15;
+    const isProduction = lateData.is_production || false;
     
     const popup = document.createElement('div');
     popup.id = 'lateArrivalPopup';
@@ -6567,6 +6570,18 @@ function showLateArrivalPopup(lateData) {
                 <div class="time">+${lateMinutes} min</div>
                 <div class="message">Orario previsto: ${turnoStart}</div>
             </div>
+            <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+            ${!isProduction && flexMinuti > 0 ? `
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2rem;">⏳</span>
+                <span style="color: #1e40af; font-size: 0.9rem;">Flessibilità ingresso: <strong>${flexMinuti} min</strong></span>
+            </div>` : ''}
+            ${lateThreshold > 0 ? `
+            <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2rem;">🔔</span>
+                <span style="color: #92400e; font-size: 0.9rem;">Tolleranza ritardo: <strong>${lateThreshold} min</strong></span>
+            </div>` : ''}
+            </div>
             
             <div class="info-text">
                 📝 È richiesta una giustificazione per il ritardo. 
@@ -6611,9 +6626,10 @@ async function submitLateArrivalMotivation() {
     const errorMsg = document.getElementById('lateArrivalMotivationError');
     const motivation = motivationInput?.value.trim() || '';
     
-    // Validazione
-    if (!motivation) {
+    // Validazione: minimo 10 caratteri
+    if (!motivation || motivation.length < 10) {
         motivationInput.classList.add('error');
+        errorMsg.textContent = !motivation ? 'La motivazione è obbligatoria' : 'La motivazione deve essere di almeno 10 caratteri';
         errorMsg.style.display = 'block';
         motivationInput.focus();
         return;
