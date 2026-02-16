@@ -1128,10 +1128,31 @@
                 } else if (hasData && dayData.ore_lavorate) {
                     const [h, m] = dayData.ore_lavorate.split(':').map(Number);
                     const mins = h * 60 + m;
+                    
+                    // Controlla se c'è Extra Turno pendente per sottrarlo dal display
+                    const cd = dayData.calcolo_dettagli;
+                    const etPending = cd && cd.extra_turno_request_status === 'pending' && cd.straordinario_arrotondato_minuti > 0;
+                    const etRejected = cd && cd.extra_turno_request_status === 'rejected' && cd.straordinario_arrotondato_minuti > 0;
+                    
+                    let displayMins = mins;
+                    let extraIcon = '';
+                    if (etPending) {
+                        displayMins = mins - (cd.straordinario_arrotondato_minuti || 0);
+                        if (displayMins < 0) displayMins = 0;
+                        extraIcon = ' ⏳';
+                    } else if (etRejected) {
+                        displayMins = mins - (cd.straordinario_arrotondato_minuti || 0);
+                        if (displayMins < 0) displayMins = 0;
+                    }
+                    
                     let hoursClass = 'complete';
-                    if (mins < 480) hoursClass = 'partial';
-                    if (mins < 240) hoursClass = 'missing';
-                    hoursHtml = `<div class="day-hours ${hoursClass}">${dayData.ore_lavorate}</div>`;
+                    if (displayMins < 480) hoursClass = 'partial';
+                    if (displayMins < 240) hoursClass = 'missing';
+                    
+                    const displayH = Math.floor(displayMins / 60);
+                    const displayM = displayMins % 60;
+                    const displayStr = `${displayH}:${String(displayM).padStart(2, '0')}`;
+                    hoursHtml = `<div class="day-hours ${hoursClass}">${displayStr}${extraIcon}</div>`;
                 } else if (!isWeekend) {
                     const isPast = new Date(year, month, day) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
                     if (isPast) {
@@ -1491,10 +1512,31 @@
                             </div>`;
                             
                             // Extra turno confermato (straordinario effettivamente conteggiato)
+                            // Controlla lo status della richiesta Extra Turno per questa giornata
                             const extraConfermato = calcRiepilogo.straordinario_arrotondato_minuti || 0;
+                            const etStatus = calcRiepilogo.extra_turno_request_status;
+                            let etLabel, etIcon, etClass;
+                            if (etStatus === 'approved') {
+                                etLabel = 'Extra turno confermato';
+                                etIcon = 'fa-check-circle';
+                                etClass = extraConfermato > 0 ? 'success' : 'muted';
+                            } else if (etStatus === 'pending') {
+                                etLabel = 'Extra turno (in attesa di approvazione)';
+                                etIcon = 'fa-hourglass-half';
+                                etClass = 'warning';
+                            } else if (etStatus === 'rejected') {
+                                etLabel = 'Extra turno (rifiutato)';
+                                etIcon = 'fa-times-circle';
+                                etClass = 'danger';
+                            } else {
+                                // Nessuna richiesta Extra Turno per questa giornata
+                                etLabel = 'Extra turno (calcolato)';
+                                etIcon = 'fa-calculator';
+                                etClass = extraConfermato > 0 ? 'info' : 'muted';
+                            }
                             html += `<div class="detail-row">
-                                <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-check-circle"></i> Extra turno confermato</div>
-                                <div class="detail-value ${extraConfermato > 0 ? 'success' : 'muted'}">${formatMinutes(extraConfermato)}</div>
+                                <div class="detail-label" style="padding-left: 15px;"><i class="fas ${etIcon}"></i> ${etLabel}</div>
+                                <div class="detail-value ${etClass}">${formatMinutes(extraConfermato)}</div>
                             </div>`;
                             
                             // Ore in meno (se lavorate meno del turno)
@@ -1510,9 +1552,34 @@
                             // TOTALE FINALE
                             // ═══════════════════════════════════════════════════════════
                             html += `<div style="border-top: 2px solid var(--primary); margin: 12px 0;"></div>`;
+                            
+                            // Se Extra Turno è pending, non includerlo nel totale giornata
+                            let totaleGiornataDisplay = dayData.ore_lavorate;
+                            let totaleGiornataClass = 'success';
+                            let totaleGiornataNote = '';
+                            if (etStatus === 'pending' && extraConfermato > 0) {
+                                // Sottrai lo straordinario arrotondato dal totale
+                                const totaleMinuti = calcRiepilogo.ore_arrotondate_minuti - extraConfermato;
+                                totaleGiornataDisplay = formatMinutes(Math.max(0, totaleMinuti));
+                                totaleGiornataNote = `<div style="font-size: 11px; color: #f57c00; margin-top: 4px;">
+                                    <i class="fas fa-info-circle"></i> Extra turno escluso (in attesa di approvazione)
+                                </div>`;
+                            } else if (etStatus === 'rejected' && extraConfermato > 0) {
+                                // Anche se rifiutato, mostra senza extra turno
+                                const totaleMinuti = calcRiepilogo.ore_arrotondate_minuti - extraConfermato;
+                                totaleGiornataDisplay = formatMinutes(Math.max(0, totaleMinuti));
+                                totaleGiornataClass = 'warning';
+                                totaleGiornataNote = `<div style="font-size: 11px; color: #e53935; margin-top: 4px;">
+                                    <i class="fas fa-times-circle"></i> Extra turno rifiutato
+                                </div>`;
+                            }
+                            
                             html += `<div class="detail-row" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 10px; border-radius: 8px;">
                                 <div class="detail-label"><i class="fas fa-check-double"></i> <strong>TOTALE GIORNATA</strong></div>
-                                <div class="detail-value success" style="font-size: 20px; font-weight: bold;">${dayData.ore_lavorate}</div>
+                                <div class="detail-value ${totaleGiornataClass}" style="font-size: 20px; font-weight: bold;">
+                                    ${totaleGiornataDisplay}
+                                    ${totaleGiornataNote}
+                                </div>
                             </div>`;
                             
                         } else {
