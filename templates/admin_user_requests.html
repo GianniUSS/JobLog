@@ -1715,11 +1715,27 @@
                 
                 if (workedMins > 0 && plannedMins > 0) {
                     // Nuovo formato: mostra ore lavorate vs pianificate
+                    // Per daily_overtime: mostra cosa succede se approvi/respingi
+                    const rejectionEnd = ed.rejection_end_time ? formatTime(ed.rejection_end_time) : plannedEnd;
+                    const approvalEnd = formatTime(ed.ora_mod);
+                    const pausaInfo = ed.pausa_effettiva_minuti > 0 
+                        ? `<div class="summary-row"><span class="summary-label">Pausa effettiva</span><span class="summary-value">${ed.pausa_effettiva_minuti} min</span></div>`
+                        : `<div class="summary-row"><span class="summary-label">Pausa</span><span class="summary-value" style="color: #dc3545;">Non timbrata</span></div>`;
                     extraInfo = `
                         <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${plannedStart} - ${plannedEnd}</span></div>
+                        ${pausaInfo}
                         <div class="summary-row"><span class="summary-label">Ore Pianificate</span><span class="summary-value">${formatMinToHM(plannedMins)}</span></div>
                         <div class="summary-row"><span class="summary-label">Ore Lavorate</span><span class="summary-value" style="font-weight: bold;">${formatMinToHM(workedMins)}</span></div>
                         <div class="summary-row"><span class="summary-label">Extra</span><span class="summary-value" style="font-weight: bold; color: #f59e0b;">+${formatMinToHM(extraMins)}</span></div>
+                        <hr style="margin: 8px 0; border-color: #e9ecef;">
+                        <div class="summary-row" style="background: #d4edda; padding: 4px 8px; border-radius: 4px;">
+                            <span class="summary-label" style="color: #155724;">✅ Se APPROVI</span>
+                            <span class="summary-value" style="color: #155724; font-weight: bold;">Uscita ${approvalEnd} (+${formatMinToHM(extraMins)} extra)</span>
+                        </div>
+                        <div class="summary-row" style="background: #f8d7da; padding: 4px 8px; border-radius: 4px; margin-top: 4px;">
+                            <span class="summary-label" style="color: #721c24;">❌ Se RESPINGI</span>
+                            <span class="summary-value" style="color: #721c24; font-weight: bold;">Uscita ${rejectionEnd} (solo ${formatMinToHM(plannedMins)})</span>
+                        </div>
                     `;
                 } else {
                     // Formato legacy: timbrata originale/arrotondata
@@ -1772,6 +1788,7 @@
                     overtimeTimesGroup.dataset.plannedStart = plannedStart;
                     overtimeTimesGroup.dataset.plannedEnd = plannedEnd;
                     overtimeTimesGroup.dataset.extraType = ed.extra_type || '';
+                    overtimeTimesGroup.dataset.rejectionEndTime = ed.rejection_end_time ? formatTime(ed.rejection_end_time) : '';
                     overtimeTimesGroup.style.display = 'block';
                 }
             } else {
@@ -1995,9 +2012,15 @@
                     // EXTRA TURNO
                     const extraType = overtimeTimesGroup.dataset.extraType || '';
                     if (status === 'rejected') {
-                        // RESPINTO: usa gli orari del turno pianificato
-                        payload.rounded_start = overtimeTimesGroup.dataset.plannedStart || '';
-                        payload.rounded_end = overtimeTimesGroup.dataset.plannedEnd || '';
+                        if (extraType === 'daily_overtime') {
+                            // DAILY OVERTIME RESPINTO: usa l'orario calcolato per le ore pianificate
+                            // (tiene conto della pausa effettiva, non quella pianificata)
+                            payload.rounded_end = overtimeTimesGroup.dataset.rejectionEndTime || overtimeTimesGroup.dataset.plannedEnd || '';
+                        } else {
+                            // ALTRI TIPI RESPINTI: usa gli orari del turno pianificato
+                            payload.rounded_start = overtimeTimesGroup.dataset.plannedStart || '';
+                            payload.rounded_end = overtimeTimesGroup.dataset.plannedEnd || '';
+                        }
                     } else if (extraType === 'daily_overtime') {
                         // DAILY OVERTIME: non modificare orari individuali
                         // Le timbrature hanno già l'ora_mod corretta dal rounding giornaliero

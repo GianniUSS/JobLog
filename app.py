@@ -5759,18 +5759,23 @@ def api_timbratura_registra():
                 inizio = None
                 pausa_start = None
                 pausa_totale = 0
+                first_inizio_min = None
+                total_pausa_effettiva = 0
                 
                 for t_tipo, t_ora_str in all_timbrature:
                     t_parts = t_ora_str.split(':')
                     t_min = int(t_parts[0]) * 60 + int(t_parts[1])
                     
                     if t_tipo == 'inizio_giornata':
+                        if first_inizio_min is None:
+                            first_inizio_min = t_min
                         inizio = t_min
                         pausa_totale = 0
                     elif t_tipo == 'inizio_pausa' and inizio is not None:
                         pausa_start = t_min
                     elif t_tipo == 'fine_pausa' and pausa_start is not None:
                         pausa_totale += (t_min - pausa_start)
+                        total_pausa_effettiva += (t_min - pausa_start)
                         pausa_start = None
                     elif t_tipo == 'fine_giornata' and inizio is not None:
                         worked_minutes += (t_min - inizio - pausa_totale)
@@ -5785,11 +5790,26 @@ def api_timbratura_registra():
                 )
                 
                 if extra_minutes > 0:
+                    # Calcola l'ora di uscita per il caso RIFIUTO:
+                    # inizio + ore_pianificate_nette + pausa_effettiva → dà esattamente le ore del turno
+                    rejection_end_time = turno_end or ""
+                    if first_inizio_min is not None:
+                        rej_end_min = first_inizio_min + planned_minutes + total_pausa_effettiva
+                        rej_h = rej_end_min // 60
+                        rej_m = rej_end_min % 60
+                        rejection_end_time = f"{rej_h:02d}:{rej_m:02d}"
+                        app.logger.info(
+                            "Extra Turno rejection_end: inizio=%s + planned=%s + pausa_eff=%s = %s",
+                            first_inizio_min, planned_minutes, total_pausa_effettiva, rejection_end_time
+                        )
+                    
                     extra_turno_data = {
                         "extra_type": "daily_overtime",
                         "extra_minutes": extra_minutes,
                         "worked_minutes": worked_minutes,
                         "planned_minutes": planned_minutes,
+                        "pausa_effettiva_minuti": total_pausa_effettiva,
+                        "rejection_end_time": rejection_end_time,
                         "turno_time": turno_end or "",
                         "ora_timbrata": ora,
                         "ora_mod": ora_mod,
