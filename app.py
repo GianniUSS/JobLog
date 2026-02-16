@@ -5164,6 +5164,7 @@ def api_timbratura_registra():
     offline_timestamp = data.get('offline_timestamp')  # ISO timestamp da quando era offline
     offline_gps = data.get('offline_gps')  # {latitude, longitude, accuracy}
     offline_qr = data.get('offline_qr')  # QR code scansionato offline
+    break_info = data.get('break_info')  # Info pausa: {break_confirmed, break_skipped, break_skip_reason}
     
     db = get_db()
     ensure_timbrature_table(db)
@@ -5593,7 +5594,7 @@ def api_timbratura_registra():
                 ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
         elif rounding_mode == 'daily' and tipo == 'fine_giornata':
             # Per daily mode: calcola l'ora di uscita che porta esattamente alle ore del turno
-            ora_mod = _calcola_ora_fine_daily(db, username, today, ora, turno_start, turno_end, rules, placeholder)
+            ora_mod = _calcola_ora_fine_daily(db, username, today, ora, turno_start, turno_end, rules, placeholder, break_info=break_info)
         else:
             ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
         
@@ -5781,6 +5782,29 @@ def api_timbratura_registra():
                         worked_minutes += (t_min - inizio - pausa_totale)
                         inizio = None
                         pausa_totale = 0
+                
+                # Se la pausa non è stata timbrata, controlla break_info dal popup
+                if total_pausa_effettiva == 0 and break_info:
+                    if break_info.get('break_confirmed'):
+                        # L'utente conferma di aver fatto la pausa (non timbrata)
+                        # Sottraiamo la pausa pianificata dalle ore lavorate per coerenza
+                        try:
+                            # planned_break è già calcolata sopra (pausa pianificata da employee_shifts)
+                            if planned_break and planned_break > 0:
+                                worked_minutes -= planned_break
+                                total_pausa_effettiva = planned_break
+                                app.logger.info(
+                                    "Extra Turno: pausa confermata dall'utente (non timbrata), sottratti %s min da worked_minutes",
+                                    planned_break
+                                )
+                        except NameError:
+                            pass  # planned_break non definita, nessuna azione
+                    elif break_info.get('break_skipped'):
+                        reason = break_info.get('break_skip_reason', 'Nessuna motivazione')
+                        app.logger.info(
+                            "Extra Turno: pausa saltata dall'utente, motivo: %s - nessuna sottrazione",
+                            reason
+                        )
                 
                 extra_minutes = worked_minutes - planned_minutes
                 
@@ -18819,7 +18843,7 @@ def _send_late_arrival_notification_to_user(
         app.logger.warning(f"Errore invio notifica ritardo all'utente {username}: {e}")
 
 
-def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start: str, turno_end: str, rules: dict, placeholder: str) -> str:
+def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start: str, turno_end: str, rules: dict, placeholder: str, break_info: dict = None) -> str:
     """
     Calcola l'ora di fine giornata per il mode 'daily'.
     
@@ -18933,13 +18957,21 @@ def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start
         except Exception as e:
             app.logger.warning(f"Errore lettura pausa effettiva: {e}")
         
-        # Usa la pausa effettiva se timbrata, altrimenti 0 (nessuna pausa sottratta)
+        # Usa la pausa effettiva se timbrata, altrimenti controlla break_info dal popup
         if pausa_effettiva > 0:
             pausa_da_usare = pausa_effettiva
             app.logger.info(f"Daily mode: pausa effettiva timbrata = {pausa_effettiva} min")
+        elif break_info and break_info.get('break_confirmed'):
+            # L'utente ha confermato di aver fatto la pausa (ma non l'ha timbrata)
+            pausa_da_usare = pausa_turno_minuti
+            app.logger.info(f"Daily mode: pausa confermata dall'utente (non timbrata) = {pausa_turno_minuti} min")
         else:
             pausa_da_usare = 0
-            app.logger.info(f"Daily mode: nessuna pausa timbrata, pausa = 0 min (turno prevedeva {pausa_turno_minuti} min)")
+            if break_info and break_info.get('break_skipped'):
+                reason = break_info.get('break_skip_reason', 'Nessuna motivazione')
+                app.logger.info(f"Daily mode: pausa saltata dall'utente, motivo: {reason}")
+            else:
+                app.logger.info(f"Daily mode: nessuna pausa timbrata, pausa = 0 min (turno prevedeva {pausa_turno_minuti} min)")
         
         # 3. Calcola ore EFFETTIVE lavorate (ore lorde - pausa effettiva)
         ore_lorde_effettive = fine_min - inizio_min

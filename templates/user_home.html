@@ -2811,6 +2811,7 @@ let pendingOvertime = null;  // Straordinario in attesa di revisione
 let html5QrcodeScanner = null;
 let pendingTimbraturaType = null;  // Tipo di timbratura in attesa di conferma QR
 let currentTurnoNotes = { note: null, note_planner: null };  // Note del turno corrente
+let pendingBreakInfo = null;  // Info conferma pausa per fine_giornata
 
 // Funzioni per Note Turno
 function showTurnoNotes() {
@@ -2910,11 +2911,191 @@ async function loadTimbraturaConfig() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// VERIFICA PAUSA PRIMA DI FINE GIORNATA
+// ═══════════════════════════════════════════════════════════════════
+function checkBreakBeforeEndDay(callback) {
+  // Verifica se la pausa è stata timbrata oggi
+  const hasPauseStart = todayTimbrature.some(t => t.tipo === 'inizio_pausa');
+  const hasPauseEnd = todayTimbrature.some(t => t.tipo === 'fine_pausa');
+  
+  // Se la pausa è stata timbrata (sia inizio che fine), procedi
+  if (hasPauseStart && hasPauseEnd) {
+    pendingBreakInfo = { break_confirmed: true, break_stamped: true };
+    callback();
+    return;
+  }
+  
+  // Verifica se il turno ha una pausa pianificata
+  const turno = allTurni[currentTurnoIndex] || {};
+  const hasPlannedBreak = (turno.break_start && turno.break_end) || (turno.break_minutes && turno.break_minutes > 0);
+  
+  // Se non c'è pausa pianificata, procedi senza chiedere
+  if (!hasPlannedBreak) {
+    pendingBreakInfo = null;
+    callback();
+    return;
+  }
+  
+  // Pausa pianificata ma NON timbrata → mostra popup
+  const breakText = turno.break_start && turno.break_end 
+    ? `${turno.break_start} - ${turno.break_end}` 
+    : `${turno.break_minutes} minuti`;
+  
+  showBreakConfirmPopup(breakText, callback);
+}
+
+function showBreakConfirmPopup(breakText, callback) {
+  // Rimuovi popup esistente
+  const existing = document.getElementById('breakConfirmPopup');
+  if (existing) existing.remove();
+  
+  const popup = document.createElement('div');
+  popup.id = 'breakConfirmPopup';
+  popup.innerHTML = `
+    <style>
+      #breakConfirmPopup {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.6); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px;
+        animation: fadeIn 0.3s ease;
+      }
+      #breakConfirmPopup .popup-card {
+        background: white; border-radius: 20px; padding: 28px;
+        max-width: 400px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        animation: slideUp 0.3s ease;
+      }
+      #breakConfirmPopup .popup-icon { text-align: center; font-size: 3rem; margin-bottom: 8px; }
+      #breakConfirmPopup h3 { text-align: center; margin: 0 0 4px; color: #1e293b; font-size: 1.2rem; }
+      #breakConfirmPopup .popup-subtitle { text-align: center; color: #64748b; font-size: 0.9rem; margin-bottom: 16px; }
+      #breakConfirmPopup .break-info {
+        background: linear-gradient(135deg, #fff7ed, #ffedd5); border: 1px solid #fdba74;
+        border-radius: 12px; padding: 12px 16px; text-align: center;
+        margin-bottom: 20px;
+      }
+      #breakConfirmPopup .break-info .label { font-size: 0.8rem; color: #9a3412; font-weight: 600; }
+      #breakConfirmPopup .break-info .value { font-size: 1.3rem; font-weight: 700; color: #c2410c; margin-top: 4px; }
+      #breakConfirmPopup .btn-group { display: flex; flex-direction: column; gap: 10px; }
+      #breakConfirmPopup .btn-yes {
+        padding: 14px; border-radius: 12px; border: none; font-size: 1rem;
+        font-weight: 600; cursor: pointer;
+        background: linear-gradient(135deg, #22c55e, #16a34a); color: white;
+      }
+      #breakConfirmPopup .btn-no {
+        padding: 14px; border-radius: 12px; border: none; font-size: 1rem;
+        font-weight: 600; cursor: pointer;
+        background: linear-gradient(135deg, #f59e0b, #d97706); color: white;
+      }
+      #breakConfirmPopup .btn-cancel {
+        padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0;
+        font-size: 0.9rem; cursor: pointer; background: #f8fafc; color: #64748b;
+      }
+      #breakConfirmPopup .motivation-section {
+        margin-top: 16px; display: none;
+      }
+      #breakConfirmPopup .motivation-section.visible { display: block; }
+      #breakConfirmPopup .motivation-section textarea {
+        width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 10px;
+        font-size: 0.9rem; resize: none; margin-bottom: 12px; box-sizing: border-box;
+      }
+      #breakConfirmPopup .motivation-section textarea:focus {
+        outline: none; border-color: #f59e0b;
+      }
+      #breakConfirmPopup .btn-confirm-skip {
+        width: 100%; padding: 14px; border-radius: 12px; border: none;
+        font-size: 1rem; font-weight: 600; cursor: pointer;
+        background: linear-gradient(135deg, #4361ee, #7c3aed); color: white;
+      }
+      #breakConfirmPopup .motivation-error {
+        color: #ef4444; font-size: 0.8rem; margin: -8px 0 8px; display: none;
+      }
+    </style>
+    <div class="popup-card">
+      <div class="popup-icon">☕</div>
+      <h3>Pausa non timbrata</h3>
+      <p class="popup-subtitle">La pausa prevista non è stata registrata</p>
+      
+      <div class="break-info">
+        <div class="label">⏰ Pausa pianificata</div>
+        <div class="value">${breakText}</div>
+      </div>
+      
+      <div class="btn-group" id="breakBtnGroup">
+        <button class="btn-yes" onclick="confirmBreakDone()">✅ Sì, ho fatto la pausa</button>
+        <button class="btn-no" onclick="showBreakSkipMotivation()">⚠️ No, non ho fatto la pausa</button>
+        <button class="btn-cancel" onclick="cancelBreakConfirm()">Annulla</button>
+      </div>
+      
+      <div class="motivation-section" id="breakMotivationSection">
+        <p style="font-size: 0.85rem; color: #92400e; font-weight: 600; margin-bottom: 8px;">
+          📝 Indica il motivo della mancata pausa:
+        </p>
+        <textarea id="breakSkipReason" rows="3" placeholder="Es: urgenza lavorativa, carico eccessivo..."></textarea>
+        <div class="motivation-error" id="breakMotivationError">⚠️ La motivazione è obbligatoria</div>
+        <button class="btn-confirm-skip" onclick="confirmBreakSkip()">Conferma e prosegui</button>
+        <button class="btn-cancel" style="margin-top: 8px; width: 100%;" onclick="cancelBreakConfirm()">Annulla</button>
+      </div>
+    </div>
+  `;
+  
+  // Salva callback per usarla dopo
+  popup._callback = callback;
+  document.body.appendChild(popup);
+}
+
+function confirmBreakDone() {
+  const popup = document.getElementById('breakConfirmPopup');
+  pendingBreakInfo = { break_confirmed: true, break_stamped: false };
+  const cb = popup._callback;
+  popup.remove();
+  if (cb) cb();
+}
+
+function showBreakSkipMotivation() {
+  document.getElementById('breakBtnGroup').style.display = 'none';
+  document.getElementById('breakMotivationSection').classList.add('visible');
+  document.getElementById('breakSkipReason').focus();
+}
+
+function confirmBreakSkip() {
+  const reason = document.getElementById('breakSkipReason').value.trim();
+  if (!reason) {
+    document.getElementById('breakMotivationError').style.display = 'block';
+    return;
+  }
+  const popup = document.getElementById('breakConfirmPopup');
+  pendingBreakInfo = { break_skipped: true, break_skip_reason: reason };
+  const cb = popup._callback;
+  popup.remove();
+  if (cb) cb();
+}
+
+function cancelBreakConfirm() {
+  const popup = document.getElementById('breakConfirmPopup');
+  if (popup) popup.remove();
+  pendingTimbraturaType = null;
+  pendingBreakInfo = null;
+}
+
 // Inizia processo timbratura: sceglie metodo o apre direttamente
 function startTimbratura(tipo) {
   pendingTimbraturaType = tipo;
+  pendingBreakInfo = null;
   const label = TIMBRATURA_TYPES[tipo]?.label || tipo;
   
+  // Se è Fine Giornata, verifica prima la pausa
+  if (tipo === 'fine_giornata') {
+    checkBreakBeforeEndDay(() => {
+      proceedWithTimbratura(tipo, label);
+    });
+    return;
+  }
+  
+  proceedWithTimbratura(tipo, label);
+}
+
+function proceedWithTimbratura(tipo, label) {
   // Se NESSUN metodo è abilitato (entrambi disabilitati), timbratura diretta
   if (!timbraturaConfig.qr_enabled && !timbraturaConfig.gps_enabled) {
     registerTimbraturaDirectly(tipo);
@@ -3263,10 +3444,13 @@ async function confirmGpsLocation() {
     // GPS valido, registra timbratura
     const token = validateData.token;
     
+    const gpsPayload = { tipo, token };
+    if (pendingBreakInfo) gpsPayload.break_info = pendingBreakInfo;
+    
     const res = await fetch('/api/timbratura', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo, token })
+      body: JSON.stringify(gpsPayload)
     });
     
     const data = await res.json();
@@ -3356,6 +3540,7 @@ const TEST_PAYLOAD_POPUP = false;  // <-- Cambia a true per attivare
 async function registerTimbraturaDirectly(tipo) {
   try {
     const payload = { tipo, bypass_qr: true, offline_ts: Date.now() };
+    if (pendingBreakInfo) payload.break_info = pendingBreakInfo;
     
     const res = await fetch('/api/timbratura', {
       method: 'POST',
@@ -3835,10 +4020,13 @@ async function onScanSuccess(decodedText, decodedResult) {
     // QR valido, ora registra la timbratura
     const token = validateData.token;
     
+    const qrPayload = { tipo, token };
+    if (pendingBreakInfo) qrPayload.break_info = pendingBreakInfo;
+    
     const res = await fetch('/api/timbratura', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo, token })
+      body: JSON.stringify(qrPayload)
     });
     
     const data = await res.json();
