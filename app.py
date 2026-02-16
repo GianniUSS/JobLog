@@ -5695,6 +5695,7 @@ def api_timbratura_registra():
             if planned_minutes > 0:
                 # Sottrai la pausa pianificata per ottenere le ore nette pianificate
                 # (worked_minutes sottrae solo le pause effettivamente timbraste)
+                planned_break = 0  # Inizializza a 0, verrà valorizzata se trovata
                 try:
                     ensure_employee_shifts_table(db)
                     break_row = db.execute(
@@ -5790,17 +5791,18 @@ def api_timbratura_registra():
                     if break_info.get('break_confirmed'):
                         # L'utente conferma di aver fatto la pausa (non timbrata)
                         # Sottraiamo la pausa pianificata dalle ore lavorate per coerenza
-                        try:
-                            # planned_break è già calcolata sopra (pausa pianificata da employee_shifts)
-                            if planned_break and planned_break > 0:
-                                worked_minutes -= planned_break
-                                total_pausa_effettiva = planned_break
-                                app.logger.info(
-                                    "Extra Turno: pausa confermata dall'utente (non timbrata), sottratti %s min da worked_minutes",
-                                    planned_break
-                                )
-                        except NameError:
-                            pass  # planned_break non definita, nessuna azione
+                        if planned_break and planned_break > 0:
+                            worked_minutes -= planned_break
+                            total_pausa_effettiva = planned_break
+                            app.logger.info(
+                                "Extra Turno: pausa confermata dall'utente (non timbrata), sottratti %s min da worked_minutes (worked=%s)",
+                                planned_break, worked_minutes
+                            )
+                        else:
+                            app.logger.warning(
+                                "Extra Turno: pausa confermata dall'utente ma planned_break=%s, non sottratto nulla",
+                                planned_break
+                            )
                     elif break_info.get('break_skipped'):
                         reason = break_info.get('break_skip_reason', 'Nessuna motivazione')
                         app.logger.info(
@@ -5811,8 +5813,10 @@ def api_timbratura_registra():
                 extra_minutes = worked_minutes - planned_minutes
                 
                 app.logger.info(
-                    "Extra Turno check: user=%s, worked=%s min, planned=%s min, extra=%s min",
-                    username, worked_minutes, planned_minutes, extra_minutes
+                    "Extra Turno check: user=%s, worked=%s min, planned=%s min, extra=%s min, "
+                    "pausa_eff=%s, planned_break=%s, break_info=%s",
+                    username, worked_minutes, planned_minutes, extra_minutes,
+                    total_pausa_effettiva, planned_break, break_info
                 )
                 
                 if extra_minutes > 0:
@@ -5835,6 +5839,10 @@ def api_timbratura_registra():
                         "worked_minutes": worked_minutes,
                         "planned_minutes": planned_minutes,
                         "pausa_effettiva_minuti": total_pausa_effettiva,
+                        "pausa_pianificata_minuti": planned_break,
+                        "break_confirmed": break_info.get('break_confirmed', False) if break_info else False,
+                        "break_skipped": break_info.get('break_skipped', False) if break_info else False,
+                        "break_skip_reason": break_info.get('break_skip_reason', '') if break_info else '',
                         "rejection_end_time": rejection_end_time,
                         "turno_time": turno_end or "",
                         "ora_timbrata": ora,
@@ -22013,6 +22021,47 @@ def api_user_storico_timbrature() -> ResponseReturnValue:
             req_copy["data"] = date_str
             all_requests.append(req_copy)
     
+    # Recupera le richieste Extra Turno (type 9) per il mese, qualsiasi stato
+    extra_turno_by_date = {}
+    try:
+        et_rows = db.execute(f"""
+            SELECT ur.id, ur.date_from, ur.status, ur.value_amount, ur.reviewed_by
+            FROM user_requests ur
+            WHERE ur.username = {placeholder}
+              AND ur.request_type_id = 9
+              AND ur.date_from >= {placeholder} AND ur.date_from < {placeholder}
+            ORDER BY ur.id DESC
+        """, (username, first_day, last_day)).fetchall()
+        for et_row in et_rows:
+            if isinstance(et_row, Mapping):
+                d = str(et_row["date_from"])[:10]
+                if d not in extra_turno_by_date:
+                    extra_turno_by_date[d] = {
+                        "id": et_row["id"],
+                        "status": et_row["status"],
+                        "value_amount": float(et_row["value_amount"]) if et_row["value_amount"] else 0,
+                        "reviewed_by": et_row.get("reviewed_by"),
+                    }
+            else:
+                d = str(et_row[1])[:10]
+                if d not in extra_turno_by_date:
+                    extra_turno_by_date[d] = {
+                        "id": et_row[0],
+                        "status": et_row[2],
+                        "value_amount": float(et_row[3]) if et_row[3] else 0,
+                        "reviewed_by": et_row[4] if len(et_row) > 4 else None,
+                    }
+    except Exception as e:
+        print(f"[storico-timbrature] Errore recupero Extra Turno requests: {e}")
+
+    # Aggiungi info Extra Turno request a calcolo_dettagli di ogni giorno
+    for data_key, day_info in timbrature_by_day.items():
+        if day_info.get("calcolo_dettagli") and data_key in extra_turno_by_date:
+            et_info = extra_turno_by_date[data_key]
+            day_info["calcolo_dettagli"]["extra_turno_request_status"] = et_info["status"]
+            day_info["calcolo_dettagli"]["extra_turno_request_id"] = et_info["id"]
+            day_info["calcolo_dettagli"]["extra_turno_request_value"] = et_info["value_amount"]
+
     # Debug: stampa le ore calcolate per i primi 5 giorni
     if debug_calcs:
         print(f"[storico-timbrature] Calcoli ore: {debug_calcs[:5]}...")

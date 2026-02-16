@@ -1441,10 +1441,17 @@
                             </div>`;
                             
                             // Pausa effettiva
-                            if (dayData.pausa_minuti) {
+                            const pausaPianificata = calcRiepilogo.pausa_turno_minuti || 0;
+                            if (dayData.pausa_minuti && dayData.pausa_minuti > 0) {
                                 html += `<div class="detail-row">
                                     <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-coffee"></i> Pausa effettiva</div>
                                     <div class="detail-value warning">-${formatMinutes(dayData.pausa_minuti)}</div>
+                                </div>`;
+                            } else if (pausaPianificata > 0) {
+                                // Pausa prevista ma non effettuata
+                                html += `<div class="detail-row">
+                                    <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-coffee"></i> Pausa</div>
+                                    <div class="detail-value danger" style="font-size: 12px;">⚠️ Non effettuata (prevista ${formatMinutes(pausaPianificata)})</div>
                                 </div>`;
                             }
                             

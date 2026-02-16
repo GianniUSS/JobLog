@@ -1421,6 +1421,23 @@
                     const actualStart = formatTime(ed.actual_start || ed.ora_timbrata);
                     const roundedTimbratura = formatTime(ed.ora_mod || ed.rounded_start);
                     
+                    // Info pausa
+                    const pausaEffettiva = ed.pausa_effettiva_minuti || 0;
+                    const pausaPianificata = ed.pausa_pianificata_minuti || 0;
+                    let pausaHtml = '';
+                    if (ed.break_skipped) {
+                        pausaHtml = `
+                            <div class="overtime-diff-item" style="color: #e53935;">⚠️ Pausa non effettuata
+                                ${ed.break_skip_reason ? `<span style="font-size: 12px; color: #666;"> — Motivo: ${ed.break_skip_reason}</span>` : ''}
+                            </div>`;
+                    } else if (ed.break_confirmed && pausaEffettiva > 0) {
+                        pausaHtml = `<div class="overtime-diff-item">☕ Pausa: ${formatMinToHM(pausaEffettiva)} <span style="font-size: 12px; color: #666;">(confermata dall'utente)</span></div>`;
+                    } else if (pausaEffettiva > 0) {
+                        pausaHtml = `<div class="overtime-diff-item">☕ Pausa: ${formatMinToHM(pausaEffettiva)}</div>`;
+                    } else if (pausaPianificata > 0) {
+                        pausaHtml = `<div class="overtime-diff-item" style="color: #e53935;">⚠️ Pausa non effettuata (prevista ${formatMinToHM(pausaPianificata)})</div>`;
+                    }
+                    
                     overtimeHtml = `
                         <div class="request-overtime-details">
                             <div class="overtime-header">⏱️ Riepilogo Extra Turno</div>
@@ -1428,6 +1445,14 @@
                                 <div class="overtime-box">
                                     <div class="overtime-box-label">🗓️ Turno Pianificato</div>
                                     <div class="overtime-box-value">${formatTime(ed.planned_start)} - ${formatTime(ed.planned_end)}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">📝 Timbrata Originale</div>
+                                    <div class="overtime-box-value">${actualStart}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">⏰ Timbrata Arrotondata</div>
+                                    <div class="overtime-box-value">${roundedTimbratura}</div>
                                 </div>
                                 ${workedMins > 0 ? `
                                 <div class="overtime-box">
@@ -1437,20 +1462,13 @@
                                 <div class="overtime-box">
                                     <div class="overtime-box-label">📋 Ore Pianificate</div>
                                     <div class="overtime-box-value">${formatMinToHM(plannedMins)}</div>
-                                </div>` : `
-                                <div class="overtime-box">
-                                    <div class="overtime-box-label">📝 Timbrata Originale</div>
-                                    <div class="overtime-box-value">${actualStart}</div>
-                                </div>
-                                <div class="overtime-box">
-                                    <div class="overtime-box-label">⏰ Timbrata Arrotondata</div>
-                                    <div class="overtime-box-value">${roundedTimbratura}</div>
-                                </div>`}
+                                </div>` : ''}
                             </div>
                             <div class="overtime-diff">
                                 <div class="overtime-diff-item">⬆️ Extra: <span class="overtime-diff-badge">+${formatMinToHM(extraMins)}</span></div>
                                 ${ed.extra_minutes_before > 0 ? `<div class="overtime-diff-item">⬆️ Ingresso anticipato: <span class="overtime-diff-badge">+${ed.extra_minutes_before} min</span></div>` : ''}
                                 ${ed.extra_minutes_after > 0 ? `<div class="overtime-diff-item">⬇️ Uscita posticipata: <span class="overtime-diff-badge">+${ed.extra_minutes_after} min</span></div>` : ''}
+                                ${pausaHtml}
                             </div>
                             <div class="overtime-source">${source}</div>
                         </div>`;
