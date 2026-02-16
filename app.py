@@ -5459,8 +5459,8 @@ def api_timbratura_registra():
     ora_mod = None
     turno_start = None
     turno_end = None
-    flex_warning = None  # Avviso se timbrata fuori flessibilità (per daily mode)
-    flex_request_id = None  # ID richiesta Fuori Flessibilità (se creata)
+    flex_warning = None  # DEPRECATO - mantenuto per compatibilità
+    flex_request_id = None  # DEPRECATO - mantenuto per compatibilità
     try:
         # Usa le regole specifiche dell'utente (gruppo o globali)
         rules = get_user_timbratura_rules(db, username)
@@ -5597,38 +5597,8 @@ def api_timbratura_registra():
         else:
             ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
         
-        # Per daily mode: verifica flessibilità e gestisci azione
-        flex_request_id = None  # ID richiesta fuori flessibilità (se creata)
-        if rounding_mode == 'daily' and tipo in ('inizio_giornata', 'fine_giornata'):
-            flex_check = verifica_flessibilita_timbrata(ora, tipo, turno_start, turno_end, rules)
-            app.logger.info(f"Flex check per {username}: {flex_check}")
-            
-            if not flex_check['within_flex']:
-                action = flex_check['action']
-                if action == 'block':
-                    app.logger.warning(f"BLOCCO timbratura {username}: fuori flessibilità - {flex_check['message']}")
-                    return jsonify({
-                        "error": f"Timbratura fuori flessibilità: {flex_check['message']}. Contatta l'amministratore."
-                    }), 400
-                elif action == 'warn':
-                    # Crea una richiesta di autorizzazione per fuori flessibilità
-                    flex_warning = flex_check['message']
-                    app.logger.warning(f"Timbratura {username} fuori flessibilità: {flex_warning}")
-                    
-                    # Crea richiesta "Fuori Flessibilità" (type_id=17)
-                    try:
-                        # Prendi arrotondamento dalle regole del gruppo
-                        arrot_minuti = rules.get('arrotondamento_giornaliero_minuti', 30) if rules else 30
-                        # Per Fuori Flessibilita, ora_mod deve essere l'ora timbrata effettiva
-                        # (l'arrotondamento non ha senso per timbrature fuori flessibilita)
-                        flex_request_id = _create_flex_request(
-                            db, username, today, tipo, ora, ora,  # usa ora come ora_mod
-                            flex_check['diff_minutes'], flex_warning, placeholder,
-                            turno_start, turno_end, arrot_minuti
-                        )
-                        app.logger.info(f"Creata richiesta Fuori Flessibilità ID={flex_request_id} per {username}")
-                    except Exception as e:
-                        app.logger.error(f"Errore creazione richiesta fuori flessibilità: {e}")
+        # Verifica flessibilità DISABILITATA - logica unificata con Ritardo + Extra Turno
+        # La flessibilità viene usata solo per l'arrotondamento in daily mode, non genera più richieste
         
         app.logger.info(f"Ora mod calcolata: {ora} -> {ora_mod} (turno: {turno_start} - {turno_end}, tipo: {tipo}, mode: {rounding_mode})")
     except Exception as e:
@@ -5643,55 +5613,173 @@ def api_timbratura_registra():
     extra_turno_request_id = None
     extra_turno_data = None
     
-    # NON creare Extra Turno se c'e gia una richiesta Fuori Flessibilita
-    # Fuori Flessibilita gestisce anticipi/ritardi oltre il limite - non e straordinario
-    if flex_request_id:
-        app.logger.info(
-            "Extra Turno SKIPPED per %s: gia creata richiesta Fuori Flessibilita ID=%s",
-            username, flex_request_id
-        )
     # Verifica se il modulo straordinari è attivo prima di rilevare Extra Turno
-    elif is_module_enabled(db, "straordinari") and tipo in ('inizio_giornata', 'fine_giornata'):
+    # Extra Turno scatta SOLO a fine_giornata quando le ore lavorate superano le ore pianificate
+    if is_module_enabled(db, "straordinari") and tipo == 'fine_giornata':
         try:
-            # Usa le regole specifiche dell'utente (gruppo o globali)
             rules_for_extra = get_user_timbratura_rules(db, username)
-            app.logger.info(
-                "Checking Extra Turno: user=%s, tipo=%s, ora=%s, ora_mod=%s, turno_start=%s, turno_end=%s, rules=%s",
-                username, tipo, ora, ora_mod, turno_start, turno_end, rules_for_extra
-            )
-            extra_turno_data = _detect_extra_turno(
-                ora_timbrata=ora,
-                ora_mod=ora_mod,
-                tipo=tipo,
-                turno_start=turno_start,
-                turno_end=turno_end,
-                rules=rules_for_extra
-            )
             
-            if extra_turno_data:
+            # Calcola ore pianificate totali del giorno (somma di tutti i turni)
+            planned_minutes = 0
+            user_row_et = db.execute(
+                f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+                (username,)
+            ).fetchone()
+            crew_id_et = None
+            if user_row_et:
+                crew_id_et = user_row_et['rentman_crew_id'] if isinstance(user_row_et, dict) else user_row_et[0]
+            
+            if crew_id_et:
+                # Somma tutti i turni Rentman del giorno per l'utente
+                turni_rows = db.execute(
+                    f"""SELECT plan_start, plan_end FROM rentman_plannings 
+                       WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+                       AND (is_obsolete IS NULL OR is_obsolete = 0)""",
+                    (crew_id_et, today)
+                ).fetchall()
+                for tr in turni_rows:
+                    ps = tr['plan_start'] if isinstance(tr, dict) else tr[0]
+                    pe = tr['plan_end'] if isinstance(tr, dict) else tr[1]
+                    if ps and pe:
+                        # Converti plan_start e plan_end in minuti
+                        if hasattr(ps, 'hour'):
+                            ps_min = ps.hour * 60 + ps.minute
+                        else:
+                            ps_str = str(ps)
+                            ps_time = ps_str[11:16] if len(ps_str) > 11 else ps_str[:5]
+                            ps_parts = ps_time.split(':')
+                            ps_min = int(ps_parts[0]) * 60 + int(ps_parts[1])
+                        if hasattr(pe, 'hour'):
+                            pe_min = pe.hour * 60 + pe.minute
+                        else:
+                            pe_str = str(pe)
+                            pe_time = pe_str[11:16] if len(pe_str) > 11 else pe_str[:5]
+                            pe_parts = pe_time.split(':')
+                            pe_min = int(pe_parts[0]) * 60 + int(pe_parts[1])
+                        planned_minutes += max(0, pe_min - ps_min)
+            
+            if planned_minutes == 0:
+                # Se non ci sono turni Rentman, usa employee_shifts
+                try:
+                    ensure_employee_shifts_table(db)
+                    shift_rows = db.execute(
+                        f"""SELECT start_time, end_time FROM employee_shifts 
+                           WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1""",
+                        (username, day_of_week)
+                    ).fetchall()
+                    for sr in shift_rows:
+                        st = sr['start_time'] if isinstance(sr, dict) else sr[0]
+                        et = sr['end_time'] if isinstance(sr, dict) else sr[1]
+                        if st and et:
+                            if hasattr(st, 'total_seconds'):
+                                st_min = int(st.total_seconds()) // 60
+                            elif hasattr(st, 'hour'):
+                                st_min = st.hour * 60 + st.minute
+                            else:
+                                st_parts = str(st)[:5].split(':')
+                                st_min = int(st_parts[0]) * 60 + int(st_parts[1])
+                            if hasattr(et, 'total_seconds'):
+                                et_min = int(et.total_seconds()) // 60
+                            elif hasattr(et, 'hour'):
+                                et_min = et.hour * 60 + et.minute
+                            else:
+                                et_parts = str(et)[:5].split(':')
+                                et_min = int(et_parts[0]) * 60 + int(et_parts[1])
+                            planned_minutes += max(0, et_min - st_min)
+                except Exception:
+                    pass
+            
+            if planned_minutes > 0:
+                # Calcola ore effettivamente lavorate dal giorno
+                # Recupera tutte le timbrature del giorno (inclusa l'attuale fine_giornata)
+                timbrature_giorno = db.execute(
+                    f"""SELECT tipo, ora_mod FROM timbrature 
+                       WHERE username = {placeholder} AND data = {placeholder}
+                       ORDER BY ora_mod ASC""",
+                    (username, today)
+                ).fetchall()
+                
+                # Aggiungi la timbratura corrente (fine_giornata) che non è ancora salvata
+                all_timbrature = []
+                for t in timbrature_giorno:
+                    t_tipo = t['tipo'] if isinstance(t, dict) else t[0]
+                    t_ora = t['ora_mod'] if isinstance(t, dict) else t[1]
+                    if t_ora:
+                        if hasattr(t_ora, 'strftime'):
+                            t_ora_str = t_ora.strftime("%H:%M")
+                        elif hasattr(t_ora, 'total_seconds'):
+                            total_sec = int(t_ora.total_seconds())
+                            t_ora_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}"
+                        else:
+                            t_ora_str = str(t_ora)[:5]
+                        all_timbrature.append((t_tipo, t_ora_str))
+                
+                # Aggiungi fine_giornata corrente
+                all_timbrature.append(('fine_giornata', ora_mod[:5] if ora_mod else ora[:5]))
+                
+                # Calcola ore lavorate: somma dei periodi inizio_giornata→fine_giornata meno pause
+                worked_minutes = 0
+                inizio = None
+                pausa_start = None
+                pausa_totale = 0
+                
+                for t_tipo, t_ora_str in all_timbrature:
+                    t_parts = t_ora_str.split(':')
+                    t_min = int(t_parts[0]) * 60 + int(t_parts[1])
+                    
+                    if t_tipo == 'inizio_giornata':
+                        inizio = t_min
+                        pausa_totale = 0
+                    elif t_tipo == 'inizio_pausa' and inizio is not None:
+                        pausa_start = t_min
+                    elif t_tipo == 'fine_pausa' and pausa_start is not None:
+                        pausa_totale += (t_min - pausa_start)
+                        pausa_start = None
+                    elif t_tipo == 'fine_giornata' and inizio is not None:
+                        worked_minutes += (t_min - inizio - pausa_totale)
+                        inizio = None
+                        pausa_totale = 0
+                
+                extra_minutes = worked_minutes - planned_minutes
+                
                 app.logger.info(
-                    "Extra Turno rilevato per %s: type=%s, minutes=%s, turno=%s",
-                    username, extra_turno_data.get("extra_type"), 
-                    extra_turno_data.get("extra_minutes"),
-                    extra_turno_data.get("turno_time")
+                    "Extra Turno check: user=%s, worked=%s min, planned=%s min, extra=%s min",
+                    username, worked_minutes, planned_minutes, extra_minutes
                 )
                 
-                # Crea automaticamente la richiesta di Extra Turno
-                extra_turno_data["planned_start"] = turno_start
-                extra_turno_data["planned_end"] = turno_end
-                
-                extra_turno_request_id = _create_auto_extra_turno_request(
-                    db=db,
-                    username=username,
-                    date_str=today,
-                    extra_data=extra_turno_data,
-                    notes=f"Extra Turno rilevato automaticamente - {extra_turno_data.get('extra_type')}"
-                )
+                if extra_minutes > 0:
+                    extra_turno_data = {
+                        "extra_type": "daily_overtime",
+                        "extra_minutes": extra_minutes,
+                        "worked_minutes": worked_minutes,
+                        "planned_minutes": planned_minutes,
+                        "turno_time": turno_end or "",
+                        "ora_timbrata": ora,
+                        "ora_mod": ora_mod,
+                        "planned_start": turno_start,
+                        "planned_end": turno_end,
+                    }
+                    
+                    app.logger.info(
+                        "Extra Turno rilevato per %s: worked=%s min, planned=%s min, extra=%s min",
+                        username, worked_minutes, planned_minutes, extra_minutes
+                    )
+                    
+                    extra_turno_request_id = _create_auto_extra_turno_request(
+                        db=db,
+                        username=username,
+                        date_str=today,
+                        extra_data=extra_turno_data,
+                        notes=f"Extra Turno rilevato automaticamente - {extra_minutes} min oltre le {planned_minutes // 60}h{planned_minutes % 60:02d} pianificate"
+                    )
+                else:
+                    app.logger.info(
+                        "Extra Turno NON rilevato per %s: worked=%s min <= planned=%s min",
+                        username, worked_minutes, planned_minutes
+                    )
             else:
-                app.logger.info(
-                    "Extra Turno NON rilevato per %s: tipo=%s, ora=%s, ora_mod=%s, turno_start=%s, turno_end=%s",
-                    username, tipo, ora, ora_mod, turno_start, turno_end
-                )
+                app.logger.info("Extra Turno SKIP per %s: nessun turno pianificato trovato", username)
+                
         except Exception as e:
             app.logger.error(f"Errore rilevamento Extra Turno: {e}")
             import traceback
@@ -5703,9 +5791,8 @@ def api_timbratura_registra():
     late_arrival_request_id = None
     late_arrival_data = None
     
-    # Rileva ritardi SOLO per inizio_giornata
-    # NON creare richiesta ritardo se c'è già Fuori Flessibilità (priorità maggiore)
-    if tipo == 'inizio_giornata' and not flex_request_id:
+    # Rileva ritardi SOLO per inizio_giornata (per tutti i gruppi)
+    if tipo == 'inizio_giornata':
         try:
             # Usa le regole specifiche dell'utente (gruppo o globali)
             rules_for_late = get_user_timbratura_rules(db, username)
@@ -5872,32 +5959,22 @@ def api_timbratura_registra():
         }
         cedolino_url = f"{CEDOLINO_WEB_ENDPOINT}?{urlencode(debug_params)}"
         
-        # Determina se bloccare la sync per Extra Turno o Fuori Flessibilità:
+        # Determina se bloccare la sync per Extra Turno:
         # 1. Se abbiamo appena creato una richiesta Extra Turno automatica, usa quell'ID
-        # 2. Se abbiamo appena creato una richiesta Fuori Flessibilità automatica, usa quell'ID
-        # 3. Altrimenti verifica se c'è una richiesta Extra Turno pending esistente
+        # 2. Altrimenti verifica se c'è una richiesta Extra Turno pending esistente
         overtime_request_id = extra_turno_request_id  # Usa l'ID Extra Turno appena creato se presente
         
-        # Se c'è una richiesta Fuori Flessibilità, quella ha la priorità (blocca prima dell'Extra Turno)
-        if flex_request_id:
-            overtime_request_id = flex_request_id
-        elif not overtime_request_id:
+        if not overtime_request_id:
             # Cerca richieste Extra Turno pending esistenti per oggi
             overtime_request_id = _get_pending_overtime_request_id(db, username, today)
         
         if overtime_request_id:
-            request_type = "Fuori Flessibilità" if flex_request_id else "Extra Turno"
             app.logger.info(
-                "Timbratura %s per %s bloccata in attesa revisione %s (request_id=%s)",
-                tipo, username, request_type, overtime_request_id
+                "Timbratura %s per %s bloccata in attesa revisione Extra Turno (request_id=%s)",
+                tipo, username, overtime_request_id
             )
         
-        # Per Fuori Flessibilità, NON usare ora_mod (arrotondamento) perché è calcolato
-        # assumendo che la timbratura sia nel range normale del turno.
-        # Esempio: timbrata alle 16:00 con turno 09:00-18:00 -> ora_mod diventerebbe 18:00
-        # Ma 16:00 è un'uscita anticipata, quindi dobbiamo tenere 16:00!
-        # L'ora_mod sarà determinata dopo la revisione in _process_fuori_flessibilita
-        ora_da_salvare = ora if flex_request_id else (ora_mod or ora)
+        ora_da_salvare = ora_mod or ora
         
         timbrata_ok, external_id, timbrata_error, _ = send_timbrata_utente(
             db,
@@ -5937,16 +6014,9 @@ def api_timbratura_registra():
             "detected": True,
             "type": extra_turno_data.get("extra_type"),
             "minutes": extra_turno_data.get("extra_minutes"),
+            "worked_minutes": extra_turno_data.get("worked_minutes"),
+            "planned_minutes": extra_turno_data.get("planned_minutes"),
             "request_id": extra_turno_request_id
-        }
-    
-    # Se c'è un warning Fuori Flessibilità, informa il frontend
-    if flex_warning and flex_request_id:
-        response_data["flex_warning"] = {
-            "detected": True,
-            "message": flex_warning,
-            "request_id": flex_request_id,
-            "tipo": tipo
         }
     
     # Se c'è un Late Arrival rilevato, informa il frontend

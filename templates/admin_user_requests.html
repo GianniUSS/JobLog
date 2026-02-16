@@ -1300,7 +1300,7 @@
                     </div>`;
             }
             
-            // Dettagli Extra Turno o Fuori Flessibilità (extra_data)
+            // Dettagli Extra Turno o Giustificazione Ritardo (extra_data)
             let overtimeHtml = '';
             if (r.value_type === 'minutes' && r.extra_data) {
                 const ed = r.extra_data;
@@ -1308,45 +1308,32 @@
                 // Funzione per rimuovere i secondi (HH:MM:SS -> HH:MM)
                 const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
                 
-                // Distingui tra Fuori Flessibilità, Giustificazione Ritardo ed Extra Turno
+                // Distingui tra Giustificazione Ritardo ed Extra Turno
                 if (r.request_type_id === 17) {
-                    // FUORI FLESSIBILITÀ
+                    // FUORI FLESSIBILITÀ (legacy - per richieste esistenti)
                     const turnoStart = formatTime(ed.turno_start);
                     const turnoEnd = formatTime(ed.turno_end);
                     const oraTimbrata = formatTime(ed.ora_timbrata);
-                    // Usa ora_finale se presente (dopo approvazione), altrimenti ora_mod
                     const oraArrotondata = formatTime(ed.ora_finale || ed.ora_mod);
                     const tipoLabel = ed.tipo_timbratura === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
                     const diffMinutes = ed.diff_minutes || 0;
                     const flessibilita = ed.arrotondamento_minuti || 30;
                     const oltreFlexMinuti = Math.abs(diffMinutes) - flessibilita;
                     
-                    // Determina il tipo di problema
                     let tipoProblema, badgeColor;
                     if (ed.tipo_timbratura === 'inizio_giornata') {
-                        if (diffMinutes > 0) {
-                            tipoProblema = 'RITARDO';
-                            badgeColor = '#dc3545';  // rosso
-                        } else {
-                            tipoProblema = 'INGRESSO ANTICIPATO';
-                            badgeColor = '#f59e0b';  // arancione
-                        }
+                        tipoProblema = diffMinutes > 0 ? 'RITARDO' : 'INGRESSO ANTICIPATO';
+                        badgeColor = diffMinutes > 0 ? '#dc3545' : '#f59e0b';
                     } else {
-                        if (diffMinutes < 0) {
-                            tipoProblema = 'USCITA ANTICIPATA';
-                            badgeColor = '#dc3545';  // rosso
-                        } else {
-                            tipoProblema = 'USCITA POSTICIPATA';
-                            badgeColor = '#f59e0b';  // arancione
-                        }
+                        tipoProblema = diffMinutes < 0 ? 'USCITA ANTICIPATA' : 'USCITA POSTICIPATA';
+                        badgeColor = diffMinutes < 0 ? '#dc3545' : '#f59e0b';
                     }
                     
-                    // Determina l'orario turno di riferimento (inizio o fine)
                     const orarioTurnoRef = ed.tipo_timbratura === 'inizio_giornata' ? turnoStart : turnoEnd;
                     
                     overtimeHtml = `
                         <div class="request-overtime-details">
-                            <div class="overtime-header">⚠️ Riepilogo Fuori Flessibilità</div>
+                            <div class="overtime-header">⚠️ Riepilogo Fuori Flessibilità (legacy)</div>
                             <div class="overtime-grid">
                                 <div class="overtime-box">
                                     <div class="overtime-box-label">🗓️ Turno Pianificato</div>
@@ -1400,14 +1387,19 @@
                     };
                     const source = sourceLabels[ed.shift_source] || '📝 Inserito manualmente';
                     
-                    const totalMins = r.value || 0;
-                    const hours = Math.floor(totalMins / 60);
-                    const mins = totalMins % 60;
-                    const totalFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                    // Nuovo formato: ore lavorate vs ore pianificate
+                    const workedMins = ed.worked_minutes || 0;
+                    const plannedMins = ed.planned_minutes || 0;
+                    const extraMins = ed.extra_minutes || (r.value || 0);
                     
-                    // Timbrata originale (es. 00:27) e arrotondata (es. 00:30)
+                    const formatMinToHM = (m) => {
+                        const h = Math.floor(m / 60);
+                        const mm = m % 60;
+                        return h > 0 ? `${h}h ${mm}m` : `${mm} min`;
+                    };
+                    
                     const actualStart = formatTime(ed.actual_start || ed.ora_timbrata);
-                    const roundedTimbratura = formatTime(ed.ora_mod || ed.rounded_start) || roundTime(actualStart, 'up');
+                    const roundedTimbratura = formatTime(ed.ora_mod || ed.rounded_start);
                     
                     overtimeHtml = `
                         <div class="request-overtime-details">
@@ -1417,6 +1409,15 @@
                                     <div class="overtime-box-label">🗓️ Turno Pianificato</div>
                                     <div class="overtime-box-value">${formatTime(ed.planned_start)} - ${formatTime(ed.planned_end)}</div>
                                 </div>
+                                ${workedMins > 0 ? `
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">⏱️ Ore Lavorate</div>
+                                    <div class="overtime-box-value" style="font-weight: bold;">${formatMinToHM(workedMins)}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">📋 Ore Pianificate</div>
+                                    <div class="overtime-box-value">${formatMinToHM(plannedMins)}</div>
+                                </div>` : `
                                 <div class="overtime-box">
                                     <div class="overtime-box-label">📝 Timbrata Originale</div>
                                     <div class="overtime-box-value">${actualStart}</div>
@@ -1424,9 +1425,10 @@
                                 <div class="overtime-box">
                                     <div class="overtime-box-label">⏰ Timbrata Arrotondata</div>
                                     <div class="overtime-box-value">${roundedTimbratura}</div>
-                                </div>
+                                </div>`}
                             </div>
                             <div class="overtime-diff">
+                                <div class="overtime-diff-item">⬆️ Extra: <span class="overtime-diff-badge">+${formatMinToHM(extraMins)}</span></div>
                                 ${ed.extra_minutes_before > 0 ? `<div class="overtime-diff-item">⬆️ Ingresso anticipato: <span class="overtime-diff-badge">+${ed.extra_minutes_before} min</span></div>` : ''}
                                 ${ed.extra_minutes_after > 0 ? `<div class="overtime-diff-item">⬇️ Uscita posticipata: <span class="overtime-diff-badge">+${ed.extra_minutes_after} min</span></div>` : ''}
                             </div>
@@ -1680,22 +1682,50 @@
                 const plannedStart = formatTime(ed.planned_start);
                 const plannedEnd = formatTime(ed.planned_end);
                 
-                // Preview orari per APPROVA/RESPINGI
-                const oraApprova = ed.extra_type === 'before_shift' 
-                    ? roundedTimbratura 
-                    : (ed.rounded_end || roundedTimbratura);
-                const oraRespingi = ed.extra_type === 'before_shift' 
-                    ? plannedStart 
-                    : plannedEnd;
+                // Nuova logica: ore lavorate vs pianificate
+                const workedMins = ed.worked_minutes || 0;
+                const plannedMins = ed.planned_minutes || 0;
+                const extraMins = ed.extra_minutes || (r.value || 0);
                 
-                extraInfo = `
-                    <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${plannedStart} - ${plannedEnd}</span></div>
-                    <div class="summary-row"><span class="summary-label">Timbrata originale</span><span class="summary-value">${actualStart}</span></div>
-                    <div class="summary-row"><span class="summary-label">Timbrata arrotondata</span><span class="summary-value">${roundedTimbratura}</span></div>
-                    <hr style="margin: 8px 0; border-color: #e9ecef;">
-                    <div class="summary-row" style="background: #d4edda; padding: 4px 8px; border-radius: 4px;">
-                        <span class="summary-label" style="color: #155724;">✅ Se APPROVI</span>
-                        <span class="summary-value" style="color: #155724; font-weight: bold;">${oraApprova}</span>
+                const formatMinToHM = (m) => {
+                    const h = Math.floor(m / 60);
+                    const mm = m % 60;
+                    return h > 0 ? `${h}h ${mm}m` : `${mm} min`;
+                };
+                
+                if (workedMins > 0 && plannedMins > 0) {
+                    // Nuovo formato: mostra ore lavorate vs pianificate
+                    extraInfo = `
+                        <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${plannedStart} - ${plannedEnd}</span></div>
+                        <div class="summary-row"><span class="summary-label">Ore Pianificate</span><span class="summary-value">${formatMinToHM(plannedMins)}</span></div>
+                        <div class="summary-row"><span class="summary-label">Ore Lavorate</span><span class="summary-value" style="font-weight: bold;">${formatMinToHM(workedMins)}</span></div>
+                        <div class="summary-row"><span class="summary-label">Extra</span><span class="summary-value" style="font-weight: bold; color: #f59e0b;">+${formatMinToHM(extraMins)}</span></div>
+                    `;
+                } else {
+                    // Formato legacy: timbrata originale/arrotondata
+                    // Preview orari per APPROVA/RESPINGI
+                    const oraApprova = ed.extra_type === 'before_shift' 
+                        ? roundedTimbratura 
+                        : (ed.rounded_end || roundedTimbratura);
+                    const oraRespingi = ed.extra_type === 'before_shift' 
+                        ? plannedStart 
+                        : plannedEnd;
+                    
+                    extraInfo = `
+                        <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${plannedStart} - ${plannedEnd}</span></div>
+                        <div class="summary-row"><span class="summary-label">Timbrata originale</span><span class="summary-value">${actualStart}</span></div>
+                        <div class="summary-row"><span class="summary-label">Timbrata arrotondata</span><span class="summary-value">${roundedTimbratura}</span></div>
+                        <hr style="margin: 8px 0; border-color: #e9ecef;">
+                        <div class="summary-row" style="background: #d4edda; padding: 4px 8px; border-radius: 4px;">
+                            <span class="summary-label" style="color: #155724;">✅ Se APPROVI</span>
+                            <span class="summary-value" style="color: #155724; font-weight: bold;">${oraApprova}</span>
+                        </div>
+                        <div class="summary-row" style="background: #f8d7da; padding: 4px 8px; border-radius: 4px; margin-top: 4px;">
+                            <span class="summary-label" style="color: #721c24;">❌ Se RESPINGI</span>
+                            <span class="summary-value" style="color: #721c24; font-weight: bold;">${oraRespingi}</span>
+                        </div>
+                    `;
+                }
                     </div>
                     <div class="summary-row" style="background: #f8d7da; padding: 4px 8px; border-radius: 4px; margin-top: 4px;">
                         <span class="summary-label" style="color: #721c24;">❌ Se RESPINGI</span>

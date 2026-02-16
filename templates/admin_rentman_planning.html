@@ -3175,11 +3175,15 @@
                                 </div>
                                 
                                 <div class="location-card-actions">
-                                    ${loc.address ? `
+                                    ${hasCoords ? `
+                                        <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps?q=${finalLat},${finalLon}', '_blank')">
+                                            🗺️ Maps
+                                        </button>
+                                    ` : (loc.address ? `
                                         <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps/search/${encodeURIComponent(loc.address)}', '_blank')">
                                             🗺️ Maps
                                         </button>
-                                    ` : ''}
+                                    ` : '')}
                                     <button class="location-card-btn save" onclick="saveLocationCoords('${escapeHtml(String(key))}')">
                                         💾 Salva
                                     </button>
@@ -3233,11 +3237,15 @@
                                 </div>
                                 
                                 <div class="location-card-actions">
-                                    ${loc.address ? `
+                                    ${hasCoords ? `
+                                        <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps?q=${loc.lat},${loc.lon}', '_blank')">
+                                            🗺️ Maps
+                                        </button>
+                                    ` : (loc.address ? `
                                         <button class="location-card-btn maps" onclick="window.open('https://www.google.com/maps/search/${encodeURIComponent(loc.address)}', '_blank')">
                                             🗺️ Maps
                                         </button>
-                                    ` : ''}
+                                    ` : '')}
                                     <button class="location-card-btn save" onclick="saveLocationCoords('${escapeHtml(String(key))}')">
                                         💾 Salva
                                     </button>
