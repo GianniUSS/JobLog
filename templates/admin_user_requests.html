@@ -1553,22 +1553,6 @@
             currentRequestId = id;
             document.getElementById('reviewNotes').value = '';
 
-            // Personalizza bottoni e label per tipo 19 (Giustificazione Ritardo)
-            const btnApprove = document.getElementById('btnApprove');
-            const btnReject = document.getElementById('btnReject');
-            const notesLabel = document.querySelector('#reviewNotes')?.previousElementSibling;
-            if (r.request_type_id === 19) {
-                btnApprove.innerHTML = '✅ Accetta giustificazione';
-                btnReject.innerHTML = '⏰ Registra ritardo';
-                btnReject.className = 'btn btn-warning';
-                if (notesLabel) notesLabel.textContent = 'Motivazione (minimo 10 caratteri)';
-            } else {
-                btnApprove.innerHTML = '✅ Approva';
-                btnReject.innerHTML = '❌ Respingi';
-                btnReject.className = 'btn btn-danger';
-                if (notesLabel) notesLabel.textContent = 'Note di revisione (opzionale)';
-            }
-
             const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km', minutes: 'min' };
             const valueUnit = valueUnits[r.value_type] || '';
             const dateFrom = formatDate(r.date_from);
@@ -1857,6 +1841,7 @@
             const btnApprove = document.getElementById('btnApprove');
             const btnReject = document.getElementById('btnReject');
             
+            const notesLabel = document.querySelector('#reviewNotes')?.previousElementSibling;
             // Giustificazione Ritardo (ID 19)
             if (r.request_type_id === 19) {
                 btnApprove.innerHTML = '✅ Accetta giustificazione';
@@ -1865,6 +1850,7 @@
                 btnReject.innerHTML = '⏰ Registra ritardo';
                 btnReject.className = 'btn btn-warning';
                 btnReject.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
+                if (notesLabel) notesLabel.textContent = 'Motivazione (minimo 10 caratteri)';
             } else if (r.request_type_id === 17 && r.extra_data) {
                 const ed = r.extra_data;
                 const diffMinutes = ed.diff_minutes || 0;
@@ -1898,6 +1884,7 @@
                 btnReject.innerHTML = '❌ Respingi';
                 btnReject.className = 'btn btn-danger';
                 btnReject.style.background = '';
+                if (notesLabel) notesLabel.textContent = 'Note di revisione (opzionale)';
             }
 
             document.getElementById('reviewModal').classList.add('open');
