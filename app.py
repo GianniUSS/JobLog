@@ -6011,6 +6011,82 @@ def api_timbratura_registra():
                     )
                     ora_mod = fp_ora_mod  # Aggiorna per CedolinoWeb
     
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PAUSA CONFERMATA: se l'utente ha confermato la pausa (non timbrata),
+    # crea le timbrature inizio_pausa e fine_pausa con gli orari pianificati
+    # e invia a CedolinoWeb
+    # ═══════════════════════════════════════════════════════════════════════════
+    created_break_records = []
+    if tipo == 'fine_giornata' and break_info and break_info.get('break_confirmed') and not break_info.get('break_stamped'):
+        try:
+            # Verifica che non ci siano già pause timbraste oggi
+            existing_pausa = db.execute(
+                f"""SELECT COUNT(*) as cnt FROM timbrature 
+                   WHERE username = {placeholder} AND data = {placeholder} 
+                   AND tipo IN ('inizio_pausa', 'fine_pausa')""",
+                (username, today)
+            ).fetchone()
+            existing_count = existing_pausa['cnt'] if isinstance(existing_pausa, dict) else existing_pausa[0]
+            
+            if existing_count == 0:
+                # Recupera break_start e break_end dalla configurazione turno
+                break_start_str = None
+                break_end_str = None
+                try:
+                    ensure_employee_shifts_table(db)
+                    brow = db.execute(
+                        f"""SELECT break_start, break_end FROM employee_shifts 
+                           WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1""",
+                        (username, day_of_week)
+                    ).fetchone()
+                    if brow:
+                        _bs = brow['break_start'] if isinstance(brow, dict) else brow[0]
+                        _be = brow['break_end'] if isinstance(brow, dict) else brow[1]
+                        if _bs and _be:
+                            if hasattr(_bs, 'total_seconds'):
+                                total_sec = int(_bs.total_seconds())
+                                break_start_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}:00"
+                            elif hasattr(_bs, 'strftime'):
+                                break_start_str = _bs.strftime("%H:%M:%S")
+                            else:
+                                bs_s = str(_bs)[:5]
+                                break_start_str = f"{bs_s}:00"
+                            if hasattr(_be, 'total_seconds'):
+                                total_sec = int(_be.total_seconds())
+                                break_end_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}:00"
+                            elif hasattr(_be, 'strftime'):
+                                break_end_str = _be.strftime("%H:%M:%S")
+                            else:
+                                be_s = str(_be)[:5]
+                                break_end_str = f"{be_s}:00"
+                except Exception as e:
+                    app.logger.warning(f"Errore lettura break da employee_shifts per pausa confermata: {e}")
+                
+                if break_start_str and break_end_str:
+                    now_ts = now_ms()
+                    # Crea inizio_pausa
+                    db.execute(
+                        f"""INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method)
+                           VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})""",
+                        (username, 'inizio_pausa', today, break_start_str, break_start_str, now_ts, 'confirmed_by_user')
+                    )
+                    # Crea fine_pausa
+                    db.execute(
+                        f"""INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method)
+                           VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})""",
+                        (username, 'fine_pausa', today, break_end_str, break_end_str, now_ts, 'confirmed_by_user')
+                    )
+                    created_break_records = [
+                        {'tipo': 'inizio_pausa', 'ora': break_start_str, 'timeframe': TIMEFRAME_INIZIO_PAUSA},
+                        {'tipo': 'fine_pausa', 'ora': break_end_str, 'timeframe': TIMEFRAME_FINE_PAUSA},
+                    ]
+                    app.logger.info(
+                        "Pausa confermata per %s: create timbrature inizio_pausa %s e fine_pausa %s (method=confirmed_by_user)",
+                        username, break_start_str, break_end_str
+                    )
+        except Exception as e:
+            app.logger.error(f"Errore creazione timbrature pausa confermata: {e}")
+    
     # Pulisce dati timbratura dalla sessione
     session.pop("timbratura_method", None)
     session.pop("timbratura_gps_lat", None)
@@ -6094,6 +6170,48 @@ def api_timbratura_registra():
                 "missing_external_id": True,
                 "cedolino_url": cedolino_url  # Mostra comunque l'URL per debug
             }), 400
+    
+    # Invia a CedolinoWeb le timbrature pausa confermate (inizio_pausa + fine_pausa)
+    if created_break_records:
+        try:
+            # Recupera display_name se non già disponibile
+            _dn_row = db.execute(
+                f"SELECT display_name FROM app_users WHERE username = {placeholder}",
+                (username,)
+            ).fetchone()
+            _disp_name = username
+            if _dn_row:
+                _disp_name = (_dn_row['display_name'] if isinstance(_dn_row, dict) else _dn_row[0]) or username
+            
+            # Usa lo stesso overtime_request_id se definito
+            _ot_req_id = extra_turno_request_id or _get_pending_overtime_request_id(db, username, today)
+            
+            for brec in created_break_records:
+                try:
+                    brk_ok, brk_ext_id, brk_err, _ = send_timbrata_utente(
+                        db,
+                        username=username,
+                        member_name=_disp_name,
+                        timeframe_id=brec['timeframe'],
+                        data_riferimento=today,
+                        ora_originale=brec['ora'],
+                        ora_modificata=brec['ora'],
+                        overtime_request_id=_ot_req_id,
+                    )
+                    if brk_ok:
+                        app.logger.info(
+                            "CedolinoWeb: inviata pausa confermata %s alle %s per %s",
+                            brec['tipo'], brec['ora'], username
+                        )
+                    else:
+                        app.logger.warning(
+                            "CedolinoWeb: errore invio pausa confermata %s per %s: %s",
+                            brec['tipo'], username, brk_err
+                        )
+                except Exception as e:
+                    app.logger.error(f"Errore invio pausa confermata a CedolinoWeb: {e}")
+        except Exception as e:
+            app.logger.error(f"Errore preparazione invio pause confermate: {e}")
     
     db.commit()
     
