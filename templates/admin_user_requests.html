@@ -1405,7 +1405,7 @@
                         'manual': '✏️ Turno manuale',
                         'employee_shift': '🏢 Turno impiegato'
                     };
-                    const source = sourceLabels[ed.shift_source] || '📝 Inserito manualmente';
+                    const source = sourceLabels[ed.shift_source] || (ed.auto_detected ? '🤖 Rilevato automaticamente' : '📝 Inserito manualmente');
                     
                     // Nuovo formato: ore lavorate vs ore pianificate
                     const workedMins = ed.worked_minutes || 0;
@@ -1452,7 +1452,7 @@
                                 ${ed.extra_minutes_before > 0 ? `<div class="overtime-diff-item">⬆️ Ingresso anticipato: <span class="overtime-diff-badge">+${ed.extra_minutes_before} min</span></div>` : ''}
                                 ${ed.extra_minutes_after > 0 ? `<div class="overtime-diff-item">⬇️ Uscita posticipata: <span class="overtime-diff-badge">+${ed.extra_minutes_after} min</span></div>` : ''}
                             </div>
-                            <div class="overtime-source">${source}${ed.auto_detected ? ' • Rilevato automaticamente' : ''}</div>
+                            <div class="overtime-source">${source}</div>
                         </div>`;
                 }
             }
@@ -1749,7 +1749,13 @@
                 
                 // Popola il campo orario arrotondato (solo quello rilevante)
                 const overtimeTimeLabel = document.getElementById('overtimeTimeLabel');
-                if (ed.extra_type === 'before_shift') {
+                if (ed.extra_type === 'daily_overtime') {
+                    // Daily overtime: non servono orari individuali
+                    if (overtimeTimeLabel) overtimeTimeLabel.textContent = '';
+                    if (overtimeRoundedStart) overtimeRoundedStart.value = '';
+                    if (overtimeRoundedEnd) overtimeRoundedEnd.value = '';
+                    if (overtimeTimesGroup) overtimeTimesGroup.style.display = 'none';
+                } else if (ed.extra_type === 'before_shift') {
                     // Ingresso anticipato
                     if (overtimeTimeLabel) overtimeTimeLabel.textContent = '⏱️ Orario Arrotondato (Ingresso)';
                     if (overtimeRoundedStart) overtimeRoundedStart.value = roundedTimbratura || '';
@@ -1757,8 +1763,8 @@
                 } else {
                     // Uscita posticipata
                     if (overtimeTimeLabel) overtimeTimeLabel.textContent = '⏱️ Orario Arrotondato (Uscita)';
-                    if (overtimeRoundedStart) overtimeRoundedStart.value = ed.rounded_end || roundedTimbratura || '';
-                    if (overtimeRoundedEnd) overtimeRoundedEnd.value = '';
+                    if (overtimeRoundedStart) overtimeRoundedStart.value = '';
+                    if (overtimeRoundedEnd) overtimeRoundedEnd.value = ed.rounded_end || roundedTimbratura || '';
                 }
                 
                 // Salva i dati del turno pianificato per il submit
@@ -1987,13 +1993,19 @@
                     payload.flex_type = 'fuori_flessibilita';
                 } else {
                     // EXTRA TURNO
+                    const extraType = overtimeTimesGroup.dataset.extraType || '';
                     if (status === 'rejected') {
                         // RESPINTO: usa gli orari del turno pianificato
                         payload.rounded_start = overtimeTimesGroup.dataset.plannedStart || '';
                         payload.rounded_end = overtimeTimesGroup.dataset.plannedEnd || '';
-                    } else {
-                        // APPROVATO: usa gli orari arrotondati (extra turno)
+                    } else if (extraType === 'daily_overtime') {
+                        // DAILY OVERTIME: non modificare orari individuali
+                        // Le timbrature hanno già l'ora_mod corretta dal rounding giornaliero
+                    } else if (extraType === 'before_shift') {
+                        // INGRESSO ANTICIPATO: aggiorna solo l'ingresso
                         payload.rounded_start = document.getElementById('overtimeRoundedStart')?.value || '';
+                    } else {
+                        // USCITA POSTICIPATA: aggiorna solo l'uscita
                         payload.rounded_end = document.getElementById('overtimeRoundedEnd')?.value || '';
                     }
                 }

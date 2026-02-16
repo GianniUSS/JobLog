@@ -18364,6 +18364,7 @@ def _create_auto_extra_turno_request(
             "soglia_time": extra_data.get("soglia_time"),
             "auto_detected": True,
             "overtime_type": extra_type,
+            "shift_source": extra_data.get("shift_source", "employee_shift"),
             # Campi per visualizzazione nel riepilogo admin
             "planned_start": planned_start,
             "planned_end": planned_end,
