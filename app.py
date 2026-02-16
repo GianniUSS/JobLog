@@ -5165,7 +5165,9 @@ def api_timbratura_registra():
     offline_gps = data.get('offline_gps')  # {latitude, longitude, accuracy}
     offline_qr = data.get('offline_qr')  # QR code scansionato offline
     break_info = data.get('break_info')  # Info pausa: {break_confirmed, break_skipped, break_skip_reason}
-    
+    if tipo == 'fine_giornata':
+        app.logger.info(f"BREAK_INFO DEBUG: username={username}, break_info={break_info}, raw_data_keys={list(data.keys())}")
+
     db = get_db()
     ensure_timbrature_table(db)
     

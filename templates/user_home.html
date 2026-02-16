@@ -3047,6 +3047,7 @@ function showBreakConfirmPopup(breakText, callback) {
 function confirmBreakDone() {
   const popup = document.getElementById('breakConfirmPopup');
   pendingBreakInfo = { break_confirmed: true, break_stamped: false };
+  console.log('✅ BREAK CONFIRMED - pendingBreakInfo:', JSON.stringify(pendingBreakInfo));
   const cb = popup._callback;
   popup.remove();
   if (cb) cb();
@@ -3066,6 +3067,7 @@ function confirmBreakSkip() {
   }
   const popup = document.getElementById('breakConfirmPopup');
   pendingBreakInfo = { break_skipped: true, break_skip_reason: reason };
+  console.log('⚠️ BREAK SKIPPED - pendingBreakInfo:', JSON.stringify(pendingBreakInfo));
   const cb = popup._callback;
   popup.remove();
   if (cb) cb();
@@ -3446,6 +3448,7 @@ async function confirmGpsLocation() {
     
     const gpsPayload = { tipo, token };
     if (pendingBreakInfo) gpsPayload.break_info = pendingBreakInfo;
+    console.log('🔵 GPS Payload (break_info):', JSON.stringify(gpsPayload));
     
     const res = await fetch('/api/timbratura', {
       method: 'POST',
@@ -3541,6 +3544,7 @@ async function registerTimbraturaDirectly(tipo) {
   try {
     const payload = { tipo, bypass_qr: true, offline_ts: Date.now() };
     if (pendingBreakInfo) payload.break_info = pendingBreakInfo;
+    console.log('🔵 Direct Payload (break_info):', JSON.stringify(payload));
     
     const res = await fetch('/api/timbratura', {
       method: 'POST',
@@ -4022,6 +4026,7 @@ async function onScanSuccess(decodedText, decodedResult) {
     
     const qrPayload = { tipo, token };
     if (pendingBreakInfo) qrPayload.break_info = pendingBreakInfo;
+    console.log('🔵 QR Payload (break_info):', JSON.stringify(qrPayload));
     
     const res = await fetch('/api/timbratura', {
       method: 'POST',
