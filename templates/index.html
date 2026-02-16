@@ -703,6 +703,7 @@ header { background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color: #
 <div id="offlineBanner" class="offline-banner hidden">⚠️ Connessione assente. Dati in sola lettura</div>
 <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite" aria-hidden="true">
 <span>🔄 Nuova versione disponibile</span>
+<button id="dismissUpdateBtn" type="button" style="background: transparent; border: 1px solid rgba(255,255,255,0.4); margin-right: 8px;">Più tardi</button>
 <button id="refreshAppBtn" type="button">Aggiorna</button>
 </div>
 
@@ -1449,8 +1450,21 @@ const installBtn = document.getElementById('installBtn');
 const dismissInstallBtn = document.getElementById('dismissInstallBtn');
 const updateBanner = document.getElementById('updateBanner');
 const refreshAppBtn = document.getElementById('refreshAppBtn');
+const dismissUpdateBtn = document.getElementById('dismissUpdateBtn');
 let pendingServiceWorker = null;
 let reloadOnControllerChange = false;
+const DISMISSED_SW_KEY = 'joblog-dismissed-sw-version';
+
+function getSwVersionFromUrl(scriptUrl) {
+    if (!scriptUrl) return null;
+    try {
+        const url = new URL(scriptUrl);
+        const vParam = url.searchParams.get('v');
+        return vParam || url.pathname;
+    } catch (e) {
+        return scriptUrl;
+    }
+}
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -1501,6 +1515,7 @@ window.addEventListener('appinstalled', () => {
 
 if (refreshAppBtn) {
     refreshAppBtn.addEventListener('click', () => {
+        localStorage.removeItem(DISMISSED_SW_KEY);
         hideUpdateBanner();
         if (pendingServiceWorker) {
             reloadOnControllerChange = true;
@@ -1509,6 +1524,16 @@ if (refreshAppBtn) {
         } else {
             window.location.reload();
         }
+    });
+}
+
+if (dismissUpdateBtn) {
+    dismissUpdateBtn.addEventListener('click', () => {
+        const swVersion = updateBanner?.dataset?.swVersion;
+        if (swVersion) {
+            localStorage.setItem(DISMISSED_SW_KEY, swVersion);
+        }
+        hideUpdateBanner();
     });
 }
 
@@ -1521,12 +1546,19 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-function showUpdateAvailable() {
+function showUpdateAvailable(swVersion) {
     if (!updateBanner) {
+        return;
+    }
+    // Controlla se l'utente ha già dismissato questo aggiornamento
+    const dismissedVersion = localStorage.getItem(DISMISSED_SW_KEY);
+    if (dismissedVersion && dismissedVersion === swVersion) {
+        console.log('[Update] Banner già dismissato per versione:', swVersion);
         return;
     }
     updateBanner.classList.remove('hidden');
     updateBanner.setAttribute('aria-hidden', 'false');
+    updateBanner.dataset.swVersion = swVersion || '';
 }
 
 function hideUpdateBanner() {
@@ -1547,7 +1579,8 @@ function monitorServiceWorkerUpdates(registration) {
             return;
         }
         pendingServiceWorker = worker;
-        showUpdateAvailable();
+        const swVersion = getSwVersionFromUrl(worker.scriptURL);
+        showUpdateAvailable(swVersion);
     };
 
     if (registration.waiting) {

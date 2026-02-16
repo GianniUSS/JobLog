@@ -1,8 +1,8 @@
-// Service Worker Version: v2026.01.17 - Updated: 2026-01-17T20:00:00Z
-const CACHE_NAME = 'joblog-v2026.01.17b';
-const STATIC_CACHE = 'joblog-static-v41';
-const DYNAMIC_CACHE = 'joblog-dynamic-v41';
-const API_CACHE = 'joblog-api-v36';
+// Service Worker Version: v2026.02.13b - Updated: 2026-02-13T16:20:00Z
+const CACHE_NAME = 'joblog-v2026.02.13b';
+const STATIC_CACHE = 'joblog-static-v44';
+const DYNAMIC_CACHE = 'joblog-dynamic-v44';
+const API_CACHE = 'joblog-api-v39';
 const BG_SYNC_TAG = 'joblog-sync-queue';
 const QUEUE_DB = 'joblog-sync-db';
 const QUEUE_STORE = 'requests';

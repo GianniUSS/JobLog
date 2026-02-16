@@ -531,9 +531,9 @@
         .timbratura-icon.pausa { background: var(--warning-bg); color: var(--warning); }
         
         .timbratura-info { flex: 1; }
-        .timbratura-tipo { font-size: 12px; font-weight: 600; }
-        .timbratura-details { font-size: 10px; color: var(--text-muted); }
-        .timbratura-ora { font-size: 15px; font-weight: 700; }
+        .timbratura-tipo { font-size: 14px; font-weight: 600; }
+        .timbratura-details { font-size: 11px; color: var(--text-muted); }
+        .timbratura-ora { font-size: 18px; font-weight: 700; }
         
         /* Ora originale e modifica */
         .timbratura-item.has-modifica {
@@ -1297,7 +1297,7 @@
                 // Timbrature
                 if (dayData && dayData.timbrature && dayData.timbrature.length > 0) {
                     html += `<div class="detail-section">
-                        <div class="detail-section-title"><i class="fas fa-clock"></i> Timbrature</div>`;
+                        <div class="detail-section-title" style="font-size: 15px;"><i class="fas fa-clock"></i> Timbrature</div>`;
                     
                     dayData.timbrature.forEach(t => {
                         let iconClass = 'pausa';
@@ -1317,21 +1317,41 @@
                             'fine_pausa': 'Fine Pausa'
                         };
                         
-                        const oraDisplay = t.ora_mod || t.ora;
-                        const hasModifica = t.ora_mod && t.ora_mod !== t.ora;
+                        // Controlla se questa timbratura ha una richiesta Fuori Flessibilità pending
+                        // In quel caso, l'ora_mod potrebbe essere sbagliata (calcolata prima del controllo flex)
+                        const flexForThisTimbratura = dayData.fuori_flessibilita?.find(ff => 
+                            ff.tipo_timbratura === t.tipo && ff.status === 'pending'
+                        );
                         
-                        // Calcola differenza in minuti se c'è modifica
-                        let modificaInfo = '';
-                        if (hasModifica) {
-                            const [h1, m1] = t.ora.split(':').map(Number);
-                            const [h2, m2] = t.ora_mod.split(':').map(Number);
-                            const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
-                            const sign = diff >= 0 ? '+' : '';
-                            const diffClass = diff >= 0 ? 'success' : 'danger';
+                        console.log('Checking flex for timbratura:', t.tipo, 'found:', flexForThisTimbratura, 'fuori_flex:', dayData.fuori_flessibilita);
+                        
+                        // Se c'è una richiesta Fuori Flessibilità pending, mostra l'ora originale
+                        // perché ora_mod potrebbe essere calcolata erroneamente
+                        let oraDisplay, hasModifica, modificaInfo = '';
+                        
+                        if (flexForThisTimbratura) {
+                            // Fuori Flessibilità pending: mostra ora originale con badge "In attesa"
+                            oraDisplay = t.ora;
+                            hasModifica = false;
                             modificaInfo = `<div class="timbratura-originale">
-                                <span class="ora-originale">Originale: ${t.ora}</span>
-                                <span class="modifica-badge ${diffClass}">${sign}${diff}m</span>
+                                <span class="modifica-badge warning" style="background: #f59e0b; color: white;">⏳ In attesa revisione</span>
                             </div>`;
+                        } else {
+                            oraDisplay = t.ora_mod || t.ora;
+                            hasModifica = t.ora_mod && t.ora_mod !== t.ora;
+                            
+                            // Calcola differenza in minuti se c'è modifica
+                            if (hasModifica) {
+                                const [h1, m1] = t.ora.split(':').map(Number);
+                                const [h2, m2] = t.ora_mod.split(':').map(Number);
+                                const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                                const sign = diff >= 0 ? '+' : '';
+                                const diffClass = diff >= 0 ? 'success' : 'danger';
+                                modificaInfo = `<div class="timbratura-originale">
+                                    <span class="ora-originale">Originale: ${t.ora}</span>
+                                    <span class="modifica-badge ${diffClass}">${sign}${diff}m</span>
+                                </div>`;
+                            }
                         }
                         
                         html += `<div class="timbratura-item ${hasModifica ? 'has-modifica' : ''}">
@@ -1366,7 +1386,7 @@
                             const fineT = dayData.timbrature?.find(t => t.tipo === 'fine_giornata');
                             
                             html += `<div style="font-size: 12px; color: #666; font-weight: 600; margin-bottom: 6px;">
-                                <i class="fas fa-fingerprint"></i> TIMBRATURE REGISTRATE
+                                <i class="fas fa-fingerprint"></i> TIMBRATURE CONFERMATE
                             </div>`;
                             
                             if (inizioT) {
@@ -1376,17 +1396,21 @@
                                 </div>`;
                             }
                             if (fineT) {
+                                // Usa ora_mod (arrotondata) se disponibile, altrimenti ora originale
+                                const oraUscitaDisplay = fineT.ora_mod || fineT.ora;
                                 html += `<div class="detail-row">
                                     <div class="detail-label" style="padding-left: 15px;">Uscita</div>
-                                    <div class="detail-value">${fineT.ora}</div>
+                                    <div class="detail-value">${oraUscitaDisplay}</div>
                                 </div>`;
                             }
                             
-                            // Calcola ore lorde direttamente dalle timbrature originali
+                            // Calcola ore lorde usando l'ora arrotondata se disponibile
                             let oreLordeMinuti = 0;
                             if (inizioT && fineT) {
-                                const [h1, m1] = inizioT.ora.split(':').map(Number);
-                                const [h2, m2] = fineT.ora.split(':').map(Number);
+                                const ingressoOra = inizioT.ora_mod || inizioT.ora;
+                                const uscitaOra = fineT.ora_mod || fineT.ora;
+                                const [h1, m1] = ingressoOra.split(':').map(Number);
+                                const [h2, m2] = uscitaOra.split(':').map(Number);
                                 oreLordeMinuti = (h2 * 60 + m2) - (h1 * 60 + m1);
                             }
                             

@@ -204,6 +204,96 @@
         } catch {}
     }
     
+    // Carica timer dal server (per timer avviati da timbratura produzione)
+    async function loadTimerFromServer() {
+        try {
+            const res = await fetch('/api/production/timer');
+            if (!res.ok) return false;
+            const data = await res.json();
+            if (data.ok && data.active && data.timer) {
+                const serverTimer = data.timer;
+                console.log('[MagTimer] Timer trovato sul server:', serverTimer);
+                
+                // Calcola elapsed attuale
+                let currentElapsed = serverTimer.elapsed_ms || 0;
+                if (!serverTimer.paused && serverTimer.start_ts) {
+                    currentElapsed += Date.now() - serverTimer.start_ts;
+                }
+                
+                // Imposta il timer locale
+                timer = {
+                    running: true,
+                    paused: serverTimer.paused,
+                    start: serverTimer.start_ts,
+                    startedAt: serverTimer.start_ts,
+                    elapsed: currentElapsed,
+                    proj: { code: serverTimer.project_code, name: serverTimer.project_name || serverTimer.project_code },
+                    act: serverTimer.activity_label,
+                    notes: serverTimer.notes || ''
+                };
+                
+                // Salva in localStorage per coerenza
+                saveTimerState();
+                return true;
+            } else if (data.ok && !data.active) {
+                // Timer non attivo sul server - se era attivo localmente, fermalo
+                if (timer.running) {
+                    console.log('[MagTimer] Timer fermato dal server (timbratura fine giornata)');
+                    stopTick();
+                    clearTimerState();
+                    updateUI();
+                    fetchSessions(); // Ricarica sessioni
+                }
+                return false;
+            }
+        } catch (err) {
+            console.error('[MagTimer] Errore caricamento timer server:', err);
+        }
+        return false;
+    }
+    
+    // Sincronizza stato timer dal server (per rilevare pause/stop da timbratura)
+    async function syncTimerStateFromServer() {
+        if (!timer.running) return;
+        
+        try {
+            const res = await fetch('/api/production/timer');
+            if (!res.ok) return;
+            const data = await res.json();
+            
+            if (data.ok && data.active && data.timer) {
+                const serverTimer = data.timer;
+                
+                // Controlla se lo stato di pausa è cambiato
+                if (serverTimer.paused !== timer.paused) {
+                    console.log('[MagTimer] Stato pausa cambiato dal server:', serverTimer.paused);
+                    timer.paused = serverTimer.paused;
+                    timer.elapsed = serverTimer.elapsed_ms || 0;
+                    
+                    if (serverTimer.paused) {
+                        stopTick();
+                    } else {
+                        timer.start = serverTimer.start_ts;
+                        timer.startedAt = serverTimer.start_ts;
+                        startTick();
+                    }
+                    
+                    saveTimerState();
+                    updateUI();
+                }
+            } else if (data.ok && !data.active && timer.running) {
+                // Timer fermato dal server (fine giornata)
+                console.log('[MagTimer] Timer fermato dal server');
+                stopTick();
+                clearTimerState();
+                updateUI();
+                fetchSessions();
+            }
+        } catch (err) {
+            // Ignora errori di rete
+        }
+    }
+    
     function saveTimerState() {
         try {
             localStorage.setItem(TIMER_KEY, JSON.stringify(timer));
@@ -228,6 +318,27 @@
             console.log('[MagTimer] Skip sync: timer not running or no proj', timer);
             return;
         }
+        
+        // Prima verifica se il timer è ancora attivo sul server
+        // (potrebbe essere stato fermato da una timbratura fine_giornata)
+        try {
+            const checkRes = await fetch('/api/production/timer');
+            if (checkRes.ok) {
+                const checkData = await checkRes.json();
+                if (checkData.ok && !checkData.active) {
+                    // Timer fermato dal server! Non ricrearlo, aggiorna stato locale
+                    console.log('[MagTimer] Timer fermato lato server, aggiorno stato locale');
+                    stopTick();
+                    clearTimerState();
+                    updateUI();
+                    fetchSessions();
+                    return;
+                }
+            }
+        } catch (err) {
+            // Ignora errori di verifica
+        }
+        
         console.log('[MagTimer] Syncing timer to server:', timer);
         try {
             const res = await fetch('/api/magazzino/timer', {
@@ -1165,6 +1276,21 @@
     initSessionActionsBar();
     initActivitiesCarousel();
     
+    // Se non c'è un timer locale attivo, controlla se c'è sul server (avviato da timbratura)
+    async function initTimerFromServer() {
+        if (!timer.running) {
+            const loaded = await loadTimerFromServer();
+            if (loaded) {
+                selectedProj = timer.proj;
+                selectedAct = timer.act;
+                if (!timer.paused) startTick();
+                updateUI();
+                console.log('[MagTimer] Timer caricato dal server');
+            }
+        }
+    }
+    initTimerFromServer();
+    
     // Restore running timer
     if (timer.running) {
         selectedProj = timer.proj;
@@ -1184,5 +1310,19 @@
             fetchProjects(true);
         }
     }, 5 * 60 * 1000);
+    
+    // Sincronizza stato timer dal server ogni 5 secondi (per rilevare pause/stop da timbratura)
+    setInterval(() => {
+        if (timer.running && document.visibilityState === 'visible') {
+            syncTimerStateFromServer();
+        }
+    }, 5000);
+    
+    // Sincronizza anche quando la pagina torna visibile
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && timer.running) {
+            syncTimerStateFromServer();
+        }
+    });
     
 })();

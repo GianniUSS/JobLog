@@ -9,11 +9,35 @@
     const newVersionDisplay = document.getElementById('newVersionDisplay');
     let pendingServiceWorker = null;
     let reloadOnControllerChange = false;
+    const DISMISSED_SW_KEY = 'joblog-dismissed-sw-version';
 
-    function showUpdateAvailable() {
+    function getSwVersionFromUrl(scriptUrl) {
+        // Estrai un identificatore unico dal service worker URL
+        if (!scriptUrl) return null;
+        try {
+            const url = new URL(scriptUrl);
+            // Usa il parametro v= se presente, altrimenti usa l'hash dell'URL
+            const vParam = url.searchParams.get('v');
+            return vParam || url.pathname;
+        } catch (e) {
+            return scriptUrl;
+        }
+    }
+
+    function showUpdateAvailable(swVersion) {
         if (!updateBanner) return;
+        
+        // Controlla se l'utente ha già dismissato questo aggiornamento
+        const dismissedVersion = localStorage.getItem(DISMISSED_SW_KEY);
+        if (dismissedVersion && dismissedVersion === swVersion) {
+            console.log('[Update] Banner già dismissato per versione:', swVersion);
+            return;
+        }
+        
         updateBanner.classList.remove('hidden');
         updateBanner.setAttribute('aria-hidden', 'false');
+        // Salva la versione in attesa per riferimento
+        updateBanner.dataset.swVersion = swVersion || '';
         // Mostra il numero di versione
         if (newVersionDisplay && window.APP_VERSION) {
             newVersionDisplay.textContent = `(${window.APP_VERSION})`;
@@ -28,6 +52,8 @@
 
     if (refreshAppBtn) {
         refreshAppBtn.addEventListener('click', () => {
+            // Pulisci il localStorage per questa versione quando l'utente aggiorna
+            localStorage.removeItem(DISMISSED_SW_KEY);
             hideUpdateBanner();
             if (pendingServiceWorker) {
                 reloadOnControllerChange = true;
@@ -36,6 +62,19 @@
             } else {
                 window.location.reload();
             }
+        });
+    }
+    
+    // Aggiungi pulsante per dismissare il banner (chiudere senza aggiornare)
+    const dismissBtn = document.getElementById('dismissUpdateBtn');
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+            const swVersion = updateBanner?.dataset?.swVersion;
+            if (swVersion) {
+                localStorage.setItem(DISMISSED_SW_KEY, swVersion);
+                console.log('[Update] Dismissato aggiornamento per versione:', swVersion);
+            }
+            hideUpdateBanner();
         });
     }
 
@@ -68,7 +107,9 @@
                 return;
             }
             pendingServiceWorker = worker;
-            showUpdateAvailable();
+            // Passa l'identificatore della versione del SW in waiting
+            const swVersion = getSwVersionFromUrl(worker.scriptURL);
+            showUpdateAvailable(swVersion);
         };
 
         if (registration.waiting) {

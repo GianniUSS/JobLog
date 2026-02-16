@@ -529,6 +529,7 @@ body {
   animation: slideIn 0.3s ease forwards;
   opacity: 0;
   transform: translateY(10px);
+  position: relative;
 }
 
 .turno-card:hover {
@@ -1156,6 +1157,227 @@ body {
   color: var(--text-muted);
   margin-top: 8px;
 }
+
+/* Turno Info Button */
+.turno-info-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: white;
+  border: 2px solid var(--brand);
+  color: var(--brand);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.turno-info-btn:hover {
+  background: var(--brand);
+  color: white;
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+}
+
+/* Crew Info Modal */
+.crew-info-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.crew-info-overlay.active {
+  display: flex;
+}
+.crew-info-modal {
+  background: var(--bg-card);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: slideUp 0.3s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.crew-info-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px 20px;
+  border-radius: 18px 18px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.crew-info-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
+}
+.crew-info-close {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.crew-info-close:hover {
+  background: rgba(255,255,255,0.35);
+}
+.crew-info-body {
+  padding: 16px 20px;
+}
+.crew-info-loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.crew-info-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.crew-info-section {
+  margin-bottom: 20px;
+}
+.crew-info-section:last-child {
+  margin-bottom: 0;
+}
+.crew-info-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+.crew-member-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.crew-member-item.is-me {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.crew-member-item.is-leader {
+  background: #fffbeb;
+  border-color: #fbbf24;
+  border-width: 2px;
+}
+.crew-member-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.crew-member-item.is-me .crew-member-avatar {
+  background: #3b82f6;
+  color: white;
+}
+.crew-member-item.is-leader .crew-member-avatar {
+  background: #fbbf24;
+  color: white;
+}
+.crew-member-info {
+  flex: 1;
+  min-width: 0;
+}
+.crew-member-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crew-member-role {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crew-member-time {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.vehicle-info-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+.vehicle-info-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.vehicle-info-details {
+  flex: 1;
+  min-width: 0;
+}
+.vehicle-info-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vehicle-info-driver {
+  font-size: 12px;
+  color: #15803d;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 </style>
 </head>
 <body>
@@ -1290,6 +1512,19 @@ body {
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Crew Info Modal -->
+<div class="crew-info-overlay" id="crewInfoOverlay" onclick="closeCrewInfoModal(event)">
+  <div class="crew-info-modal" onclick="event.stopPropagation()">
+    <div class="crew-info-header">
+      <h3 id="crewInfoTitle">ℹ️ Info Turno</h3>
+      <button class="crew-info-close" onclick="closeCrewInfoModal()">✕</button>
+    </div>
+    <div class="crew-info-body" id="crewInfoBody">
+      <div class="crew-info-loading">Caricamento...</div>
+    </div>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════
@@ -1849,6 +2084,7 @@ function showToastGlobal(message) {
       
       return `
         <div class="turno-card ${todayClass}" style="animation-delay: ${index * 0.05}s">
+          <button class="turno-info-btn" onclick="openCrewInfoModal('${turno.project_code}')" title="Info squadra e mezzi">ℹ</button>
           <div class="turno-date-header">
             <div>
               <div class="turno-date">
@@ -1928,6 +2164,87 @@ function showToastGlobal(message) {
   // Funzioni globali per week navigation
   window.navigateWeek = navigateWeek;
   window.selectDate = selectDate;
+  
+  // ═══ Crew Info Modal ═══
+  async function openCrewInfoModal(projectCode) {
+    if (!projectCode) return;
+
+    const overlay = document.getElementById('crewInfoOverlay');
+    const body = document.getElementById('crewInfoBody');
+    const title = document.getElementById('crewInfoTitle');
+
+    title.textContent = `ℹ️ Info Turno`;
+    body.innerHTML = '<div class="crew-info-loading">⏳ Caricamento...</div>';
+    overlay.classList.add('active');
+
+    try {
+      const res = await fetch(`/api/user/turno-crew-info?project_code=${encodeURIComponent(projectCode)}`);
+      if (!res.ok) throw new Error('Errore caricamento');
+      const data = await res.json();
+
+      let html = '';
+
+      // Sezione Squadra
+      if (data.crew && data.crew.length > 0) {
+        html += `<div class="crew-info-section">
+          <div class="crew-info-section-title">👥 Squadra (${data.total_crew})</div>`;
+        data.crew.forEach(m => {
+          const initials = (m.crew_name || '?').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+          const timeStr = m.start && m.end ? `${m.start} - ${m.end}` : (m.start || '');
+          html += `<div class="crew-member-item ${m.is_me ? 'is-me' : ''} ${m.is_leader ? 'is-leader' : ''}">
+            <div class="crew-member-avatar">${initials}</div>
+            <div class="crew-member-info">
+              <div class="crew-member-name">
+                ${m.is_leader ? '<span style="font-size:16px;margin-right:4px;">⭐</span>' : ''}${escapeHtml(m.crew_name)}${m.is_me ? ' (Tu)' : ''}
+              </div>
+              <div class="crew-member-role">${escapeHtml(m.function || '—')}${m.location ? ' • ' + escapeHtml(m.location) : ''}</div>
+            </div>
+            ${timeStr ? `<div class="crew-member-time">${timeStr}</div>` : ''}
+          </div>`;
+        });
+        html += '</div>';
+      } else {
+        html += '<div class="crew-info-empty">Nessun collega trovato per questo turno</div>';
+      }
+
+      // Sezione Mezzi
+      if (data.vehicles && data.vehicles.length > 0) {
+        html += `<div class="crew-info-section">
+          <div class="crew-info-section-title">🚛 Mezzi (${data.total_vehicles})</div>`;
+        data.vehicles.forEach(v => {
+          html += `<div class="vehicle-info-item">
+            <div class="vehicle-info-icon">🚛</div>
+            <div class="vehicle-info-details">
+              <div class="vehicle-info-name">${escapeHtml(v.vehicle_name)}</div>
+              <div class="vehicle-info-driver">${v.driver_name ? '🧑‍✈️ Autista: ' + escapeHtml(v.driver_name) : '⚠️ Nessun autista assegnato'}</div>
+            </div>
+          </div>`;
+        });
+        html += '</div>';
+      }
+
+      body.innerHTML = html || '<div class="crew-info-empty">Nessuna informazione disponibile</div>';
+
+    } catch (err) {
+      console.error('Errore caricamento crew info:', err);
+      body.innerHTML = '<div class="crew-info-empty">❌ Errore nel caricamento delle informazioni</div>';
+    }
+  }
+
+  function closeCrewInfoModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('crewInfoOverlay').classList.remove('active');
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  window.openCrewInfoModal = openCrewInfoModal;
+  window.closeCrewInfoModal = closeCrewInfoModal;
   
   // Init
   loadTurni();

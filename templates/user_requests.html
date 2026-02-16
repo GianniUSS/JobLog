@@ -964,6 +964,52 @@
             font-weight: 500;
         }
         
+        .request-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        .request-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .request-meta-item i {
+            font-size: 11px;
+        }
+        
+        .request-reviewer {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+        }
+        
+        .request-reviewer.approved {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        
+        .request-reviewer.rejected {
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+        
+        .request-reviewer i {
+            font-size: 14px;
+        }
+        
         .request-cdc {
             font-size: 13px;
             color: var(--text-secondary);
@@ -1032,6 +1078,64 @@
             color: var(--text-primary);
         }
         
+        /* Permission time details */
+        .request-time-range {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: var(--info-bg);
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--info);
+        }
+        
+        .request-time-range i {
+            font-size: 12px;
+        }
+        
+        /* Flex violation details */
+        .flex-details {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--warning-bg);
+            border-radius: var(--radius-sm);
+            border-left: 3px solid var(--warning);
+        }
+        
+        .flex-details .flex-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--warning);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .flex-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 13px;
+        }
+        
+        .flex-row-label {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        
+        .flex-row-value {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        .flex-row-value.highlight {
+            color: var(--warning);
+            font-weight: 600;
+        }
 
 
         /* Empty State */
@@ -2187,11 +2291,22 @@
 
             container.innerHTML = filtered.map(req => {
                 const statusClass = req.status || 'pending';
-                const statusText = {
-                    'pending': 'In attesa',
-                    'approved': 'Approvata',
-                    'rejected': 'Rifiutata'
-                }[statusClass] || statusClass;
+                let statusText;
+                
+                // Per Fuori Flessibilità (type_id=17), usa etichette specifiche
+                if (req.request_type_id === 17) {
+                    statusText = {
+                        'pending': 'In attesa di revisione',
+                        'approved': 'Ritardo confermato',
+                        'rejected': 'Giustificato'
+                    }[statusClass] || statusClass;
+                } else {
+                    statusText = {
+                        'pending': 'In attesa',
+                        'approved': 'Approvata',
+                        'rejected': 'Rifiutata'
+                    }[statusClass] || statusClass;
+                }
 
                 const typeName = requestTypes.find(t => t.id === req.request_type_id)?.name || req.type_name || 'Richiesta';
                 
@@ -2206,6 +2321,47 @@
                                     <span class="tratta-km">${t.km} km</span>
                                 </div>
                             `).join('')}
+                        </div>
+                    `;
+                }
+                
+                // Render orari permesso se presenti
+                let timeRangeHtml = '';
+                if (req.time_start && req.time_end) {
+                    timeRangeHtml = `
+                        <div class="request-time-range">
+                            <i class="fas fa-clock"></i>
+                            <span>${req.time_start} - ${req.time_end}</span>
+                        </div>
+                    `;
+                }
+                
+                // Render dettagli fuori flessibilità se presenti
+                let flexHtml = '';
+                if (req.request_type_id === 17 && req.ora_timbrata) {
+                    const tipoLabel = req.tipo_timbratura === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
+                    const diffMinutes = Math.abs(req.diff_minutes || req.value || 0);
+                    const direction = (req.diff_minutes || 0) > 0 ? 'ritardo' : 'anticipo';
+                    
+                    flexHtml = `
+                        <div class="flex-details">
+                            <div class="flex-title">⏰ Dettagli fuori flessibilità</div>
+                            <div class="flex-row">
+                                <span class="flex-row-label">Tipo</span>
+                                <span class="flex-row-value">${tipoLabel}</span>
+                            </div>
+                            <div class="flex-row">
+                                <span class="flex-row-label">Turno previsto</span>
+                                <span class="flex-row-value">${req.turno_start || '—'} - ${req.turno_end || '—'}</span>
+                            </div>
+                            <div class="flex-row">
+                                <span class="flex-row-label">Ora timbrata</span>
+                                <span class="flex-row-value highlight">${req.ora_timbrata}</span>
+                            </div>
+                            <div class="flex-row">
+                                <span class="flex-row-label">Differenza</span>
+                                <span class="flex-row-value highlight">${diffMinutes} min di ${direction}</span>
+                            </div>
                         </div>
                     `;
                 }
@@ -2244,6 +2400,35 @@
                     `;
                 }
 
+                // Render info revisione (chi ha gestito la richiesta)
+                let reviewerHtml = '';
+                if (req.status !== 'pending' && req.reviewed_by) {
+                    const reviewIcon = req.status === 'approved' ? 'fa-check-circle' : 'fa-times-circle';
+                    const reviewAction = req.status === 'approved' ? 'Approvata' : 'Rifiutata';
+                    reviewerHtml = `
+                        <div class="request-reviewer ${req.status}">
+                            <i class="fas ${reviewIcon}"></i>
+                            <span>${reviewAction} da <strong>${req.reviewed_by}</strong>${req.reviewed_ts ? ' il ' + formatDateTime(req.reviewed_ts) : ''}</span>
+                        </div>
+                    `;
+                }
+                
+                // Render meta info (data creazione)
+                let metaHtml = `
+                    <div class="request-meta">
+                        <div class="request-meta-item">
+                            <i class="fas fa-clock"></i>
+                            <span>Inviata: ${formatDateTime(req.created_ts)}</span>
+                        </div>
+                        ${req.updated_ts && req.updated_ts !== req.created_ts ? `
+                        <div class="request-meta-item">
+                            <i class="fas fa-edit"></i>
+                            <span>Aggiornata: ${formatDateTime(req.updated_ts)}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+
                 return `
                     <div class="request-card ${statusClass}">
                         <div class="request-header">
@@ -2253,12 +2438,16 @@
                         <div class="request-dates">
                             ${formatDate(req.date_start)}${req.date_end && req.date_end !== req.date_start ? ' → ' + formatDate(req.date_end) : ''}
                         </div>
+                        ${timeRangeHtml}
                         ${req.cdc ? `<div class="request-cdc">🏢 CDC: ${req.cdc}</div>` : ''}
                         ${tratteHtml}
+                        ${flexHtml}
                         ${overtimeHtml}
                         ${req.value && req.value_type !== 'minutes' ? `<div class="request-value">${req.value} ${req.value_unit || 'ore'}</div>` : ''}
                         ${req.notes ? `<div class="request-notes">${req.notes}</div>` : ''}
                         ${req.admin_notes ? `<div class="request-admin-notes">📝 ${req.admin_notes}</div>` : ''}
+                        ${reviewerHtml}
+                        ${metaHtml}
                     </div>
                 `;
             }).join('');

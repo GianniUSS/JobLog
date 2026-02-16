@@ -798,6 +798,16 @@
                     </div>
                 </div>
 
+                <!-- Controllo Ritardi (applicabile a tutti i modi) -->
+                <div class="form-group" style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border);">
+                    <label>⏰ Soglia Ritardo per Giustificazione</label>
+                    <div class="form-row" style="align-items: center;">
+                        <input type="number" class="form-input" id="lateThreshold" min="0" max="120" value="15" style="width: 100px;">
+                        <span class="hint">minuti (0 = disabilitato)</span>
+                    </div>
+                    <span class="hint">Se l'utente timbra in ritardo oltre questa soglia, deve fornire una giustificazione</span>
+                </div>
+
                 <div class="form-group" style="margin-top: 20px;">
                     <label class="checkbox-group">
                         <input type="checkbox" id="usaPausaStd" checked>
@@ -916,6 +926,7 @@
                 document.getElementById('arrotGiornaliero').value = r.arrotondamento_giornaliero_minuti || 15;
                 document.getElementById('arrotTipo').value = r.arrotondamento_giornaliero_tipo || 'floor';
                 document.getElementById('oltreFless').value = r.oltre_flessibilita_action || 'allow';
+                document.getElementById('lateThreshold').value = r.late_threshold_minutes !== undefined ? r.late_threshold_minutes : 15;
                 document.getElementById('usaPausaStd').checked = r.usa_regole_pausa_standard !== false;
             } else {
                 document.querySelector('input[name="roundingMode"][value="single"]').checked = true;
@@ -923,6 +934,7 @@
                 document.getElementById('flessUscita').value = 30;
                 document.getElementById('arrotGiornaliero').value = 15;
                 document.getElementById('arrotTipo').value = 'floor';
+                document.getElementById('lateThreshold').value = 15;
                 document.getElementById('oltreFless').value = 'allow';
                 document.getElementById('usaPausaStd').checked = true;
             }
@@ -979,6 +991,7 @@
                 arrotondamento_giornaliero_minuti: parseInt(document.getElementById('arrotGiornaliero').value),
                 arrotondamento_giornaliero_tipo: document.getElementById('arrotTipo').value,
                 oltre_flessibilita_action: document.getElementById('oltreFless').value,
+                late_threshold_minutes: parseInt(document.getElementById('lateThreshold').value),
                 usa_regole_pausa_standard: document.getElementById('usaPausaStd').checked,
                 is_active: true
             };

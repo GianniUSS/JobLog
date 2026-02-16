@@ -428,6 +428,11 @@ tr:hover {
     color: var(--brand);
 }
 
+.badge-production {
+    background: rgba(139, 92, 246, 0.15);
+    color: #8b5cf6;
+}
+
 .action-btns {
     display: flex;
     gap: 8px;
@@ -851,6 +856,14 @@ tr:hover {
                 
                 <div class="form-group">
                     <div class="form-check">
+                        <input type="checkbox" id="groupProduction">
+                        <label for="groupProduction">🏭 Gruppo di produzione</label>
+                    </div>
+                    <small style="color: var(--text-muted); margin-left: 24px;">Identifica i gruppi dedicati alla produzione</small>
+                </div>
+                
+                <div class="form-group">
+                    <div class="form-check">
                         <input type="checkbox" id="groupActive" checked>
                         <label for="groupActive">Gruppo attivo</label>
                     </div>
@@ -967,6 +980,7 @@ function renderGroups() {
         <tr>
             <td>
                 <strong>${escapeHtml(g.name)}</strong>
+                ${g.is_production ? '<span class="badge badge-production" style="margin-left: 8px;">🏭 Produzione</span>' : ''}
             </td>
             <td>${escapeHtml(g.description || '-')}</td>
             ${gpsLocationsEnabled ? `<td>${g.gps_location_name ? `<span class="badge badge-success">📍 ${escapeHtml(g.gps_location_name)}</span>` : '-'}</td>` : ''}
@@ -1000,6 +1014,7 @@ function openModal(group = null) {
     if (cedolinoInput) cedolinoInput.value = group ? (group.cedolino_group_id || '') : '';
     const gpsLocationSelect = document.getElementById('gpsLocationName');
     if (gpsLocationSelect) gpsLocationSelect.value = group ? (group.gps_location_name || '') : '';
+    document.getElementById('groupProduction').checked = group ? group.is_production : false;
     document.getElementById('groupActive').checked = group ? group.is_active : true;
     
     document.getElementById('modalOverlay').classList.add('open');
@@ -1026,6 +1041,7 @@ async function saveGroup(e) {
         description: document.getElementById('groupDescription').value.trim() || null,
         cedolino_group_id: document.getElementById('cedolinoGroupId')?.value.trim() || null,
         gps_location_name: document.getElementById('gpsLocationName')?.value || null,
+        is_production: document.getElementById('groupProduction').checked,
         is_active: document.getElementById('groupActive').checked
     };
     

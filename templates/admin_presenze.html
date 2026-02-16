@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Foglio Presenze - JobLog Admin</title>
-    <link rel="stylesheet" href="{{ static_version('css/admin_common.css') }}">
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
     <style>
         :root {
             --bg-primary: #0f172a;
@@ -378,13 +379,492 @@
             to { transform: rotate(360deg); }
         }
         
+        /* Paginazione */
+        .pagination-bar {
+            background: var(--bg-secondary);
+            padding: 12px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .pagination-info {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        .pagination-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .pagination-controls button {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 13px;
+        }
+        
+        .pagination-controls button:hover:not(:disabled) {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .pagination-controls button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .pagination-controls select {
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+        
+        /* Riga selezionata */
+        .presenze-table tbody tr.selected {
+            background: var(--primary) !important;
+            color: white;
+        }
+        
+        .presenze-table tbody tr {
+            cursor: pointer;
+        }
+        
+        /* Pannello inferiore */
+        .bottom-panel {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr 1fr;
+            gap: 16px;
+            padding: 16px 30px;
+            background: var(--bg-secondary);
+            border-top: 2px solid var(--border-color);
+            min-height: 250px;
+        }
+        
+        .panel-section {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background: var(--bg-tertiary);
+            padding: 10px 14px;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .panel-content {
+            padding: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        /* Tabella Giorno Lavorativo */
+        .giorni-table {
+            width: 100%;
+            font-size: 11px;
+            border-collapse: collapse;
+        }
+        
+        .giorni-table th,
+        .giorni-table td {
+            padding: 5px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .giorni-table th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        
+        .giorni-table tr:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        /* Dettaglio Dipendente */
+        .dettaglio-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 16px;
+            font-size: 12px;
+        }
+        
+        .dettaglio-item {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .dettaglio-label {
+            color: var(--text-secondary);
+            font-weight: 500;
+            min-width: 80px;
+        }
+        
+        .dettaglio-value {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        /* Statistiche */
+        .stats-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 12px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+        }
+        
+        .stat-label {
+            color: var(--text-secondary);
+        }
+        
+        .stat-value {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .stat-value.positive {
+            color: var(--success);
+        }
+        
+        .stat-value.warning {
+            color: var(--warning);
+        }
+        
+        /* Modal Dettaglio Giorno */
+        .day-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .day-modal-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .day-modal {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            width: 95%;
+            max-width: 500px;
+            max-height: 85vh;
+            overflow: hidden;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        
+        .day-modal-overlay.visible .day-modal {
+            transform: scale(1);
+        }
+        
+        .day-modal-header {
+            background: linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%);
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .day-modal-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
+        .day-modal-subtitle {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-top: 2px;
+        }
+        
+        .day-modal-close {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .day-modal-close:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .day-modal-body {
+            padding: 16px 20px;
+            max-height: calc(85vh - 80px);
+            overflow-y: auto;
+        }
+        
+        .detail-section {
+            margin-bottom: 16px;
+        }
+        
+        .detail-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
+        .detail-value {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .detail-value.success { color: var(--success); }
+        .detail-value.warning { color: var(--warning); }
+        .detail-value.danger { color: var(--danger); }
+        .detail-value.info { color: var(--info); }
+        .detail-value.muted { color: var(--text-secondary); font-weight: 400; }
+        
+        /* Timbrature nel modal */
+        .timbratura-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .timbratura-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        
+        .timbratura-icon.entrata {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+        
+        .timbratura-icon.uscita {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+        
+        .timbratura-icon.pausa {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+        
+        .timbratura-info {
+            flex: 1;
+        }
+        
+        .timbratura-tipo {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .timbratura-details {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        
+        .timbratura-ora {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .timbratura-originale {
+            font-size: 11px;
+            margin-top: 4px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .ora-originale {
+            color: var(--text-secondary);
+        }
+        
+        .modifica-badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 10px;
+        }
+        
+        .modifica-badge.success {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+        
+        .modifica-badge.danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+        
+        /* Turno box */
+        .turno-box {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .turno-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .turno-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        
+        .turno-orari {
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 4px;
+        }
+        
+        .turno-durata {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--primary);
+        }
+        
+        /* Totale box */
+        .totale-box {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%);
+            border-radius: 12px;
+            padding: 14px;
+            margin-top: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .totale-label {
+            font-weight: 700;
+            font-size: 14px;
+        }
+        
+        .totale-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--success);
+        }
+        
+        /* Empty state */
+        .empty-day {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-day i {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.3;
+        }
+        
+        /* Cell clickable */
+        .cell-day.clickable {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .cell-day.clickable:hover {
+            transform: scale(1.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 10;
+            position: relative;
+        }
+        
         /* Responsive */
+        @media (max-width: 1200px) {
+            .bottom-panel {
+                grid-template-columns: 1fr;
+            }
+        }
+        
         @media (max-width: 768px) {
             .filters-bar {
                 padding: 12px 16px;
             }
             
             .presenze-container {
+                padding: 12px 16px;
+            }
+            
+            .bottom-panel {
                 padding: 12px 16px;
             }
         }
@@ -469,7 +949,11 @@
         </div>
         <div class="legend-item">
             <div class="legend-color cell-festivo">FS</div>
-            <span>Festivo/Sabato</span>
+            <span>Festivo</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color weekend" style="background: var(--bg-tertiary); color: var(--text-secondary);">-</div>
+            <span>Weekend</span>
         </div>
         <div class="legend-item">
             <div class="legend-color cell-straordinario">S</div>
@@ -489,9 +973,166 @@
         </table>
     </div>
     
+    <!-- Paginazione -->
+    <div class="pagination-bar">
+        <div class="pagination-info" id="paginationInfo">
+            Record 0 - 0 di 0
+        </div>
+        <div class="pagination-controls">
+            <button onclick="goToPage(1)" id="btnFirst" title="Prima pagina">⏮️</button>
+            <button onclick="goToPage(currentPage - 1)" id="btnPrev" title="Pagina precedente">◀️</button>
+            <span style="margin: 0 8px;">
+                Pagina <select id="pageSelect" onchange="goToPage(parseInt(this.value))"></select> di <span id="totalPages">1</span>
+            </span>
+            <button onclick="goToPage(currentPage + 1)" id="btnNext" title="Pagina successiva">▶️</button>
+            <button onclick="goToPage(totalPages)" id="btnLast" title="Ultima pagina">⏭️</button>
+            <span style="margin-left: 16px;">
+                <label>Per pagina:</label>
+                <select id="pageSizeSelect" onchange="changePageSize(parseInt(this.value))">
+                    <option value="15" selected>15</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </span>
+        </div>
+    </div>
+    
+    <!-- Pannello Inferiore -->
+    <div class="bottom-panel">
+        <!-- Giorno Lavorativo -->
+        <div class="panel-section">
+            <div class="panel-header">📅 Giorno Lavorativo</div>
+            <div class="panel-content">
+                <table class="giorni-table" id="giorniTable">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Giustificativo</th>
+                            <th>Valore</th>
+                        </tr>
+                    </thead>
+                    <tbody id="giorniBody">
+                        <tr><td colspan="3" style="text-align:center; color: var(--text-secondary);">Seleziona un dipendente</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Dettaglio Dipendente -->
+        <div class="panel-section">
+            <div class="panel-header">👤 Dettaglio Dipendente</div>
+            <div class="panel-content">
+                <div class="dettaglio-grid" id="dettaglioContent">
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Cognome:</span>
+                        <span class="dettaglio-value" id="detCognome">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Nome:</span>
+                        <span class="dettaglio-value" id="detNome">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Matricola:</span>
+                        <span class="dettaglio-value" id="detMatricola">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Username:</span>
+                        <span class="dettaglio-value" id="detUsername">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Cod. Fiscale:</span>
+                        <span class="dettaglio-value" id="detCF">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Azienda:</span>
+                        <span class="dettaglio-value" id="detAzienda">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Qualifica:</span>
+                        <span class="dettaglio-value" id="detQualifica">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Livello:</span>
+                        <span class="dettaglio-value" id="detLivello">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Assunzione:</span>
+                        <span class="dettaglio-value" id="detAssunzione">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Contratto:</span>
+                        <span class="dettaglio-value" id="detContratto">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Gruppo:</span>
+                        <span class="dettaglio-value" id="detGruppo">-</span>
+                    </div>
+                    <div class="dettaglio-item">
+                        <span class="dettaglio-label">Mansione:</span>
+                        <span class="dettaglio-value" id="detMansione">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Statistiche -->
+        <div class="panel-section">
+            <div class="panel-header">📊 Statistiche Mese</div>
+            <div class="panel-content">
+                <div class="stats-grid" id="statsContent">
+                    <div class="stat-item">
+                        <span class="stat-label">Lavorato:</span>
+                        <span class="stat-value" id="statLavorato">0:00 hh</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Ordinario:</span>
+                        <span class="stat-value" id="statOrdinario">0:00 hh</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Straordinario:</span>
+                        <span class="stat-value positive" id="statStraordinario">0:00 hh</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Giorni Ferie:</span>
+                        <span class="stat-value" id="statFerie">0 gg</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Ore Permesso:</span>
+                        <span class="stat-value" id="statPermessi">0:00 hh</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Giorni Malattia:</span>
+                        <span class="stat-value" id="statMalattia">0 gg</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Giorni Lavorati:</span>
+                        <span class="stat-value" id="statGiorniLav">0 gg</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Loading -->
     <div class="loading-overlay hidden" id="loadingOverlay">
         <div class="spinner"></div>
+    </div>
+    
+    <!-- Modal Dettaglio Giorno -->
+    <div class="day-modal-overlay" id="dayModalOverlay" onclick="closeDayModal(event)">
+        <div class="day-modal" onclick="event.stopPropagation()">
+            <div class="day-modal-header">
+                <div>
+                    <div class="day-modal-title" id="dayModalTitle">Dettaglio Giorno</div>
+                    <div class="day-modal-subtitle" id="dayModalSubtitle"></div>
+                </div>
+                <button class="day-modal-close" onclick="closeDayModal()">✕</button>
+            </div>
+            <div class="day-modal-body" id="dayModalBody">
+                <!-- Contenuto generato dinamicamente -->
+            </div>
+        </div>
     </div>
     
     <script>
@@ -509,8 +1150,15 @@
         const loadingOverlay = document.getElementById('loadingOverlay');
         
         // === STATE ===
-        let currentData = [];
+        let allData = [];          // Tutti i dipendenti
+        let currentData = [];      // Dipendenti paginati
         let employees = [];
+        let selectedEmployee = null;
+        
+        // Paginazione
+        let currentPage = 1;
+        let pageSize = 15;
+        let totalPages = 1;
         
         // === INIT ===
         document.addEventListener('DOMContentLoaded', () => {
@@ -591,15 +1239,71 @@
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 
                 const data = await res.json();
-                currentData = data.employees || [];
+                allData = data.employees || [];
                 
+                // Reset paginazione
+                currentPage = 1;
+                selectedEmployee = null;
+                updatePagination();
                 renderTable(month, year);
+                clearBottomPanels();
             } catch (e) {
                 console.error('Errore caricamento dati:', e);
                 alert('Errore nel caricamento dei dati');
             } finally {
                 showLoading(false);
             }
+        }
+        
+        // === PAGINAZIONE ===
+        function updatePagination() {
+            totalPages = Math.max(1, Math.ceil(allData.length / pageSize));
+            
+            // Aggiorna select pagine
+            const pageSelect = document.getElementById('pageSelect');
+            pageSelect.innerHTML = '';
+            for (let i = 1; i <= totalPages; i++) {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = i;
+                if (i === currentPage) opt.selected = true;
+                pageSelect.appendChild(opt);
+            }
+            
+            document.getElementById('totalPages').textContent = totalPages;
+            
+            // Aggiorna stato bottoni
+            document.getElementById('btnFirst').disabled = currentPage <= 1;
+            document.getElementById('btnPrev').disabled = currentPage <= 1;
+            document.getElementById('btnNext').disabled = currentPage >= totalPages;
+            document.getElementById('btnLast').disabled = currentPage >= totalPages;
+            
+            // Info paginazione
+            const start = (currentPage - 1) * pageSize + 1;
+            const end = Math.min(currentPage * pageSize, allData.length);
+            document.getElementById('paginationInfo').textContent = 
+                allData.length > 0 ? `Record ${start} - ${end} di ${allData.length}` : 'Nessun record';
+            
+            // Estrai dati pagina corrente
+            currentData = allData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+        }
+        
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            selectedEmployee = null;
+            updatePagination();
+            renderTable(parseInt(filterMonth.value), parseInt(filterYear.value));
+            clearBottomPanels();
+        }
+        
+        function changePageSize(size) {
+            pageSize = size;
+            currentPage = 1;
+            selectedEmployee = null;
+            updatePagination();
+            renderTable(parseInt(filterMonth.value), parseInt(filterYear.value));
+            clearBottomPanels();
         }
         
         // === RENDERING ===
@@ -645,9 +1349,10 @@
                     </tr>
                 `;
             } else {
-                currentData.forEach(emp => {
+                currentData.forEach((emp, idx) => {
+                    const globalIdx = (currentPage - 1) * pageSize + idx;
                     bodyHtml += `
-                        <tr>
+                        <tr data-index="${globalIdx}" onclick="selectEmployee(${globalIdx})">
                             <td class="col-mat">${emp.matricola || '-'}</td>
                             <td class="col-nome">${emp.display_name || emp.username}</td>
                     `;
@@ -664,12 +1369,14 @@
                         
                         let cellClass = 'cell-day';
                         let cellContent = '';
+                        let isClickable = false;
                         
                         if (isWeekend) {
                             cellClass += ' weekend';
                         }
                         
                         if (dayData) {
+                            isClickable = true;
                             if (dayData.type === 'worked') {
                                 cellClass += ' cell-ore';
                                 cellContent = formatHoursMinutes(dayData.minutes);
@@ -690,17 +1397,24 @@
                             } else if (dayData.type === 'festivo') {
                                 cellClass += ' cell-festivo';
                                 cellContent = 'FS';
+                                isClickable = false; // Festivi non cliccabili
                             } else if (dayData.type === 'straordinario') {
                                 cellClass += ' cell-straordinario';
                                 cellContent = formatHoursMinutes(dayData.minutes);
                                 totalMinutes += dayData.minutes || 0;
                             }
                         } else if (isWeekend) {
-                            cellClass += ' cell-festivo';
-                            cellContent = 'FS';
+                            // Weekend senza dati: mostra solo "-"
+                            cellClass += ' weekend';
+                            cellContent = '-';
                         }
                         
-                        bodyHtml += `<td class="${cellClass}">${cellContent}</td>`;
+                        if (isClickable) {
+                            cellClass += ' clickable';
+                            bodyHtml += `<td class="${cellClass}" onclick="showDayDetail('${emp.username}', '${dateKey}', event)">${cellContent}</td>`;
+                        } else {
+                            bodyHtml += `<td class="${cellClass}">${cellContent}</td>`;
+                        }
                     }
                     
                     // Totale ore
@@ -720,12 +1434,426 @@
             tableBody.innerHTML = bodyHtml;
         }
         
+        // === SELEZIONE DIPENDENTE ===
+        function selectEmployee(index) {
+            selectedEmployee = allData[index];
+            
+            // Highlight riga
+            document.querySelectorAll('.presenze-table tbody tr').forEach(tr => {
+                tr.classList.remove('selected');
+                if (parseInt(tr.dataset.index) === index) {
+                    tr.classList.add('selected');
+                }
+            });
+            
+            // Aggiorna pannelli inferiori
+            updateGiorniLavorativi();
+            updateDettaglioDipendente();
+            updateStatistiche();
+        }
+        
+        function clearBottomPanels() {
+            document.getElementById('giorniBody').innerHTML = 
+                '<tr><td colspan="3" style="text-align:center; color: var(--text-secondary);">Seleziona un dipendente</td></tr>';
+            
+            document.getElementById('detCognome').textContent = '-';
+            document.getElementById('detNome').textContent = '-';
+            document.getElementById('detMatricola').textContent = '-';
+            document.getElementById('detUsername').textContent = '-';
+            document.getElementById('detCF').textContent = '-';
+            document.getElementById('detAzienda').textContent = '-';
+            document.getElementById('detQualifica').textContent = '-';
+            document.getElementById('detLivello').textContent = '-';
+            document.getElementById('detAssunzione').textContent = '-';
+            document.getElementById('detContratto').textContent = '-';
+            document.getElementById('detGruppo').textContent = '-';
+            document.getElementById('detMansione').textContent = '-';
+            
+            document.getElementById('statLavorato').textContent = '0:00 hh';
+            document.getElementById('statOrdinario').textContent = '0:00 hh';
+            document.getElementById('statStraordinario').textContent = '0:00 hh';
+            document.getElementById('statFerie').textContent = '0 gg';
+            document.getElementById('statPermessi').textContent = '0:00 hh';
+            document.getElementById('statMalattia').textContent = '0 gg';
+            document.getElementById('statGiorniLav').textContent = '0 gg';
+        }
+        
+        function updateGiorniLavorativi() {
+            if (!selectedEmployee) return;
+            
+            const month = parseInt(filterMonth.value);
+            const year = parseInt(filterYear.value);
+            const daysInMonth = new Date(year, month, 0).getDate();
+            
+            let html = '';
+            
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const dateStr = `${String(d).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
+                const dayData = selectedEmployee.days ? selectedEmployee.days[dateKey] : null;
+                
+                const date = new Date(year, month - 1, d);
+                const dayOfWeek = date.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                
+                let giustificativo = '';
+                let valore = '';
+                
+                if (dayData) {
+                    if (dayData.type === 'worked') {
+                        giustificativo = 'Lav.Ordinario';
+                        valore = formatHoursMinutes(dayData.minutes);
+                    } else if (dayData.type === 'ferie') {
+                        giustificativo = 'Ferie';
+                        valore = '8:00';
+                    } else if (dayData.type === 'permesso') {
+                        giustificativo = 'Permesso';
+                        valore = dayData.minutes ? formatHoursMinutes(dayData.minutes) : '8:00';
+                    } else if (dayData.type === 'malattia') {
+                        giustificativo = 'Malattia';
+                        valore = '8:00';
+                    } else if (dayData.type === 'festivo') {
+                        giustificativo = 'Festività';
+                        valore = '8:00';
+                    } else if (dayData.type === 'straordinario') {
+                        giustificativo = 'Straordinario';
+                        valore = formatHoursMinutes(dayData.minutes);
+                    }
+                } else if (isWeekend) {
+                    giustificativo = 'Riposo';
+                    valore = '-';
+                }
+                
+                if (giustificativo) {
+                    html += `
+                        <tr>
+                            <td>${dateStr}</td>
+                            <td>${giustificativo}</td>
+                            <td>${valore}</td>
+                        </tr>
+                    `;
+                }
+            }
+            
+            document.getElementById('giorniBody').innerHTML = html || 
+                '<tr><td colspan="3" style="text-align:center; color: var(--text-secondary);">Nessun dato</td></tr>';
+        }
+        
+        function updateDettaglioDipendente() {
+            if (!selectedEmployee) return;
+            
+            const emp = selectedEmployee;
+            const displayName = emp.display_name || emp.username;
+            const nameParts = displayName.split(' ');
+            
+            // Prova a separare cognome e nome
+            const cognome = nameParts.length > 1 ? nameParts.slice(-1).join(' ') : displayName;
+            const nome = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : '';
+            
+            document.getElementById('detCognome').textContent = cognome.toUpperCase();
+            document.getElementById('detNome').textContent = nome.toUpperCase();
+            document.getElementById('detMatricola').textContent = emp.matricola || '-';
+            document.getElementById('detUsername').textContent = emp.username;
+            document.getElementById('detCF').textContent = emp.codice_fiscale || '-';
+            document.getElementById('detAzienda').textContent = emp.azienda || '-';
+            document.getElementById('detQualifica').textContent = emp.qualifica || '-';
+            document.getElementById('detLivello').textContent = emp.livello || '-';
+            document.getElementById('detAssunzione').textContent = emp.data_assunzione || '-';
+            document.getElementById('detContratto').textContent = emp.contratto || '-';
+            document.getElementById('detGruppo').textContent = emp.gruppo || '-';
+            document.getElementById('detMansione').textContent = emp.mansione || '-';
+        }
+        
+        function updateStatistiche() {
+            if (!selectedEmployee) return;
+            
+            const month = parseInt(filterMonth.value);
+            const year = parseInt(filterYear.value);
+            const daysInMonth = new Date(year, month, 0).getDate();
+            
+            let totLavorato = 0;
+            let totStraordinario = 0;
+            let giorniFerie = 0;
+            let orePermesso = 0;
+            let giorniMalattia = 0;
+            let giorniLavorati = 0;
+            
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const dayData = selectedEmployee.days ? selectedEmployee.days[dateKey] : null;
+                
+                if (dayData) {
+                    if (dayData.type === 'worked') {
+                        totLavorato += dayData.minutes || 0;
+                        giorniLavorati++;
+                    } else if (dayData.type === 'straordinario') {
+                        totStraordinario += dayData.minutes || 0;
+                        giorniLavorati++;
+                    } else if (dayData.type === 'ferie') {
+                        giorniFerie++;
+                    } else if (dayData.type === 'permesso') {
+                        if (dayData.minutes) {
+                            orePermesso += dayData.minutes;
+                        } else {
+                            orePermesso += 480; // 8 ore default
+                        }
+                    } else if (dayData.type === 'malattia') {
+                        giorniMalattia++;
+                    }
+                }
+            }
+            
+            // Calcola ordinario (lavorato - straordinario oltre le 8h/giorno)
+            const oreOrdinario = Math.min(totLavorato, giorniLavorati * 480);
+            const oreStraordinarieExtra = Math.max(0, totLavorato - oreOrdinario);
+            const totStraordinarioEffettivo = totStraordinario + oreStraordinarieExtra;
+            
+            document.getElementById('statLavorato').textContent = formatHoursMinutes(totLavorato + totStraordinario) + ' (' + giorniLavorati + ' gg)';
+            document.getElementById('statOrdinario').textContent = formatHoursMinutes(oreOrdinario);
+            document.getElementById('statStraordinario').textContent = formatHoursMinutes(totStraordinarioEffettivo);
+            document.getElementById('statFerie').textContent = giorniFerie + ' gg';
+            document.getElementById('statPermessi').textContent = formatHoursMinutes(orePermesso);
+            document.getElementById('statMalattia').textContent = giorniMalattia + ' gg';
+            document.getElementById('statGiorniLav').textContent = giorniLavorati + ' gg';
+        }
+        
+        // === MODAL DETTAGLIO GIORNO ===
+        const DAYS_FULL = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+        const dayModalOverlay = document.getElementById('dayModalOverlay');
+        const dayModalTitle = document.getElementById('dayModalTitle');
+        const dayModalSubtitle = document.getElementById('dayModalSubtitle');
+        const dayModalBody = document.getElementById('dayModalBody');
+        
+        async function showDayDetail(username, dateStr, event) {
+            event.stopPropagation();
+            
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
+            const dayName = DAYS_FULL[date.getDay()];
+            
+            // Trova il dipendente
+            const emp = allData.find(e => e.username === username);
+            const displayName = emp ? (emp.display_name || emp.username) : username;
+            
+            dayModalTitle.textContent = `${dayName} ${day} ${MONTHS_IT[month - 1]} ${year}`;
+            dayModalSubtitle.textContent = displayName;
+            dayModalBody.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-secondary);"><div class="spinner" style="margin:0 auto 16px;"></div>Caricamento...</div>';
+            
+            dayModalOverlay.classList.add('visible');
+            
+            try {
+                // Carica dettagli timbrature
+                const res = await fetch(`/api/admin/presenze/day-detail?username=${encodeURIComponent(username)}&date=${dateStr}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                
+                const data = await res.json();
+                renderDayDetail(data, emp, dateStr);
+            } catch (e) {
+                console.error('Errore caricamento dettagli:', e);
+                dayModalBody.innerHTML = '<div class="empty-day"><div style="font-size:48px; margin-bottom:12px;">⚠️</div><p>Errore nel caricamento dei dettagli</p></div>';
+            }
+        }
+        
+        function renderDayDetail(data, emp, dateStr) {
+            let html = '';
+            
+            const formatTime = (t) => {
+                if (!t) return '';
+                const parts = String(t).split(':');
+                return parts[0] + ':' + parts[1];
+            };
+            
+            const formatMinutes = (m) => {
+                if (!m && m !== 0) return '0:00';
+                const h = Math.floor(m / 60);
+                const min = m % 60;
+                return `${h}:${String(min).padStart(2, '0')}`;
+            };
+            
+            // Turno previsto
+            if (data.turno_inizio && data.turno_fine) {
+                const pausaTurnoMin = data.pausa_turno_minuti || 60;
+                html += `
+                    <div class="turno-box">
+                        <div class="turno-header">
+                            <div>
+                                <div class="turno-label">📋 TURNO PREVISTO</div>
+                                <div class="turno-orari">${formatTime(data.turno_inizio)} - ${formatTime(data.turno_fine)}</div>
+                            </div>
+                            <div style="text-align:right;">
+                                <div style="font-size:11px; color:var(--text-secondary);">pausa ${formatMinutes(pausaTurnoMin)}</div>
+                                <div class="turno-durata">${formatMinutes(data.turno_base_minuti || 450)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Richieste/Giustificativi
+            if (data.richieste && data.richieste.length > 0) {
+                html += `<div class="detail-section">
+                    <div class="detail-section-title">📝 Giustificativi</div>`;
+                
+                data.richieste.forEach(req => {
+                    html += `<div class="detail-row">
+                        <div class="detail-label">${req.tipo || 'Richiesta'}</div>
+                        <div class="detail-value info">${req.valore || 'Giornata intera'}</div>
+                    </div>`;
+                    if (req.note) {
+                        html += `<div class="detail-row">
+                            <div class="detail-label" style="padding-left:15px;">Note</div>
+                            <div class="detail-value muted">${req.note}</div>
+                        </div>`;
+                    }
+                });
+                html += `</div>`;
+            }
+            
+            // Timbrature
+            if (data.timbrature && data.timbrature.length > 0) {
+                html += `<div class="detail-section">
+                    <div class="detail-section-title">⏱️ Timbrature</div>`;
+                
+                const tipoLabels = {
+                    'inizio_giornata': 'Inizio Giornata',
+                    'fine_giornata': 'Fine Giornata',
+                    'inizio_pausa': 'Inizio Pausa',
+                    'fine_pausa': 'Fine Pausa'
+                };
+                
+                data.timbrature.forEach(t => {
+                    let iconClass = 'pausa';
+                    let icon = '☕';
+                    if (t.tipo.includes('inizio') && !t.tipo.includes('pausa')) {
+                        iconClass = 'entrata';
+                        icon = '🟢';
+                    } else if (t.tipo.includes('fine') && !t.tipo.includes('pausa')) {
+                        iconClass = 'uscita';
+                        icon = '🔴';
+                    }
+                    
+                    const oraDisplay = t.ora_mod || t.ora;
+                    const hasModifica = t.ora_mod && t.ora_mod !== t.ora;
+                    
+                    let modificaInfo = '';
+                    if (hasModifica) {
+                        const [h1, m1] = String(t.ora).split(':').map(Number);
+                        const [h2, m2] = String(t.ora_mod).split(':').map(Number);
+                        const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                        const sign = diff >= 0 ? '+' : '';
+                        const diffClass = diff >= 0 ? 'success' : 'danger';
+                        modificaInfo = `
+                            <div class="timbratura-originale">
+                                <span class="ora-originale">Originale: ${formatTime(t.ora)}</span>
+                                <span class="modifica-badge ${diffClass}">${sign}${diff}m</span>
+                            </div>`;
+                    }
+                    
+                    html += `
+                        <div class="timbratura-item">
+                            <div class="timbratura-icon ${iconClass}">${icon}</div>
+                            <div class="timbratura-info">
+                                <div class="timbratura-tipo">${tipoLabels[t.tipo] || t.tipo}</div>
+                                <div class="timbratura-details">${t.metodo || ''} ${t.location ? '• ' + t.location : ''}</div>
+                                ${modificaInfo}
+                            </div>
+                            <div class="timbratura-ora">${formatTime(oraDisplay)}</div>
+                        </div>
+                    `;
+                });
+                
+                html += `</div>`;
+            }
+            
+            // Calcolo ore
+            if (data.ore_lorde || data.ore_nette || data.pausa_minuti) {
+                html += `<div class="detail-section">
+                    <div class="detail-section-title">📊 Calcolo Ore</div>`;
+                
+                if (data.ora_inizio && data.ora_fine) {
+                    html += `<div class="detail-row">
+                        <div class="detail-label">Ingresso</div>
+                        <div class="detail-value">${formatTime(data.ora_inizio)}</div>
+                    </div>`;
+                    html += `<div class="detail-row">
+                        <div class="detail-label">Uscita</div>
+                        <div class="detail-value">${formatTime(data.ora_fine)}</div>
+                    </div>`;
+                }
+                
+                if (data.ore_lorde) {
+                    html += `<div class="detail-row">
+                        <div class="detail-label">Ore lorde</div>
+                        <div class="detail-value muted">${formatMinutes(data.ore_lorde)}</div>
+                    </div>`;
+                }
+                
+                if (data.pausa_minuti) {
+                    html += `<div class="detail-row">
+                        <div class="detail-label">Pausa</div>
+                        <div class="detail-value warning">-${formatMinutes(data.pausa_minuti)}</div>
+                    </div>`;
+                }
+                
+                if (data.ore_nette) {
+                    html += `<div class="detail-row">
+                        <div class="detail-label">Ore nette</div>
+                        <div class="detail-value info">${formatMinutes(data.ore_nette)}</div>
+                    </div>`;
+                }
+                
+                if (data.straordinario_minuti > 0) {
+                    html += `<div class="detail-row">
+                        <div class="detail-label">Straordinario</div>
+                        <div class="detail-value success">+${formatMinutes(data.straordinario_minuti)}</div>
+                    </div>`;
+                }
+                
+                if (data.deficit_minuti > 0) {
+                    html += `<div class="detail-row">
+                        <div class="detail-label">Ore in meno</div>
+                        <div class="detail-value danger">-${formatMinutes(data.deficit_minuti)}</div>
+                    </div>`;
+                }
+                
+                html += `</div>`;
+            }
+            
+            // Totale finale
+            if (data.totale_minuti !== undefined) {
+                html += `
+                    <div class="totale-box">
+                        <div class="totale-label">✅ TOTALE GIORNATA</div>
+                        <div class="totale-value">${formatMinutes(data.totale_minuti)}</div>
+                    </div>
+                `;
+            }
+            
+            // Se non ci sono dati
+            if (!html) {
+                html = '<div class="empty-day"><div style="font-size:48px; margin-bottom:12px;">📭</div><p>Nessun dettaglio disponibile</p></div>';
+            }
+            
+            dayModalBody.innerHTML = html;
+        }
+        
+        function closeDayModal(event) {
+            if (event && event.target !== dayModalOverlay) return;
+            dayModalOverlay.classList.remove('visible');
+        }
+        
+        // Chiudi modal con ESC
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && dayModalOverlay.classList.contains('visible')) {
+                closeDayModal();
+            }
+        });
+        
         // === HELPERS ===
         function formatHoursMinutes(minutes) {
-            if (!minutes) return '';
+            if (!minutes) return '0:00';
             const h = Math.floor(minutes / 60);
             const m = minutes % 60;
-            if (m === 0) return `${h}:00`;
             return `${h}:${String(m).padStart(2, '0')}`;
         }
         

@@ -707,6 +707,7 @@
     <!-- Update Banner -->
     <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite" aria-hidden="true">
         <span>🔄 Nuova versione disponibile <strong id="newVersionDisplay"></strong></span>
+        <button id="dismissUpdateBtn" type="button" style="background: transparent; border: 1px solid rgba(255,255,255,0.4); margin-right: 8px;">Più tardi</button>
         <button id="refreshAppBtn" type="button">Aggiorna</button>
     </div>
 
@@ -818,6 +819,15 @@
                         </div>
                     </div>
 
+                    <!-- Riga 4: Codice Paghe (Matricola) -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="formCodicePaghe">Codice Paghe (Matricola)</label>
+                            <input type="text" class="form-input" id="formCodicePaghe" placeholder="Es: 1234" />
+                            <p class="form-hint">Matricola per il foglio presenze e cedolino</p>
+                        </div>
+                    </div>
+
                     <!-- Sezione CedolinoWeb -->
                     {% if cedolino_sync_enabled %}
                     <div class="form-section cedolino-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
@@ -916,6 +926,7 @@
         const formIsActive = document.getElementById('formIsActive');
         const formCrewId = document.getElementById('formCrewId');
         const formGroupId = document.getElementById('formGroupId');
+        const formCodicePaghe = document.getElementById('formCodicePaghe');
         // CedolinoWeb elements (potrebbero non esistere se sync disabilitato)
         const formExternalId = document.getElementById('formExternalId');
         const formGroupCedolinoId = document.getElementById('formGroupCedolinoId');
@@ -1053,6 +1064,7 @@
                 is_active: formIsActive.checked,
                 rentman_crew_id: formCrewId.value ? parseInt(formCrewId.value) : null,
                 group_id: formGroupId.value ? parseInt(formGroupId.value) : null,
+                codice_paghe: formCodicePaghe.value.trim() || null,
                 external_id: formExternalId ? (formExternalId.value.trim() || null) : null
             };
 
@@ -1180,6 +1192,7 @@
             formIsActive.checked = true;
             formCrewId.value = '';
             formGroupId.value = '';
+            formCodicePaghe.value = '';
             if (formExternalId) formExternalId.value = '';
             if (formGroupCedolinoId) formGroupCedolinoId.value = '';
             if (externalIdStatus) externalIdStatus.innerHTML = '<span style="color: var(--muted);">ℹ L\'ID Esterno può essere impostato dopo la creazione dell\'utente.</span>';
@@ -1207,6 +1220,7 @@
             formIsActive.checked = user.is_active;
             formCrewId.value = user.rentman_crew_id || '';
             formGroupId.value = user.group_id || '';
+            formCodicePaghe.value = user.codice_paghe || '';
             if (formExternalId) formExternalId.value = user.external_id || '';
             // Aggiorna il campo cedolino ID dal gruppo selezionato
             updateGroupCedolinoId();
