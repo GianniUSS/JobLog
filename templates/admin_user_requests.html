@@ -377,6 +377,45 @@
             min-width: 160px;
         }
         .filter-input { min-width: 200px; }
+        
+        .filter-date {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-panel);
+            color: var(--text);
+            font-size: 14px;
+            min-width: 140px;
+        }
+        
+        .filter-date-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .filter-date-group label {
+            font-size: 13px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+        
+        .filter-btn-clear {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .filter-btn-clear:hover {
+            background: var(--danger);
+            color: white;
+            border-color: var(--danger);
+        }
 
         /* Cards */
         .request-card {
@@ -797,6 +836,12 @@
             .request-card {
                 grid-template-columns: 1fr 1fr;
             }
+            .filter-date-group {
+                flex: 1;
+            }
+            .filter-date {
+                width: 100%;
+            }
         }
         @media (max-width: 600px) {
             .request-card {
@@ -808,6 +853,11 @@
             }
             .filter-tabs {
                 overflow-x: auto;
+            }
+            .filter-date-group {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
             }
         }
     </style>
@@ -882,6 +932,7 @@
     <!-- Update Banner -->
     <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite" aria-hidden="true">
         <span>🔄 Nuova versione disponibile <strong id="newVersionDisplay"></strong></span>
+        <button id="dismissUpdateBtn" type="button" style="background: transparent; border: 1px solid rgba(255,255,255,0.4); margin-right: 8px;">Più tardi</button>
         <button id="refreshAppBtn" type="button">Aggiorna</button>
     </div>
 
@@ -905,6 +956,20 @@
                 <option value="">Tutte le tipologie</option>
             </select>
             <input type="text" class="filter-input" id="searchUser" placeholder="🔍 Cerca utente...">
+        </div>
+        
+        <!-- Filtri data competenza -->
+        <div class="filter-bar" style="margin-top: -12px;">
+            <div class="filter-date-group">
+                <label>📅 Competenza dal:</label>
+                <input type="date" class="filter-date" id="filterDateFrom">
+            </div>
+            <div class="filter-date-group">
+                <label>al:</label>
+                <input type="date" class="filter-date" id="filterDateTo">
+            </div>
+            <button class="filter-btn-clear" id="clearDateFilters" title="Rimuovi filtri data">✕ Pulisci date</button>
+        </div>
         </div>
 
         <div id="requestsList">
@@ -940,8 +1005,8 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-ghost" onclick="closeModal()">Annulla</button>
-                <button class="btn btn-danger" onclick="submitReview('rejected')">❌ Respingi</button>
-                <button class="btn btn-success" onclick="submitReview('approved')">✅ Approva</button>
+                <button class="btn btn-danger" id="btnReject" onclick="submitReview('rejected')">❌ Respingi</button>
+                <button class="btn btn-success" id="btnApprove" onclick="submitReview('approved')">✅ Approva</button>
             </div>
         </div>
     </div>
@@ -1021,8 +1086,21 @@
             // Filter type & search
             const filterType = document.getElementById('filterType');
             const searchUser = document.getElementById('searchUser');
+            const filterDateFrom = document.getElementById('filterDateFrom');
+            const filterDateTo = document.getElementById('filterDateTo');
+            const clearDateFilters = document.getElementById('clearDateFilters');
+            
             if (filterType) filterType.addEventListener('change', renderRequests);
             if (searchUser) searchUser.addEventListener('input', renderRequests);
+            if (filterDateFrom) filterDateFrom.addEventListener('change', renderRequests);
+            if (filterDateTo) filterDateTo.addEventListener('change', renderRequests);
+            if (clearDateFilters) {
+                clearDateFilters.addEventListener('click', () => {
+                    filterDateFrom.value = '';
+                    filterDateTo.value = '';
+                    renderRequests();
+                });
+            }
         }
 
         function loadTheme() {
@@ -1086,13 +1164,32 @@
         function renderRequests() {
             const filterType = document.getElementById('filterType').value;
             const searchUser = document.getElementById('searchUser').value.toLowerCase();
+            const filterDateFrom = document.getElementById('filterDateFrom').value;
+            const filterDateTo = document.getElementById('filterDateTo').value;
 
             let filtered = allRequests.filter(r => {
                 if (currentFilter !== 'all' && r.status !== currentFilter) return false;
                 if (filterType && r.request_type_id != filterType) return false;
                 if (searchUser && !r.username.toLowerCase().includes(searchUser)) return false;
+                
+                // Filtro per periodo di competenza
+                if (filterDateFrom) {
+                    // La richiesta deve avere date_from >= filterDateFrom OPPURE date_to >= filterDateFrom
+                    const reqDateFrom = r.date_from ? r.date_from.split('T')[0] : null;
+                    const reqDateTo = r.date_to ? r.date_to.split('T')[0] : reqDateFrom;
+                    if (reqDateTo && reqDateTo < filterDateFrom) return false;
+                }
+                if (filterDateTo) {
+                    // La richiesta deve avere date_from <= filterDateTo
+                    const reqDateFrom = r.date_from ? r.date_from.split('T')[0] : null;
+                    if (reqDateFrom && reqDateFrom > filterDateTo) return false;
+                }
+                
                 return true;
             });
+
+            // Aggiorna contatori filtrati
+            updateFilteredCounts(filtered);
 
             if (filtered.length === 0) {
                 document.getElementById('requestsList').innerHTML = `
@@ -1105,6 +1202,48 @@
 
             const html = filtered.map(r => renderRequestCard(r)).join('');
             document.getElementById('requestsList').innerHTML = html;
+        }
+        
+        function updateFilteredCounts(filtered) {
+            // Mostra contatori basati sui filtri attivi (eccetto status)
+            const filterDateFrom = document.getElementById('filterDateFrom').value;
+            const filterDateTo = document.getElementById('filterDateTo').value;
+            const filterType = document.getElementById('filterType').value;
+            const searchUser = document.getElementById('searchUser').value.toLowerCase();
+            
+            // Se ci sono filtri attivi, mostra conteggi filtrati
+            if (filterDateFrom || filterDateTo || filterType || searchUser) {
+                const counts = { all: 0, pending: 0, approved: 0, rejected: 0 };
+                
+                // Filtra senza considerare currentFilter per avere i conteggi giusti
+                allRequests.forEach(r => {
+                    let match = true;
+                    if (filterType && r.request_type_id != filterType) match = false;
+                    if (searchUser && !r.username.toLowerCase().includes(searchUser)) match = false;
+                    
+                    if (filterDateFrom) {
+                        const reqDateTo = (r.date_to || r.date_from)?.split('T')[0];
+                        if (reqDateTo && reqDateTo < filterDateFrom) match = false;
+                    }
+                    if (filterDateTo) {
+                        const reqDateFrom = r.date_from?.split('T')[0];
+                        if (reqDateFrom && reqDateFrom > filterDateTo) match = false;
+                    }
+                    
+                    if (match) {
+                        counts.all++;
+                        counts[r.status]++;
+                    }
+                });
+                
+                document.getElementById('count-all').textContent = counts.all;
+                document.getElementById('count-pending').textContent = counts.pending;
+                document.getElementById('count-approved').textContent = counts.approved;
+                document.getElementById('count-rejected').textContent = counts.rejected;
+            } else {
+                // Nessun filtro attivo, mostra conteggi totali
+                updateCounts();
+            }
         }
 
         function renderRequestCard(r) {
@@ -1169,7 +1308,7 @@
                 // Funzione per rimuovere i secondi (HH:MM:SS -> HH:MM)
                 const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
                 
-                // Distingui tra Fuori Flessibilità (request_type_id=17) e Extra Turno (request_type_id=9)
+                // Distingui tra Fuori Flessibilità, Giustificazione Ritardo ed Extra Turno
                 if (r.request_type_id === 17) {
                     // FUORI FLESSIBILITÀ
                     const turnoStart = formatTime(ed.turno_start);
@@ -1178,6 +1317,32 @@
                     // Usa ora_finale se presente (dopo approvazione), altrimenti ora_mod
                     const oraArrotondata = formatTime(ed.ora_finale || ed.ora_mod);
                     const tipoLabel = ed.tipo_timbratura === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
+                    const diffMinutes = ed.diff_minutes || 0;
+                    const flessibilita = ed.arrotondamento_minuti || 30;
+                    const oltreFlexMinuti = Math.abs(diffMinutes) - flessibilita;
+                    
+                    // Determina il tipo di problema
+                    let tipoProblema, badgeColor;
+                    if (ed.tipo_timbratura === 'inizio_giornata') {
+                        if (diffMinutes > 0) {
+                            tipoProblema = 'RITARDO';
+                            badgeColor = '#dc3545';  // rosso
+                        } else {
+                            tipoProblema = 'INGRESSO ANTICIPATO';
+                            badgeColor = '#f59e0b';  // arancione
+                        }
+                    } else {
+                        if (diffMinutes < 0) {
+                            tipoProblema = 'USCITA ANTICIPATA';
+                            badgeColor = '#dc3545';  // rosso
+                        } else {
+                            tipoProblema = 'USCITA POSTICIPATA';
+                            badgeColor = '#f59e0b';  // arancione
+                        }
+                    }
+                    
+                    // Determina l'orario turno di riferimento (inizio o fine)
+                    const orarioTurnoRef = ed.tipo_timbratura === 'inizio_giornata' ? turnoStart : turnoEnd;
                     
                     overtimeHtml = `
                         <div class="request-overtime-details">
@@ -1188,18 +1353,43 @@
                                     <div class="overtime-box-value">${turnoStart} - ${turnoEnd}</div>
                                 </div>
                                 <div class="overtime-box">
-                                    <div class="overtime-box-label">📝 Timbrata Originale</div>
-                                    <div class="overtime-box-value">${oraTimbrata}</div>
+                                    <div class="overtime-box-label">📝 Timbrata Effettiva</div>
+                                    <div class="overtime-box-value" style="font-weight: bold; color: ${badgeColor};">${oraTimbrata}</div>
                                 </div>
                                 <div class="overtime-box">
-                                    <div class="overtime-box-label">⏰ Timbrata Arrotondata</div>
-                                    <div class="overtime-box-value">${oraArrotondata}</div>
+                                    <div class="overtime-box-label">🎯 Orario ${tipoLabel} Turno</div>
+                                    <div class="overtime-box-value">${orarioTurnoRef}</div>
                                 </div>
                             </div>
                             <div class="overtime-diff">
-                                <div class="overtime-diff-item">⏱️ ${tipoLabel} fuori flessibilità: <span class="overtime-diff-badge" style="background: #f59e0b;">+${ed.diff_minutes || 0} min</span></div>
+                                <div class="overtime-diff-item">⏰ ${tipoLabel} fuori flessibilità: <span class="overtime-diff-badge" style="background: ${badgeColor}; color: white; font-weight: bold;">${tipoProblema} +${oltreFlexMinuti} min</span></div>
                             </div>
-                            <div class="overtime-source">${ed.auto_created ? '📝 Inserito manualmente • Rilevato automaticamente' : '📝 Inserito manualmente'}</div>
+                            <div class="overtime-source">${ed.auto_created ? '🤖 Rilevato automaticamente' : '📝 Inserito manualmente'}</div>
+                        </div>`;
+                } else if (r.request_type_id === 19) {
+                    // GIUSTIFICAZIONE RITARDO
+                    const turnoStart = formatTime(ed.turno_start);
+                    const oraTimbrata = formatTime(ed.ora_timbrata);
+                    const lateMinutes = ed.late_minutes || 0;
+                    
+                    overtimeHtml = `
+                        <div class="request-overtime-details">
+                            <div class="overtime-header">⏰ Dettagli Ritardo</div>
+                            <div class="overtime-grid">
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">🗓️ Turno Previsto</div>
+                                    <div class="overtime-box-value">${turnoStart}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">📝 Timbrata Effettiva</div>
+                                    <div class="overtime-box-value" style="font-weight: bold; color: #dc3545;">${oraTimbrata}</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">⏱️ Ritardo</div>
+                                    <div class="overtime-box-value" style="font-weight: bold; color: #f59e0b;">${lateMinutes} min</div>
+                                </div>
+                            </div>
+                            <div class="overtime-source">${ed.auto_created ? '🤖 Rilevato automaticamente' : '📝 Inserito manualmente'}</div>
                         </div>`;
                 } else {
                     // EXTRA TURNO
@@ -1376,44 +1566,103 @@
                 
                 // Dati dalla richiesta
                 const oraTimbrata = formatTime(ed.ora_timbrata);
-                const oraModTurno = formatTime(ed.ora_mod);  // Ora calcolata sul turno (RESPINGI)
                 const turnoStart = formatTime(ed.turno_start);
                 const turnoEnd = formatTime(ed.turno_end);
                 const diffMinutes = ed.diff_minutes || 0;
                 const tipoTimbratura = ed.tipo_timbratura || 'fine_giornata';
                 const tipoLabel = tipoTimbratura === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
                 
-                // Prendi arrotondamento dalle regole del gruppo (salvato in extra_data)
-                const arrotondamentoMinuti = ed.arrotondamento_minuti || 30;
+                // Calcola quanto fuori flessibilità
+                const flessibilita = ed.arrotondamento_minuti || 30;
+                const oltreFlexMinuti = Math.abs(diffMinutes) - flessibilita;
                 
-                // Calcola ora approvata (ora reale arrotondata per difetto)
-                // Esempio con 30min: 19:09 → 19:00
-                const oraApprova = roundTime(oraTimbrata, 'down', arrotondamentoMinuti);
+                // Determina il tipo di fuori flessibilità
+                // diffMinutes < 0 = anticipo, diffMinutes > 0 = ritardo/posticipo
+                // IMPORTANTE: solo INGRESSO ANTICIPATO cambia orario, gli altri NO
+                const isIngressoAnticipato = (tipoTimbratura === 'inizio_giornata' && diffMinutes < 0);
+                
+                let tipoFuoriFlex, descFlex;
+                if (tipoTimbratura === 'inizio_giornata') {
+                    if (diffMinutes > 0) {
+                        tipoFuoriFlex = 'Ritardo';
+                        descFlex = `${Math.abs(diffMinutes)} minuti di ritardo (${oltreFlexMinuti} min oltre flessibilita)`;
+                    } else {
+                        tipoFuoriFlex = 'Ingresso anticipato';
+                        descFlex = `${Math.abs(diffMinutes)} minuti prima del turno (${oltreFlexMinuti} min oltre flessibilita)`;
+                    }
+                } else {
+                    if (diffMinutes < 0) {
+                        tipoFuoriFlex = 'Uscita anticipata';
+                        descFlex = `${Math.abs(diffMinutes)} minuti prima della fine turno (${oltreFlexMinuti} min oltre flessibilita)`;
+                    } else {
+                        tipoFuoriFlex = 'Uscita posticipata';
+                        descFlex = `${Math.abs(diffMinutes)} minuti dopo la fine turno (${oltreFlexMinuti} min oltre flessibilita)`;
+                    }
+                }
+                
+                // Calcola orari per le due opzioni
+                const oraRiferimentoTurno = tipoTimbratura === 'inizio_giornata' ? turnoStart : turnoEnd;
+                
+                // Box informativi diversi per tipo
+                let boxApprova, boxRespingi;
+                if (isIngressoAnticipato) {
+                    // SOLO INGRESSO ANTICIPATO: Approva = usa timbrata (ore extra), Respingi = usa orario turno
+                    boxApprova = `
+                        <div class="summary-row" style="background: #d4edda; padding: 8px; border-radius: 4px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: #155724; font-weight: 600;">✅ Autorizza anticipo</span>
+                                <span style="color: #155724; font-weight: bold;">${oraTimbrata}</span>
+                            </div>
+                            <div style="color: #155724; font-size: 0.85em; margin-top: 2px;">L'anticipo viene riconosciuto, passa la timbrata effettiva</div>
+                        </div>`;
+                    boxRespingi = `
+                        <div class="summary-row" style="background: #f8d7da; padding: 8px; border-radius: 4px; margin-top: 4px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: #721c24; font-weight: 600;">❌ Non autorizzare</span>
+                                <span style="color: #721c24; font-weight: bold;">${oraRiferimentoTurno}</span>
+                            </div>
+                            <div style="color: #721c24; font-size: 0.85em; margin-top: 2px;">L'anticipo non e autorizzato, passa l'orario del turno</div>
+                        </div>`;
+                } else {
+                    // RITARDO, USCITA ANTICIPATA, USCITA POSTICIPATA: la timbrata resta sempre quella effettiva
+                    // Cambia solo se viene giustificato o meno (per statistiche)
+                    boxApprova = `
+                        <div class="summary-row" style="background: #d4edda; padding: 8px; border-radius: 4px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: #155724; font-weight: 600;">✅ Giustifica</span>
+                                <span style="color: #155724; font-weight: bold;">${oraTimbrata}</span>
+                            </div>
+                            <div style="color: #155724; font-size: 0.85em; margin-top: 2px;">Giustificato, <strong>NON</strong> verra conteggiato nelle statistiche</div>
+                        </div>`;
+                    boxRespingi = `
+                        <div class="summary-row" style="background: #fff3cd; padding: 8px; border-radius: 4px; margin-top: 4px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: #856404; font-weight: 600;">⏰ Conferma</span>
+                                <span style="color: #856404; font-weight: bold;">${oraTimbrata}</span>
+                            </div>
+                            <div style="color: #856404; font-size: 0.85em; margin-top: 2px;">Verra registrato e conteggiato nelle statistiche</div>
+                        </div>`;
+                }
                 
                 extraInfo = `
                     <div class="summary-row"><span class="summary-label">Turno</span><span class="summary-value">${turnoStart} - ${turnoEnd}</span></div>
-                    <div class="summary-row"><span class="summary-label">Timbrata originale</span><span class="summary-value">${oraTimbrata}</span></div>
-                    <div class="summary-row"><span class="summary-label">Timbrata arrotondata</span><span class="summary-value">${oraModTurno}</span></div>
+                    <div class="summary-row"><span class="summary-label">Timbrata</span><span class="summary-value" style="font-weight: bold; color: #dc3545;">${oraTimbrata}</span></div>
+                    <div class="summary-row"><span class="summary-label">${tipoFuoriFlex}</span><span class="summary-value">${descFlex}</span></div>
                     <hr style="margin: 8px 0; border-color: #e9ecef;">
-                    <div class="summary-row" style="background: #d4edda; padding: 4px 8px; border-radius: 4px;">
-                        <span class="summary-label" style="color: #155724;">✅ Se APPROVI</span>
-                        <span class="summary-value" style="color: #155724; font-weight: bold;">${oraApprova}</span>
+                    <div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                        <div style="color: #1565c0; font-weight: 600; margin-bottom: 6px;">📋 Cosa succede:</div>
                     </div>
-                    <div class="summary-row" style="background: #f8d7da; padding: 4px 8px; border-radius: 4px; margin-top: 4px;">
-                        <span class="summary-label" style="color: #721c24;">❌ Se RESPINGI</span>
-                        <span class="summary-value" style="color: #721c24; font-weight: bold;">${oraModTurno}</span>
-                    </div>
+                    ${boxApprova}
+                    ${boxRespingi}
                 `;
                 
-                // Mostra il campo per modificare l'orario
-                const overtimeTimeLabel = document.getElementById('overtimeTimeLabel');
-                if (overtimeTimeLabel) overtimeTimeLabel.textContent = `⏱️ Orario Arrotondato (${tipoLabel})`;
-                if (overtimeRoundedStart) overtimeRoundedStart.value = oraApprova || '';
-                
+                // Salva info per i bottoni
                 if (overtimeTimesGroup) {
-                    overtimeTimesGroup.dataset.oraModTurno = oraModTurno;
                     overtimeTimesGroup.dataset.flexType = 'fuori_flessibilita';
-                    overtimeTimesGroup.style.display = 'block';
+                    overtimeTimesGroup.dataset.isIngressoAnticipato = isIngressoAnticipato ? 'true' : 'false';
+                    overtimeTimesGroup.dataset.oraTimbrata = oraTimbrata;
+                    overtimeTimesGroup.dataset.oraRiferimentoTurno = oraRiferimentoTurno;
+                    overtimeTimesGroup.style.display = 'none';
                 }
             }
             // Gestione EXTRA TURNO (request_type_id = 9)
@@ -1479,6 +1728,36 @@
                 if (overtimeTimesGroup) overtimeTimesGroup.style.display = 'none';
             }
 
+            // Gestione GIUSTIFICAZIONE RITARDO (request_type_id = 19)
+            let lateArrivalInfo = '';
+            if (r.request_type_id === 19 && r.extra_data) {
+                const ed = r.extra_data;
+                const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
+                
+                const oraTimbrata = formatTime(ed.ora_timbrata);
+                const turnoStart = formatTime(ed.turno_start);
+                const lateMinutes = ed.late_minutes || 0;
+                const threshold = ed.threshold || 15;
+                
+                lateArrivalInfo = `
+                    <div class="summary-row"><span class="summary-label">Turno previsto</span><span class="summary-value">${turnoStart}</span></div>
+                    <div class="summary-row"><span class="summary-label">Timbrata</span><span class="summary-value" style="font-weight: bold; color: #dc3545;">${oraTimbrata}</span></div>
+                    <div class="summary-row"><span class="summary-label">Ritardo</span><span class="summary-value">${lateMinutes} minuti</span></div>
+                    <hr style="margin: 8px 0; border-color: #e9ecef;">
+                    <div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                        <div style="color: #1565c0; font-weight: 600; margin-bottom: 6px;">📋 Cosa succede:</div>
+                    </div>
+                    <div class="summary-row" style="background: #d4edda; padding: 8px; border-radius: 4px;">
+                        <span style="color: #155724; font-weight: 600;">✅ Accetta giustificazione</span>
+                        <div style="color: #155724; font-size: 0.85em; margin-top: 2px;">Il ritardo è giustificato, <strong>NON</strong> verrà conteggiato</div>
+                    </div>
+                    <div class="summary-row" style="background: #fff3cd; padding: 8px; border-radius: 4px; margin-top: 4px;">
+                        <span style="color: #856404; font-weight: 600;">⏰ Registra ritardo</span>
+                        <div style="color: #856404; font-size: 0.85em; margin-top: 2px;">Il ritardo verrà registrato nelle statistiche</div>
+                    </div>
+                `;
+            }
+
             // Se è un permesso (request_type_id = 3), mostra anche gli orari
             let permissionTimeInfo = '';
             if (r.request_type_id === 3 && r.extra_data && r.extra_data.time_start && r.extra_data.time_end) {
@@ -1525,10 +1804,58 @@
                 <div class="summary-row"><span class="summary-label">Data</span><span class="summary-value">${dateFrom}${dateTo}</span></div>
                 ${permissionTimeInfo}
                 ${timbraturaInfo}
+                ${lateArrivalInfo}
                 ${extraInfo}
                 ${r.value && r.value_type !== 'minutes' ? `<div class="summary-row"><span class="summary-label">Valore</span><span class="summary-value">${r.value} ${valueUnit}</span></div>` : ''}
                 ${r.notes ? `<div class="summary-row"><span class="summary-label">Note</span><span class="summary-value">${r.notes}</span></div>` : ''}
             `;
+
+            // Cambia etichette bottoni per Fuori Flessibilità e Giustificazione Ritardo
+            const btnApprove = document.getElementById('btnApprove');
+            const btnReject = document.getElementById('btnReject');
+            
+            // Giustificazione Ritardo (ID 19)
+            if (r.request_type_id === 19) {
+                btnApprove.innerHTML = '✅ Accetta giustificazione';
+                btnApprove.className = 'btn btn-success';
+                btnApprove.style.background = '';
+                btnReject.innerHTML = '⏰ Registra ritardo';
+                btnReject.className = 'btn btn-warning';
+                btnReject.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
+            } else if (r.request_type_id === 17 && r.extra_data) {
+                const ed = r.extra_data;
+                const diffMinutes = ed.diff_minutes || 0;
+                const tipoTimbratura = ed.tipo_timbratura || 'fine_giornata';
+                
+                // Solo INGRESSO ANTICIPATO ha logica diversa (cambia orario)
+                const isIngressoAnticipato = (tipoTimbratura === 'inizio_giornata' && diffMinutes < 0);
+                
+                if (isIngressoAnticipato) {
+                    // INGRESSO ANTICIPATO: Approva = autorizza, Respingi = non autorizzare
+                    btnApprove.innerHTML = '✅ Autorizza anticipo';
+                    btnApprove.className = 'btn btn-success';
+                    btnApprove.style.background = '';
+                    btnReject.innerHTML = '❌ Non autorizzare';
+                    btnReject.className = 'btn btn-danger';
+                    btnReject.style.background = '';
+                } else {
+                    // RITARDO / USCITA ANTICIPATA / USCITA POSTICIPATA: Giustifica vs Conferma
+                    btnApprove.innerHTML = '✅ Giustifica';
+                    btnApprove.className = 'btn btn-success';
+                    btnApprove.style.background = '';
+                    btnReject.innerHTML = '⏰ Conferma';
+                    btnReject.className = 'btn btn-warning';
+                    btnReject.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
+                }
+            } else {
+                // Altre tipologie: bottoni standard
+                btnApprove.innerHTML = '✅ Approva';
+                btnApprove.className = 'btn btn-success';
+                btnApprove.style.background = '';
+                btnReject.innerHTML = '❌ Respingi';
+                btnReject.className = 'btn btn-danger';
+                btnReject.style.background = '';
+            }
 
             document.getElementById('reviewModal').classList.add('open');
         }
@@ -1612,6 +1939,8 @@
             }
             
             try {
+                console.log('📤 Invio revisione richiesta:', currentRequestId, payload);
+                
                 const res = await fetch(`/api/admin/user-requests/${currentRequestId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -1619,6 +1948,18 @@
                 });
 
                 const result = await res.json();
+                
+                // Log dettagliato per debug CedolinoWeb
+                console.log('📥 Risposta revisione:', result);
+                if (result.cedolino_debug) {
+                    console.log('🔗 CedolinoWeb Debug:', result.cedolino_debug);
+                }
+                if (result.flex_result) {
+                    console.log('📋 Fuori Flessibilità Result:', result.flex_result);
+                    if (result.flex_result.cedolino_sync) {
+                        console.log('🔗 CedolinoWeb Sync:', result.flex_result.cedolino_sync);
+                    }
+                }
                 
                 if (!res.ok) {
                     throw new Error(result.error || 'Errore nella revisione');
@@ -1630,6 +1971,7 @@
                 const statusLabel = status === 'approved' ? 'approvata' : 'respinta';
                 showToast(`Richiesta ${statusLabel} con successo`, 'success');
             } catch (err) {
+                console.error('❌ Errore revisione:', err);
                 showToast(err.message, 'danger');
             }
         }

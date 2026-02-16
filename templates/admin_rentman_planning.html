@@ -468,6 +468,7 @@
         .col-operator { width: 200px; }
         .col-function { width: 130px; }
         .col-location { min-width: 180px; }
+        .col-vehicle { min-width: 160px; }
         .col-time { width: 120px; }
         .col-hours { width: 80px; text-align: center; }
         .col-status { width: 90px; text-align: center; }
@@ -556,6 +557,128 @@
             font-size: 11px;
             font-weight: 500;
             margin-left: auto;
+        }
+        .project-manager-badge {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .project-leader-badge {
+            background: #fff3e0;
+            color: #e65100;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .gestione-squadra-toggle {
+            background: #e0e0e0;
+            color: #616161;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        .gestione-squadra-toggle:hover {
+            opacity: 0.8;
+            transform: scale(1.02);
+        }
+        .gestione-squadra-toggle.active {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        .project-vehicle-badge {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .project-vehicles-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-top: 5px;
+            padding: 6px 8px;
+            background: rgba(34, 197, 94, 0.08);
+            border-radius: 8px;
+            border-left: 3px solid var(--success);
+        }
+        .vehicle-driver-item.assigned {
+            display: none;
+        }
+        .vehicle-driver-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            padding: 3px 6px;
+            border-radius: 6px;
+            cursor: grab;
+            transition: background 0.3s, transform 0.15s;
+            user-select: none;
+        }
+        .vehicle-driver-item:hover {
+            background: rgba(34, 197, 94, 0.15);
+        }
+        .vehicle-driver-item.dragging {
+            opacity: 0.5;
+            transform: scale(0.95);
+        }
+        .vehicle-name-label {
+            color: var(--success);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .vehicle-no-driver {
+            color: var(--muted);
+            font-style: italic;
+            font-size: 10px;
+        }
+        tr.drop-hint td {
+            background: rgba(34, 197, 94, 0.08) !important;
+        }
+        tr.drop-hover td {
+            background: rgba(34, 197, 94, 0.2) !important;
+            outline: 2px dashed var(--success);
+            outline-offset: -2px;
+        }
+        .operator-vehicle-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+        .operator-vehicle-badge .remove-operator-vehicle {
+            cursor: pointer;
+            color: var(--danger);
+            font-weight: 700;
+            font-size: 10px;
+            margin-left: 2px;
+        }
+        .operator-vehicle-badge .remove-operator-vehicle:hover {
+            color: #ff6b6b;
+        }
+        .project-details-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 5px;
+            padding-top: 4px;
         }
         
         .crew-info {
@@ -1490,7 +1613,7 @@
                             <span class="stat-label">operatori</span>
                         </div>
                         <div class="stat-item">
-                            <span class="stat-value" id="summaryHours">0h</span>
+                            <span class="stat-value" id="summaryHours">0:00</span>
                             <span class="stat-label">ore</span>
                         </div>
                         <div class="stat-item">
@@ -1520,6 +1643,7 @@
                                 <th class="col-operator">Operatore</th>
                                 <th class="col-function">Funzione</th>
                                 <th class="col-location">Location</th>
+                                <th class="col-vehicle">Mezzo</th>
                                 <th class="col-time">Orario</th>
                                 <th class="col-hours center">Ore</th>
                                 <th class="col-status center">Stato</th>
@@ -1527,7 +1651,7 @@
                         </thead>
                         <tbody id="planningList">
                             <tr>
-                                <td colspan="7">
+                                <td colspan="8">
                                     <div class="empty-state">
                                         <div class="empty-state-icon">📅</div>
                                         <div class="empty-state-text">Seleziona una data e clicca "Sincronizza"</div>
@@ -1704,12 +1828,15 @@
             // Il valore da Rentman può essere in secondi o già in ore decimali
             // Se il valore è > 100, assumiamo sia in secondi
             const num = parseFloat(value) || 0;
+            let totalHoursDecimal;
             if (num > 100) {
-                // Converti da secondi a ore
-                const hours = num / 3600;
-                return hours.toFixed(1) + 'h';
+                totalHoursDecimal = num / 3600;
+            } else {
+                totalHoursDecimal = num;
             }
-            return num.toFixed(1) + 'h';
+            const hours = Math.floor(totalHoursDecimal);
+            const minutes = Math.round((totalHoursDecimal - hours) * 60);
+            return `${hours}:${String(minutes).padStart(2, '0')}`;
         }
 
         function getEffectiveHours(planning) {
@@ -1806,15 +1933,7 @@
                 currentPlannings = (data.plannings || []).map(p => {
                     const rentmanId = String(p.rentman_id || p.id);
                     const saved = savedDataMap.get(rentmanId);
-                    
-                    // DEBUG: Log il primo elemento
-                    if (p.crew_name === "Angelo Ruggieri") {
-                        console.log("🔍 DEBUG MERGE Angelo Ruggieri:", {
-                            original_p: {plan_start: p.plan_start, plan_end: p.plan_end},
-                            saved: saved ? {plan_start: saved.plan_start, plan_end: saved.plan_end} : "non trovato"
-                        });
-                    }
-                    
+
                     if (saved) {
                         // Preserva campi personalizzati dal DB
                         // Le coordinate manuali hanno priorità su quelle di Rentman (che spesso sono 0,0 o null)
@@ -1829,6 +1948,7 @@
                             rentman_id: p.rentman_id || p.id,  // Preserva sempre il rentman_id originale
                             timbratura_gps_mode: saved.timbratura_gps_mode || 'group',
                             gps_timbratura_location: saved.gps_timbratura_location || p.gps_timbratura_location,
+                            gestione_squadra: saved.gestione_squadra || 0,
                             // Preserva coordinate manuali se Rentman non le ha
                             location_lat: rentmanHasCoords ? p.location_lat : (hasManualCoords ? saved.location_lat : p.location_lat),
                             location_lon: rentmanHasCoords ? p.location_lon : (hasManualCoords ? saved.location_lon : p.location_lon),
@@ -1886,7 +2006,7 @@
             if (!plannings.length) {
                 planningList.innerHTML = `
                     <tr>
-                        <td colspan="7">
+                        <td colspan="8">
                             <div class="empty-state">
                                 <div class="empty-state-icon">📭</div>
                                 <div class="empty-state-text">Nessuna pianificazione per questa data</div>
@@ -1911,7 +2031,9 @@
             plannings.forEach((p, idx) => {
                 const key = p.project_code || p.project_name || 'N/D';
                 if (!grouped.has(key)) {
-                    grouped.set(key, { name: p.project_name, code: p.project_code, location: p.location_name, items: [] });
+                    let vehicleData = [];
+                    try { if (p.vehicle_data) vehicleData = JSON.parse(p.vehicle_data); } catch(e) {}
+                    grouped.set(key, { name: p.project_name, code: p.project_code, location: p.location_name, project_manager: p.project_manager_name, vehicles: p.vehicle_names, vehicle_data: vehicleData, project_id: p.project_id, gestione_squadra: p.gestione_squadra || 0, items: [] });
                 }
                 grouped.get(key).items.push({ ...p, originalIdx: idx });
             });
@@ -1924,14 +2046,46 @@
                 const hasGroupNotes = uniqueRemarks.length > 0 || uniqueRemarksPlanners.length > 0;
                 
                 // Header gruppo progetto
+                // Trova i leader del crew (project_leader)
+                const leaders = group.items.filter(p => p.is_leader).map(p => p.crew_name).filter(Boolean);
+                const leaderNames = [...new Set(leaders)].join(', ');
+
                 html += `<tr class="project-row">
-                    <td colspan="7">
+                    <td colspan="8">
                         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                             <span style="font-weight: 700;">${escapeHtml(group.name || 'Progetto N/D')}</span>
                             ${group.code ? `<span style="color: var(--muted); font-weight: 500; font-size: 11px;">${escapeHtml(group.code)}</span>` : ''}
                             <span class="project-badge">${group.items.length} operatori</span>
                             ${group.location ? `<span class="project-location">📍 ${escapeHtml(group.location)}</span>` : ''}
                         </div>
+                        ${(group.project_manager || leaderNames) ? `
+                        <div class="project-details-row">
+                            ${group.project_manager ? `<span class="project-manager-badge">👤 Capo progetto: ${escapeHtml(group.project_manager)}</span>` : ''}
+                            ${leaderNames ? `<span class="project-leader-badge">⭐ Capo squadra: ${escapeHtml(leaderNames)}</span>` : ''}
+                        </div>
+                        ` : ''}
+                        <div class="project-details-row" style="margin-top: 4px;">
+                            <span class="gestione-squadra-toggle ${group.gestione_squadra ? 'active' : ''}" 
+                                  onclick="toggleGestioneSquadra('${escapeHtml(group.code)}', ${group.gestione_squadra ? 0 : 1})"
+                                  title="${group.gestione_squadra ? 'Gestione squadra attiva: il capo squadra gestisce le attività per tutti' : 'Attività individuale: ogni operatore sceglie la propria attività'}">
+                                ${group.gestione_squadra ? '👥 Gestione squadra' : '👤 Attività individuale'}
+                            </span>
+                        </div>
+                        ${group.vehicle_data.length > 0 ? `
+                        <div class="project-vehicles-row" data-project-id="${group.project_id}" style="${group.vehicle_data.every(v => v.driver_crew_id) ? 'display:none' : ''}">
+                            ${group.vehicle_data.map(v => {
+                                const vLabel = v.name && v.plate ? `${v.name} - ${v.plate}` : (v.name || v.plate);
+                                const isAssigned = v.driver_crew_id ? 'assigned' : '';
+                                return `<div class="vehicle-driver-item ${isAssigned}" draggable="true"
+                                    data-project-id="${group.project_id}"
+                                    data-vehicle-id="${v.id}"
+                                    data-vehicle-name="${encodeURIComponent(vLabel)}">
+                                    <span class="vehicle-name-label">🚛 ${escapeHtml(vLabel)}</span>
+                                    <span class="vehicle-no-driver">trascina su operatore</span>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                        ` : ''}
                         ${hasGroupNotes ? `
                             <div class="project-notes" style="margin-top: 6px;">
                                 ${uniqueRemarks.map(r => `<span class="note-crew" style="margin-right: 12px;">👷 ${escapeHtml(r)}</span>`).join('')}
@@ -1940,7 +2094,19 @@
                         ` : ''}
                     </td>
                 </tr>`;
-                
+
+                // Mappa crew_id -> veicoli assegnati (per mostrare badge nella riga operatore)
+                const crewVehicleMap = new Map();
+                if (group.vehicle_data.length > 0) {
+                    group.vehicle_data.forEach(v => {
+                        if (v.driver_crew_id) {
+                            const cid = String(v.driver_crew_id);
+                            if (!crewVehicleMap.has(cid)) crewVehicleMap.set(cid, []);
+                            crewVehicleMap.get(cid).push(v);
+                        }
+                    });
+                }
+
                 // Righe operatori
                 group.items.forEach(p => {
                     const idx = p.originalIdx;
@@ -1955,10 +2121,18 @@
                     } else {
                         gpsInfo = hasGroupLocation ? `📍 ${escapeHtml(p.gps_timbratura_location.substring(0,20))}` : '⚠️ N/D';
                     }
+
+                    // Veicoli assegnati a questo operatore
+                    const assignedVehicles = crewVehicleMap.get(String(p.crew_id)) || [];
+                    const vehicleBadgesHtml = assignedVehicles.map(v => {
+                        const vShort = v.name || v.plate || '';
+                        return `<span class="operator-vehicle-badge" data-vehicle-id="${v.id}" data-project-id="${group.project_id}" data-vehicle-name="${encodeURIComponent(v.name && v.plate ? v.name + ' - ' + v.plate : vShort)}">🚛 ${escapeHtml(vShort)} <span class="remove-operator-vehicle" title="Rimuovi">✕</span></span>`;
+                    }).join('');
                     
                     // Costruisce la riga (le note sono mostrate nell'header del gruppo)
-                    html += `<tr class="${p.sent_to_webservice ? 'sent' : ''} ${p.is_modified ? 'modified' : ''}" 
-                                data-idx="${idx}" data-project="${escapeHtml(key)}">
+                    html += `<tr class="operator-row ${p.sent_to_webservice ? 'sent' : ''} ${p.is_modified ? 'modified' : ''}"
+                                data-idx="${idx}" data-project="${escapeHtml(key)}"
+                                data-crew-id="${p.crew_id}" data-crew-name="${escapeHtml(p.crew_name || '')}">
                         <td class="col-check center">
                             <input type="checkbox" class="planning-checkbox" data-idx="${idx}" ${selectedIds.has(idx) ? 'checked' : ''}>
                         </td>
@@ -1977,16 +2151,19 @@
                         <td class="col-location">
                             ${p.location_name ? `
                                 <div class="location-cell">
-                                    ${hasLocationCoords ? 
+                                    ${hasLocationCoords ?
                                         `<a href="https://www.google.com/maps?q=${p.location_lat},${p.location_lon}" target="_blank" class="location-gps ok">
                                             ${escapeHtml(p.location_name.substring(0, 40))}${p.location_name.length > 40 ? '...' : ''} ✓
-                                        </a>` : 
+                                        </a>` :
                                         `<span class="location-gps no">
                                             ${escapeHtml(p.location_name.substring(0, 40))}${p.location_name.length > 40 ? '...' : ''} ⚠
                                         </span>`
                                     }
                                 </div>
                             ` : '<span class="status-pending">—</span>'}
+                        </td>
+                        <td class="col-vehicle">
+                            <div class="operator-vehicles-container">${vehicleBadgesHtml}</div>
                         </td>
                         <td class="col-time">
                             <div class="time-cell">${formatTimeRange(p.plan_start, p.plan_end)}</div>
@@ -2022,7 +2199,158 @@
                     updateSendButtonState();
                 });
             });
-            
+
+            // Drag & Drop: trascina mezzo su operatore per assegnare autista
+            let draggedVehicle = null;
+
+            document.querySelectorAll('.vehicle-driver-item[draggable]').forEach(item => {
+                item.addEventListener('dragstart', (e) => {
+                    draggedVehicle = {
+                        projectId: item.dataset.projectId,
+                        vehicleId: item.dataset.vehicleId,
+                        vehicleName: decodeURIComponent(item.dataset.vehicleName),
+                        element: item
+                    };
+                    item.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'link';
+                    e.dataTransfer.setData('text/plain', item.dataset.vehicleId);
+                    // Evidenzia le righe operatore dello stesso progetto
+                    const projectTr = item.closest('tr.project-row');
+                    if (projectTr) {
+                        let sibling = projectTr.nextElementSibling;
+                        while (sibling && sibling.classList.contains('operator-row')) {
+                            sibling.classList.add('drop-hint');
+                            sibling = sibling.nextElementSibling;
+                        }
+                    }
+                });
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                    document.querySelectorAll('.operator-row').forEach(r => {
+                        r.classList.remove('drop-hint', 'drop-hover');
+                    });
+                    draggedVehicle = null;
+                });
+            });
+
+            // Drop target: righe operatore
+            document.querySelectorAll('.operator-row').forEach(row => {
+                row.addEventListener('dragover', (e) => {
+                    if (!draggedVehicle) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'link';
+                    row.classList.add('drop-hover');
+                });
+                row.addEventListener('dragleave', () => {
+                    row.classList.remove('drop-hover');
+                });
+                row.addEventListener('drop', async (e) => {
+                    e.preventDefault();
+                    row.classList.remove('drop-hover');
+                    if (!draggedVehicle) return;
+
+                    const crewId = row.dataset.crewId;
+                    const crewName = row.dataset.crewName;
+                    const { projectId, vehicleId, vehicleName, element } = draggedVehicle;
+
+                    try {
+                        const resp = await fetch('/api/admin/rentman/planning/update-vehicle-driver', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                project_id: parseInt(projectId),
+                                date: dateInput.value,
+                                vehicle_id: parseInt(vehicleId),
+                                vehicle_name: vehicleName,
+                                driver_crew_id: parseInt(crewId),
+                                driver_name: crewName
+                            })
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            // Rimuovi badge dal vecchio operatore (se era assegnato ad un altro)
+                            document.querySelectorAll(`.operator-vehicle-badge[data-vehicle-id="${vehicleId}"][data-project-id="${projectId}"]`).forEach(b => b.remove());
+
+                            // Nascondi il veicolo dalla card header
+                            element.classList.add('assigned');
+
+                            // Nascondi container se tutti i veicoli sono assegnati
+                            const vehicleContainer = element.closest('.project-vehicles-row');
+                            if (vehicleContainer) {
+                                const visibleVehicles = vehicleContainer.querySelectorAll('.vehicle-driver-item:not(.assigned)');
+                                if (visibleVehicles.length === 0) {
+                                    vehicleContainer.style.display = 'none';
+                                }
+                            }
+
+                            // Aggiungi badge mezzo accanto alla location dell'operatore
+                            const container = row.querySelector('.operator-vehicles-container');
+                            if (container) {
+                                const vShort = vehicleName.split('(')[0].trim() || vehicleName;
+                                const badge = document.createElement('span');
+                                badge.className = 'operator-vehicle-badge';
+                                badge.dataset.vehicleId = vehicleId;
+                                badge.dataset.projectId = projectId;
+                                badge.dataset.vehicleName = encodeURIComponent(vehicleName);
+                                badge.innerHTML = `🚛 ${escapeHtml(vShort)} <span class="remove-operator-vehicle" title="Rimuovi">✕</span>`;
+                                container.appendChild(badge);
+                                badge.querySelector('.remove-operator-vehicle').addEventListener('click', handleRemoveFromOperator);
+                            }
+                        } else {
+                            alert('Errore: ' + (data.error || 'Sconosciuto'));
+                        }
+                    } catch (err) {
+                        alert('Errore di rete: ' + err.message);
+                    }
+                });
+            });
+
+            // Funzione per rimuovere autista dalla riga operatore (click su X nel badge)
+            async function handleRemoveFromOperator(e) {
+                e.stopPropagation();
+                const badge = e.target.closest('.operator-vehicle-badge');
+                if (!badge) return;
+                const vehicleId = badge.dataset.vehicleId;
+                const projectId = badge.dataset.projectId;
+                const vehicleName = badge.dataset.vehicleName ? decodeURIComponent(badge.dataset.vehicleName) : '';
+
+                try {
+                    const resp = await fetch('/api/admin/rentman/planning/update-vehicle-driver', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            project_id: parseInt(projectId),
+                            date: dateInput.value,
+                            vehicle_id: parseInt(vehicleId),
+                            vehicle_name: vehicleName,
+                            driver_crew_id: null,
+                            driver_name: ''
+                        })
+                    });
+                    const data = await resp.json();
+                    if (data.success) {
+                        badge.remove();
+                        // Rimostra il veicolo nella card header
+                        const headerItem = document.querySelector(`.vehicle-driver-item[data-vehicle-id="${vehicleId}"][data-project-id="${projectId}"]`);
+                        if (headerItem) {
+                            headerItem.classList.remove('assigned');
+                            // Mostra il container dei veicoli se era nascosto
+                            const container = headerItem.closest('.project-vehicles-row');
+                            if (container) container.style.display = '';
+                        }
+                    } else {
+                        alert('Errore: ' + (data.error || 'Sconosciuto'));
+                    }
+                } catch (err) {
+                    alert('Errore di rete: ' + err.message);
+                }
+            }
+
+            // Click su "✕" per rimuovere mezzo dalla riga operatore
+            document.querySelectorAll('.remove-operator-vehicle').forEach(btn => {
+                btn.addEventListener('click', handleRemoveFromOperator);
+            });
+
             // Aggiorna pannelli laterali
             updateLocationsPanel();
             updateProjectsPanel();
@@ -2043,7 +2371,9 @@
                 return sum + (effectiveHours * 3600);
             }, 0);
             const totalHours = totalSeconds / 3600;
-            summaryHours.textContent = totalHours.toFixed(1) + 'h';
+            const th = Math.floor(totalHours);
+            const tm = Math.round((totalHours - th) * 60);
+            summaryHours.textContent = `${th}:${String(tm).padStart(2, '0')}`;
 
             // Conta inviati e modificati
             const sentCount = plannings.filter(p => p.sent_to_webservice && !p.is_modified).length;
@@ -2136,7 +2466,7 @@
                 updateLoadButtonText();
                 planningList.innerHTML = `
                     <tr>
-                        <td colspan="7">
+                        <td colspan="8">
                             <div class="empty-state">
                                 <div class="empty-state-icon">📅</div>
                                 <div class="empty-state-text">Nessuna pianificazione salvata. Clicca "Sincronizza"</div>
@@ -2235,7 +2565,7 @@
                 }
             } catch (err) {
                 showMessage(err.message, 'error');
-                planningList.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">${err.message}</div></div></td></tr>`;
+                planningList.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">${err.message}</div></div></td></tr>`;
             } finally {
                 loadingOverlay.classList.add('hidden');
             }
@@ -2522,6 +2852,40 @@
             }
         }
 
+        window.toggleGestioneSquadra = async function(projectCode, newValue) {
+            const dateInput = document.getElementById('planningDate');
+            const planningDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+
+            try {
+                const response = await fetch('/api/admin/rentman/planning/toggle-gestione-squadra', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_code: projectCode,
+                        date: planningDate,
+                        gestione_squadra: newValue
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    // Aggiorna stato locale per tutte le pianificazioni di questo progetto
+                    currentPlannings.forEach(p => {
+                        if (p.project_code === projectCode) {
+                            p.gestione_squadra = newValue;
+                        }
+                    });
+                    renderPlannings(currentPlannings);
+                    showMessage(data.message, 'success');
+                } else {
+                    showMessage(data.error || 'Errore nel cambio gestione squadra', 'error');
+                }
+            } catch (err) {
+                console.error('Errore toggle gestione squadra:', err);
+                showMessage('Errore di connessione', 'error');
+            }
+        }
+
         // Chiudi modal con click fuori o ESC
         breakModalOverlay.addEventListener('click', (e) => {
             if (e.target === breakModalOverlay) closeBreakModal();
@@ -2641,7 +3005,7 @@
                         </div>
                         <div class="project-card-stats">
                             <span class="project-card-stat">👥 ${proj.operators.length} operatori</span>
-                            <span class="project-card-stat">⏱️ ${proj.totalHours.toFixed(1)}h</span>
+                            <span class="project-card-stat">⏱️ ${(() => { const h = Math.floor(proj.totalHours); const m = Math.round((proj.totalHours - h) * 60); return `${h}:${String(m).padStart(2, '0')}`; })()}</span>
                             <span class="project-card-stat ${allSent ? 'sent' : ''}">
                                 ${allSent ? '✓ Inviati' : `📤 ${proj.sentCount}/${proj.indexes.length}`}
                             </span>
