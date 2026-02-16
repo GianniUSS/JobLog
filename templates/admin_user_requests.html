@@ -1880,7 +1880,7 @@
                 btnReject.innerHTML = '⏰ Registra ritardo';
                 btnReject.className = 'btn btn-warning';
                 btnReject.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
-                if (notesLabel) notesLabel.textContent = 'Motivazione (minimo 10 caratteri)';
+                if (notesLabel) notesLabel.textContent = 'Motivazione';
             } else if (r.request_type_id === 17 && r.extra_data) {
                 const ed = r.extra_data;
                 const diffMinutes = ed.diff_minutes || 0;
@@ -1965,14 +1965,6 @@
             if (!currentRequestId) return;
 
             const notes = document.getElementById('reviewNotes').value.trim();
-            
-            // Per Giustificazione Ritardo (type 19), la motivazione deve avere almeno 10 caratteri
-            const currentReq = allRequests.find(req => req.id === currentRequestId);
-            if (currentReq && currentReq.request_type_id === 19 && notes.length < 10) {
-                showToast('La motivazione deve essere di almeno 10 caratteri', 'danger');
-                document.getElementById('reviewNotes').focus();
-                return;
-            }
             
             const overtimeTimesGroup = document.getElementById('overtimeTimesGroup');
             
