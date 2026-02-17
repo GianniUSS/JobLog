@@ -5820,13 +5820,23 @@ def api_timbratura_registra():
                             first_inizio_min, planned_minutes, total_pausa_effettiva, rejection_end_time
                         )
                     
+                    # Blocco straordinario dalle regole del gruppo
+                    blocco_str = user_rules.get('arrotondamento_giornaliero_minuti', 30)
+                    tipo_arrot = user_rules.get('arrotondamento_giornaliero_tipo', 'floor')
+                    # Calcola straordinario lordo (prima dell'arrotondamento a blocchi)
+                    extra_minutes_lordo = worked_minutes - planned_minutes
+                    
                     extra_turno_data = {
                         "extra_type": "daily_overtime",
                         "extra_minutes": extra_minutes,
+                        "extra_minutes_lordo": extra_minutes_lordo,
                         "worked_minutes": worked_minutes,
                         "planned_minutes": planned_minutes,
                         "pausa_effettiva_minuti": total_pausa_effettiva,
                         "pausa_pianificata_minuti": planned_break,
+                        "blocco_straordinario_minuti": blocco_str,
+                        "tipo_arrotondamento": tipo_arrot,
+                        "differenza_minuti": extra_minutes_lordo - extra_minutes,
                         "break_confirmed": break_info.get('break_confirmed', False) if break_info else False,
                         "break_skipped": break_info.get('break_skipped', False) if break_info else False,
                         "break_skip_reason": break_info.get('break_skip_reason', '') if break_info else '',

@@ -1465,7 +1465,14 @@
                                 </div>` : ''}
                             </div>
                             <div class="overtime-diff">
+                                ${ed.extra_minutes_lordo != null ? `
+                                <div class="overtime-diff-item">📊 Straordinario lordo: <span class="overtime-diff-badge" style="background: #e3f2fd; color: #1565c0;">+${formatMinToHM(ed.extra_minutes_lordo)}</span></div>
+                                <div class="overtime-diff-item">📐 Blocco straordinario: <span style="font-weight:600;">${ed.blocco_straordinario_minuti} min</span> <span style="font-size:12px; color:#666;">(${ed.tipo_arrotondamento === 'floor' ? 'per difetto' : ed.tipo_arrotondamento === 'ceil' ? 'per eccesso' : 'più vicino'})</span></div>
+                                <div class="overtime-diff-item">✅ Straordinario conteggiato: <span class="overtime-diff-badge">+${formatMinToHM(extraMins)}</span></div>
+                                ${ed.differenza_minuti > 0 ? `<div class="overtime-diff-item">✂️ Differenza detratta dall'uscita: <span style="color:#e53935; font-weight:600;">-${ed.differenza_minuti} min</span></div>` : ''}
+                                ` : `
                                 <div class="overtime-diff-item">⬆️ Extra: <span class="overtime-diff-badge">+${formatMinToHM(extraMins)}</span></div>
+                                `}
                                 ${ed.extra_minutes_before > 0 ? `<div class="overtime-diff-item">⬆️ Ingresso anticipato: <span class="overtime-diff-badge">+${ed.extra_minutes_before} min</span></div>` : ''}
                                 ${ed.extra_minutes_after > 0 ? `<div class="overtime-diff-item">⬇️ Uscita posticipata: <span class="overtime-diff-badge">+${ed.extra_minutes_after} min</span></div>` : ''}
                                 ${pausaHtml}
