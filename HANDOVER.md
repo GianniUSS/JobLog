@@ -1,8 +1,8 @@
 # JOBLogApp — Handover Document
 
-> **Ultimo aggiornamento:** 15 febbraio 2026  
+> **Ultimo aggiornamento:** 17 febbraio 2026  
 > **Stack:** Flask 3.0 · Python 3.11 · MySQL 8 · PWA · Vanilla JS  
-> **File principale:** `app.py` (~23.600 righe, ~397 funzioni, ~174 route)
+> **File principale:** `app.py` (~24.000 righe, ~400 funzioni, ~174 route)
 
 ---
 
@@ -273,6 +273,40 @@ extra_data JSON: {
   - Uscita dopo `turno_end + flessibilità` (in daily mode)
 - Creato automaticamente: `_create_auto_extra_turno_request()`
 - Value type: `minutes`
+
+### Formula ora_mod (daily mode) — `_calcola_ora_fine_daily()`
+```
+ore_nette = uscita_reale - ingresso - pausa_pianificata
+ore_arrotondate = floor(ore_nette / blocco) * blocco    # es. floor(546/30)*30 = 540
+differenza = ore_nette - ore_arrotondate                 # es. 546 - 540 = 6 min
+ora_mod = uscita_reale - differenza                      # es. 19:01 - 6 = 18:55
+```
+- **Pausa**: sempre pianificata (da `employee_shifts`), mai effettiva
+- **Blocco straordinario**: `arrotondamento_giornaliero_minuti` (default 30 min)
+- **Tipo arrotondamento**: `arrotondamento_giornaliero_tipo` (floor/ceil/nearest)
+
+### Dati Extra Turno (`extra_data` JSON)
+```json
+{
+  "planned_start": "09:00", "planned_end": "18:00",
+  "actual_start": "19:01", "ora_mod": "18:55",
+  "worked_minutes": 546, "planned_minutes": 480,
+  "extra_minutes_lordo": 66, "blocco_straordinario_minuti": 30,
+  "tipo_arrotondamento": "floor", "differenza_minuti": 6,
+  "pausa_effettiva_minuti": 54, "pausa_pianificata_minuti": 60,
+  "break_confirmed": true, "break_skipped": false, "break_skip_reason": null
+}
+```
+
+### Visualizzazione Extra Turno
+
+| Dove | Cosa mostra | Logica status |
+|------|------------|---------------|
+| **Home storico** (Fine Giornata) | Ora + nota stato | Pending: "⏳ Sarà 18:55 se approvato"; Approved: ora barrata + ora_mod; Rejected: ora originale |
+| **Storico timbrature** (Uscita) | Ora condizionale | Pending/rejected: ora originale; Approved: ora_mod |
+| **Storico timbrature** (Calendario) | ⏳ icona | Pending: clessidra, ore ridotte |
+| **Storico timbrature** (TOTALE GIORNATA) | Ore senza extra | Pending/rejected: extra escluso dal totale |
+| **Admin richieste** | Griglia box dettagliata | Straordinario lordo, blocco, conteggiato, differenza, pausa |
 
 ### Fuori Flessibilità (Request Type ID 17)
 - Hardcoded type_id = 17
@@ -704,3 +738,19 @@ Push notification → Utente con esito
 - Toggle UI in pianificazione admin
 - Logica backend: `gestione_squadra=1` → skip popup attività individuale
 - Decoupled da `is_leader` (che è read-only da Rentman)
+
+### Extra Turno: Formula e Visualizzazione — COMPLETATO (17/02)
+- **Formula ora_mod corretta**: `ora_mod = uscita_reale - differenza` (dove `differenza = ore_nette - ore_arrotondate`)
+- **Pausa pianificata**: il calcolo usa sempre la pausa pianificata (da `employee_shifts`), non quella effettiva
+- **Admin griglia box**: straordinario lordo, blocco (30 min per difetto), conteggiato, differenza detratta, pausa — in box separati (non inline)
+- **Admin dettagli pausa**: mostra se confermata, timbrata, o non effettuata con motivo
+- **Storico TOTALE GIORNATA**: esclude Extra Turno se pending o rifiutato
+- **Storico Calendario**: icona ⏳ per giorni con Extra Turno in attesa
+- **Storico Uscita**: mostra ora originale se pending/rifiutato, ora_mod se approvato, con nota "Sarà X:XX se approvato"
+- **Home storico Fine Giornata**: ora di uscita condizionale allo stato Extra Turno:
+  - Pending → ora originale + nota arancione "⏳ Sarà 18:55 se approvato"
+  - Approvato → ora barrata + ora_mod + badge verde "✅ Confermato"
+  - Rifiutato → ora originale + badge rosso "❌ Extra rifiutato"
+- **Backend API `/api/timbratura/oggi`**: restituisce Extra Turno con qualsiasi stato (non solo pending), include `ora_mod` da `extra_data`
+- **Retrocompatibilità**: richieste vecchie senza nuovi campi mostrano solo "Extra: +Xh Xm"
+- Commits: `5ace3d4`, `40e9886`, `f8c3f8c`, `160a43b`, `75d908b`, `7d79039`
