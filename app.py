@@ -5120,23 +5120,35 @@ def api_timbratura_oggi():
             "late_arrival_request": late_arrival_request
         })
     
-    # Verifica se c'è uno straordinario pending per oggi
+    # Verifica se c'è uno straordinario (qualsiasi stato) per oggi
     pending_overtime = None
-    overtime_req_id = _get_pending_overtime_request_id(db, username, today)
-    if overtime_req_id:
-        # Recupera i dettagli della richiesta straordinario
-        overtime_type_id = get_overtime_request_type_id(db)
-        ot_row = db.execute(f"""
-            SELECT value_amount, extra_data FROM user_requests
-            WHERE id = {placeholder} AND request_type_id = {placeholder}
-        """, (overtime_req_id, overtime_type_id)).fetchone()
-        if ot_row:
-            minutes = int(ot_row['value_amount'] if isinstance(ot_row, dict) else ot_row[0]) if ot_row else 0
-            pending_overtime = {
-                "id": overtime_req_id,
-                "minutes": minutes,
-                "status": "pending"
-            }
+    overtime_type_id = get_overtime_request_type_id(db)
+    ot_row = db.execute(f"""
+        SELECT id, value_amount, extra_data, status FROM user_requests
+        WHERE username = {placeholder} AND request_type_id = {placeholder}
+          AND date_from = {placeholder}
+        ORDER BY created_ts DESC
+        LIMIT 1
+    """, (username, overtime_type_id, today)).fetchone()
+    if ot_row:
+        ot_id = ot_row['id'] if isinstance(ot_row, dict) else ot_row[0]
+        minutes = int(ot_row['value_amount'] if isinstance(ot_row, dict) else ot_row[1]) if ot_row else 0
+        ot_status = ot_row['status'] if isinstance(ot_row, dict) else ot_row[3]
+        ot_extra_data = ot_row['extra_data'] if isinstance(ot_row, dict) else ot_row[2]
+        ot_ora_mod = None
+        if ot_extra_data:
+            try:
+                import json as _json
+                ed = _json.loads(ot_extra_data) if isinstance(ot_extra_data, str) else ot_extra_data
+                ot_ora_mod = ed.get('ora_mod')
+            except Exception:
+                pass
+        pending_overtime = {
+            "id": ot_id,
+            "minutes": minutes,
+            "status": ot_status,
+            "ora_mod": ot_ora_mod
+        }
     
     return jsonify({"timbrature": timbrature, "pending_overtime": pending_overtime})
 

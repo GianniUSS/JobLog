@@ -4312,6 +4312,22 @@ function updateUI() {
       } else if (t.ora_mod && formatHHMM(t.ora_mod) !== formatHHMM(t.ora) && t.rounding_mode !== 'daily') {
         // Mostra ora barrata SOLO se NON è modalità daily (arrotondamento a fine giornata)
         oraDisplay = `<span class="ora-originale">${formatHHMM(t.ora)}</span><span class="ora-mod">${formatHHMM(t.ora_mod)}</span>`;
+      } else if (t.tipo === 'fine_giornata' && t.rounding_mode === 'daily' && pendingOvertime && t.ora_mod && formatHHMM(t.ora_mod) !== formatHHMM(t.ora)) {
+        // Modalità daily: l'uscita dipende dallo stato dell'Extra Turno
+        const otStatus = pendingOvertime.status;
+        if (otStatus === 'approved') {
+          // Approvato: mostra ora arrotondata con badge conferma
+          oraDisplay = `<span class="ora-originale">${formatHHMM(t.ora)}</span><span class="ora-mod">${formatHHMM(t.ora_mod)}</span>`;
+          extraInfo = `<div class="pausa-durata-row" style="color: #22c55e; font-size: 11px;">✅ Confermato</div>`;
+        } else if (otStatus === 'rejected') {
+          // Rifiutato: mostra ora originale con badge rifiutato
+          oraDisplay = formatHHMM(t.ora);
+          extraInfo = `<div class="pausa-durata-row" style="color: #e53935; font-size: 11px;">❌ Extra rifiutato</div>`;
+        } else {
+          // Pending: mostra ora originale con nota "sarà X se approvato"
+          oraDisplay = formatHHMM(t.ora);
+          extraInfo = `<div class="pausa-durata-row" style="color: #f59e0b; font-size: 11px;">⏳ Sarà ${formatHHMM(t.ora_mod)} se approvato</div>`;
+        }
       }
       
       // Mostra location se presente (GPS)
