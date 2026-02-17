@@ -1400,6 +1400,9 @@
                         // Se ci sono dettagli del calcolo, mostra il breakdown completo
                         const calcRiepilogo = dayData.calcolo_dettagli;
                         if (calcRiepilogo) {
+                            // Determina lo status Extra Turno in anticipo (serve per uscita)
+                            const etStatus = calcRiepilogo.extra_turno_request_status;
+                            
                             // ═══════════════════════════════════════════════════════════
                             // TIMBRATURE REGISTRATE - calcolo ore lorde dalle timbrature originali
                             // ═══════════════════════════════════════════════════════════
@@ -1417,19 +1420,24 @@
                                 </div>`;
                             }
                             if (fineT) {
-                                // Usa ora_mod (arrotondata) se disponibile, altrimenti ora originale
-                                const oraUscitaDisplay = fineT.ora_mod || fineT.ora;
+                                // Uscita: mostra ora_mod solo se Extra Turno è approvato
+                                // Se pending/rifiutato, mostra l'ora originale
+                                const hasExtraApproved = etStatus === 'approved';
+                                const oraUscitaDisplay = (hasExtraApproved && fineT.ora_mod) ? fineT.ora_mod : fineT.ora;
+                                const uscitaNote = (etStatus === 'pending' && fineT.ora_mod && fineT.ora_mod !== fineT.ora) 
+                                    ? `<div style="font-size: 11px; color: #f57c00;">⏳ Sarà ${fineT.ora_mod} se approvato</div>` : '';
                                 html += `<div class="detail-row">
                                     <div class="detail-label" style="padding-left: 15px;">Uscita</div>
-                                    <div class="detail-value">${oraUscitaDisplay}</div>
+                                    <div class="detail-value">${oraUscitaDisplay}${uscitaNote}</div>
                                 </div>`;
                             }
                             
-                            // Calcola ore lorde usando l'ora arrotondata se disponibile
+                            // Calcola ore lorde: usa ora_mod solo se Extra Turno approvato
                             let oreLordeMinuti = 0;
                             if (inizioT && fineT) {
+                                const hasExtraApproved = etStatus === 'approved';
                                 const ingressoOra = inizioT.ora_mod || inizioT.ora;
-                                const uscitaOra = fineT.ora_mod || fineT.ora;
+                                const uscitaOra = (hasExtraApproved && fineT.ora_mod) ? fineT.ora_mod : fineT.ora;
                                 const [h1, m1] = ingressoOra.split(':').map(Number);
                                 const [h2, m2] = uscitaOra.split(':').map(Number);
                                 oreLordeMinuti = (h2 * 60 + m2) - (h1 * 60 + m1);
@@ -1521,7 +1529,7 @@
                             // Extra turno confermato (straordinario effettivamente conteggiato)
                             // Controlla lo status della richiesta Extra Turno per questa giornata
                             const extraConfermato = calcRiepilogo.straordinario_arrotondato_minuti || 0;
-                            const etStatus = calcRiepilogo.extra_turno_request_status;
+                            // etStatus già definito sopra
                             let etLabel, etIcon, etClass;
                             if (etStatus === 'approved') {
                                 etLabel = 'Extra turno confermato';
