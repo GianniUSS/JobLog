@@ -818,12 +818,7 @@
                     <span class="icon">🕐</span>
                     <span>Storico Timbrature</span>
                 </a>
-                {% if magazzino_enabled %}
-                <a href="{{ url_for('magazzino_home') }}" class="menu-item">
-                    <span class="icon">📦</span>
-                    <span>Magazzino</span>
-                </a>
-                {% endif %}
+
             </div>
             
             <div class="menu-section">
@@ -1338,6 +1333,9 @@
                             'fine_pausa': 'Fine Pausa'
                         };
                         
+                        // Controlla se questa timbratura ha una richiesta Deroga Pausa Ridotta pending
+                        const breakReduction = (t.tipo === 'fine_pausa') ? dayData.break_reduction : null;
+                        
                         // Controlla se questa timbratura ha una richiesta Fuori Flessibilità pending
                         // In quel caso, l'ora_mod potrebbe essere sbagliata (calcolata prima del controllo flex)
                         const flexForThisTimbratura = dayData.fuori_flessibilita?.find(ff => 
@@ -1350,7 +1348,38 @@
                         // perché ora_mod potrebbe essere calcolata erroneamente
                         let oraDisplay, hasModifica, modificaInfo = '';
                         
-                        if (flexForThisTimbratura) {
+                        if (breakReduction && breakReduction.status === 'pending') {
+                            // Deroga Pausa Ridotta pending: mostra ora arrotondata con badge
+                            oraDisplay = t.ora_mod || t.ora;
+                            hasModifica = t.ora_mod && t.ora_mod !== t.ora;
+                            const brPlanned = breakReduction.planned_break_minutes || '?';
+                            const brEffective = breakReduction.effective_break_minutes || '?';
+                            const brRounded = breakReduction.rounded_break_minutes;
+                            const brRoundedStr = brRounded ? ` → ${brRounded} min arrot.` : '';
+                            modificaInfo = `<div class="timbratura-originale">
+                                ${hasModifica ? `<span class="ora-originale">Timbrata: ${t.ora}</span>` : ''}
+                                <span class="modifica-badge warning" style="background: #f59e0b; color: white;">⏳ Pausa ridotta (${brEffective}/${brPlanned} min${brRoundedStr}) in attesa revisione</span>
+                            </div>`;
+                        } else if (breakReduction && breakReduction.status === 'approved') {
+                            oraDisplay = t.ora_mod || t.ora;
+                            hasModifica = t.ora_mod && t.ora_mod !== t.ora;
+                            const brRounded = breakReduction.rounded_break_minutes;
+                            if (hasModifica) {
+                                modificaInfo = `<div class="timbratura-originale">
+                                    <span class="ora-originale">Originale: ${t.ora}</span>
+                                    <span class="modifica-badge" style="background: #22c55e; color: white;">✅ Pausa ridotta autorizzata${brRounded ? ` (${brRounded} min)` : ''}</span>
+                                </div>`;
+                            }
+                        } else if (breakReduction && breakReduction.status === 'rejected') {
+                            oraDisplay = t.ora_mod || t.ora;
+                            hasModifica = t.ora_mod && t.ora_mod !== t.ora;
+                            if (hasModifica) {
+                                modificaInfo = `<div class="timbratura-originale">
+                                    <span class="ora-originale">Originale: ${t.ora}</span>
+                                    <span class="modifica-badge" style="background: #ef4444; color: white;">↩️ Pausa pianificata applicata</span>
+                                </div>`;
+                            }
+                        } else if (flexForThisTimbratura) {
                             // Fuori Flessibilità pending: mostra ora originale con badge "In attesa"
                             oraDisplay = t.ora;
                             hasModifica = false;
@@ -1402,6 +1431,9 @@
                         if (calcRiepilogo) {
                             // Determina lo status Extra Turno in anticipo (serve per uscita)
                             const etStatus = calcRiepilogo.extra_turno_request_status;
+                            // Deroga pausa ridotta approvata (serve per uscita e ore lorde)
+                            const brInfo = dayData.break_reduction;
+                            const brApproved = brInfo && brInfo.status === 'approved';
                             
                             // ═══════════════════════════════════════════════════════════
                             // TIMBRATURE REGISTRATE - calcolo ore lorde dalle timbrature originali
@@ -1420,10 +1452,9 @@
                                 </div>`;
                             }
                             if (fineT) {
-                                // Uscita: mostra ora_mod solo se Extra Turno è approvato
-                                // Se pending/rifiutato, mostra l'ora originale
+                                // Uscita: mostra ora_mod se Extra Turno approvato O Deroga Pausa approvata
                                 const hasExtraApproved = etStatus === 'approved';
-                                const oraUscitaDisplay = (hasExtraApproved && fineT.ora_mod) ? fineT.ora_mod : fineT.ora;
+                                const oraUscitaDisplay = ((hasExtraApproved || brApproved) && fineT.ora_mod) ? fineT.ora_mod : fineT.ora;
                                 const uscitaNote = (etStatus === 'pending' && fineT.ora_mod && fineT.ora_mod !== fineT.ora) 
                                     ? `<div style="font-size: 11px; color: #f57c00;">⏳ Sarà ${fineT.ora_mod} se approvato</div>` : '';
                                 html += `<div class="detail-row">
@@ -1432,12 +1463,12 @@
                                 </div>`;
                             }
                             
-                            // Calcola ore lorde: usa ora_mod solo se Extra Turno approvato
+                            // Calcola ore lorde: usa ora_mod se Extra Turno approvato O Deroga Pausa approvata
                             let oreLordeMinuti = 0;
                             if (inizioT && fineT) {
                                 const hasExtraApproved = etStatus === 'approved';
                                 const ingressoOra = inizioT.ora_mod || inizioT.ora;
-                                const uscitaOra = (hasExtraApproved && fineT.ora_mod) ? fineT.ora_mod : fineT.ora;
+                                const uscitaOra = ((hasExtraApproved || brApproved) && fineT.ora_mod) ? fineT.ora_mod : fineT.ora;
                                 const [h1, m1] = ingressoOra.split(':').map(Number);
                                 const [h2, m2] = uscitaOra.split(':').map(Number);
                                 oreLordeMinuti = (h2 * 60 + m2) - (h1 * 60 + m1);
@@ -1448,23 +1479,46 @@
                                 <div class="detail-value muted">${formatMinutes(oreLordeMinuti)}</div>
                             </div>`;
                             
-                            // Pausa effettiva
+                            // Pausa: se deroga approvata usa quella approvata, altrimenti pianificata
                             const pausaPianificata = calcRiepilogo.pausa_turno_minuti || 0;
-                            if (dayData.pausa_minuti && dayData.pausa_minuti > 0) {
+                            const pausaEffettivaTimbrata = dayData.pausa_minuti || 0;
+                            // brInfo e brApproved già definiti sopra
+                            // pausaUsataPerCalcolo = coerente con il backend
+                            let pausaUsataPerCalcolo;
+                            if (brApproved && pausaEffettivaTimbrata > 0) {
+                                // Deroga approvata: usa la pausa effettiva timbrata (ora_mod già arrotondata)
+                                pausaUsataPerCalcolo = pausaEffettivaTimbrata;
+                            } else {
+                                pausaUsataPerCalcolo = pausaEffettivaTimbrata > 0 ? pausaPianificata : 0;
+                            }
+                            if (pausaEffettivaTimbrata > 0) {
+                                let pausaLabel, pausaNota = '';
+                                if (brApproved && brInfo.rounded_break_minutes) {
+                                    pausaLabel = 'Pausa (deroga approvata)';
+                                    if (pausaPianificata !== pausaUsataPerCalcolo) {
+                                        pausaNota = ` <span style="font-size:11px;color:#888;">pianificata: ${formatMinutes(pausaPianificata)}</span>`;
+                                    }
+                                } else {
+                                    pausaLabel = 'Pausa pianificata';
+                                    if (pausaEffettivaTimbrata !== pausaUsataPerCalcolo) {
+                                        pausaNota = ` <span style="font-size:11px;color:#888;">(timbrata: ${formatMinutes(pausaEffettivaTimbrata)})</span>`;
+                                    }
+                                }
                                 html += `<div class="detail-row">
-                                    <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-coffee"></i> Pausa effettiva</div>
-                                    <div class="detail-value warning">-${formatMinutes(dayData.pausa_minuti)}</div>
+                                    <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-coffee"></i> ${pausaLabel}</div>
+                                    <div class="detail-value warning">-${formatMinutes(pausaUsataPerCalcolo)}${pausaNota}</div>
                                 </div>`;
-                            } else if (pausaPianificata > 0) {
-                                // Pausa prevista ma non effettuata
+                            } else if (pausaUsataPerCalcolo > 0) {
                                 html += `<div class="detail-row">
                                     <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-coffee"></i> Pausa</div>
-                                    <div class="detail-value danger" style="font-size: 12px;">⚠️ Non effettuata (prevista ${formatMinutes(pausaPianificata)})</div>
+                                    <div class="detail-value danger" style="font-size: 12px;">⚠️ Non effettuata (prevista ${formatMinutes(pausaUsataPerCalcolo)})</div>
                                 </div>`;
                             }
                             
-                            // Ore nette (lorde - pausa)
-                            const oreNetteCalcolate = oreLordeMinuti - (dayData.pausa_minuti || 0);
+                            // Ore nette: usa il valore già calcolato dal backend (coerente con TOTALE)
+                            const oreNetteCalcolate = calcRiepilogo.ore_nette_minuti != null
+                                ? calcRiepilogo.ore_nette_minuti
+                                : oreLordeMinuti - pausaUsataPerCalcolo;
                             html += `<div class="detail-row">
                                 <div class="detail-label" style="padding-left: 15px;"><i class="fas fa-equals"></i> Ore nette</div>
                                 <div class="detail-value info">${formatMinutes(oreNetteCalcolate)}</div>

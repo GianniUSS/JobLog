@@ -167,6 +167,137 @@
             color: var(--text-muted);
             text-transform: uppercase;
         }
+
+        .btn-add-custom {
+            padding: 10px 20px;
+            background: var(--success, #22c55e);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .btn-add-custom:hover {
+            background: #16a34a;
+            transform: translateY(-1px);
+        }
+
+        .custom-badge {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin-left: 8px;
+            text-transform: uppercase;
+        }
+
+        .location-card.is-custom {
+            border-color: var(--primary);
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.05) 100%);
+        }
+
+        .btn-delete-custom {
+            padding: 8px 12px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .btn-delete-custom:hover {
+            background: #dc2626;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-box {
+            background: var(--bg-card, #fff);
+            border-radius: 16px;
+            padding: 28px;
+            width: 440px;
+            max-width: 95vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal-box h3 {
+            margin: 0 0 20px 0;
+            font-size: 18px;
+        }
+        .modal-field {
+            margin-bottom: 14px;
+        }
+        .modal-field label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .modal-field input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            background: var(--bg);
+            color: var(--text);
+            box-sizing: border-box;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        .modal-actions button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-modal-cancel {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border) !important;
+        }
+        .btn-modal-save {
+            background: var(--primary);
+            color: white;
+        }
+        .btn-modal-save:hover {
+            opacity: 0.9;
+        }
+
+        .section-divider {
+            grid-column: 1 / -1;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            padding: 10px 0 4px 0;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 4px;
+        }
     </style>
 </head>
 <body>
@@ -193,16 +324,23 @@
         </header>
 
         <div class="header-section">
-            <h2>Coordinate per le Location Rentman</h2>
-            <div class="stats">
-                <div class="stat-item">
-                    <div class="stat-value" id="totalCount">0</div>
-                    <div class="stat-label">Totale Location</div>
+            <h2>Coordinate per le Location</h2>
+            <div style="display: flex; align-items: center; gap: 20px;">
+                <div class="stats">
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalCount">0</div>
+                        <div class="stat-label">Totale Location</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="cachedCount">0</div>
+                        <div class="stat-label">Con Coordinate</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="customCount">0</div>
+                        <div class="stat-label">Custom</div>
+                    </div>
                 </div>
-                <div class="stat-item">
-                    <div class="stat-value" id="cachedCount">0</div>
-                    <div class="stat-label">Con Coordinate</div>
-                </div>
+                <button class="btn-add-custom" onclick="openAddCustomModal()">➕ Nuova Location</button>
             </div>
         </div>
 
@@ -211,7 +349,105 @@
         </div>
     </div>
 
+    <!-- Modal Nuova Location Custom -->
+    <div class="modal-overlay" id="addCustomModal">
+        <div class="modal-box">
+            <h3>📍 Nuova Location Custom</h3>
+            <div class="modal-field">
+                <label>Nome *</label>
+                <input type="text" id="customName" placeholder="es: Magazzino Secondario">
+            </div>
+            <div class="modal-field">
+                <label>Indirizzo</label>
+                <input type="text" id="customAddress" placeholder="es: Via Roma 10, 72015 Fasano (BR)">
+            </div>
+            <div class="modal-field">
+                <label>Latitudine *</label>
+                <input type="number" id="customLat" placeholder="es: 40.834500" step="0.000001">
+            </div>
+            <div class="modal-field">
+                <label>Longitudine *</label>
+                <input type="number" id="customLon" placeholder="es: 17.365200" step="0.000001">
+            </div>
+            <div class="modal-field">
+                <label>Raggio GPS (metri)</label>
+                <input type="number" id="customRadius" placeholder="300" value="300" min="10" max="5000" step="10">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-modal-cancel" onclick="closeAddCustomModal()">Annulla</button>
+                <button class="btn-modal-save" onclick="saveCustomLocation()">💾 Crea Location</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        function openAddCustomModal() {
+            document.getElementById('customName').value = '';
+            document.getElementById('customAddress').value = '';
+            document.getElementById('customLat').value = '';
+            document.getElementById('customLon').value = '';
+            document.getElementById('customRadius').value = '300';
+            document.getElementById('addCustomModal').classList.add('open');
+        }
+
+        function closeAddCustomModal() {
+            document.getElementById('addCustomModal').classList.remove('open');
+        }
+
+        // Chiudi modal con click outside
+        document.getElementById('addCustomModal').addEventListener('click', function(e) {
+            if (e.target === this) closeAddCustomModal();
+        });
+
+        async function saveCustomLocation() {
+            const name = document.getElementById('customName').value.trim();
+            const address = document.getElementById('customAddress').value.trim();
+            const latitude = parseFloat(document.getElementById('customLat').value);
+            const longitude = parseFloat(document.getElementById('customLon').value);
+            const radius_meters = parseInt(document.getElementById('customRadius').value) || 300;
+
+            if (!name) { alert('Inserisci il nome della location'); return; }
+            if (isNaN(latitude) || isNaN(longitude)) { alert('Inserisci coordinate valide'); return; }
+            if (latitude < -90 || latitude > 90) { alert('Latitudine non valida (-90 a 90)'); return; }
+            if (longitude < -180 || longitude > 180) { alert('Longitudine non valida (-180 a 180)'); return; }
+
+            try {
+                const res = await fetch('/api/admin/locations/custom', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, address, latitude, longitude, radius_meters })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    closeAddCustomModal();
+                    alert('Location custom creata! ✅');
+                    loadLocations();
+                } else {
+                    alert('Errore: ' + (data.error || 'Errore sconosciuto'));
+                }
+            } catch (err) {
+                console.error('Errore:', err);
+                alert('Errore nella creazione');
+            }
+        }
+
+        async function deleteCustomLocation(customId, name) {
+            if (!confirm(`Eliminare la location custom "${name}"?`)) return;
+            try {
+                const res = await fetch(`/api/admin/locations/custom/${customId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.ok) {
+                    alert('Location eliminata ✅');
+                    loadLocations();
+                } else {
+                    alert('Errore: ' + (data.error || 'Errore sconosciuto'));
+                }
+            } catch (err) {
+                console.error('Errore:', err);
+                alert('Errore nella eliminazione');
+            }
+        }
+
         async function loadLocations() {
             try {
                 const res = await fetch('/api/admin/locations');
@@ -227,41 +463,35 @@
                 }
 
                 const locations = data.locations || [];
+                const customLocations = locations.filter(l => l.is_custom);
+                const rentmanLocations = locations.filter(l => !l.is_custom);
                 
                 document.getElementById('totalCount').textContent = locations.length;
                 document.getElementById('cachedCount').textContent = locations.filter(l => l.has_cache).length;
+                document.getElementById('customCount').textContent = customLocations.length;
 
                 if (locations.length === 0) {
                     document.getElementById('locationsList').innerHTML = `
                         <div class="empty-state">
                             <div class="empty-state-icon">📍</div>
-                            <div>Nessuna location trovata da Rentman</div>
+                            <div>Nessuna location trovata. Clicca "Nuova Location" per crearne una.</div>
                         </div>`;
                     return;
                 }
 
-                const html = locations.map(loc => `
-                    <div class="location-card ${loc.has_cache ? 'has-cache' : ''}">
-                        <div class="location-name ${loc.has_cache ? 'has-cache' : 'no-cache'}">
-                            ${escapeHtml(loc.name)}
-                        </div>
-                        ${loc.address ? `<div class="location-address">${escapeHtml(loc.address)}</div>` : ''}
-                        <div class="location-coords">
-                            ${loc.has_cache ? `
-                                <div>Lat: <strong>${loc.latitude.toFixed(6)}</strong></div>
-                                <div>Lon: <strong>${loc.longitude.toFixed(6)}</strong></div>
-                            ` : '<div style="color: var(--text-muted);">Nessuna coordinata salvata</div>'}
-                        </div>
-                        <div class="coord-input-group">
-                            <input type="number" class="lat-input" placeholder="Lat" step="0.000001" value="${loc.latitude || ''}" data-location="${escapeHtml(loc.name)}">
-                            <input type="number" class="lon-input" placeholder="Lon" step="0.000001" value="${loc.longitude || ''}" data-location="${escapeHtml(loc.name)}">
-                        </div>
-                        <div class="coord-button-group">
-                            <button class="btn-save-coords" onclick="saveCoordinates('${escapeHtml(loc.name)}')">💾 Salva</button>
-                            <button class="btn-map" onclick="openMap('${escapeHtml(loc.name)}', ${loc.latitude || 0}, ${loc.longitude || 0})">🗺️ Mappa</button>
-                        </div>
-                    </div>
-                `).join('');
+                let html = '';
+
+                // Sezione location custom
+                if (customLocations.length > 0) {
+                    html += '<div class="section-divider">📍 Location Custom</div>';
+                    html += customLocations.map(loc => renderLocationCard(loc, true)).join('');
+                }
+
+                // Sezione location Rentman
+                if (rentmanLocations.length > 0) {
+                    html += '<div class="section-divider">🔗 Location da Rentman</div>';
+                    html += rentmanLocations.map(loc => renderLocationCard(loc, false)).join('');
+                }
 
                 document.getElementById('locationsList').innerHTML = html;
             } catch (err) {
@@ -274,7 +504,35 @@
             }
         }
 
-        async function saveCoordinates(locationName) {
+        function renderLocationCard(loc, isCustom) {
+            return `
+                <div class="location-card ${loc.has_cache ? 'has-cache' : ''} ${isCustom ? 'is-custom' : ''}">
+                    <div class="location-name ${loc.has_cache ? 'has-cache' : 'no-cache'}">
+                        ${escapeHtml(loc.name)}
+                        ${isCustom ? '<span class="custom-badge">Custom</span>' : ''}
+                    </div>
+                    ${loc.address ? `<div class="location-address">${escapeHtml(loc.address)}</div>` : ''}
+                    <div class="location-coords">
+                        ${loc.has_cache ? `
+                            <div>Lat: <strong>${loc.latitude ? loc.latitude.toFixed(6) : '—'}</strong></div>
+                            <div>Lon: <strong>${loc.longitude ? loc.longitude.toFixed(6) : '—'}</strong></div>
+                            <div>Raggio: <strong>${loc.radius_meters || 300}m</strong></div>
+                        ` : '<div style="color: var(--text-muted);">Nessuna coordinata salvata</div>'}
+                    </div>
+                    <div class="coord-input-group">
+                        <input type="number" class="lat-input" placeholder="Lat" step="0.000001" value="${loc.latitude || ''}" data-location="${escapeHtml(loc.name)}">
+                        <input type="number" class="lon-input" placeholder="Lon" step="0.000001" value="${loc.longitude || ''}" data-location="${escapeHtml(loc.name)}">
+                    </div>
+                    <div class="coord-button-group">
+                        <button class="btn-save-coords" onclick="saveCoordinates('${escapeJs(loc.name)}', ${isCustom})">💾 Salva</button>
+                        <button class="btn-map" onclick="openMap('${escapeJs(loc.name)}', ${loc.latitude || 0}, ${loc.longitude || 0})">🗺️ Mappa</button>
+                        ${isCustom ? `<button class="btn-delete-custom" onclick="deleteCustomLocation(${loc.custom_id}, '${escapeJs(loc.name)}')">🗑️</button>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        async function saveCoordinates(locationName, isCustom) {
             const card = event.target.closest('.location-card');
             const latInput = card.querySelector('.lat-input');
             const lonInput = card.querySelector('.lon-input');
@@ -321,6 +579,10 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function escapeJs(text) {
+            return (text || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
         }
 
         // Carica al caricamento della pagina

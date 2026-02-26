@@ -399,6 +399,38 @@ header {
   align-items: center;
   gap: 8px;
 }
+.gps-location-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+}
+.gps-location-item {
+  background: rgba(0,0,0,0.03);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Fullscreen GPS modal */
+.gps-modal.active .gps-container {
+  max-width: none;
+  width: 100%;
+  height: 100vh;
+  border-radius: 0;
+  padding: calc(var(--safe-top) + 20px) 20px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow: auto;
+}
+.gps-modal .gps-status {
+  flex: 1 0 auto;
+}
 .gps-location-name .location-label {
   font-size: 18px;
 }
@@ -418,6 +450,10 @@ header {
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(1.1); }
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
 }
 .gps-message {
   font-size: 14px;
@@ -1239,6 +1275,125 @@ header {
   font-size: 14px;
   white-space: nowrap;
 }
+/* Container e bottoni azione inline (Sedi + Info) */
+.action-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 0;
+}
+.action-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: rgba(255,255,255,0.8);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s;
+}
+.action-chip:active {
+  background: rgba(255,255,255,0.25);
+}
+.action-chip .icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+.action-chip b { font-weight: 700; }
+/* Pulsante "Sedi" per aprire popup sedi valide */
+.valid-locations-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.95);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.valid-locations-btn:active {
+  background: rgba(255,255,255,0.3);
+}
+/* Popup sedi valide */
+.valid-locations-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 9998;
+  display: none;
+}
+.valid-locations-popup-overlay.active { display: block; }
+.valid-locations-popup {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  padding: 18px 20px 14px;
+  min-width: 250px;
+  max-width: 90vw;
+  display: none;
+}
+.valid-locations-popup.active { display: block; }
+.valid-locations-popup h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #333;
+}
+.valid-locations-popup ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.valid-locations-popup li {
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  background: #f3f4f6;
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.valid-locations-popup li:last-child { margin-bottom: 0; }
+.valid-locations-popup .close-btn {
+  display: block;
+  margin: 10px auto 0;
+  padding: 6px 20px;
+  border: none;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+[data-theme="dark"] .valid-locations-popup {
+  background: #1e293b;
+}
+[data-theme="dark"] .valid-locations-popup h4 { color: #e2e8f0; }
+[data-theme="dark"] .valid-locations-popup li {
+  background: rgba(255,255,255,0.08);
+  color: #e2e8f0;
+}
 .turno-badge {
   display: inline-block;
   background: rgba(251, 191, 36, 0.25);
@@ -1265,30 +1420,127 @@ header {
   position: relative;
 }
 
+/* Fasi turno */
+.turno-phases-box {
+  background: var(--card-bg, #fff);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin: -4px 0 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border: 1px solid var(--border, #e5e7eb);
+}
+.turno-phases-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.turno-phases-icon { font-size: 16px; }
+.turno-phases-title {
+  font-weight: 700;
+  font-size: 14px;
+  flex: 1;
+  color: var(--text, #1a1a2e);
+}
+.turno-phases-counter {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand, #4361ee);
+  background: rgba(67,97,238,0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.turno-phases-bar {
+  height: 6px;
+  background: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.turno-phases-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4361ee, #2ecc71);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.turno-phases-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.turno-phase-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-hover, #f8f9fa);
+  border-radius: 10px;
+  border: 1px solid var(--border-light, #e9ecef);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.turno-phase-item:active {
+  transform: scale(0.98);
+}
+.turno-phase-item.completed {
+  background: rgba(46,204,113,0.08);
+  border-color: rgba(46,204,113,0.25);
+}
+.turno-phase-item .phase-num {
+  width: 28px;
+  height: 28px;
+  background: var(--brand, #4361ee);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.turno-phase-item.completed .phase-num {
+  background: #2ecc71;
+}
+.turno-phase-item .phase-label {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+}
+.turno-phase-item .phase-check {
+  font-size: 20px;
+}
+.turno-phase-item .phase-by {
+  font-size: 11px;
+  color: var(--muted, #888);
+}
+
 /* Info Button */
 .turno-info-btn {
   position: absolute;
   bottom: 10px;
   right: 12px;
-  background: rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.2);
   backdrop-filter: blur(10px);
-  border: 2px solid rgba(255,255,255,0.4);
+  border: 1.5px solid rgba(255,255,255,0.35);
   color: white;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  font-size: 16px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.3px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
   z-index: 3;
   transition: background 0.2s, transform 0.15s;
+  white-space: nowrap;
 }
-.turno-info-btn:hover {
-  background: rgba(255,255,255,0.4);
-  transform: scale(1.1);
+.turno-info-btn:hover, .turno-info-btn:active {
+  background: rgba(255,255,255,0.35);
+  transform: scale(1.03);
 }
 
 /* Crew Info Modal */
@@ -2394,6 +2646,8 @@ header {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+
 </style>
 </head>
 <body>
@@ -2456,12 +2710,7 @@ header {
         <span class="icon">🕐</span>
         <span>Storico Timbrature</span>
       </a>
-      {% if magazzino_enabled %}
-      <a href="{{ url_for('magazzino_home') }}" class="menu-item">
-        <span class="icon">📦</span>
-        <span>Magazzino</span>
-      </a>
-      {% endif %}
+
     </div>
     
     <div class="menu-section">
@@ -2563,7 +2812,7 @@ header {
   <!-- Box Turno Oggi -->
   <div class="turno-box" id="turnoBox" style="display:none;">
     <span class="turno-counter" id="turnoCounter" style="display:none;">1/1</span>
-    <button class="turno-info-btn" id="turnoInfoBtn" onclick="openCrewInfoModal()" title="Info squadra" style="display:none;">ℹ</button>
+    
     <div class="turno-nav">
       <button class="turno-nav-btn" id="turnoPrevBtn" onclick="navigateTurno(-1)" style="display:none;">‹</button>
       <div class="turno-content">
@@ -2577,7 +2826,7 @@ header {
             📝 Note
           </span>
         </div>
-        <div class="turno-details">
+        <div class="turno-details" id="turnoDetailsGrid">
           <!-- Orario -->
           <div class="turno-detail turno-detail-row" id="turnoOrarioRow">
             <span id="turnoProjectCode" style="font-weight:700; font-size:11px; background:rgba(255,255,255,0.25); padding:2px 6px; border-radius:6px; margin-right:14px; display:none;"></span>
@@ -2601,6 +2850,19 @@ header {
       </div>
       <button class="turno-nav-btn" id="turnoNextBtn" onclick="navigateTurno(1)" style="display:none;">›</button>
     </div>
+  </div>
+
+  <!-- Fasi del turno -->
+  <div class="turno-phases-box" id="turnoPhases" style="display:none;">
+    <div class="turno-phases-header">
+      <span class="turno-phases-icon">🔧</span>
+      <span class="turno-phases-title">Fasi Attività</span>
+      <span class="turno-phases-counter" id="turnoPhaseCounter">0/0</span>
+    </div>
+    <div class="turno-phases-bar">
+      <div class="turno-phases-fill" id="turnoPhaseBar" style="width:0%"></div>
+    </div>
+    <div class="turno-phases-list" id="turnoPhasesList"></div>
   </div>
 
   <div class="actions">
@@ -2663,6 +2925,7 @@ header {
       <h3>🔢 Numero Progetto</h3>
       <button class="switch-activity-close" onclick="closeNumpad()">✕</button>
     </div>
+    <div id="numpadActivityHint" style="display:none;text-align:center;padding:4px 12px 8px;font-size:13px;color:#1e88e5;font-weight:600;"></div>
     <div class="numpad-display">
       <input type="text" id="numpadInput" readonly placeholder="---" maxlength="10">
     </div>
@@ -2914,38 +3177,295 @@ async function loadTimbraturaConfig() {
 // ═══════════════════════════════════════════════════════════════════
 // VERIFICA PAUSA PRIMA DI FINE GIORNATA
 // ═══════════════════════════════════════════════════════════════════
+function parseTimeToMinutes(rawTime) {
+  if (!rawTime) return null;
+  const text = String(rawTime);
+  const hhmm = text.length > 10 ? text.substring(11, 16) : text.substring(0, 5);
+  const parts = hhmm.split(':');
+  if (parts.length < 2) return null;
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function calculateStampedBreakMinutes() {
+  const pausaTimbrature = todayTimbrature
+    .filter(t => t.tipo === 'inizio_pausa' || t.tipo === 'fine_pausa')
+    .slice()
+    .sort((a, b) => {
+      const am = parseTimeToMinutes(a.ora || a.ora_mod || '00:00') || 0;
+      const bm = parseTimeToMinutes(b.ora || b.ora_mod || '00:00') || 0;
+      return am - bm;
+    });
+
+  let total = 0;
+  let startMin = null;
+  pausaTimbrature.forEach(t => {
+    const tMin = parseTimeToMinutes(t.ora || t.ora_mod);
+    if (tMin == null) return;
+    if (t.tipo === 'inizio_pausa') {
+      startMin = tMin;
+    } else if (t.tipo === 'fine_pausa' && startMin != null && tMin >= startMin) {
+      total += (tMin - startMin);
+      startMin = null;
+    }
+  });
+
+  return Math.max(0, total);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VERIFICA RIDUZIONE PAUSA PRIMA DI FINE PAUSA
+// Quando l'utente timbra Fine Pausa, calcola la pausa effettiva
+// (ora attuale - inizio_pausa) e confronta con quella pianificata.
+// Se riduzione >= 30 min → popup motivazione obbligatoria.
+// ═══════════════════════════════════════════════════════════════════
+function checkBreakReductionBeforeFinePausa(callback) {
+  // Trova l'ultima timbratura inizio_pausa
+  const inizioPausaTimb = todayTimbrature
+    .filter(t => t.tipo === 'inizio_pausa')
+    .slice(-1)[0];
+  
+  if (!inizioPausaTimb) {
+    console.log('🔍 checkBreakReduction: nessun inizio_pausa trovato, procedo');
+    callback();
+    return;
+  }
+  
+  // Calcola pausa effettiva: ora corrente - inizio_pausa
+  const inizioMin = parseTimeToMinutes(inizioPausaTimb.ora || inizioPausaTimb.ora_mod);
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  
+  if (inizioMin == null) {
+    console.log('🔍 checkBreakReduction: impossibile parsare inizio_pausa, procedo');
+    callback();
+    return;
+  }
+  
+  const effectiveBreakMinutes = Math.max(0, nowMin - inizioMin);
+  
+  // Trova pausa pianificata dal turno
+  const turniGiorno = (allTurni && allTurni.length > 0)
+    ? allTurni
+    : [allTurni[currentTurnoIndex] || {}];
+
+  const turnoConPausa = turniGiorno.find(t =>
+    (t && t.break_start && t.break_end) ||
+    (t && Number(t.break_minutes || 0) > 0)
+  ) || {};
+
+  let plannedBreakMinutes = 0;
+  if (turnoConPausa.break_start && turnoConPausa.break_end) {
+    const bs = parseTimeToMinutes(turnoConPausa.break_start);
+    const be = parseTimeToMinutes(turnoConPausa.break_end);
+    if (bs != null && be != null && be > bs) plannedBreakMinutes = be - bs;
+  } else {
+    plannedBreakMinutes = Number(turnoConPausa.break_minutes || 0) || 0;
+  }
+  
+  const reduction = plannedBreakMinutes - effectiveBreakMinutes;
+  
+  console.log('🔍🔍🔍 BREAK REDUCTION CHECK (Fine Pausa):');
+  console.log('  inizio_pausa=', inizioPausaTimb.ora || inizioPausaTimb.ora_mod, '(', inizioMin, 'min)');
+  console.log('  ora corrente=', now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0'), '(', nowMin, 'min)');
+  console.log('  effectiveBreak=', effectiveBreakMinutes, 'min');
+  console.log('  plannedBreak=', plannedBreakMinutes, 'min');
+  console.log('  reduction=', reduction, 'min');
+  
+  if (plannedBreakMinutes > 0 && effectiveBreakMinutes >= 0 && reduction >= 30) {
+    console.log('🔍🔍🔍 ✅ SHOWING BREAK REDUCTION POPUP!');
+    showBreakReductionMotivationPopup(
+      plannedBreakMinutes,
+      effectiveBreakMinutes,
+      callback,
+      {
+        break_start: turnoConPausa.break_start || null,
+        break_end: turnoConPausa.break_end || null,
+        break_minutes: plannedBreakMinutes || null,
+      }
+    );
+    return;
+  }
+  
+  console.log('🔍🔍🔍 ❌ Nessuna riduzione critica, procedo normalmente');
+  callback();
+}
+
 function checkBreakBeforeEndDay(callback) {
   // Verifica se la pausa è stata timbrata oggi
   const hasPauseStart = todayTimbrature.some(t => t.tipo === 'inizio_pausa');
   const hasPauseEnd = todayTimbrature.some(t => t.tipo === 'fine_pausa');
   
+  console.log('🔍 checkBreakBeforeEndDay: hasPauseStart=', hasPauseStart, 'hasPauseEnd=', hasPauseEnd);
+  
+  // Verifica se la giornata ha una pausa pianificata.
+  const turniGiorno = (allTurni && allTurni.length > 0)
+    ? allTurni
+    : [allTurni[currentTurnoIndex] || {}];
+
+  const turnoConPausa = turniGiorno.find(t =>
+    (t && t.break_start && t.break_end) ||
+    (t && Number(t.break_minutes || 0) > 0)
+  ) || {};
+
+  let plannedBreakMinutes = 0;
+  if (turnoConPausa.break_start && turnoConPausa.break_end) {
+    const bs = parseTimeToMinutes(turnoConPausa.break_start);
+    const be = parseTimeToMinutes(turnoConPausa.break_end);
+    if (bs != null && be != null && be > bs) plannedBreakMinutes = be - bs;
+  } else {
+    plannedBreakMinutes = Number(turnoConPausa.break_minutes || 0) || 0;
+  }
+
+  const hasPlannedBreak = Boolean(
+    (turnoConPausa.break_start && turnoConPausa.break_end) ||
+    Number(turnoConPausa.break_minutes || 0) > 0
+  );
+
   // Se la pausa è stata timbrata (sia inizio che fine), procedi
   if (hasPauseStart && hasPauseEnd) {
     pendingBreakInfo = { break_confirmed: true, break_stamped: true };
+    console.log('🔍 checkBreakBeforeEndDay: pausa già timbrata, skip popup');
     callback();
     return;
   }
   
-  // Verifica se il turno ha una pausa pianificata
-  const turno = allTurni[currentTurnoIndex] || {};
-  const hasPlannedBreak = (turno.break_start && turno.break_end) || (turno.break_minutes && turno.break_minutes > 0);
-  
-  // Se non c'è pausa pianificata, procedi senza chiedere
+  // Se non c'è pausa pianificata dai dati Rentman, chiedi al backend come fallback
+  // (in produzione break_start/end/minutes possono essere NULL nei dati Rentman)
   if (!hasPlannedBreak) {
-    pendingBreakInfo = null;
-    callback();
+    fetch('/api/check_break_needed')
+      .then(r => r.json())
+      .then(backendData => {
+        if (backendData.planned_break_minutes > 0 && !backendData.has_pausa_timbrata) {
+          console.log('🔍 checkBreakBeforeEndDay (backend fallback): pausa pianificata=', backendData.planned_break_minutes, 'min, non timbrata → mostro popup');
+          showBreakConfirmPopup(`${backendData.planned_break_minutes} minuti`, callback, {
+            break_start: null,
+            break_end: null,
+            break_minutes: backendData.planned_break_minutes,
+          });
+        } else {
+          console.log('🔍 checkBreakBeforeEndDay (backend fallback): nessuna pausa necessaria, procedo');
+          pendingBreakInfo = null;
+          callback();
+        }
+      })
+      .catch(err => {
+        console.warn('🔍 checkBreakBeforeEndDay: errore fetch backend, procedo:', err);
+        pendingBreakInfo = null;
+        callback();
+      });
     return;
   }
   
   // Pausa pianificata ma NON timbrata → mostra popup
-  const breakText = turno.break_start && turno.break_end 
-    ? `${turno.break_start} - ${turno.break_end}` 
-    : `${turno.break_minutes} minuti`;
+  const breakText = turnoConPausa.break_start && turnoConPausa.break_end
+    ? `${turnoConPausa.break_start} - ${turnoConPausa.break_end}`
+    : `${turnoConPausa.break_minutes} minuti`;
   
-  showBreakConfirmPopup(breakText, callback);
+  showBreakConfirmPopup(breakText, callback, {
+    break_start: turnoConPausa.break_start || null,
+    break_end: turnoConPausa.break_end || null,
+    break_minutes: plannedBreakMinutes || Number(turnoConPausa.break_minutes || 0) || null
+  });
 }
 
-function showBreakConfirmPopup(breakText, callback) {
+function showBreakReductionMotivationPopup(plannedMinutes, effectiveMinutes, callback, breakMeta = null) {
+  const existing = document.getElementById('breakConfirmPopup');
+  if (existing) existing.remove();
+
+  const reduction = Math.max(0, plannedMinutes - effectiveMinutes);
+  const popup = document.createElement('div');
+  popup.id = 'breakConfirmPopup';
+  popup.innerHTML = `
+    <style>
+      #breakConfirmPopup {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.6); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px;
+      }
+      #breakConfirmPopup .popup-card {
+        background: white; border-radius: 20px; padding: 24px;
+        max-width: 430px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      }
+      #breakConfirmPopup h3 { text-align: center; margin: 0 0 8px; color: #1e293b; }
+      #breakConfirmPopup .popup-subtitle { text-align: center; color: #64748b; font-size: 0.9rem; margin-bottom: 16px; }
+      #breakConfirmPopup .break-info {
+        background: #fff7ed; border: 1px solid #fdba74;
+        border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+      }
+      #breakConfirmPopup .break-row { display:flex; justify-content:space-between; font-size:0.92rem; margin:4px 0; }
+      #breakConfirmPopup textarea {
+        width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 10px;
+        font-size: 0.9rem; resize: none; margin-bottom: 10px; box-sizing: border-box;
+      }
+      #breakConfirmPopup textarea:focus { outline: none; border-color: #f59e0b; }
+      #breakConfirmPopup .motivation-error { color: #ef4444; font-size: 0.8rem; margin: -6px 0 8px; display: none; }
+      #breakConfirmPopup .btn-confirm {
+        width: 100%; padding: 13px; border-radius: 12px; border: none;
+        font-size: 0.95rem; font-weight: 600; cursor: pointer;
+        background: linear-gradient(135deg, #4361ee, #7c3aed); color: white;
+      }
+      #breakConfirmPopup .btn-cancel {
+        margin-top: 8px; width: 100%; padding: 11px;
+        border-radius: 12px; border: 1px solid #e2e8f0;
+        font-size: 0.9rem; cursor: pointer; background: #f8fafc; color: #64748b;
+      }
+    </style>
+    <div class="popup-card">
+      <h3>⚠️ Pausa ridotta rilevata</h3>
+      <p class="popup-subtitle">La pausa timbrata è inferiore di almeno 30 minuti rispetto al pianificato</p>
+      <div class="break-info">
+        <div class="break-row"><span>⏰ Pausa pianificata</span><strong>${plannedMinutes} min</strong></div>
+        <div class="break-row"><span>🕒 Pausa timbrata</span><strong>${effectiveMinutes} min</strong></div>
+        <div class="break-row"><span>📉 Differenza</span><strong style="color:#c2410c;">-${reduction} min</strong></div>
+      </div>
+      <p style="font-size:0.85rem;color:#92400e;font-weight:600;margin-bottom:8px;">📝 Motivazione obbligatoria (verrà inviata ad approvazione admin):</p>
+      <textarea id="breakReductionReason" rows="3" placeholder="Es: necessità operativa, urgenza cliente, ecc..."></textarea>
+      <div class="motivation-error" id="breakReductionError">⚠️ La motivazione è obbligatoria</div>
+      <button class="btn-confirm" onclick="confirmBreakReductionReason(${plannedMinutes}, ${effectiveMinutes})">Conferma e prosegui</button>
+      <button class="btn-cancel" onclick="cancelBreakConfirm()">Annulla</button>
+    </div>
+  `;
+
+  popup._callback = callback;
+  popup._breakMeta = breakMeta || null;
+  document.body.appendChild(popup);
+  document.getElementById('breakReductionReason')?.focus();
+}
+
+function confirmBreakReductionReason(plannedMinutes, effectiveMinutes) {
+  const reason = document.getElementById('breakReductionReason')?.value?.trim() || '';
+  if (!reason) {
+    const err = document.getElementById('breakReductionError');
+    if (err) err.style.display = 'block';
+    return;
+  }
+
+  const popup = document.getElementById('breakConfirmPopup');
+  const breakMeta = popup?._breakMeta || {};
+  const reduction = Math.max(0, plannedMinutes - effectiveMinutes);
+
+  pendingBreakInfo = {
+    break_confirmed: true,
+    break_stamped: true,
+    break_start: breakMeta.break_start || null,
+    break_end: breakMeta.break_end || null,
+    break_minutes: breakMeta.break_minutes || plannedMinutes || null,
+    break_reduction_reason: reason,
+    planned_break_minutes: plannedMinutes,
+    effective_break_minutes: effectiveMinutes,
+    break_reduction_minutes: reduction,
+  };
+
+  const cb = popup?._callback;
+  if (popup) popup.remove();
+  if (cb) cb();
+}
+
+function showBreakConfirmPopup(breakText, callback, breakMeta = null) {
   // Rimuovi popup esistente
   const existing = document.getElementById('breakConfirmPopup');
   if (existing) existing.remove();
@@ -3041,12 +3561,20 @@ function showBreakConfirmPopup(breakText, callback) {
   
   // Salva callback per usarla dopo
   popup._callback = callback;
+  popup._breakMeta = breakMeta || null;
   document.body.appendChild(popup);
 }
 
 function confirmBreakDone() {
   const popup = document.getElementById('breakConfirmPopup');
-  pendingBreakInfo = { break_confirmed: true, break_stamped: false };
+  const breakMeta = popup?._breakMeta || {};
+  pendingBreakInfo = {
+    break_confirmed: true,
+    break_stamped: false,
+    break_start: breakMeta.break_start || null,
+    break_end: breakMeta.break_end || null,
+    break_minutes: breakMeta.break_minutes || null,
+  };
   console.log('✅ BREAK CONFIRMED - pendingBreakInfo:', JSON.stringify(pendingBreakInfo));
   const cb = popup._callback;
   popup.remove();
@@ -3086,9 +3614,19 @@ function startTimbratura(tipo) {
   pendingBreakInfo = null;
   const label = TIMBRATURA_TYPES[tipo]?.label || tipo;
   
-  // Se è Fine Giornata, verifica prima la pausa
+  console.log('🚀 startTimbratura:', tipo, 'todayTimbrature.length=', todayTimbrature.length, 'allTurni.length=', allTurni.length);
+  
+  // Se è Fine Giornata, verifica prima la pausa (popup: "non hai timbrato la pausa")
   if (tipo === 'fine_giornata') {
     checkBreakBeforeEndDay(() => {
+      proceedWithTimbratura(tipo, label);
+    });
+    return;
+  }
+  
+  // Se è Fine Pausa, verifica eventuale riduzione critica della pausa
+  if (tipo === 'fine_pausa') {
+    checkBreakReductionBeforeFinePausa(() => {
       proceedWithTimbratura(tipo, label);
     });
     return;
@@ -3160,6 +3698,50 @@ function selectMethod(method) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// POPUP SEDI VALIDE
+// ═══════════════════════════════════════════════════════════════════
+
+function showValidLocationsPopup() {
+  // Rimuovi popup precedente se esiste
+  let overlay = document.getElementById('validLocOverlay');
+  let popup = document.getElementById('validLocPopup');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'validLocOverlay';
+    overlay.className = 'valid-locations-popup-overlay';
+    overlay.onclick = function() { closeValidLocationsPopup(); };
+    document.body.appendChild(overlay);
+  }
+  if (!popup) {
+    popup = document.createElement('div');
+    popup.id = 'validLocPopup';
+    popup.className = 'valid-locations-popup';
+    document.body.appendChild(popup);
+  }
+
+  let html = '<h4>📍 Sedi valide per timbrare</h4><ul>';
+  if (Array.isArray(currentValidLocations) && currentValidLocations.length) {
+    currentValidLocations.forEach(function(loc) {
+      const name = loc.name || String(loc);
+      html += `<li><span>🏢</span> ${name}</li>`;
+    });
+  } else {
+    html += '<li>Nessuna sede configurata</li>';
+  }
+  html += '</ul><button class="close-btn" onclick="closeValidLocationsPopup()">Chiudi</button>';
+  popup.innerHTML = html;
+  overlay.classList.add('active');
+  popup.classList.add('active');
+}
+
+function closeValidLocationsPopup() {
+  const overlay = document.getElementById('validLocOverlay');
+  const popup = document.getElementById('validLocPopup');
+  if (overlay) overlay.classList.remove('active');
+  if (popup) popup.classList.remove('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // GPS MODAL
 // ═══════════════════════════════════════════════════════════════════
 
@@ -3167,17 +3749,56 @@ function openGpsModal(label) {
   document.getElementById('gpsTitle').textContent = '📍 ' + label;
   document.getElementById('gpsSubtitle').textContent = 'Avvicinati alla sede per timbrare';
   
-  // Mostra la sede specifica del turno se presente, altrimenti tutte le location
+  // Mostra le sedi valide del turno (sede gruppo + location turno)
   let locationNames;
-  // Usa currentShiftGpsData se ha dati GPS configurati, altrimenti currentShiftLocationName
-  if (currentShiftGpsData && currentShiftGpsData.location) {
-    locationNames = currentShiftGpsData.location;
-  } else if (currentShiftLocationName) {
-    locationNames = currentShiftLocationName;
-  } else {
-    locationNames = timbraturaConfig.gps_locations.map(l => l.name).join(', ') || 'Sede';
+  // Priorità: valid_locations (sede gruppo + location turno) > legacy fallbacks
+  // Costruisci lista unificata delle sedi abilitate (currentValidLocations + gps_config + shift fallback)
+  const gpsLocationEl = document.getElementById('gpsLocationName');
+  gpsLocationEl.innerHTML = '';
+
+  // Raccogli le sedi valide SOLO dal backend (valid_locations del turno, che include sede gruppo + location Rentman + custom locations)
+  const collected = [];
+  if (Array.isArray(currentValidLocations) && currentValidLocations.length) {
+    currentValidLocations.forEach(vl => collected.push({ name: vl.name || String(vl), source: 'turno' }));
   }
-  document.getElementById('gpsLocationName').innerHTML = `<span class="location-label">🏢</span> <strong>${locationNames}</strong>`;
+  // Fallback: se il backend non ha fornito valid_locations, usa la location dallo shift GPS data
+  if (!collected.length && currentShiftGpsData && currentShiftGpsData.location) {
+    collected.push({ name: currentShiftGpsData.location, source: 'shift' });
+  }
+
+  // Rimuovi duplicati preservando ordine (confronto su nome normalizzato)
+  const seen = new Set();
+  const unified = [];
+  collected.forEach(item => {
+    const key = (item.name || '').toString().trim().toLowerCase();
+    if (!key) return;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unified.push(item);
+    }
+  });
+
+  if (unified.length) {
+    const list = document.createElement('div');
+    list.className = 'gps-location-list';
+    unified.forEach(it => {
+      const item = document.createElement('div');
+      item.className = 'gps-location-item';
+      item.textContent = it.name;
+      // Tagga la location più probabile (turno) con un'icona
+      if (it.source === 'turno') {
+        const badge = document.createElement('span');
+        badge.style.marginRight = '8px';
+        badge.textContent = '🏢';
+        item.prepend(badge);
+      }
+      list.appendChild(item);
+    });
+    gpsLocationEl.appendChild(list);
+  } else {
+    const fallback = (currentShiftGpsData && currentShiftGpsData.location) || currentShiftLocationName || 'Sede';
+    gpsLocationEl.innerHTML = `<span class="location-label">🏢</span> <strong>${fallback}</strong>`;
+  }
   
   document.getElementById('gpsIcon').textContent = '📍';
   document.getElementById('gpsIcon').classList.add('loading');
@@ -3232,14 +3853,22 @@ function onGpsSuccess(position) {
   lastGpsPosition = { latitude, longitude, accuracy };
   
   // Calcola distanza dalla sede più vicina
-  // Se il turno ha una sede specifica, usa solo quella
+  // Usa valid_locations dal backend (sede gruppo + location turno)
   let minDistance = Infinity;
   let nearestLocation = null;
-  let locations = timbraturaConfig.gps_locations || [];
+  let locations = [];
   
-  // Priorità 1: Usa le coordinate dal turno Rentman (currentShiftGpsData)
-  if (currentShiftGpsData && currentShiftGpsData.lat && currentShiftGpsData.lon) {
-    // Crea una location temporanea con le coordinate del turno
+  // Priorità 1: Usa valid_locations dal backend (sede default gruppo + location turno)
+  if (currentValidLocations && currentValidLocations.length > 0) {
+    locations = currentValidLocations.map(vl => ({
+      name: vl.name,
+      latitude: parseFloat(vl.latitude),
+      longitude: parseFloat(vl.longitude),
+      radius_meters: vl.radius_meters || 300
+    }));
+  }
+  // Priorità 2: Coordinate dirette dal turno Rentman (fallback legacy)
+  else if (currentShiftGpsData && currentShiftGpsData.lat && currentShiftGpsData.lon) {
     locations = [{
       name: currentShiftGpsData.location || 'Sede',
       latitude: parseFloat(currentShiftGpsData.lat),
@@ -3247,12 +3876,15 @@ function onGpsSuccess(position) {
       radius_meters: currentShiftGpsData.radius || 300
     }];
   }
-  // Priorità 2: Filtra per sede specifica del turno se presente nelle gps_locations
-  else if (currentShiftLocationName && locations.length > 0) {
-    const filteredLocations = locations.filter(l => l.name === currentShiftLocationName);
-    if (filteredLocations.length > 0) {
-      locations = filteredLocations;
-    }
+  // Priorità 3: Filtra per sede specifica del turno nelle gps_locations globali
+  else if (currentShiftLocationName && (timbraturaConfig.gps_locations || []).length > 0) {
+    const allLocs = timbraturaConfig.gps_locations;
+    const filteredLocations = allLocs.filter(l => l.name === currentShiftLocationName);
+    locations = filteredLocations.length > 0 ? filteredLocations : allLocs;
+  }
+  // Priorità 4: Tutte le gps_locations globali
+  else {
+    locations = timbraturaConfig.gps_locations || [];
   }
   
   for (const loc of locations) {
@@ -3405,12 +4037,16 @@ async function confirmGpsLocation() {
   
   try {
     // Valida posizione con il server
-    // Se il turno ha una sede specifica, passa il nome per validazione mirata
+    // Invia le valid_locations (sede gruppo + location turno) per validazione
     const validatePayload = {
       latitude: lastGpsPosition.latitude,
       longitude: lastGpsPosition.longitude,
       accuracy: lastGpsPosition.accuracy
     };
+    // Invia valid_locations dal backend (sede gruppo + location turno)
+    if (currentValidLocations && currentValidLocations.length > 0) {
+      validatePayload.valid_locations = currentValidLocations;
+    }
     if (currentShiftLocationName) {
       validatePayload.shift_location_name = currentShiftLocationName;
     }
@@ -3420,7 +4056,7 @@ async function confirmGpsLocation() {
       validatePayload.shift_location_lon = currentShiftGpsData.lon;
     }
     
-    console.log("🔵 GPU Validate - currentShiftLocationName:", currentShiftLocationName);
+    console.log("🔵 GPS Validate - currentValidLocations:", currentValidLocations);
     console.log("🔵 GPS Validate Payload:", validatePayload);
     console.log("🔵 currentShiftGpsData:", currentShiftGpsData);
     
@@ -3466,6 +4102,10 @@ async function confirmGpsLocation() {
       const locationName = validateData.location || 'Sede';
       showToast(`${TIMBRATURA_TYPES[tipo]?.label} registrata (${locationName})! ✓`, 'success');
       
+      // 🔍 DEBUG: pausa confermata e flessibilità uscita
+      if (data._break_debug) console.log('🔍 BREAK_DEBUG (GPS):', JSON.stringify(data._break_debug, null, 2));
+      if (data._flex_exit_debug) console.log('🔍 FLEX_EXIT_DEBUG (GPS):', JSON.stringify(data._flex_exit_debug, null, 2));
+      
       // 🧪 TEST PAYLOAD POPUP - Mostra URL CedolinoWeb
       if (TEST_PAYLOAD_POPUP && data.cedolino_url) {
         showTestPayloadPopup(data.cedolino_url, tipo);
@@ -3475,7 +4115,11 @@ async function confirmGpsLocation() {
       
       // Se è stato rilevato un Extra Turno, mostra il popup
       if (data.extra_turno && data.extra_turno.detected) {
-        setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
+        if (data.extra_turno.skip_motivation) {
+          showToast('⏱️ Extra Turno rilevato - motivazione copiata dall\'anticipo ingresso', 'success');
+        } else {
+          setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
+        }
       }
       // Se è stato rilevato Fuori Flessibilità, mostra il popup
       if (data.flex_warning && data.flex_warning.detected) {
@@ -3506,6 +4150,14 @@ async function confirmGpsLocation() {
           setTimeout(() => showToast(actionMessages[data.production_activity.action], 'info'), 500);
         }
       }
+    } else if (data.need_break_reduction_reason) {
+      const br = data.break_reduction || {};
+      showBreakReductionMotivationPopup(
+        br.planned_break_minutes || 0,
+        br.effective_break_minutes || 0,
+        () => { pendingTimbraturaType = tipo; proceedWithTimbratura(tipo); },
+        null
+      );
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
       // Mostra anche l'URL di debug in caso di errore
@@ -3561,6 +4213,10 @@ async function registerTimbraturaDirectly(tipo) {
     } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
       
+      // 🔍 DEBUG: pausa confermata e flessibilità uscita
+      if (data._break_debug) console.log('🔍 BREAK_DEBUG (Direct):', JSON.stringify(data._break_debug, null, 2));
+      if (data._flex_exit_debug) console.log('🔍 FLEX_EXIT_DEBUG (Direct):', JSON.stringify(data._flex_exit_debug, null, 2));
+      
       // 🧪 TEST PAYLOAD POPUP - Mostra URL CedolinoWeb
       if (TEST_PAYLOAD_POPUP && data.cedolino_url) {
         showTestPayloadPopup(data.cedolino_url, tipo);
@@ -3570,7 +4226,11 @@ async function registerTimbraturaDirectly(tipo) {
       
       // Se è stato rilevato un Extra Turno, mostra il popup
       if (data.extra_turno && data.extra_turno.detected) {
-        setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
+        if (data.extra_turno.skip_motivation) {
+          showToast('⏱️ Extra Turno rilevato - motivazione copiata dall\'anticipo ingresso', 'success');
+        } else {
+          setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
+        }
       }
       // Se è stato rilevato Fuori Flessibilità, mostra il popup
       if (data.flex_warning && data.flex_warning.detected) {
@@ -3580,6 +4240,20 @@ async function registerTimbraturaDirectly(tipo) {
       if (data.late_arrival && data.late_arrival.detected) {
         const lateDelay = (data.extra_turno?.detected || data.flex_warning?.detected) ? 1200 : 600;
         setTimeout(() => showLateArrivalPopup(data.late_arrival), lateDelay);
+      }
+      // Se è stata rilevata una pausa ridotta, informa che è in approvazione admin
+      if (data.break_reduction_request && data.break_reduction_request.detected) {
+        const br = data.break_reduction_request;
+        setTimeout(() => {
+          showToast(`☕ Pausa ridotta: richiesta inviata (${br.effective_break_minutes}/${br.planned_break_minutes} min)`, 'warning');
+        }, 700);
+      }
+      // Se è stata rilevata una pausa ridotta, informa che è in approvazione admin
+      if (data.break_reduction_request && data.break_reduction_request.detected) {
+        const br = data.break_reduction_request;
+        setTimeout(() => {
+          showToast(`☕ Pausa ridotta: richiesta inviata (${br.effective_break_minutes}/${br.planned_break_minutes} min)`, 'warning');
+        }, 700);
       }
       // Se è stata rilevata un'attività di produzione da avviare (mostrato SEMPRE, anche con altri popup)
       if (data.production_activity && data.production_activity.detected && data.production_activity.action === 'start') {
@@ -3603,6 +4277,14 @@ async function registerTimbraturaDirectly(tipo) {
           setTimeout(() => showToast(actionMessages[data.production_activity.action], 'info'), 500);
         }
       }
+    } else if (data.need_break_reduction_reason) {
+      const br = data.break_reduction || {};
+      showBreakReductionMotivationPopup(
+        br.planned_break_minutes || 0,
+        br.effective_break_minutes || 0,
+        () => { pendingTimbraturaType = tipo; proceedWithTimbratura(tipo); },
+        null
+      );
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
       // Mostra anche l'URL di debug in caso di errore
@@ -3629,7 +4311,16 @@ async function registerTimbraturaDirectly(tipo) {
 // POPUP ATTIVITÀ PRODUZIONE
 // ═══════════════════════════════════════════════════════════════════
 
-function showProductionActivityPopup(activity) {
+async function showProductionActivityPopup(activity) {
+  // Se tutti i turni sono gestione_squadra e l'utente non è leader, skip popup
+  // L'attività è gestita dal capo squadra/supervisore
+  const isGestioneSquadra = allTurni.length > 0 && allTurni.every(t => t.gestione_squadra && !t.is_leader);
+  if (isGestioneSquadra) {
+    console.log('[PROD-POPUP] Gestione squadra attiva, skip popup attività (gestito dal supervisore)');
+    showToast('✓ Timbratura registrata', 'success');
+    return;
+  }
+  
   const timbraturaTs = activity.timbratura_ts || Date.now();
   
   // Prendi progetto e attività dal turno visualizzato sulla home (prioritario)
@@ -3637,8 +4328,62 @@ function showProductionActivityPopup(activity) {
   const projectCode = turno.project_code || activity.project_code || '';
   const projectName = turno.project_name || activity.project_name || projectCode;
   const activityLabel = turno.function || activity.activity_label || 'Attività';
+  const normalizedActivity = (activityLabel || '').toString().trim().toLowerCase();
+  const requiresManualSelection =
+    Boolean(activity.manual_selection || activity.requires_project_selection || activity.requires_activity_selection) ||
+    !projectCode ||
+    !activityLabel ||
+    normalizedActivity === '-' ||
+    normalizedActivity === 'attività' ||
+    normalizedActivity === 'attivita';
+
+  console.log('[PROD-POPUP] activity:', JSON.stringify(activity));
+  console.log('[PROD-POPUP] allTurni.length:', allTurni.length, 'currentTurnoIndex:', currentTurnoIndex);
+  console.log('[PROD-POPUP] turno.project_code:', turno.project_code, 'turno.function:', turno.function);
+  console.log('[PROD-POPUP] projectCode:', projectCode, 'activityLabel:', activityLabel, 'normalized:', normalizedActivity);
+  console.log('[PROD-POPUP] requiresManualSelection:', requiresManualSelection,
+    '{ manual_selection:', activity.manual_selection,
+    ', requires_project:', activity.requires_project_selection,
+    ', !projectCode:', !projectCode,
+    ', !activityLabel:', !activityLabel,
+    ', isAttivita:', normalizedActivity === 'attività' || normalizedActivity === 'attivita', '}');
+
+  if (requiresManualSelection) {
+    console.warn('[PROD-POPUP] ⚠️ Opening numpad (manual selection required)');
+    openSwitchActivityModal({ forceProjectSelection: true, forceActivitySelection: true, timbraturaTs });
+    return;
+  }
   
-  // Lista attività predefinite magazzino
+  // ═══ Aspetta che le fasi siano caricate (risolve race condition) ═══
+  console.log('[FASI-POPUP] _loadTurnoPhasesPromise:', !!_loadTurnoPhasesPromise, 'currentTurnoPhasesData:', currentTurnoPhasesData);
+  if (_loadTurnoPhasesPromise) {
+    try {
+      await _loadTurnoPhasesPromise;
+      console.log('[FASI-POPUP] Promise risolta, currentTurnoPhasesData:', currentTurnoPhasesData);
+    } catch (e) {
+      console.error('[FASI-POPUP] Errore attesa caricamento fasi:', e);
+    }
+  }
+
+  // Se non c'è ancora, forza il caricamento
+  if (!currentTurnoPhasesData) {
+    console.log('[FASI-POPUP] currentTurnoPhasesData ancora null, forzo caricamento...');
+    const turno = allTurni[currentTurnoIndex] || {};
+    if (turno.function && turno.project_code) {
+      await loadTurnoPhases(turno);
+      console.log('[FASI-POPUP] Caricamento forzato completato:', currentTurnoPhasesData);
+    }
+  }
+  
+  // ═══ Se la funzione ha FASI configurate, mostra selezione fasi ═══
+  if (currentTurnoPhasesData && currentTurnoPhasesData.matchedPhases.length > 0) {
+    console.log('[FASI-POPUP] Mostra selezione fasi!', currentTurnoPhasesData.matchedPhases.length, 'fasi');
+    showPhaseSelectionPopup(projectCode, projectName, activityLabel, timbraturaTs, 'start');
+    return;
+  }
+  
+  console.log('[FASI-POPUP] Nessuna fase trovata, mostra popup generico');
+  // Lista attività predefinite produzione
   const ACTIVITIES = [
     { code: 'Preparazione', icon: '📦', label: 'Preparazione' },
     { code: 'Carico', icon: '🚚', label: 'Carico' },
@@ -3727,6 +4472,296 @@ function dismissProductionActivityPopup() {
   if (popup) popup.remove();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// POPUP SELEZIONE FASI (per avvio giornata e cambio attività)
+// ═══════════════════════════════════════════════════════════════════
+
+async function showPhaseSelectionPopup(projectCode, projectName, functionLabel, timbraturaTs, mode) {
+  // mode: 'start' = avvio giornata, 'switch' = cambio attività
+  const pd = currentTurnoPhasesData;
+  if (!pd) return;
+  
+  const phases = pd.matchedPhases;
+  const states = pd.states || [];
+  const isSwitch = mode === 'switch';
+  
+  // Recupera l'attività in corso dal timer per evidenziare fase attiva
+  let activePhaseLabel = '';
+  try {
+    const timerRes = await fetch('/api/production/timer');
+    const timerData = await timerRes.json();
+    if (timerData.ok && timerData.active && timerData.timer) {
+      activePhaseLabel = (timerData.timer.activity_label || '').trim();
+    }
+  } catch(e) { console.warn('Errore recupero timer attivo per fasi:', e); }
+  
+  let phasesHtml = '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">';
+  phases.forEach((ph, i) => {
+    const state = states.find(st => st.phase_name === ph.name);
+    const isDone = state && state.completed;
+    const doneBy = isDone && state.completed_by ? state.completed_by : '';
+    const isActive = activePhaseLabel && ph.name.trim().toLowerCase() === activePhaseLabel.toLowerCase();
+    
+    if (isActive) {
+      // Fase IN CORSO — bloccata, non cliccabile
+      phasesHtml += `
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;
+                    background:rgba(67,97,238,0.10);
+                    border:2px solid var(--brand, #4361ee);
+                    border-radius:12px;cursor:default;position:relative;overflow:hidden;">
+          <span style="width:32px;height:32px;background:var(--brand, #4361ee);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;">
+            ${i + 1}
+          </span>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:14px;color:var(--brand, #4361ee);">${escapeHtml(ph.name)}</div>
+            <div style="font-size:11px;color:var(--brand, #4361ee);margin-top:2px;display:flex;align-items:center;gap:4px;">
+              <span style="display:inline-block;width:8px;height:8px;background:#4361ee;border-radius:50%;animation:pulseDot 1.2s ease-in-out infinite;"></span>
+              IN CORSO
+            </div>
+          </div>
+          <span style="font-size:18px;color:var(--brand, #4361ee);font-weight:700;">⏱️</span>
+        </div>`;
+    } else if (isDone) {
+      // Fase completata — cliccabile ma mostra come completata
+      phasesHtml += `
+        <div onclick="selectPhaseForActivity('${escapeHtml(projectCode)}', '${escapeHtml(projectName)}', '${escapeHtml(ph.name)}', ${ph.order}, ${timbraturaTs || 0}, '${mode}')"
+             style="display:flex;align-items:center;gap:12px;padding:14px 16px;
+                    background:rgba(46,204,113,0.08);
+                    border:2px solid rgba(46,204,113,0.3);
+                    border-radius:12px;cursor:pointer;transition:all 0.15s ease;-webkit-tap-highlight-color:transparent;"
+             onmouseover="this.style.borderColor='#2ecc71';this.style.transform='scale(1.02)'"
+             onmouseout="this.style.borderColor='rgba(46,204,113,0.3)';this.style.transform='scale(1)'">
+          <span style="width:32px;height:32px;background:#2ecc71;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;">
+            ✓
+          </span>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:14px;color:var(--text-primary);text-decoration:line-through;opacity:0.6;">${escapeHtml(ph.name)}</div>
+            ${doneBy ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">✓ ${escapeHtml(doneBy)}</div>` : ''}
+          </div>
+          <span style="font-size:22px;">✅</span>
+        </div>`;
+    } else {
+      // Fase non ancora fatto — cliccabile
+      phasesHtml += `
+        <div onclick="selectPhaseForActivity('${escapeHtml(projectCode)}', '${escapeHtml(projectName)}', '${escapeHtml(ph.name)}', ${ph.order}, ${timbraturaTs || 0}, '${mode}')"
+             style="display:flex;align-items:center;gap:12px;padding:14px 16px;
+                    background:var(--bg);
+                    border:2px solid var(--border);
+                    border-radius:12px;cursor:pointer;transition:all 0.15s ease;-webkit-tap-highlight-color:transparent;"
+             onmouseover="this.style.borderColor='var(--brand)';this.style.transform='scale(1.02)'"
+             onmouseout="this.style.borderColor='var(--border)';this.style.transform='scale(1)'">
+          <span style="width:32px;height:32px;background:var(--brand, #4361ee);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;">
+            ${i + 1}
+          </span>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:14px;color:var(--text-primary);">${escapeHtml(ph.name)}</div>
+          </div>
+          <span style="font-size:22px;">▶️</span>
+        </div>`;
+    }
+  });
+  phasesHtml += '</div>';
+  
+  const title = isSwitch ? 'Seleziona Fase' : 'Seleziona la fase da avviare';
+  const subtitle = isSwitch 
+    ? 'La fase precedente verrà completata automaticamente.' 
+    : `Progetto: ${escapeHtml(projectName)}`;
+  
+  const html = `
+    <div id="phaseSelectionPopup" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px 20px;" onclick="dismissPhaseSelectionPopup()">
+      <div style="background:var(--bg-card, #fff);color:var(--text-primary);padding:20px;border-radius:16px;max-width:400px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto;" onclick="event.stopPropagation()">
+        <div style="text-align:center;margin-bottom:14px;">
+          <h3 style="margin:0 0 4px;font-size:17px;font-weight:700;">${title}</h3>
+          <p style="margin:0;color:var(--text-secondary, #888);font-size:13px;">${subtitle}</p>
+        </div>
+        
+        <div style="background:var(--bg, #f8f9fa);padding:12px;border-radius:10px;margin-bottom:16px;">
+          <div style="font-size:11px;color:var(--text-muted, #999);margin-bottom:2px;">MANSIONE</div>
+          <div style="font-weight:700;font-size:14px;color:var(--brand, #4361ee);">${escapeHtml(functionLabel)}</div>
+        </div>
+        
+        ${phasesHtml}
+        
+        <!-- Extra attività con descrizione libera -->
+        <div id="extraActivitySection" style="margin-bottom:12px;">
+          <div onclick="toggleExtraActivityInput()" 
+               style="display:flex;align-items:center;gap:12px;padding:14px 16px;
+                      background:rgba(255,152,0,0.08);
+                      border:2px dashed rgba(255,152,0,0.4);
+                      border-radius:12px;cursor:pointer;transition:all 0.15s ease;-webkit-tap-highlight-color:transparent;"
+               onmouseover="this.style.borderColor='#ff9800';this.style.transform='scale(1.02)'"
+               onmouseout="this.style.borderColor='rgba(255,152,0,0.4)';this.style.transform='scale(1)'">
+            <span style="width:32px;height:32px;background:#ff9800;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;">+</span>
+            <div style="flex:1;">
+              <div style="font-weight:600;font-size:14px;color:var(--text-primary);">Extra attività</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">Descrizione libera</div>
+            </div>
+            <span style="font-size:20px;">📝</span>
+          </div>
+          <div id="extraActivityInputBox" style="display:none;margin-top:8px;padding:12px;background:var(--bg, #f8f9fa);border-radius:10px;">
+            <input type="text" id="extraActivityInput" placeholder="Descrivi l'attività..." maxlength="100"
+                   style="width:100%;padding:10px 12px;border:2px solid var(--border, #ddd);border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border-color 0.2s;"
+                   onfocus="this.style.borderColor='#ff9800'" onblur="this.style.borderColor='var(--border, #ddd)'"
+                   onkeydown="if(event.key==='Enter')confirmExtraActivity('${escapeHtml(projectCode)}','${escapeHtml(projectName)}',${timbraturaTs || 0},'${mode}')">
+            <button onclick="confirmExtraActivity('${escapeHtml(projectCode)}','${escapeHtml(projectName)}',${timbraturaTs || 0},'${mode}')"
+                    style="width:100%;margin-top:8px;padding:10px;background:#ff9800;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;transition:background 0.2s;"
+                    onmouseover="this.style.background='#f57c00'" onmouseout="this.style.background='#ff9800'">
+              ▶ Avvia Extra
+            </button>
+          </div>
+        </div>
+        
+        <button onclick="dismissPhaseSelectionPopup()" style="width:100%;padding:12px;background:var(--bg, #f5f5f5);color:var(--text-secondary, #666);border:1px solid var(--border, #ddd);border-radius:10px;font-weight:600;cursor:pointer;font-size:14px;">
+          ✕ Annulla
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function dismissPhaseSelectionPopup() {
+  const popup = document.getElementById('phaseSelectionPopup');
+  if (popup) popup.remove();
+}
+
+function toggleExtraActivityInput() {
+  const box = document.getElementById('extraActivityInputBox');
+  if (!box) return;
+  const visible = box.style.display !== 'none';
+  box.style.display = visible ? 'none' : 'block';
+  if (!visible) {
+    const inp = document.getElementById('extraActivityInput');
+    if (inp) { inp.value = ''; inp.focus(); }
+  }
+}
+
+async function confirmExtraActivity(projectCode, projectName, timbraturaTs, mode) {
+  const inp = document.getElementById('extraActivityInput');
+  const desc = (inp ? inp.value : '').trim();
+  if (!desc) {
+    inp && inp.focus();
+    inp && (inp.style.borderColor = '#e74c3c');
+    setTimeout(() => inp && (inp.style.borderColor = 'var(--border, #ddd)'), 1500);
+    return;
+  }
+  dismissPhaseSelectionPopup();
+  
+  if (mode === 'start') {
+    await _doStartProductionActivity(projectCode, projectName, desc, timbraturaTs, null);
+    await loadTimbrature();
+  } else {
+    // Chiudi la fase in corso (come in selectPhaseForActivity)
+    const pd = currentTurnoPhasesData;
+    if (pd) {
+      let currentPhaseToClose = null;
+      try {
+        const timerRes = await fetch('/api/production/timer');
+        const timerData = await timerRes.json();
+        if (timerData.ok && timerData.active && timerData.timer) {
+          currentPhaseToClose = (timerData.timer.activity_label || '').trim();
+        }
+      } catch(e) { console.warn('Errore recupero timer:', e); }
+      
+      if (currentPhaseToClose) {
+        const prevPhase = pd.matchedPhases.find(p => p.name === currentPhaseToClose);
+        if (prevPhase) {
+          const prevState = (pd.states || []).find(st => st.phase_name === currentPhaseToClose);
+          if (!prevState || !prevState.completed) {
+            try {
+              await fetch('/api/project-phases/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  date: pd.dateStr,
+                  project_key: pd.projectKey,
+                  function_key: pd.matchedKey,
+                  phase_name: currentPhaseToClose,
+                  phase_order: prevPhase.order,
+                  completed: true
+                })
+              });
+              const existingState = (pd.states || []).find(st => st.phase_name === currentPhaseToClose);
+              if (existingState) {
+                existingState.completed = 1;
+              } else {
+                pd.states.push({ phase_name: currentPhaseToClose, phase_order: prevPhase.order, completed: 1 });
+              }
+            } catch(e) { console.warn('Errore chiusura fase precedente:', e); }
+          }
+        }
+      }
+      turnoCurrentPhases = pd.states || [];
+    }
+    await _doSwitchActivity(projectCode, projectName, desc, null);
+  }
+}
+
+async function selectPhaseForActivity(projectCode, projectName, phaseName, phaseOrder, timbraturaTs, mode) {
+  dismissPhaseSelectionPopup();
+  
+  const pd = currentTurnoPhasesData;
+  if (!pd) return;
+  
+  if (mode === 'start') {
+    // AVVIO GIORNATA: avvia timer con il nome della fase come activity_label
+    await _doStartProductionActivity(projectCode, projectName, phaseName, timbraturaTs, null);
+    // Ricarica UI per aggiornare lo stato
+    await loadTimbrature();
+  } else {
+    // CAMBIO ATTIVITÀ: chiudi fase precedente + avvia nuova fase
+    // 1. Recupera timer attivo per sapere quale fase chiudere
+    let currentPhaseToClose = null;
+    try {
+      const timerRes = await fetch('/api/production/timer');
+      const timerData = await timerRes.json();
+      if (timerData.ok && timerData.active && timerData.timer) {
+        currentPhaseToClose = timerData.timer.activity_label || '';
+      }
+    } catch(e) { console.warn('Errore recupero timer:', e); }
+    
+    // 2. Marca la fase precedente come completata (se esiste e non è già completata)
+    if (currentPhaseToClose) {
+      const prevPhase = pd.matchedPhases.find(p => p.name === currentPhaseToClose);
+      if (prevPhase) {
+        const prevState = (pd.states || []).find(st => st.phase_name === currentPhaseToClose);
+        if (!prevState || !prevState.completed) {
+          try {
+            await fetch('/api/project-phases/toggle', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                date: pd.dateStr,
+                project_key: pd.projectKey,
+                function_key: pd.matchedKey,
+                phase_name: currentPhaseToClose,
+                phase_order: prevPhase.order,
+                completed: true
+              })
+            });
+            // Aggiorna stato locale
+            const existingState = (pd.states || []).find(st => st.phase_name === currentPhaseToClose);
+            if (existingState) {
+              existingState.completed = 1;
+            } else {
+              pd.states.push({ phase_name: currentPhaseToClose, phase_order: prevPhase.order, completed: 1 });
+            }
+          } catch(e) { console.warn('Errore chiusura fase precedente:', e); }
+        }
+      }
+    }
+    
+    // 3. Switch timer alla nuova fase (questo chiama anche loadTimbrature)
+    await _doSwitchActivity(projectCode, projectName, phaseName, null);
+  }
+  
+  // Aggiorna turnoCurrentPhases per riflettere i cambiamenti
+  if (pd) {
+    turnoCurrentPhases = pd.states || [];
+  }
+}
+
 // --- Gestione note obbligatorie per attività "Altro" ---
 let _pendingNotesCallback = null;
 
@@ -3769,18 +4804,23 @@ function confirmNotesAndProceed() {
 }
 
 async function confirmStartProductionActivity(projectCode, projectName, activityLabel, startTs) {
-  // Se attività è "Altro" e non abbiamo note, chiedi prima le note
-  if (activityLabel.toLowerCase() === 'altro') {
-    // Non chiudiamo il popup originale ancora - mostriamo il notes popup sopra
-    openNotesPopup(async (notes) => {
-      dismissProductionActivityPopup();
-      await _doStartProductionActivity(projectCode, projectName, activityLabel, startTs, notes);
-    });
+  // Se c'è già un progetto valido dal turno, avvia direttamente senza chiedere numpad
+  if (projectCode) {
+    // Attività "Altro" richiede note obbligatorie
+    if (activityLabel.toLowerCase() === 'altro') {
+      openNotesPopup(async (notes) => {
+        dismissProductionActivityPopup();
+        await _doStartProductionActivity(projectCode, projectName, activityLabel, startTs, notes);
+      });
+      return;
+    }
+    dismissProductionActivityPopup();
+    await _doStartProductionActivity(projectCode, projectName, activityLabel, startTs, null);
     return;
   }
-  
-  dismissProductionActivityPopup();
-  await _doStartProductionActivity(projectCode, projectName, activityLabel, startTs, null);
+  // Nessun progetto → chiedi tramite numpad DOPO aver scelto l'attività
+  _pendingProductionStart = { projectCode, projectName, activityLabel, startTs };
+  openNumpad('');
 }
 
 async function _doStartProductionActivity(projectCode, projectName, activityLabel, startTs, notes) {
@@ -4042,11 +5082,20 @@ async function onScanSuccess(decodedText, decodedResult) {
       saveOfflineTimbratura(tipo);
     } else if (res.ok && data.success) {
       showToast(TIMBRATURA_TYPES[tipo]?.label + ' registrata! ✓', 'success');
+      
+      // 🔍 DEBUG: pausa confermata e flessibilità uscita
+      if (data._break_debug) console.log('🔍 BREAK_DEBUG (QR):', JSON.stringify(data._break_debug, null, 2));
+      if (data._flex_exit_debug) console.log('🔍 FLEX_EXIT_DEBUG (QR):', JSON.stringify(data._flex_exit_debug, null, 2));
+      
       loadTimbrature();
       
       // Se è stato rilevato un Extra Turno, mostra il popup
       if (data.extra_turno && data.extra_turno.detected) {
-        setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
+        if (data.extra_turno.skip_motivation) {
+          showToast('⏱️ Extra Turno rilevato - motivazione copiata dall\'anticipo ingresso', 'success');
+        } else {
+          setTimeout(() => showExtraTurnoPopup(data.extra_turno, tipo), 500);
+        }
       }
       // Se è stato rilevato Fuori Flessibilità, mostra il popup
       if (data.flex_warning && data.flex_warning.detected) {
@@ -4056,6 +5105,13 @@ async function onScanSuccess(decodedText, decodedResult) {
       if (data.late_arrival && data.late_arrival.detected) {
         const lateDelay = (data.extra_turno?.detected || data.flex_warning?.detected) ? 1200 : 600;
         setTimeout(() => showLateArrivalPopup(data.late_arrival), lateDelay);
+      }
+      // Se è stata rilevata una pausa ridotta, informa che è in approvazione admin
+      if (data.break_reduction_request && data.break_reduction_request.detected) {
+        const br = data.break_reduction_request;
+        setTimeout(() => {
+          showToast(`☕ Pausa ridotta: richiesta inviata (${br.effective_break_minutes}/${br.planned_break_minutes} min)`, 'warning');
+        }, 700);
       }
       // Se è stata rilevata un'attività di produzione da avviare
       if (data.production_activity && data.production_activity.detected && data.production_activity.action === 'start') {
@@ -4077,6 +5133,14 @@ async function onScanSuccess(decodedText, decodedResult) {
           setTimeout(() => showToast(actionMessages[data.production_activity.action], 'info'), 500);
         }
       }
+    } else if (data.need_break_reduction_reason) {
+      const br = data.break_reduction || {};
+      showBreakReductionMotivationPopup(
+        br.planned_break_minutes || 0,
+        br.effective_break_minutes || 0,
+        () => { pendingTimbraturaType = tipo; proceedWithTimbratura(tipo); },
+        null
+      );
     } else {
       showToast(data.error || 'Errore registrazione', 'error');
     }
@@ -4162,9 +5226,15 @@ function updateUI() {
   document.getElementById('btnStartDay').disabled = hasStarted;
   document.getElementById('btnEndDay').disabled = !hasStarted || hasEnded || inPause;
   
+  // Controlla se TUTTI i turni hanno gestione_squadra attiva e l'utente NON è leader
+  // In tal caso, l'operatore deve solo timbrare: niente "Cambia Attività" né popup attività
+  const isGestioneSquadraOnly = timbraturaConfig.is_production_group && allTurni.length > 0 &&
+    allTurni.every(t => t.gestione_squadra && !t.is_leader);
+  
   // Se gruppo di produzione e ha già timbrato inizio, cambia il bottone in "Cambia Attività"
+  // MA solo se NON è in modalità gestione_squadra (altrimenti solo timbratura)
   const btnStart = document.getElementById('btnStartDay');
-  if (timbraturaConfig.is_production_group && hasStarted && !hasEnded) {
+  if (timbraturaConfig.is_production_group && hasStarted && !hasEnded && !isGestioneSquadraOnly) {
     btnStart.disabled = false;
     document.getElementById('labelStart').textContent = 'Cambia Attività';
     document.getElementById('iconStart').textContent = '🔄';
@@ -4180,9 +5250,18 @@ function updateUI() {
   }
   
   // Check marks
-  if (!(timbraturaConfig.is_production_group && hasStarted && !hasEnded)) {
+  if (!(timbraturaConfig.is_production_group && hasStarted && !hasEnded && !isGestioneSquadraOnly)) {
     document.getElementById('checkStart').className = 'check' + (hasStarted ? ' done' : '');
     document.getElementById('checkStart').innerHTML = hasStarted ? '✓' : '';
+  }
+  
+  // Se gestione_squadra e ha già timbrato inizio: mostra ✓ e tieni il bottone disabled
+  if (isGestioneSquadraOnly && hasStarted && !hasEnded) {
+    btnStart.disabled = true;
+    document.getElementById('checkStart').className = 'check done';
+    document.getElementById('checkStart').innerHTML = '✓';
+    document.getElementById('labelStart').textContent = 'Inizio Giornata';
+    document.getElementById('iconStart').textContent = '→';
   }
   document.getElementById('checkEnd').className = 'check' + (hasEnded ? ' done' : '');
   document.getElementById('checkEnd').innerHTML = hasEnded ? '✓' : '';
@@ -4227,8 +5306,8 @@ function updateUI() {
       // Verifica se questa timbratura è in attesa di conferma Extra Turno
       if (t.pending_extra_turno) {
         hasOvertimeClass = 'has-overtime pending-confirmation';
-        // Usa sync_error se disponibile, altrimenti messaggio generico
-        const waitMessage = t.sync_error || 'In attesa di revisione';
+        // Usa sync_error se disponibile, altrimenti messaggio specifico Extra Turno
+        const waitMessage = (t.sync_error && t.sync_error !== 'In attesa di revisione') ? t.sync_error : 'Extra Turno in attesa di approvazione';
         overtimeRow = `
           <div class="overtime-info-row pending-confirmation">
             <span class="overtime-icon">⏳</span>
@@ -4273,13 +5352,131 @@ function updateUI() {
         
         if (lateText) {
           hasOvertimeClass = hasOvertimeClass || 'has-late-request';
-          overtimeRow = `
+          overtimeRow += `
             <div class="${lateClass}">
               <span class="overtime-icon">${lateIcon}</span>
               <span class="overtime-text">${lateText}</span>
             </div>
           `;
         }
+      }
+
+      // Badge Deroga Pausa Ridotta - per fine_pausa con richiesta break_reduction
+      if (t.break_reduction_request && t.tipo === 'fine_pausa') {
+        const brReq = t.break_reduction_request;
+        let brIcon = '☕';
+        let brText = '';
+        let brClass = 'late-arrival-row';
+
+        if (brReq.status === 'pending') {
+          brIcon = '⏳';
+          const effMin = brReq.effective_break_minutes || '?';
+          const planMin = brReq.planned_break_minutes || '?';
+          const roundedMin = brReq.rounded_break_minutes;
+          const roundedStr = roundedMin ? ` → ${roundedMin} min arrotondati` : '';
+          brText = `Pausa ridotta in attesa di revisione (${effMin}/${planMin} min${roundedStr})`;
+          brClass = 'late-arrival-row pending-confirmation';
+        } else if (brReq.status === 'approved') {
+          brIcon = '✅';
+          const roundedMin = brReq.rounded_break_minutes;
+          brText = roundedMin ? `Pausa ridotta autorizzata (${roundedMin} min)` : 'Pausa ridotta autorizzata';
+          brClass = 'late-arrival-row approved';
+        } else if (brReq.status === 'rejected') {
+          brIcon = '↩️';
+          brText = 'Pausa ridotta non autorizzata';
+          brClass = 'late-arrival-row registered';
+        }
+
+        if (brText) {
+          hasOvertimeClass = hasOvertimeClass || 'has-break-reduction';
+          overtimeRow += `
+            <div class="${brClass}">
+              <span class="overtime-icon">${brIcon}</span>
+              <span class="overtime-text">${brText}</span>
+            </div>
+          `;
+        }
+      }
+
+      // Badge Fuori Flessibilità - per inizio_giornata con richiesta creata su anticipo
+      if (t.flex_request && t.tipo === 'inizio_giornata') {
+        const flexReq = t.flex_request;
+        let flexIcon = '⚠️';
+        let flexText = '';
+        let flexClass = 'late-arrival-row';
+        let flexNoteHtml = '';
+
+        if (flexReq.status === 'pending') {
+          flexIcon = '⏳';
+          flexText = 'Timbrata in attesa di revisione';
+          flexClass = 'late-arrival-row pending-confirmation';
+        } else if (flexReq.status === 'approved') {
+          flexIcon = '✅';
+          flexText = 'Anticipo autorizzato';
+          flexClass = 'late-arrival-row approved';
+        } else if (flexReq.status === 'rejected') {
+          flexIcon = '↩️';
+          flexText = 'Anticipo non autorizzato';
+          flexClass = 'late-arrival-row registered';
+        }
+
+        if (flexText) {
+          const noteText = (flexReq.review_notes || flexReq.notes || '').trim();
+          if (noteText) {
+            flexNoteHtml = `<div class="pausa-durata-row" style="font-size:11px; color:#64748b; margin-top:2px;">📝 ${escapeHtml(noteText)}</div>`;
+          }
+
+          hasOvertimeClass = hasOvertimeClass || 'has-late-request';
+          overtimeRow += `
+            <div class="${flexClass}">
+              <span class="overtime-icon">${flexIcon}</span>
+              <span class="overtime-text">${flexText}${flexNoteHtml}</span>
+            </div>
+          `;
+        }
+      }
+
+      // Badge Mancata Timbratura - per timbrature pre-inserite con richiesta pendente
+      if (t.mancata_timbratura_request) {
+        const mtReq = t.mancata_timbratura_request;
+        let mtIcon = '📝';
+        let mtText = '';
+        let mtClass = 'late-arrival-row';
+
+        if (mtReq.status === 'pending') {
+          mtIcon = '⏳';
+          mtText = 'Mancata Timbratura - In attesa di revisione';
+          mtClass = 'late-arrival-row pending-confirmation';
+        } else if (mtReq.status === 'approved') {
+          mtIcon = '✅';
+          mtText = 'Mancata Timbratura confermata';
+          mtClass = 'late-arrival-row approved';
+        } else if (mtReq.status === 'rejected') {
+          mtIcon = '❌';
+          mtText = 'Mancata Timbratura rifiutata';
+          mtClass = 'late-arrival-row registered';
+        }
+
+        if (mtText) {
+          hasOvertimeClass = hasOvertimeClass || 'has-late-request';
+          overtimeRow += `
+            <div class="${mtClass}">
+              <span class="overtime-icon">${mtIcon}</span>
+              <span class="overtime-text">${mtText}</span>
+            </div>
+          `;
+        }
+      }
+
+      // Badge pausa confermata automaticamente (quando il sistema crea inizio/fine pausa)
+      if ((t.tipo === 'inizio_pausa' || t.tipo === 'fine_pausa') && t.method === 'confirmed_by_user') {
+        hasOvertimeClass = hasOvertimeClass || 'has-late-request';
+        overtimeRow += `
+          <div class="late-arrival-row approved">
+            <span class="overtime-icon">☕</span>
+            <span class="overtime-text">Pausa confermata automaticamente</span>
+          </div>
+        `;
       }
       
       if (t.tipo === 'fine_pausa') {
@@ -4312,21 +5509,24 @@ function updateUI() {
       } else if (t.ora_mod && formatHHMM(t.ora_mod) !== formatHHMM(t.ora) && t.rounding_mode !== 'daily') {
         // Mostra ora barrata SOLO se NON è modalità daily (arrotondamento a fine giornata)
         oraDisplay = `<span class="ora-originale">${formatHHMM(t.ora)}</span><span class="ora-mod">${formatHHMM(t.ora_mod)}</span>`;
-      } else if (t.tipo === 'fine_giornata' && t.rounding_mode === 'daily' && pendingOvertime && t.ora_mod && formatHHMM(t.ora_mod) !== formatHHMM(t.ora)) {
-        // Modalità daily: l'uscita dipende dallo stato dell'Extra Turno
-        const otStatus = pendingOvertime.status;
-        if (otStatus === 'approved') {
-          // Approvato: mostra ora arrotondata con badge conferma
+      } else if (t.tipo === 'fine_giornata' && t.rounding_mode === 'daily' && t.ora_mod && formatHHMM(t.ora_mod) !== formatHHMM(t.ora)) {
+        // Modalità daily: controlla se c'è deroga pausa approvata (anche senza Extra Turno)
+        const brApprovedToday = allTimbrature.some(x => x.tipo === 'fine_pausa' && x.break_reduction_request && x.break_reduction_request.status === 'approved');
+        if (pendingOvertime) {
+          const otStatus = pendingOvertime.status;
+          if (otStatus === 'approved') {
+            oraDisplay = `<span class="ora-originale">${formatHHMM(t.ora)}</span><span class="ora-mod">${formatHHMM(t.ora_mod)}</span>`;
+            extraInfo = `<div class="pausa-durata-row" style="color: #22c55e; font-size: 11px;">✅ Confermato</div>`;
+          } else if (otStatus === 'rejected') {
+            oraDisplay = formatHHMM(t.ora);
+            extraInfo = `<div class="pausa-durata-row" style="color: #e53935; font-size: 11px;">❌ Extra rifiutato</div>`;
+          } else {
+            oraDisplay = formatHHMM(t.ora);
+            extraInfo = `<div class="pausa-durata-row" style="color: #f59e0b; font-size: 11px;">⏳ Sarà ${formatHHMM(t.ora_mod)} se approvato</div>`;
+          }
+        } else if (brApprovedToday) {
+          // Deroga pausa approvata → mostra ora arrotondata
           oraDisplay = `<span class="ora-originale">${formatHHMM(t.ora)}</span><span class="ora-mod">${formatHHMM(t.ora_mod)}</span>`;
-          extraInfo = `<div class="pausa-durata-row" style="color: #22c55e; font-size: 11px;">✅ Confermato</div>`;
-        } else if (otStatus === 'rejected') {
-          // Rifiutato: mostra ora originale con badge rifiutato
-          oraDisplay = formatHHMM(t.ora);
-          extraInfo = `<div class="pausa-durata-row" style="color: #e53935; font-size: 11px;">❌ Extra rifiutato</div>`;
-        } else {
-          // Pending: mostra ora originale con nota "sarà X se approvato"
-          oraDisplay = formatHHMM(t.ora);
-          extraInfo = `<div class="pausa-durata-row" style="color: #f59e0b; font-size: 11px;">⏳ Sarà ${formatHHMM(t.ora_mod)} se approvato</div>`;
         }
       }
       
@@ -4383,6 +5583,7 @@ let allTurni = [];
 let currentTurnoIndex = 0;
 let currentShiftLocationName = null; // Sede GPS associata al turno corrente
 let currentShiftGpsData = null; // Dati GPS per la timbratura del turno corrente
+let currentValidLocations = []; // Lista locations valide (sede gruppo + location turno)
 
 // Carica turno di oggi (da Rentman)
 async function loadTurno() {
@@ -4411,8 +5612,8 @@ async function loadTurno() {
       if (turnoOrario) turnoOrario.style.display = 'none';
       if (turnoFunzione) turnoFunzione.style.display = 'none';
       if (turnoBadge) turnoBadge.style.display = 'none';
-      const infoBtn = document.getElementById('turnoInfoBtn');
-      if (infoBtn) infoBtn.style.display = 'none';
+      const infoBtnInline = document.getElementById('turnoInfoInline');
+      if (infoBtnInline) infoBtnInline.style.display = 'none';
       hideNavigation();
       console.warn("⚠️ Nessun turno disponibile");
       return;
@@ -4547,19 +5748,10 @@ function displayTurno(index) {
       timbraturaEl.appendChild(locationItem);
     }
     
-    // Timbratura location (prioritaria se presente) - Solo icona come simbolo
+    // Timbratura location (prioritaria se presente)
+    // Nota: non mostriamo più la "chip" della timbratura per evitare confusione.
     if (turno.timbratura_location) {
-      const timbraturaItem = document.createElement('div');
-      timbraturaItem.className = 'location-item';
-      const hasCoords = turno.timbratura_lat && turno.timbratura_lon;
-      const warningText = !hasCoords ? ' ⚠️' : '';
-      timbraturaItem.innerHTML = `
-        <span class="icon" title="Timbra presso: ${turno.timbratura_location}"><i class="fas fa-clock"></i></span>
-        <span class="value">${turno.timbratura_location}${warningText}</span>
-      `;
-      timbraturaEl.appendChild(timbraturaItem);
-      
-      // Salva i dati GPS per la validazione della timbratura
+      // Salva i dati GPS per la validazione della timbratura (necessari internamente)
       currentShiftGpsData = {
         location: turno.timbratura_location,
         lat: turno.timbratura_lat,
@@ -4567,6 +5759,9 @@ function displayTurno(index) {
         radius: turno.timbratura_radius || 300,
         mode: turno.gps_mode
       };
+      const hasCoords = Boolean(turno.timbratura_lat && turno.timbratura_lon);
+      // Salva le locations valide dal backend (sede gruppo + location turno + custom)
+      currentValidLocations = Array.isArray(turno.valid_locations) ? turno.valid_locations : [];
       
       console.log("✅ TURNO CARICATO:", {
         timbratura_location: turno.timbratura_location,
@@ -4574,7 +5769,8 @@ function displayTurno(index) {
         timbratura_lon: turno.timbratura_lon,
         gps_mode: turno.gps_mode,
         location_name: turno.location_name,
-        gps_timbratura_location: turno.gps_timbratura_location
+        gps_timbratura_location: turno.gps_timbratura_location,
+        valid_locations: currentValidLocations
       });
       
       if (!hasCoords) {
@@ -4588,13 +5784,48 @@ function displayTurno(index) {
       }
     } else {
       currentShiftGpsData = null;
+      currentValidLocations = [];
     }
   } else {
     timbraturaEl.style.display = 'none';
     currentShiftGpsData = null;
+    currentValidLocations = [];
   }
   
-  // Badge (Leader)
+      // Pulsanti azione: Sedi + Info (inline nella griglia turno-details)
+      try {
+        const existingAction = document.getElementById('turnoActionChips');
+        if (existingAction) existingAction.remove();
+
+        const detailsGrid = document.getElementById('turnoDetailsGrid');
+        if (Array.isArray(currentValidLocations) && currentValidLocations.length > 0 && detailsGrid) {
+          const container = document.createElement('div');
+          container.id = 'turnoActionChips';
+          container.className = 'action-chips';
+
+          const sedeBtn = document.createElement('button');
+          sedeBtn.className = 'action-chip';
+          sedeBtn.id = 'turnoSediBtnInline';
+          sedeBtn.type = 'button';
+          sedeBtn.innerHTML = `<span class="icon">📍</span> Sedi <b>${currentValidLocations.length}</b>`;
+          sedeBtn.onclick = function(e) { e.stopPropagation(); showValidLocationsPopup(); };
+
+          const infoBtnInline = document.createElement('button');
+          infoBtnInline.className = 'action-chip';
+          infoBtnInline.id = 'turnoInfoInline';
+          infoBtnInline.type = 'button';
+          infoBtnInline.innerHTML = '<span class="icon">ℹ️</span> Info turno';
+          infoBtnInline.onclick = function(e) { e.stopPropagation(); openCrewInfoModal(); };
+
+          container.appendChild(sedeBtn);
+          container.appendChild(infoBtnInline);
+          detailsGrid.appendChild(container);
+        }
+      } catch (e) {
+        console.warn('Errore rendering action chips:', e);
+      }
+
+      // Badge (Leader)
   const badge = document.getElementById('turnoBadge');
   if (turno.is_leader) {
     badge.textContent = '⭐ Caposquadra';
@@ -4604,18 +5835,21 @@ function displayTurno(index) {
     badge.style.display = 'none';
   }
   
-  // Mostra bottone info se è un turno Rentman (ha project_code)
-  const infoBtn = document.getElementById('turnoInfoBtn');
-  if (infoBtn) {
+  // Mostra bottone info inline se è un turno Rentman (ha project_code)
+  const infoBtnInline = document.getElementById('turnoInfoInline');
+  if (infoBtnInline) {
     if (turno.project_code && turno.source !== 'employee_shifts') {
-      infoBtn.style.display = 'flex';
+      infoBtnInline.style.display = 'inline-flex';
     } else {
-      infoBtn.style.display = 'none';
+      infoBtnInline.style.display = 'none';
     }
   }
   
   // Aggiorna counter e stato bottoni
   updateNavigation();
+
+  // Carica fasi del turno (salva promise per sincronizzazione)
+  _loadTurnoPhasesPromise = loadTurnoPhases(turno);
 }
 
 // Naviga tra i turni
@@ -4625,6 +5859,179 @@ function navigateTurno(direction) {
     currentTurnoIndex = newIndex;
     displayTurno(currentTurnoIndex);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FASI TURNO
+// ═══════════════════════════════════════════════════════════════════
+let turnoFunctionPhasesConfig = null;
+let turnoCurrentPhases = []; // Stato corrente delle fasi
+let currentTurnoPhasesData = null; // Dati fasi per popup attività
+let _loadTurnoPhasesPromise = null; // Promise per sincronizzare il caricamento fasi
+
+async function loadTurnoPhases(turno) {
+  const phasesBox = document.getElementById('turnoPhases');
+  phasesBox.style.display = 'none';
+  currentTurnoPhasesData = null;
+  
+  if (!turno || !turno.function || !turno.project_code) {
+    console.log('[FASI] Skip: turno mancante o senza function/project_code', turno?.function, turno?.project_code);
+    return;
+  }
+
+  console.log('[FASI] Caricamento fasi per funzione:', turno.function, 'progetto:', turno.project_code);
+
+  // Carica config se non ancora fatto
+  if (!turnoFunctionPhasesConfig) {
+    try {
+      const res = await fetch('/api/admin/function-phases');
+      const data = await res.json();
+      turnoFunctionPhasesConfig = data.ok ? (data.function_phases || {}) : {};
+      console.log('[FASI] Config caricata, chiavi:', Object.keys(turnoFunctionPhasesConfig));
+    } catch (e) {
+      turnoFunctionPhasesConfig = {};
+      console.error('[FASI] Errore caricamento config:', e);
+    }
+  }
+
+  // Trova template fasi per questa funzione (matching ESATTO, case-insensitive)
+  const fnLower = turno.function.toLowerCase().trim();
+  let matchedKey = null;
+  let matchedPhases = [];
+  
+  for (const [key, tmpl] of Object.entries(turnoFunctionPhasesConfig)) {
+    const keyLower = key.toLowerCase().trim();
+    if (fnLower === keyLower) {
+      matchedKey = key;
+      matchedPhases = (tmpl.phases || []).sort((a, b) => a.order - b.order);
+      break;
+    }
+  }
+
+  console.log('[FASI] Match per "' + turno.function + '":', matchedKey ? matchedKey + ' (' + matchedPhases.length + ' fasi)' : 'NESSUN MATCH');
+
+  if (!matchedKey || matchedPhases.length === 0) {
+    return;
+  }
+
+  // Carica stato dal server
+  const dateStr = turno.planning_date || new Date().toISOString().slice(0, 10);
+  const projectKey = turno.project_code;
+
+  try {
+    const res = await fetch(`/api/project-phases?date=${encodeURIComponent(dateStr)}&project_key=${encodeURIComponent(projectKey)}&function_key=${encodeURIComponent(matchedKey)}`);
+    const data = await res.json();
+    turnoCurrentPhases = data.ok ? (data.phases || []) : [];
+  } catch (e) {
+    turnoCurrentPhases = [];
+  }
+
+  // Salva dati fasi per uso nei popup (avvio giornata / cambio attività)
+  currentTurnoPhasesData = {
+    projectKey: projectKey,
+    matchedKey: matchedKey,
+    matchedPhases: matchedPhases,
+    dateStr: dateStr,
+    states: turnoCurrentPhases
+  };
+
+  console.log('[FASI] Dati fasi pronti:', matchedPhases.length, 'fasi, stati:', turnoCurrentPhases.length);
+  // Le fasi NON vengono mostrate nella home, solo nei popup (Avvia / Cambia Attività)
+}
+
+function renderTurnoPhases(projectKey, functionKey, phases, dateStr) {
+  const phasesList = document.getElementById('turnoPhasesList');
+  const counter = document.getElementById('turnoPhaseCounter');
+  const bar = document.getElementById('turnoPhaseBar');
+
+  const total = phases.length;
+  const completed = phases.filter(ph => {
+    const s = turnoCurrentPhases.find(st => st.phase_name === ph.name);
+    return s && s.completed;
+  }).length;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  counter.textContent = `${completed}/${total}`;
+  bar.style.width = `${pct}%`;
+
+  let html = '';
+  phases.forEach((ph, i) => {
+    const state = turnoCurrentPhases.find(st => st.phase_name === ph.name);
+    const isDone = state && state.completed;
+    const doneBy = isDone && state.completed_by ? state.completed_by : '';
+
+    html += `<div class="turno-phase-item ${isDone ? 'completed' : ''}" 
+      onclick="toggleTurnoPhase('${escapeAttrSafe(projectKey)}', '${escapeAttrSafe(functionKey)}', '${escapeAttrSafe(ph.name)}', ${ph.order}, '${escapeAttrSafe(dateStr)}', this)">
+      <span class="phase-num">${isDone ? '✓' : (i + 1)}</span>
+      <span class="phase-label">${escapeHtmlSafe(ph.name)}</span>
+      ${doneBy ? `<span class="phase-by">${escapeHtmlSafe(doneBy)}</span>` : ''}
+      <span class="phase-check">${isDone ? '✅' : '⬜'}</span>
+    </div>`;
+  });
+
+  phasesList.innerHTML = html;
+}
+
+function escapeAttrSafe(str) {
+  return (str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+function escapeHtmlSafe(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+async function toggleTurnoPhase(projectKey, functionKey, phaseName, phaseOrder, dateStr, el) {
+  if (el._loading) return;
+  el._loading = true;
+
+  const state = turnoCurrentPhases.find(st => st.phase_name === phaseName);
+  const newCompleted = !(state && state.completed);
+
+  try {
+    const res = await fetch('/api/project-phases/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date: dateStr,
+        project_key: projectKey,
+        function_key: functionKey,
+        phase_name: phaseName,
+        phase_order: phaseOrder,
+        completed: newCompleted
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      // Aggiorna stato locale
+      const existing = turnoCurrentPhases.find(st => st.phase_name === phaseName);
+      if (existing) {
+        existing.completed = newCompleted ? 1 : 0;
+        existing.completed_by = data.completed_by;
+      } else {
+        turnoCurrentPhases.push({
+          phase_name: phaseName,
+          phase_order: phaseOrder,
+          function_key: functionKey,
+          completed: newCompleted ? 1 : 0,
+          completed_by: data.completed_by
+        });
+      }
+
+      // Trova le fasi config per re-render
+      for (const [key, tmpl] of Object.entries(turnoFunctionPhasesConfig)) {
+        if (key === functionKey) {
+          const phases = (tmpl.phases || []).sort((a, b) => a.order - b.order);
+          renderTurnoPhases(projectKey, functionKey, phases, dateStr);
+          break;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Errore toggle fase:', e);
+  }
+  el._loading = false;
 }
 
 // Mostra i controlli di navigazione
@@ -4732,9 +6139,45 @@ function escapeHtmlCI(str) {
 }
 
 // ===== Switch Activity Modal (Produzione) =====
-async function openSwitchActivityModal() {
+async function openSwitchActivityModal(options = {}) {
+  // ═══ Se ci sono FASI configurate, mostra popup fasi invece del modal generico ═══
+  // Forza caricamento fasi se non ancora disponibili
+  if (!options?.forceProjectSelection && !options?.forceActivitySelection) {
+    if (!currentTurnoPhasesData && _loadTurnoPhasesPromise) {
+      try { await _loadTurnoPhasesPromise; } catch(e) {}
+    }
+    if (!currentTurnoPhasesData) {
+      const turno = allTurni[currentTurnoIndex] || {};
+      if (turno.function && turno.project_code) {
+        await loadTurnoPhases(turno);
+      }
+    }
+    if (currentTurnoPhasesData && currentTurnoPhasesData.matchedPhases.length > 0) {
+      const turno = allTurni[currentTurnoIndex] || {};
+      // Aggiorna gli stati fasi dal server prima di mostrare
+      try {
+        const pd = currentTurnoPhasesData;
+        const res = await fetch(`/api/project-phases?date=${encodeURIComponent(pd.dateStr)}&project_key=${encodeURIComponent(pd.projectKey)}&function_key=${encodeURIComponent(pd.matchedKey)}`);
+        const data = await res.json();
+        pd.states = data.ok ? (data.phases || []) : pd.states;
+        turnoCurrentPhases = pd.states;
+      } catch(e) {}
+      showPhaseSelectionPopup(
+        turno.project_code || '',
+        turno.project_name || '',
+        turno.function || '',
+        0,
+        'switch'
+      );
+      return;
+    }
+  }
+
   const overlay = document.getElementById('switchActivityOverlay');
   const body = document.getElementById('switchActivityBody');
+  const forceProjectSelection = Boolean(options?.forceProjectSelection);
+  const forceActivitySelection = Boolean(options?.forceActivitySelection);
+  _switchForceActivitySelection = forceActivitySelection;
   
   // Reset override progetto e griglia
   _switchOverrideProject = null;
@@ -4744,8 +6187,10 @@ async function openSwitchActivityModal() {
   // Prendi il progetto corrente dal turno visualizzato
   const turno = allTurni[currentTurnoIndex] || {};
   const projectCode = turno.project_code || '';
-  const projectName = turno.project_name || 'Progetto';
-  const plannedFunction = turno.function || 'Attività';
+  const projectName = turno.project_name || '';
+  const plannedFunction = turno.function || '';
+  const hasPlannedProject = !!projectCode;
+  const hasPlannedFunction = !!plannedFunction && plannedFunction !== '-';
   
   // Mostra loading
   body.innerHTML = '<div style="text-align:center;padding:20px;color:#888;">Caricamento...</div>';
@@ -4769,7 +6214,7 @@ async function openSwitchActivityModal() {
     }
   } catch(e) { console.warn('Errore recupero timer attivo:', e); }
   
-  // Lista attività predefinite magazzino
+  // Lista attività predefinite produzione
   const ACTIVITIES = [
     { code: 'Preparazione', icon: '📦', label: 'Preparazione' },
     { code: 'Carico', icon: '🚚', label: 'Carico' },
@@ -4782,10 +6227,17 @@ async function openSwitchActivityModal() {
   ];
   
   let html = '';
+
+  if (forceProjectSelection || forceActivitySelection) {
+    html += `<div style="background:#fff3cd;border:1px solid #f59e0b;border-radius:10px;padding:10px 12px;margin-bottom:12px;color:#92400e;font-size:13px;font-weight:600;">
+      ⚠️ Nessun turno/mansione pianificata: seleziona progetto e attività per avviare il timer.
+    </div>`;
+  }
   
   // 0. Pulsante Cambia Progetto in alto a tutto
+  html += `<div id="switchTopCards">`;
   html += `<div style="margin-bottom:14px;">
-    <button onclick="openNumpad()" style="width:100%;background:#3b82f6;color:#fff !important;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(59,130,246,0.3);display:flex;align-items:center;justify-content:center;gap:8px;">
+    <button onclick="openNumpad()" style="width:100%;background:#3b82f6;color:#fff !important;border:none;border-radius:12px;padding:16px 20px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px rgba(59,130,246,0.35);display:flex;align-items:center;justify-content:center;gap:10px;">
       🔢 Cambia Progetto
     </button>
   </div>`;
@@ -4819,7 +6271,7 @@ async function openSwitchActivityModal() {
   
   // 2. Card combinata: Progetto Pianificato + Mansione (font ridotti)
   // Nascondo se l'attività in corso coincide con quella pianificata (stesso progetto + stessa mansione)
-  const isSameAsCurrent = currentProjectCode && projectCode && 
+  const isSameAsCurrent = hasPlannedProject && hasPlannedFunction && currentProjectCode && projectCode && 
                           currentProjectCode.toString() === projectCode.toString() && 
                           currentActivityLabel && plannedFunction &&
                           currentActivityLabel.toLowerCase().trim() === plannedFunction.toLowerCase().trim();
@@ -4830,7 +6282,7 @@ async function openSwitchActivityModal() {
     isSameAsCurrent
   });
   
-  if (!isSameAsCurrent) {
+  if (!forceProjectSelection && hasPlannedProject && hasPlannedFunction && !isSameAsCurrent) {
     html += `<div id="switchDefaultView">
       <div style="background:#fff3e0;border:2px solid #f59e0b;border-radius:12px;padding:12px;margin-bottom:14px;box-shadow:0 2px 8px rgba(245,158,11,0.15);">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
@@ -4854,6 +6306,7 @@ async function openSwitchActivityModal() {
   }
   
   // 3. Card Progetto Manuale (nascosta, appare dopo numpad)
+  html += `</div>`; // chiudi #switchTopCards
   html += `<div id="switchManualProjectCard" style="display:none;background:#e3f2fd;border:2px solid #42a5f5;border-radius:12px;padding:16px;margin-bottom:14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
       <div style="font-size:24px;">🔢</div>
@@ -4891,14 +6344,28 @@ async function openSwitchActivityModal() {
   html += '</div>';
   
   body.innerHTML = html;
+
+  // Se è richiesta la selezione attività forzata o non c'è progetto/timer, mostra direttamente la griglia attività
+  if (forceActivitySelection || forceProjectSelection || (!hasPlannedProject && !currentProjectCode)) {
+    showSwitchActivityGrid('planned');
+  }
 }
 
 // Progetto corrente selezionato per la griglia attività
 let _switchGridProject = null; // { code, name }
+let _pendingGridActivity = null; // Attività in attesa di selezione progetto (dal modal Cambia Attività)
+let _pendingProductionStart = null; // { projectCode, projectName, activityLabel, startTs } - dal popup produzione iniziale
 
 function gridActivityClick(activityLabel) {
-  if (!_switchGridProject) return;
-  confirmSwitchActivity(_switchGridProject.code, _switchGridProject.name, activityLabel);
+  // Usa il progetto già selezionato (override manuale, griglia, o corrente)
+  const proj = _switchOverrideProject || _switchGridProject || _switchCurrentProject;
+  if (proj && proj.code) {
+    confirmSwitchActivity(proj.code.toString(), proj.name || '', activityLabel);
+    return;
+  }
+  // Fallback: se non c'è nessun progetto, apri il numpad
+  _pendingGridActivity = activityLabel;
+  openNumpad();
 }
 
 function showSwitchActivityGrid(source) {
@@ -4913,16 +6380,89 @@ function showSwitchActivityGrid(source) {
   } else {
     _switchGridProject = { code: turno.project_code || '', name: turno.project_name || '' };
   }
+
+  // Se il progetto selezionato è diverso da quello in corso, rigenera la griglia sbloccando tutte le attività
+  const isDifferentProject = _switchGridProject && _switchCurrentProject &&
+    _switchGridProject.code.toString() !== _switchCurrentProject.code.toString();
+
+  if (isDifferentProject || source === 'manual') {
+    _rebuildActivityGrid(isDifferentProject);
+  }
+
   const dv = document.getElementById('switchDefaultView');
   if (dv) dv.style.display = 'none';
   const mc = document.getElementById('switchManualProjectCard');
   if (mc) mc.style.display = 'none';
+  
+  // Per cambio progetto: nascondi TUTTO tranne la griglia (card IN CORSO, pianificato, ecc.)
+  const tc = document.getElementById('switchTopCards');
+  if (source === 'manual' && tc) {
+    tc.style.display = 'none';
+  }
+  
   document.getElementById('switchActivityGrid').style.display = 'block';
+}
+
+function _rebuildActivityGrid(unlockAll) {
+  const ACTIVITIES = [
+    { code: 'Preparazione', icon: '📦', label: 'Preparazione' },
+    { code: 'Carico', icon: '🚚', label: 'Carico' },
+    { code: 'Scarico', icon: '📥', label: 'Scarico' },
+    { code: 'Controllo', icon: '🔍', label: 'Controllo' },
+    { code: 'Pulizia', icon: '🧹', label: 'Pulizia' },
+    { code: 'Verifica', icon: '✅', label: 'Verifica' },
+    { code: 'Manutenzione', icon: '🔧', label: 'Manutenzione' },
+    { code: 'Altro', icon: '📝', label: 'Altro' }
+  ];
+  const gridContainer = document.getElementById('switchActivityGrid');
+  if (!gridContainer) return;
+  
+  // Recupera attività corrente dal DOM (card IN CORSO)
+  let currentActivityLabel = '';
+  if (!unlockAll && _switchCurrentProject) {
+    const inCorsoEl = document.querySelector('#switchActivityBody .switch-activity-item.current');
+    if (inCorsoEl) currentActivityLabel = inCorsoEl.getAttribute('data-activity') || '';
+  }
+
+  let gridHtml = '';
+  
+  // Se progetto manuale selezionato, mostra header con codice progetto
+  if (unlockAll && _switchOverrideProject) {
+    gridHtml += `<div style="background:#e3f2fd;border:2px solid #42a5f5;border-radius:12px;padding:12px 14px;margin-bottom:14px;text-align:center;">
+      <div style="font-size:10px;color:#1e88e5;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">PROGETTO SELEZIONATO</div>
+      <div style="font-weight:800;font-size:17px;color:#1a56db;">P. ${escapeHtmlCI(_switchOverrideProject.code)}</div>
+      <div style="font-size:12px;color:#333;margin-top:2px;">${escapeHtmlCI(_switchOverrideProject.name)}</div>
+      <div style="font-size:12px;color:#1e88e5;margin-top:8px;font-weight:600;">↓ Scegli attività</div>
+    </div>`;
+  }
+  
+  gridHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+  ACTIVITIES.forEach(a => {
+    const isCurrent = !unlockAll && currentActivityLabel.toLowerCase() === a.code.toLowerCase();
+    const isAltro = a.code.toLowerCase() === 'altro';
+    const blocked = isCurrent && !isAltro;
+    gridHtml += `
+      <div class="switch-activity-item${isCurrent ? ' current' : ''}"
+           onclick="${blocked ? '' : `gridActivityClick('${escapeHtmlCI(a.code)}')`}"
+           data-activity="${escapeHtmlCI(a.code)}"
+           style="cursor:${blocked ? 'default' : 'pointer'};text-align:center;padding:16px 10px;position:relative;${blocked ? 'opacity:0.5;' : ''}">
+        <div style="font-size:32px;margin-bottom:6px;">${a.icon}</div>
+        <div style="font-weight:600;font-size:13px;">${escapeHtmlCI(a.label)}</div>
+        ${isCurrent ? '<div style="position:absolute;top:6px;right:8px;background:#4CAF50;color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;">IN CORSO</div>' : ''}
+      </div>`;
+  });
+  gridHtml += '</div>';
+  gridHtml += `<button onclick="hideSwitchActivityGrid()" style="width:100%;margin-top:12px;padding:12px;background:#f5f5f5;color:#666;border:1px solid #ddd;border-radius:10px;font-weight:600;cursor:pointer;">
+    ← Indietro
+  </button>`;
+  gridContainer.innerHTML = gridHtml;
 }
 
 function hideSwitchActivityGrid() {
   const dv = document.getElementById('switchDefaultView');
   if (dv) dv.style.display = '';
+  const tc = document.getElementById('switchTopCards');
+  if (tc) tc.style.display = '';
   if (_switchOverrideProject) {
     const mc = document.getElementById('switchManualProjectCard');
     if (mc) mc.style.display = '';
@@ -4932,6 +6472,7 @@ function hideSwitchActivityGrid() {
 
 function closeSwitchActivityModal(event) {
   if (event && event.target !== event.currentTarget) return;
+  _switchForceActivitySelection = false;
   document.getElementById('switchActivityOverlay').classList.remove('active');
 }
 
@@ -4940,17 +6481,44 @@ let _numpadValue = '';
 let _numpadFoundProject = null;  // { project_code, project_name }
 let _numpadSearchTimer = null;
 
-function openNumpad() {
+function openNumpad(prefillCode) {
   _numpadValue = '';
   _numpadFoundProject = null;
   document.getElementById('numpadInput').value = '';
   document.getElementById('numpadResult').innerHTML = '';
   document.getElementById('numpadConfirmBtn').disabled = true;
+  
+  // Mostra hint attività selezionata (se presente)
+  const hintEl = document.getElementById('numpadActivityHint');
+  const actName = (_pendingGridActivity || (_pendingProductionStart && _pendingProductionStart.activityLabel)) || null;
+  if (hintEl && actName) {
+    hintEl.textContent = '📋 Attività: ' + actName;
+    hintEl.style.display = 'block';
+  } else if (hintEl) {
+    hintEl.style.display = 'none';
+  }
+  
   document.getElementById('numpadOverlay').classList.add('active');
+
+  // Pre-compilazione: da parametro esplicito, oppure dal progetto corrente per attività griglia
+  const preCode = prefillCode || ((_pendingGridActivity || _pendingProductionStart) && (_switchGridProject || _switchCurrentProject) ? (_switchGridProject || _switchCurrentProject).code : null);
+  if (preCode) {
+    _numpadValue = String(preCode);
+    document.getElementById('numpadInput').value = _numpadValue;
+    setTimeout(() => numpadSearch(), 100);
+  }
 }
 
 function closeNumpad(event) {
   if (event && event.target !== event.currentTarget) return;
+  document.getElementById('numpadOverlay').classList.remove('active');
+  if (_numpadSearchTimer) { clearTimeout(_numpadSearchTimer); _numpadSearchTimer = null; }
+  _pendingGridActivity = null; // Reset attività in attesa se si chiude il numpad
+  _pendingProductionStart = null; // Reset anche il pending produzione
+}
+
+function closeNumpadSilent() {
+  // Chiudi numpad senza resettare le variabili pending (usata da numpadConfirm)
   document.getElementById('numpadOverlay').classList.remove('active');
   if (_numpadSearchTimer) { clearTimeout(_numpadSearchTimer); _numpadSearchTimer = null; }
 }
@@ -5021,25 +6589,60 @@ function numpadConfirm() {
   const newCode = _numpadFoundProject.project_code;
   const newName = _numpadFoundProject.project_name;
   
-  closeNumpad();
+  closeNumpadSilent(); // Chiudi senza resettare _pendingGridActivity/_pendingProductionStart
   
+  // ═══ Caso 1: Avvio produzione dal popup iniziale (dopo timbratura) ═══
+  if (_pendingProductionStart) {
+    const pending = _pendingProductionStart;
+    _pendingProductionStart = null;
+    _pendingGridActivity = null;
+    
+    const actLabel = pending.activityLabel;
+    const startTs = pending.startTs;
+    
+    // Se attività è "Altro", chiedi note obbligatorie prima
+    if (actLabel.toLowerCase() === 'altro') {
+      openNotesPopup(async (notes) => {
+        dismissProductionActivityPopup();
+        await _doStartProductionActivity(newCode, newName, actLabel, startTs, notes);
+      });
+      return;
+    }
+    
+    dismissProductionActivityPopup();
+    _doStartProductionActivity(newCode, newName, actLabel, startTs, null);
+    return;
+  }
+  
+  // ═══ Caso 2: Attività dalla griglia "Cambia Attività" ═══
+  if (_pendingGridActivity) {
+    const actLabel = _pendingGridActivity;
+    _pendingGridActivity = null;
+    confirmSwitchActivity(newCode, newName, actLabel);
+    return;
+  }
+  
+  // ═══ Caso 3: Cambio progetto generico (senza attività selezionata) ═══
   // Salva override progetto
   _switchOverrideProject = { code: newCode, name: newName };
   
-  // Mostra la card progetto manuale
+  // Aggiorna la card progetto manuale (ma non la mostriamo — si va diretti alla griglia)
   const card = document.getElementById('switchManualProjectCard');
   if (card) {
     document.getElementById('switchManualProjectCode').textContent = 'P. ' + newCode;
     document.getElementById('switchManualProjectName').textContent = newName;
-    card.style.display = '';
+    // Non mostrare la card, passiamo direttamente alle attività
   }
-  
-  showToast('📋 Progetto manuale aggiunto: P. ' + newCode, 'info');
+
+  // Nascondi card IN CORSO e progetto pianificato — mostra direttamente la griglia attività
+  showSwitchActivityGrid('manual');
+  showToast('📋 Progetto: P. ' + newCode + ' — Scegli attività', 'info');
 }
 
 // Progetto override per il modal switch (se l'utente ha cambiato progetto manualmente)
 let _switchOverrideProject = null;
 let _switchCurrentProject = null;
+let _switchForceActivitySelection = false;
 
 async function confirmSwitchActivity(projectCode, projectName, activityLabel) {
   // Se attività è "Altro", chiedi note obbligatorie prima di procedere
@@ -5524,12 +7127,41 @@ setInterval(updateClock, 1000);
 // Prima carica la config, poi le timbrature (l'ordine è importante!)
 (async function initPage() {
   await loadTimbraturaConfig(); // PRIMA la config
-  loadTimbrature(); // POI le timbrature (usa is_production_group)
-  loadTurno();
+  await loadTimbrature(); // POI le timbrature (usa is_production_group)
+  await loadTurno(); // Turno DEVE essere caricato prima che l'utente possa timbrare
   loadPushState();
   
   if (navigator.onLine) {
     syncOfflineTimbrature();
+  }
+  
+  // ── MANCATA TIMBRATURA PRODUZIONE: auto-apertura popup attività ──
+  // Se arriviamo dalla pagina richieste dopo una mancata timbratura pre-inserita,
+  // mostra il popup attività produzione come se l'utente avesse appena timbrato.
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const fromMancata = urlParams.get('from_mancata_timbratura');
+    const pendingActivity = sessionStorage.getItem('pending_production_activity');
+    
+    if (fromMancata && pendingActivity) {
+      sessionStorage.removeItem('pending_production_activity');
+      // Pulisci il parametro URL senza ricaricare
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+      
+      const activity = JSON.parse(pendingActivity);
+      if (activity && activity.detected && activity.action === 'start') {
+        // Mostra il popup attività con un piccolo delay per dare tempo alla UI di caricare
+        setTimeout(() => showProductionActivityPopup(activity), 600);
+      }
+    } else if (fromMancata) {
+      // Pre-inserimento avvenuto ma senza dati activity (es. pausa/uscita) → pulisci URL
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+      showToast('✓ Timbratura mancata registrata', 'success');
+    }
+  } catch (e) {
+    console.warn('Errore gestione mancata timbratura produzione:', e);
   }
 })();
 
@@ -5538,8 +7170,8 @@ window.addEventListener('pageshow', async function(event) {
   if (event.persisted) {
     console.log('Pagina ripristinata da bfcache, ricarico dati...');
     await loadTimbraturaConfig();
-    loadTimbrature();
-    loadTurno();
+    await loadTimbrature();
+    await loadTurno();
   }
 });
 
@@ -6402,14 +8034,14 @@ async function submitExtraTurnoMotivation() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// POPUP FUORI FLESSIBILITÀ
+// POPUP RICHIESTA ANTICIPO INGRESSO
 // ═══════════════════════════════════════════════════════════════════
 function showFlexWarningPopup(flexData) {
     // Rimuovi popup esistente se presente
     const existingPopup = document.getElementById('flexWarningPopup');
     if (existingPopup) existingPopup.remove();
     
-    const message = flexData.message || 'Timbratura fuori flessibilità';
+    const message = flexData.message || 'Richiesta anticipo ingresso';
     const requestId = flexData.request_id || null;
     const tipoLabel = flexData.tipo === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
     
@@ -6535,8 +8167,8 @@ function showFlexWarningPopup(flexData) {
         </style>
         <div class="popup-content">
             <div class="popup-icon">⚠️</div>
-            <h3>Fuori Flessibilità</h3>
-            <p class="subtitle">${tipoLabel} registrato oltre l'orario consentito</p>
+            <h3>${flexData.tipo === 'inizio_giornata' ? 'Richiesta anticipo ingresso' : 'Uscita oltre flessibilità'}</h3>
+            <p class="subtitle">${flexData.tipo === 'inizio_giornata' ? tipoLabel + ' registrato prima della fascia consentita' : tipoLabel + ' registrata oltre la fascia consentita'}</p>
             
             <div class="warning-box">
                 <div class="message">${message}</div>
@@ -6552,7 +8184,7 @@ function showFlexWarningPopup(flexData) {
                     Motivazione <span class="required">*</span>
                 </label>
                 <textarea id="flexWarningMotivation" class="motivation-input" 
-                    rows="3" placeholder="Indica il motivo della timbratura fuori orario..." 
+                    rows="3" placeholder="${flexData.tipo === 'inizio_giornata' ? 'Indica il motivo dell\'anticipo ingresso...' : 'Indica il motivo dell\'uscita oltre orario...'}" 
                     maxlength="500"></textarea>
                 <div id="flexWarningMotivationError" class="error-msg">
                     La motivazione è obbligatoria

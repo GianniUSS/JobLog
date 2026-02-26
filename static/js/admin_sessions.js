@@ -207,12 +207,12 @@ function renderSessions(sessions) {
         const badges = document.createElement('div');
         badges.className = 'session-badges';
 
-        // Badge fonte (Squadra/Magazzino)
+        // Badge fonte (Squadra/Produzione)
         const sourceChip = document.createElement('span');
         sourceChip.className = 'session-badge';
-        sourceChip.style.background = session.source === 'Magazzino' ? 'rgba(251, 146, 60, 0.2)' : 'rgba(34, 197, 94, 0.2)';
-        sourceChip.style.color = session.source === 'Magazzino' ? '#ea580c' : '#16a34a';
-        sourceChip.textContent = session.source || 'Squadra';
+        sourceChip.style.background = (session.source === 'Magazzino' || session.source === 'Produzione') ? 'rgba(251, 146, 60, 0.2)' : 'rgba(34, 197, 94, 0.2)';
+        sourceChip.style.color = (session.source === 'Magazzino' || session.source === 'Produzione') ? '#ea580c' : '#16a34a';
+        sourceChip.textContent = (session.source === 'Magazzino') ? 'Produzione' : (session.source || 'Squadra');
         badges.appendChild(sourceChip);
 
         const statusChip = document.createElement('span');
@@ -267,7 +267,7 @@ function renderSessions(sessions) {
         const actions = document.createElement('div');
         actions.className = 'session-actions';
 
-        // Mostra modifica solo se editable (non per magazzino)
+        // Mostra modifica solo se editable (non per produzione)
         if (session.editable !== false) {
             const editBtn = document.createElement('button');
             editBtn.type = 'button';

@@ -209,13 +209,13 @@ function renderOpenSessionsGrid(items, dateStart, dateEnd) {
     if (!openSessionsTableBody) return;
     openSessionsTableBody.innerHTML = '';
     
-    // Filtra sessioni per range date
+    // Filtra sessioni per range date (include sempre quelle senza start_ts)
     let filteredItems = items;
     if (dateStart && dateEnd) {
         const startDate = new Date(dateStart + 'T00:00:00');
         const endDate = new Date(dateEnd + 'T23:59:59');
         filteredItems = items.filter(it => {
-            if (!it.start_ts) return false;
+            if (!it.start_ts) return true;  // sessioni senza timestamp: includi sempre
             const itemDate = new Date(it.start_ts);
             return itemDate >= startDate && itemDate <= endDate;
         });
@@ -256,7 +256,7 @@ function renderOpenSessionsGrid(items, dateStart, dateEnd) {
         
         const tdSource = document.createElement('td');
         if (it.source === 'magazzino') {
-            tdSource.innerHTML = '<span style="color: var(--primary, #6366f1);">📦 Magazzino</span>';
+            tdSource.innerHTML = '<span style="color: var(--primary, #6366f1);">🏭 Produzione</span>';
         } else {
             tdSource.innerHTML = '<span style="color: var(--success, #22c55e);">👥 Squadra</span>';
         }
@@ -286,6 +286,8 @@ function renderOpenSessionsGrid(items, dateStart, dateEnd) {
             statusHtml = '<span style="color: var(--warning, #f59e0b);">⏸️ In pausa</span>';
         } else if (it.running) {
             statusHtml = '<span style="color: var(--success, #22c55e);">▶️ In corso</span>';
+        } else if (it.activity_id || it.activity_label) {
+            statusHtml = '<span style="color: var(--info, #3b82f6);">📋 Assegnata</span>';
         } else {
             statusHtml = '—';
         }
@@ -413,7 +415,9 @@ async function loadData(dateStart, dateEnd) {
         const summaryItems = Array.isArray(summaryData.items) ? summaryData.items : [];
         renderSummary(summaryItems, dateLabel);
         const sessionsFallbackCount = (teamSessions.length || 0) + (magSessions.length || 0);
-        setTotals(summaryData, teamTotalMs, sessionsFallbackCount, statusLabel);
+        // Se non esiste un riepilogo (summaryUrl vuoto), usa i totali calcolati da dayData
+        const totalsPayload = (summaryData && summaryData.total_ms) ? summaryData : { total_ms: combinedTotalMs, team_total_ms: teamTotalMs };
+        setTotals(totalsPayload, teamTotalMs, sessionsFallbackCount, statusLabel);
         
         // Mostra/nascondi card totale combinato se c'è un filtro progetto
         if (projectFilter && combinedCardEl) {
@@ -452,7 +456,7 @@ async function loadData(dateStart, dateEnd) {
                 date_label: formatDateLabel(s.start_ts || s.end_ts),
             })),
             ...magSessions.map((s) => ({
-                source: 'Magazzino',
+                source: 'Produzione',
                 project_code: s.project_code,
                 user: s.username,
                 activity: s.activity_label,
@@ -467,7 +471,7 @@ async function loadData(dateStart, dateEnd) {
             })),
         ].sort((a, b) => (b.sort_ts || 0) - (a.sort_ts || 0));
         
-        // Applica filtro fonte (Squadra/Magazzino)
+        // Applica filtro fonte (Squadra/Produzione)
         const sourceFilter = sourceFilterEl ? sourceFilterEl.value : '';
         if (sourceFilter) {
             merged = merged.filter(s => s.source === sourceFilter);

@@ -300,6 +300,9 @@ body {
         Accedi
       </button>
     </form>
+    <div id="phoneIndicator" style="display:none; text-align:center; margin-top:12px; padding:8px 12px; background:#e3f2fd; border-radius:8px; font-size:13px; color:#1565c0;">
+      📱 Telefono: <strong id="phoneCodeDisplay"></strong>
+    </div>
   </div>
 </div>
 
@@ -400,7 +403,7 @@ async function handleLogin(event) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, phone_code: window.__PHONE_CODE__ || '' }),
     });
     
     const data = await response.json();
@@ -434,6 +437,35 @@ async function handleLogin(event) {
 
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  
+  // Cattura phone code dalla URL (?phone=XXX) e salvalo in localStorage per l'eventuale installazione PWA
+  const urlParams = new URLSearchParams(window.location.search);
+  let phoneCode = urlParams.get('phone') || '{{ phone_code|default("") }}';
+  try {
+    if (phoneCode) {
+      // salva per accessi/install futuri
+      localStorage.setItem('preinstall_phone', phoneCode);
+      window.__PHONE_CODE__ = phoneCode;
+    } else {
+      // se non presente in URL, prova a leggere da localStorage
+      const saved = localStorage.getItem('preinstall_phone');
+      if (saved) {
+        phoneCode = saved;
+        window.__PHONE_CODE__ = phoneCode;
+      }
+    }
+  } catch (e) {
+    console.warn('localStorage non disponibile', e);
+  }
+
+  if (phoneCode) {
+    const indicator = document.getElementById('phoneIndicator');
+    const display = document.getElementById('phoneCodeDisplay');
+    if (indicator && display) {
+      display.textContent = phoneCode;
+      indicator.style.display = 'block';
+    }
+  }
   
   const themeToggle = document.getElementById('themeToggle');
   if (themeToggle) {

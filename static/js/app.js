@@ -28,7 +28,12 @@ const activityTotalValues = new Map();
 const clientElapsedState = new Map();
 const seenActivityIds = new Set();
 const ACTIVITY_DELAY_GRACE_MS = 0;
-const APP_RELEASE = "v2025.11.22f";
+// ── Fasi operative (function_phases) ──
+let supervisorFunctionPhasesConfig = {};
+let supervisorPhaseProgress = [];
+let supervisorProjectCode = "";
+let cachedPhones = [];
+const APP_RELEASE = "v2025.11.22g";
 const planningDateFormatter = new Intl.DateTimeFormat("it-IT", {
     day: "2-digit",
     month: "2-digit",
@@ -4812,11 +4817,26 @@ function createMemberNode(member, baseClass) {
         ? "In pausa"
         : "In attesa";
     const startLabel = formatMemberStartLabel(member);
+
+    // Trova la fase corrente o il nome attività (solo se in corso o in pausa)
+    let activityLabel = "";
+    if (member.activity_id && (member.running || member.paused) && Array.isArray(cachedActivities)) {
+        const act = cachedActivities.find(a => String(a.activity_id) === String(member.activity_id));
+        if (act) {
+            if (member.current_phase) {
+                activityLabel = `📍 ${member.current_phase}`;
+            } else {
+                const funcName = extractFunctionName(act.label);
+                activityLabel = funcName;
+            }
+        }
+    }
     
     node.innerHTML = `
         <div class="task-header-row">
             <div class="member-name-block">
                 <span class="member-name">${member.member_name}</span>
+                ${activityLabel ? `<span class="member-activity-label">${activityLabel}</span>` : ""}
                 ${startLabel ? `<span class="member-start">${startLabel}</span>` : ""}
             </div>
             <span class="timer-display" id="${timerId}">${formatTime(member.elapsed)}</span>
@@ -4955,6 +4975,185 @@ function setProjectBarCollapsed(collapsed) {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  FASI OPERATIVE – logica supervisor
+// ═══════════════════════════════════════════════════════════════════
+
+/** Estrae il nome funzione puro dal label attività, es. "Montaggio [ID 123]" → "Montaggio" */
+function extractFunctionName(label) {
+    if (!label) return "";
+    return label.replace(/\s*\[ID\s+\d+\]$/i, "").trim();
+}
+
+/** Trova il template fasi per un nome funzione (match exact case-insensitive) */
+function matchFunctionPhasesConfig(functionName) {
+    if (!functionName || !supervisorFunctionPhasesConfig) return null;
+    const fnLower = functionName.toLowerCase().trim();
+    for (const [key, template] of Object.entries(supervisorFunctionPhasesConfig)) {
+        if (key.toLowerCase().trim() === fnLower) {
+            return { functionKey: key, template };
+        }
+    }
+    return null;
+}
+
+/** Costruisce il box fasi dentro una activity card */
+function buildActivityPhasesBox(activity) {
+    const functionName = extractFunctionName(activity.label);
+    const match = matchFunctionPhasesConfig(functionName);
+    if (!match) return null;
+
+    const phases = (match.template.phases || []).slice().sort((a, b) => a.order - b.order);
+    if (phases.length === 0) return null;
+
+    const functionKey = match.functionKey;
+    const projectKey = supervisorProjectCode;
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    // Trova lo stato di progresso per questa funzione
+    const progressForFn = supervisorPhaseProgress.filter(
+        (p) => p.function_key === functionKey
+    );
+
+    const completedCount = phases.filter((ph) => {
+        const s = progressForFn.find((st) => st.phase_name === ph.name);
+        return s && s.completed;
+    }).length;
+    const pct = phases.length > 0 ? Math.round((completedCount / phases.length) * 100) : 0;
+
+    const box = document.createElement("div");
+    box.className = "activity-phases-box";
+
+    // Header
+    const header = document.createElement("div");
+    header.className = "activity-phases-header";
+    header.innerHTML = `<span class="activity-phases-icon">🔧</span>
+        <span class="activity-phases-title">Fasi Attività</span>
+        <span class="activity-phases-counter">${completedCount}/${phases.length}</span>`;
+    box.appendChild(header);
+
+    // Barra progresso
+    const bar = document.createElement("div");
+    bar.className = "activity-phases-bar";
+    const fill = document.createElement("div");
+    fill.className = "activity-phases-fill";
+    fill.style.width = `${pct}%`;
+    bar.appendChild(fill);
+    box.appendChild(bar);
+
+    // Lista fasi
+    const list = document.createElement("div");
+    list.className = "activity-phases-list";
+
+    phases.forEach((ph, i) => {
+        const state = progressForFn.find((st) => st.phase_name === ph.name);
+        const isDone = state && state.completed;
+        const doneBy = isDone && state.completed_by ? state.completed_by : "";
+
+        const item = document.createElement("div");
+        item.className = `activity-phase-item${isDone ? " completed" : ""}`;
+
+        const numSpan = document.createElement("span");
+        numSpan.className = "ap-num";
+        numSpan.textContent = isDone ? "✓" : String(i + 1);
+        item.appendChild(numSpan);
+
+        const isCurrentPhase = !isDone && phases.slice(0, i).every((prev) => {
+            const ps = progressForFn.find((st) => st.phase_name === prev.name);
+            return ps && ps.completed;
+        });
+
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "ap-label";
+        labelSpan.textContent = ph.name;
+        if (isCurrentPhase) {
+            item.classList.add("phase-current");
+            const badge = document.createElement("span");
+            badge.className = "dest-phase-badge-incorso";
+            badge.textContent = "In corso";
+            labelSpan.appendChild(badge);
+        }
+        item.appendChild(labelSpan);
+
+        if (doneBy) {
+            const bySpan = document.createElement("span");
+            bySpan.className = "ap-by";
+            bySpan.textContent = doneBy;
+            item.appendChild(bySpan);
+        }
+
+        const checkSpan = document.createElement("span");
+        checkSpan.className = "ap-check";
+        checkSpan.textContent = isDone ? "✅" : "⬜";
+        item.appendChild(checkSpan);
+
+        item.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleSupervisorPhase(projectKey, functionKey, ph.name, ph.order, dateStr, item);
+        }, { passive: false });
+
+        list.appendChild(item);
+    });
+    box.appendChild(list);
+    return box;
+}
+
+/** Toggle completamento fase dal supervisor */
+async function toggleSupervisorPhase(projectKey, functionKey, phaseName, phaseOrder, dateStr, el) {
+    if (el._loading) return;
+    el._loading = true;
+
+    const existing = supervisorPhaseProgress.find(
+        (st) => st.function_key === functionKey && st.phase_name === phaseName
+    );
+    const newCompleted = !(existing && existing.completed);
+
+    try {
+        const res = await fetch("/api/project-phases/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                date: dateStr,
+                project_key: projectKey,
+                function_key: functionKey,
+                phase_name: phaseName,
+                phase_order: phaseOrder,
+                completed: newCompleted,
+                start_timer: !newCompleted,
+            }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            // Aggiorna stato locale
+            if (existing) {
+                existing.completed = newCompleted ? 1 : 0;
+                existing.completed_by = data.completed_by || null;
+                existing.completed_at = newCompleted ? Date.now() : null;
+            } else {
+                supervisorPhaseProgress.push({
+                    phase_name: phaseName,
+                    phase_order: phaseOrder,
+                    function_key: functionKey,
+                    project_key: projectKey,
+                    project_date: dateStr,
+                    completed: newCompleted ? 1 : 0,
+                    completed_by: data.completed_by || null,
+                    completed_at: newCompleted ? Date.now() : null,
+                });
+            }
+            // Re-render attività per aggiornare la UI fasi
+            if (cachedActivities && cachedActivities.length > 0) {
+                renderActivities(cachedActivities);
+            }
+        }
+    } catch (e) {
+        console.error("Errore toggle fase supervisor:", e);
+    }
+    el._loading = false;
+}
+
 function renderActivities(activities) {
     const container = document.getElementById("activities");
     if (!container) {
@@ -4966,7 +5165,24 @@ function renderActivities(activities) {
     activityOverdueTrackers.clear();
     activityRuntimeOffsets.clear();
     activityTotalValues.clear();
+
+    // Raggruppa attività per fase (phase_id)
+    const phaseGroups = [];
+    const phaseMap = new Map();
     activities.forEach((activity) => {
+        const phaseId = activity.phase_id || "__no_phase__";
+        const phaseLabel = activity.phase_label || null;
+        if (!phaseMap.has(phaseId)) {
+            const group = { phaseId, phaseLabel, activities: [] };
+            phaseMap.set(phaseId, group);
+            phaseGroups.push(group);
+        }
+        phaseMap.get(phaseId).activities.push(activity);
+    });
+
+    phaseGroups.forEach((group) => {
+
+    group.activities.forEach((activity) => {
         const card = document.createElement("div");
         card.className = "task-card";
         const activityId = activity.activity_id ? String(activity.activity_id) : "";
@@ -5012,6 +5228,13 @@ function renderActivities(activities) {
         title.className = "task-title";
         title.textContent = activity.label;
         titleRow.appendChild(title);
+        // Badge fase/function group
+        if (activity.phase_label) {
+            const phaseBadge = document.createElement("span");
+            phaseBadge.className = "phase-badge";
+            phaseBadge.textContent = activity.phase_label;
+            titleRow.appendChild(phaseBadge);
+        }
         const delayBadge = document.createElement("span");
         delayBadge.className = "activity-delay-badge hidden";
         delayBadge.textContent = "In ritardo";
@@ -5179,6 +5402,7 @@ function renderActivities(activities) {
             body.classList.add("hidden");
         }
         cardBody.appendChild(body);
+
         card.appendChild(cardBody);
         
         // Applica stato card-collapsed
@@ -5190,7 +5414,8 @@ function renderActivities(activities) {
         if (activityId) {
             updateActivityTotalDisplay(activityId);
         }
-    });
+    }); // end group.activities.forEach
+    }); // end phaseGroups.forEach
     updateActivitySelectButtons();
     updateTeamAddActivityButtonState();
 }
@@ -5315,9 +5540,34 @@ function applyState(state) {
     }
     const previouslySelected = getSelectedKeys();
     clearTimers();
+    // Aggiorna dati fasi operative prima del render
+    if (state.function_phases_config) {
+        supervisorFunctionPhasesConfig = state.function_phases_config;
+    }
+    if (state.phase_progress) {
+        supervisorPhaseProgress = state.phase_progress;
+    }
+    if (state.project && state.project.code) {
+        supervisorProjectCode = state.project.code;
+    }
+    // Carica telefoni aziendali (non bloccante)
+    if (cachedPhones.length === 0) {
+        loadPhones().then(() => {
+            if (cachedActivities && cachedActivities.length > 0) renderActivities(cachedActivities);
+        });
+    }
     renderTeam(state.team);
     renderActivities(state.activities);
-
+    // Mostra il conteggio totale operatori nella card "Squadra",
+    // includendo sia i membri non assegnati (team) sia quelli assegnati alle attività.
+    try {
+        const teamCountTotal = (Array.isArray(state.team) ? state.team.length : 0) +
+            (Array.isArray(state.activities) ? state.activities.reduce((acc, a) => acc + (Array.isArray(a.members) ? a.members.length : 0), 0) : 0);
+        setTeamCount(teamCountTotal);
+    } catch (e) {
+        // In caso di errori, fallback al conteggio precedente gestito da renderTeam
+        console.warn('setTeamCount total failed', e);
+    }
     const everyone = [
         ...state.team,
         ...state.activities.flatMap((activity) => activity.members),
@@ -5410,12 +5660,162 @@ async function refreshState() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  WIZARD FASI – intercetta spostamento e mostra selezione fase
+// ═══════════════════════════════════════════════════════════════════
+
+let phaseWizardContext = null; // { activityId, activityLabel, functionKey, phases, resolve }
+
+function getActivityPhasesForWizard(activityId) {
+    if (!supervisorFunctionPhasesConfig || Object.keys(supervisorFunctionPhasesConfig).length === 0) return null;
+    const activity = cachedActivities.find((a) => a.activity_id === activityId);
+    if (!activity) return null;
+    const functionName = extractFunctionName(activity.label);
+    const match = matchFunctionPhasesConfig(functionName);
+    if (!match) return null;
+    const phases = (match.template.phases || []).slice().sort((a, b) => a.order - b.order);
+    if (phases.length === 0) return null;
+    return { functionKey: match.functionKey, phases, activityLabel: activity.label };
+}
+
+function openPhaseWizard(activityId, phaseInfo) {
+    return new Promise((resolve) => {
+        const { functionKey, phases, activityLabel } = phaseInfo;
+        const projectKey = supervisorProjectCode;
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+        phaseWizardContext = { activityId, activityLabel, functionKey, phases, dateStr, projectKey, resolve };
+
+        const progressForFn = supervisorPhaseProgress.filter((p) => p.function_key === functionKey);
+        const completedCount = phases.filter((ph) => {
+            const s = progressForFn.find((st) => st.phase_name === ph.name);
+            return s && s.completed;
+        }).length;
+        const pct = phases.length > 0 ? Math.round((completedCount / phases.length) * 100) : 0;
+
+        // Update header
+        const actLabel = document.getElementById("pwActivityLabel");
+        if (actLabel) actLabel.textContent = activityLabel;
+        const fill = document.getElementById("pwProgressFill");
+        if (fill) fill.style.width = `${pct}%`;
+        const pText = document.getElementById("pwProgressText");
+        if (pText) pText.textContent = `${completedCount}/${phases.length} completate`;
+        const pPct = document.getElementById("pwProgressPct");
+        if (pPct) pPct.textContent = `${pct}%`;
+
+        // Build phase list
+        const list = document.getElementById("pwPhasesList");
+        if (list) {
+            list.innerHTML = "";
+            phases.forEach((ph, i) => {
+                const state = progressForFn.find((st) => st.phase_name === ph.name);
+                const isDone = state && state.completed;
+                const doneBy = isDone && state.completed_by ? state.completed_by : "";
+
+                const div = document.createElement("div");
+                div.className = `pw-phase${isDone ? " pw-completed" : ""}`;
+
+                const num = document.createElement("div");
+                num.className = "pw-num";
+                num.textContent = isDone ? "✓" : String(i + 1);
+                div.appendChild(num);
+
+                const info = document.createElement("div");
+                info.className = "pw-info";
+                const name = document.createElement("div");
+                name.className = "pw-name";
+                name.textContent = ph.name;
+                info.appendChild(name);
+                const status = document.createElement("div");
+                status.className = "pw-status";
+                status.textContent = isDone ? `Completata da ${doneBy}` : "Da fare";
+                info.appendChild(status);
+                div.appendChild(info);
+
+                const arrow = document.createElement("div");
+                arrow.className = "pw-arrow";
+                arrow.textContent = isDone ? "✅" : "▶";
+                div.appendChild(arrow);
+
+                div.addEventListener("click", () => {
+                    selectPhaseInWizard(ph);
+                });
+
+                list.appendChild(div);
+            });
+        }
+
+        const modal = document.getElementById("phaseWizardModal");
+        if (modal) modal.style.display = "flex";
+    });
+}
+
+async function selectPhaseInWizard(phase) {
+    if (!phaseWizardContext) return;
+    const { functionKey, dateStr, projectKey, resolve } = phaseWizardContext;
+
+    // Toggle: marca la fase precedente (se presente) come completata, poi avvia la nuova
+    const progressForFn = supervisorPhaseProgress.filter((p) => p.function_key === functionKey);
+
+    // Marca la fase selezionata come "in corso" (non completata ancora)
+    // Completa le fasi precedenti se non lo sono già
+    for (const ph of phaseWizardContext.phases) {
+        if (ph.order < phase.order) {
+            const st = progressForFn.find((s) => s.phase_name === ph.name);
+            if (!st || !st.completed) {
+                // Completa automaticamente le fasi precedenti
+                try {
+                    await fetch("/api/project-phases/toggle", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            date: dateStr, project_key: projectKey,
+                            function_key: functionKey, phase_name: ph.name,
+                            phase_order: ph.order, completed: true,
+                        }),
+                    });
+                } catch (e) { console.warn("Auto-complete fase precedente:", e); }
+            }
+        }
+    }
+
+    closePhaseWizard();
+    resolve({ phase: phase.name, skipped: false });
+}
+
+function closePhaseWizard() {
+    const modal = document.getElementById("phaseWizardModal");
+    if (modal) modal.style.display = "none";
+    phaseWizardContext = null;
+}
+
+function skipPhaseWizard() {
+    if (phaseWizardContext) {
+        const { resolve } = phaseWizardContext;
+        closePhaseWizard();
+        resolve({ phase: null, skipped: true });
+    }
+}
+
+function cancelPhaseWizard() {
+    if (phaseWizardContext) {
+        const { resolve } = phaseWizardContext;
+        closePhaseWizard();
+        resolve(null); // null = annullato
+    }
+}
+
 async function moveTo(activityId) {
     const selectedNodes = getSelectedMemberNodes();
     if (selectedNodes.length === 0) {
         closeActivityModal();
         return;
     }
+    await executeMoveTo(activityId, selectedNodes, null);
+}
+
+async function executeMoveTo(activityId, selectedNodes, phaseName) {
     const uniqueMembers = new Map();
     selectedNodes.forEach((node) => {
         const name = node.dataset.name || node.textContent.trim();
@@ -5433,6 +5833,7 @@ async function moveTo(activityId) {
             elapsed,
             running,
             paused,
+            phase_name: phaseName || null,
         });
     });
     const payloads = Array.from(uniqueMembers.values());
@@ -5515,22 +5916,32 @@ async function startMember(memberKey) {
 
 async function startSelection() {
     const selectedNodes = getSelectedMemberNodes();
-    const keys = selectedNodes
-        .filter(node => {
-            const hasActivity = node.dataset.activityId && 
-                               node.dataset.activityId !== "" &&
-                               node.dataset.activityId !== "null" &&
-                               node.dataset.activityId !== "undefined";
-            const notRunning = node.dataset.running !== "true";
-            const notPaused = node.dataset.paused !== "true";
-            return hasActivity && notRunning && notPaused;
-        })
-        .map(node => node.dataset.key)
-        .filter(Boolean);
+    const startableNodes = selectedNodes.filter(node => {
+        const hasActivity = node.dataset.activityId && 
+                           node.dataset.activityId !== "" &&
+                           node.dataset.activityId !== "null" &&
+                           node.dataset.activityId !== "undefined";
+        const notRunning = node.dataset.running !== "true";
+        const notPaused = node.dataset.paused !== "true";
+        return hasActivity && notRunning && notPaused;
+    });
+    const keys = startableNodes.map(node => node.dataset.key).filter(Boolean);
     
     if (keys.length === 0) {
         showPopup("⚠️ Nessun operatore da avviare");
         return;
+    }
+
+    // ── Controlla se l'attività ha fasi configurate ──
+    // Prende l'activityId dal primo operatore selezionato
+    const activityId = startableNodes[0]?.dataset?.activityId;
+    if (activityId) {
+        const phaseInfo = getActivityPhasesForWizard(activityId);
+        if (phaseInfo) {
+            const result = await openPhaseWizard(activityId, phaseInfo);
+            if (!result) return; // Annullato
+            // Fase selezionata → procedi con avvio
+        }
     }
     
     try {
@@ -5855,6 +6266,10 @@ function closeActivityModal(options) {
     if (modal) {
         modal.style.display = "none";
     }
+    // Reset search filter so next open shows all activities (including phases)
+    activitySearchTerm = "";
+    const search = document.getElementById("activitySearch");
+    if (search) search.value = "";
     releaseBodyModalState();
     const toolbar = document.getElementById("selectionToolbar");
     if (toolbar && toolbar.dataset.modalSuppressed) {
@@ -6037,13 +6452,198 @@ function renderActivityChoices() {
         return;
     }
 
-    filtered.forEach((activity) => {
-        const button = document.createElement("button");
-        button.className = "choice";
-        button.textContent = activity.label;
-        button.addEventListener("click", () => moveTo(activity.activity_id));
-        choices.appendChild(button);
+    filtered.forEach((activity, idx) => {
+        const card = document.createElement("div");
+        card.className = "dest-activity-card";
+
+        // Header: numero + nome + freccia
+        const header = document.createElement("div");
+        header.className = "dest-activity-header";
+
+        const num = document.createElement("div");
+        num.className = "dest-activity-num";
+        num.textContent = String(idx + 1);
+        header.appendChild(num);
+
+        const info = document.createElement("div");
+        info.className = "dest-activity-info";
+        const name = document.createElement("div");
+        name.className = "dest-activity-name";
+        name.textContent = activity.label;
+        info.appendChild(name);
+
+        const memberCount = Array.isArray(activity.members) ? activity.members.length : 0;
+        if (memberCount > 0) {
+            const meta = document.createElement("div");
+            meta.className = "dest-activity-meta";
+            meta.textContent = `👷 ${memberCount} operator${memberCount === 1 ? 'e' : 'i'}`;
+            info.appendChild(meta);
+        }
+        header.appendChild(info);
+
+        const arrow = document.createElement("div");
+        arrow.className = "dest-activity-arrow";
+        arrow.textContent = "▶";
+        header.appendChild(arrow);
+
+        card.appendChild(header);
+
+        // Fasi dettagliate se configurate
+        const funcName = extractFunctionName(activity.label);
+        const match = matchFunctionPhasesConfig(funcName);
+        if (match) {
+            const phases = (match.template.phases || []).slice().sort((a, b) => a.order - b.order);
+            if (phases.length > 0) {
+                const progressForFn = supervisorPhaseProgress.filter((p) => p.function_key === match.functionKey);
+                const completedCount = phases.filter((ph) => {
+                    const s = progressForFn.find((st) => st.phase_name === ph.name);
+                    return s && s.completed;
+                }).length;
+                const pct = phases.length > 0 ? Math.round((completedCount / phases.length) * 100) : 0;
+
+                const phasesWrap = document.createElement("div");
+                phasesWrap.className = "dest-phases";
+
+                // Phases header
+                const phHeader = document.createElement("div");
+                phHeader.className = "dest-phases-header";
+                const phTitle = document.createElement("span");
+                phTitle.className = "dest-phases-title";
+                phTitle.textContent = "Fasi attività";
+                phHeader.appendChild(phTitle);
+                const phCounter = document.createElement("span");
+                phCounter.className = "dest-phases-counter";
+                phCounter.textContent = `${completedCount}/${phases.length}`;
+                phHeader.appendChild(phCounter);
+                phasesWrap.appendChild(phHeader);
+
+                // Progress bar
+                const bar = document.createElement("div");
+                bar.className = "dest-phases-bar";
+                const barFill = document.createElement("div");
+                barFill.className = "dest-phases-bar-fill";
+                barFill.style.width = `${pct}%`;
+                bar.appendChild(barFill);
+                phasesWrap.appendChild(bar);
+
+                // Phase items — cliccabili per spostare + impostare fase
+                const phList = document.createElement("div");
+                phList.className = "dest-phase-list";
+                let foundCurrent = false;
+                phases.forEach((ph, i) => {
+                    const s = progressForFn.find((st) => st.phase_name === ph.name);
+                    const isDone = s && s.completed;
+
+                    const item = document.createElement("div");
+                    item.className = "dest-phase-item";
+                    if (isDone) {
+                        item.classList.add("phase-done");
+                    } else if (!foundCurrent) {
+                        item.classList.add("phase-current");
+                        foundCurrent = true;
+                    }
+
+                    const phNum = document.createElement("div");
+                    phNum.className = "dest-phase-num";
+                    phNum.textContent = isDone ? "✓" : String(i + 1);
+                    item.appendChild(phNum);
+
+                    const phLabel = document.createElement("span");
+                    phLabel.className = "dest-phase-label";
+                    phLabel.textContent = ph.name;
+                    if (!isDone && !foundCurrent) {
+                        const badge = document.createElement("span");
+                        badge.className = "dest-phase-badge-incorso";
+                        badge.textContent = "In corso";
+                        phLabel.appendChild(badge);
+                    }
+                    item.appendChild(phLabel);
+
+                    const phCheck = document.createElement("span");
+                    phCheck.className = "dest-phase-check";
+                    phCheck.textContent = isDone ? "✅" : "▶";
+                    item.appendChild(phCheck);
+
+                    // Click sulla fase: sposta operatori + imposta questa fase come corrente
+                    item.addEventListener("click", (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        moveToWithPhase(activity.activity_id, match.functionKey, phases, ph, i);
+                    }, { passive: false });
+
+                    phList.appendChild(item);
+                });
+                phasesWrap.appendChild(phList);
+                card.appendChild(phasesWrap);
+
+                // Se ci sono fasi, NON mettere click sull'intera card
+                // L'utente deve scegliere una fase specifica
+                card.classList.add("has-phases");
+            }
+        }
+
+        // Click sulla card solo se NON ci sono fasi (attività semplice senza fasi)
+        if (!match || !(match.template.phases || []).length) {
+            card.addEventListener("click", () => moveTo(activity.activity_id));
+        }
+        // Se ci sono fasi, nessun click sulla card/header — solo sulle singole fasi
+        choices.appendChild(card);
     });
+}
+
+/**
+ * Sposta operatori all'attività e imposta la fase selezionata come corrente (per operatore).
+ * Marca automaticamente le fasi precedenti come completate.
+ */
+async function moveToWithPhase(activityId, functionKey, allPhases, selectedPhase, selectedIndex) {
+    const selectedNodes = getSelectedMemberNodes();
+    if (selectedNodes.length === 0) {
+        closeActivityModal();
+        return;
+    }
+
+    // Completa automaticamente le fasi precedenti a quella selezionata
+    const progressForFn = supervisorPhaseProgress.filter((p) => p.function_key === functionKey);
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    for (const ph of allPhases) {
+        if (ph.order < selectedPhase.order) {
+            const st = progressForFn.find((s) => s.phase_name === ph.name);
+            if (!st || !st.completed) {
+                try {
+                    await fetch("/api/project-phases/toggle", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            date: dateStr,
+                            project_key: supervisorProjectCode,
+                            function_key: functionKey,
+                            phase_name: ph.name,
+                            phase_order: ph.order,
+                            completed: true,
+                        }),
+                    });
+                    // Aggiorna stato locale
+                    if (st) {
+                        st.completed = true;
+                    } else {
+                        supervisorPhaseProgress.push({
+                            function_key: functionKey,
+                            phase_name: ph.name,
+                            phase_order: ph.order,
+                            completed: true,
+                        });
+                    }
+                } catch (e) {
+                    console.warn("Auto-complete fase precedente:", e);
+                }
+            }
+        }
+    }
+
+    // Sposta gli operatori all'attività, passando il nome della fase selezionata
+    await executeMoveTo(activityId, selectedNodes, selectedPhase.name);
 }
 
 function requestMoveSelection() {
@@ -6068,7 +6668,12 @@ async function loadProject(projectCode) {
         return;
     }
     const dateInput = document.getElementById("projectDateInput");
-    const projectDate = dateInput ? dateInput.value : "";
+    let projectDate = dateInput ? dateInput.value : "";
+    // In phone mode il campo data non esiste: usa la data odierna
+    if (!projectDate && window.__PHONE_MODE__) {
+        const now = new Date();
+        projectDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
     if (!projectDate) {
         showPopup("⚠️ Seleziona una data di riferimento");
         return;
@@ -6433,6 +7038,21 @@ function bindUI() {
             closeActivityModal({ clearSelection: true });
         });
     }
+
+    // Bottone "Nuova attività" nel modal destinazione
+    const newActivityFromModalBtn = document.getElementById("newActivityFromModalBtn");
+    if (newActivityFromModalBtn) {
+        newActivityFromModalBtn.addEventListener("click", () => {
+            closeActivityModal();
+            openNewActivityModal();
+        });
+    }
+
+    // Wizard Fasi buttons
+    const pwSkipBtn = document.getElementById("pwSkipBtn");
+    const pwCancelBtn = document.getElementById("pwCancelBtn");
+    if (pwSkipBtn) pwSkipBtn.addEventListener("click", skipPhaseWizard);
+    if (pwCancelBtn) pwCancelBtn.addEventListener("click", cancelPhaseWizard);
 
     if (loadBtn) {
         loadBtn.dataset.label = loadBtn.textContent;
@@ -6983,6 +7603,8 @@ function bindUI() {
     if (projectBarHeader) {
         projectBarHeader.addEventListener("click", (e) => {
             if (e.target.closest("button") || e.target.closest("input")) return;
+            // In phone mode la barra è sempre compressa
+            if (window.__PHONE_MODE__) return;
             toggleProjectBarCollapse();
         });
     }
@@ -7083,6 +7705,12 @@ async function init() {
     // Nascondi card inizialmente - verranno mostrate se c'è un progetto cached
     setProjectVisibility(false);
     setProjectDefaultDate();
+    // In phone mode: barra progetto sempre compressa, nascondi expand indicator
+    if (window.__PHONE_MODE__) {
+        setProjectBarCollapsed(true);
+        const expandInd = document.querySelector("#projectBar .project-expand-indicator");
+        if (expandInd) expandInd.style.display = "none";
+    }
     hydrateInitialContentFromCache();
     renderAttachments();
     renderMaterials();
@@ -7107,14 +7735,23 @@ async function init() {
 }
 
 async function autoLoadSavedSupervisorProject() {
-    // Se c'è già un progetto attivo (da cache o stato), non fare nulla
-    if (projectVisible) {
-        return;
-    }
     // Controlla se c'è un progetto salvato per questo supervisor
     const savedProject = window.__SAVED_SUPERVISOR_PROJECT__;
     if (!savedProject || !savedProject.code) {
         return;
+    }
+
+    // Se c'è già un progetto attivo CON dati reali (attività caricate), non ricaricare
+    if (projectVisible && lastKnownState) {
+        const hasActivities = (lastKnownState.activities || []).length > 0;
+        const hasActivityMembers = (lastKnownState.activities || []).some(
+            (a) => (a.members || []).length > 0
+        );
+        if (hasActivities && hasActivityMembers) {
+            return;
+        }
+        // Progetto visibile ma senza attività o senza operatori assegnati: prova a ricaricare
+        console.info("autoLoad: progetto senza attività o senza operatori assegnati, provo a ricaricare");
     }
     // Pre-popola il codice progetto e carica automaticamente
     const projectInput = document.getElementById("projectInput");
@@ -7128,9 +7765,10 @@ async function autoLoadSavedSupervisorProject() {
     if (dateInput) {
         dateInput.value = dateStr;
     }
-    // Carica il progetto
+    // Carica il progetto passando il codice salvato
     try {
-        await loadProject();
+        setProjectCodeBuffer(savedProject.code.replace(/\D/g, ""));
+        await loadProject(savedProject.code);
     } catch (e) {
         console.warn("Impossibile caricare progetto salvato:", e);
     }
@@ -7160,6 +7798,141 @@ document.addEventListener("click", (e) => {
         toggleSelection(card);
     }
 }, { capture: true });
+
+// ═══════════════════════════════════════════════════════════════════
+// TELEFONI AZIENDALI - Assegnazione da supervisor
+// ═══════════════════════════════════════════════════════════════════
+
+let _selectedPhoneCode = null;
+
+async function loadPhones() {
+    try {
+        const res = await fetch("/api/phones");
+        const data = await res.json();
+        if (data.ok) {
+            cachedPhones = data.phones || [];
+        }
+    } catch (e) {
+        console.error("Errore caricamento telefoni:", e);
+    }
+}
+
+function openPhoneAssignModal(activityId) {
+    const modal = document.getElementById("phoneAssignModal");
+    if (!modal) return;
+    _selectedPhoneCode = null;
+
+    // Popola select operatori dall'attività + team
+    const userSelect = document.getElementById("phoneAssignUser");
+    userSelect.innerHTML = "";
+    const allMembers = [];
+    if (cachedActivities) {
+        cachedActivities.forEach(a => {
+            if (Array.isArray(a.members)) {
+                a.members.forEach(m => {
+                    if (m.member_name && !allMembers.find(x => x.key === m.member_key)) {
+                        allMembers.push({ key: m.member_key, name: m.member_name });
+                    }
+                });
+            }
+        });
+    }
+    const teamEl = document.querySelectorAll(".team-member");
+    teamEl.forEach(el => {
+        const name = el.dataset.name;
+        const key = el.dataset.key;
+        if (name && key && !allMembers.find(x => x.key === key)) {
+            allMembers.push({ key, name });
+        }
+    });
+
+    allMembers.sort((a, b) => a.name.localeCompare(b.name));
+    allMembers.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m.key;
+        opt.textContent = m.name;
+        userSelect.appendChild(opt);
+    });
+
+    // Popola griglia telefoni
+    const grid = document.getElementById("phoneGrid");
+    grid.innerHTML = "";
+    cachedPhones.forEach(phone => {
+        if (!phone.active) return;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        const allAssigns = phone.assignments || (phone.assignment ? [phone.assignment] : []);
+        const isCurrentProject = allAssigns.some(a => a.project_code === supervisorProjectCode);
+        const otherAssigns = allAssigns.filter(a => a.project_code !== supervisorProjectCode);
+        const hasOtherAssigns = otherAssigns.length > 0;
+        btn.style.cssText = `
+            padding: 12px 8px; border-radius: 10px; border: 2px solid var(--border);
+            background: var(--bg-card); color: var(--text-primary); cursor: pointer;
+            font-size: 14px; font-weight: 600; text-align: center; transition: all 0.2s;
+        `;
+        let statusHtml;
+        if (isCurrentProject) {
+            const thisAssign = allAssigns.find(a => a.project_code === supervisorProjectCode);
+            statusHtml = `🔵 ${thisAssign.assigned_to}`;
+        } else if (hasOtherAssigns) {
+            statusHtml = `🟡 In uso (${otherAssigns.length})`;
+        } else {
+            statusHtml = "Disponibile";
+        }
+        btn.innerHTML = `📱 <strong>${phone.phone_code}</strong><br><span style="font-size:11px; font-weight:400; color:var(--text-secondary);">${statusHtml}</span>`;
+        btn.addEventListener("click", () => {
+            grid.querySelectorAll("button").forEach(b => b.style.borderColor = "var(--border)");
+            btn.style.borderColor = "var(--brand)";
+            btn.style.background = "rgba(37,99,235,0.08)";
+            _selectedPhoneCode = phone.phone_code;
+            document.getElementById("phoneAssignConfirmBtn").disabled = false;
+        });
+        grid.appendChild(btn);
+    });
+
+    // Confirm
+    const confirmBtn = document.getElementById("phoneAssignConfirmBtn");
+    confirmBtn.disabled = true;
+    confirmBtn.onclick = async () => {
+        if (!_selectedPhoneCode) return;
+        const assignedTo = userSelect.value;
+        try {
+            const res = await fetch("/api/phones/assign", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    phone_code: _selectedPhoneCode,
+                    project_code: supervisorProjectCode,
+                    activity_id: activityId || null,
+                    assigned_to: assignedTo,
+                }),
+            });
+            const data = await res.json();
+            if (data.ok) {
+                showPopup(`📱 Telefono ${_selectedPhoneCode} assegnato`);
+                modal.classList.remove("open");
+                await loadPhones();
+                if (cachedActivities) renderActivities(cachedActivities);
+            } else {
+                showPopup("⚠️ " + (data.error || "Errore"));
+            }
+        } catch (e) {
+            showPopup("⚠️ Errore connessione");
+        }
+    };
+
+    // Close
+    document.getElementById("phoneAssignCloseBtn").onclick = () => modal.classList.remove("open");
+    modal.classList.add("open");
+}
+
+function getPhoneForActivity(activityId) {
+    if (!cachedPhones || !activityId) return null;
+    return cachedPhones.find(p => {
+        const assigns = p.assignments || (p.assignment ? [p.assignment] : []);
+        return assigns.some(a => a.activity_id === activityId && a.project_code === supervisorProjectCode);
+    });
+}
 
 // Touch support for mobile - handle touchend for immediate response
 let touchStartTarget = null;

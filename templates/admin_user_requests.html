@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Gestione Richieste · JobLog</title>
     <script>
-        window.APP_VERSION = 'v2026.01.07c';
+        window.APP_VERSION = 'v2026.02.24a';
     </script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <link rel="manifest" href="{{ static_version('manifest.json') }}">
     <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
     <script>
@@ -415,6 +416,23 @@
             background: var(--danger);
             color: white;
             border-color: var(--danger);
+        }
+
+        .filter-btn-export {
+            padding: 8px 14px;
+            border: 1px solid var(--primary);
+            border-radius: 8px;
+            background: transparent;
+            color: var(--primary);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .filter-btn-export:hover {
+            background: var(--primary);
+            color: white;
         }
 
         /* Cards */
@@ -880,7 +898,7 @@
                 <div class="side-menu-brand-text">
                     <span class="side-menu-title">JobLog Admin</span>
                     <span class="side-menu-subtitle">Pannello Amministrazione</span>
-                <span class="side-menu-version-chip" id="adminVersionBadge">v2026.01.07c</span>
+                <span class="side-menu-version-chip" id="adminVersionBadge">v2026.02.24a</span>
                 </div>
             </div>
             <button class="side-menu-close" onclick="closeMenu()">✕</button>
@@ -955,6 +973,12 @@
             <select class="filter-select" id="filterType">
                 <option value="">Tutte le tipologie</option>
             </select>
+            <select class="filter-select" id="filterGroup">
+                <option value="">Tutti i gruppi</option>
+                {% for g in groups %}
+                <option value="{{ g.id }}">{{ g.name }}</option>
+                {% endfor %}
+            </select>
             <input type="text" class="filter-input" id="searchUser" placeholder="🔍 Cerca utente...">
         </div>
         
@@ -969,7 +993,7 @@
                 <input type="date" class="filter-date" id="filterDateTo">
             </div>
             <button class="filter-btn-clear" id="clearDateFilters" title="Rimuovi filtri data">✕ Pulisci date</button>
-        </div>
+            <button class="filter-btn-export" id="btnExportExcel" title="Esporta in Excel i dati filtrati">📥 Esporta Excel</button>
         </div>
 
         <div id="requestsList">
@@ -1017,6 +1041,17 @@
         let allRequests = [];
         let currentFilter = 'all';
         let currentRequestId = null;
+        let currentReq = null;
+
+        // Converte qualsiasi formato data (ISO o RFC: "Mon, 23 Feb 2026...") in "YYYY-MM-DD"
+        function parseApiDate(val) {
+            if (!val) return null;
+            try {
+                return new Date(val).toISOString().slice(0, 10);
+            } catch(e) {
+                return null;
+            }
+        }
 
         // Menu functions
         function toggleMenu() {
@@ -1091,6 +1126,8 @@
             const clearDateFilters = document.getElementById('clearDateFilters');
             
             if (filterType) filterType.addEventListener('change', renderRequests);
+            const filterGroup = document.getElementById('filterGroup');
+            if (filterGroup) filterGroup.addEventListener('change', renderRequests);
             if (searchUser) searchUser.addEventListener('input', renderRequests);
             if (filterDateFrom) filterDateFrom.addEventListener('change', renderRequests);
             if (filterDateTo) filterDateTo.addEventListener('change', renderRequests);
@@ -1101,6 +1138,9 @@
                     renderRequests();
                 });
             }
+
+            const btnExport = document.getElementById('btnExportExcel');
+            if (btnExport) btnExport.addEventListener('click', exportFilteredToExcel);
         }
 
         function loadTheme() {
@@ -1117,10 +1157,13 @@
 
         async function loadRequests() {
             try {
-                const res = await fetch('/api/admin/user-requests');
+                const res = await fetch('/api/admin/user-requests?_t=' + Date.now(), { cache: 'no-store' });
                 if (!res.ok) throw new Error('Errore caricamento');
                 const data = await res.json();
                 allRequests = data.requests || [];
+                console.log('[loadRequests] primo elemento:', allRequests.length > 0 ? JSON.stringify(Object.keys(allRequests[0])) : 'VUOTO');
+                console.log('[loadRequests] group_id primo:', allRequests.length > 0 ? allRequests[0].group_id : 'N/A');
+                populateGroupFilter();
                 updateCounts();
                 renderRequests();
             } catch (err) {
@@ -1149,6 +1192,32 @@
             }
         }
 
+        function populateGroupFilter() {
+            const select = document.getElementById('filterGroup');
+            if (!select) return;
+            const currentVal = select.value;
+            // Mantieni solo l'opzione di default
+            while (select.options.length > 1) select.remove(1);
+            // Raccoglie gruppi unici dai dati già caricati
+            const seen = {};
+            allRequests.forEach(r => {
+                const gid = r.group_id;
+                const gname = r.group_name;
+                if (gid !== null && gid !== undefined && gid !== '' && !seen[gid]) {
+                    seen[gid] = (gname && gname !== '') ? gname : ('Gruppo ' + gid);
+                }
+            });
+            const gids = Object.keys(seen);
+            console.log('[GroupFilter] gruppi trovati:', seen);
+            gids.sort((a, b) => seen[a].localeCompare(seen[b])).forEach(gid => {
+                const opt = document.createElement('option');
+                opt.value = String(gid);
+                opt.textContent = seen[gid];
+                if (String(gid) === String(currentVal)) opt.selected = true;
+                select.appendChild(opt);
+            });
+        }
+
         function updateCounts() {
             const counts = { all: 0, pending: 0, approved: 0, rejected: 0 };
             allRequests.forEach(r => {
@@ -1162,31 +1231,7 @@
         }
 
         function renderRequests() {
-            const filterType = document.getElementById('filterType').value;
-            const searchUser = document.getElementById('searchUser').value.toLowerCase();
-            const filterDateFrom = document.getElementById('filterDateFrom').value;
-            const filterDateTo = document.getElementById('filterDateTo').value;
-
-            let filtered = allRequests.filter(r => {
-                if (currentFilter !== 'all' && r.status !== currentFilter) return false;
-                if (filterType && r.request_type_id != filterType) return false;
-                if (searchUser && !r.username.toLowerCase().includes(searchUser)) return false;
-                
-                // Filtro per periodo di competenza
-                if (filterDateFrom) {
-                    // La richiesta deve avere date_from >= filterDateFrom OPPURE date_to >= filterDateFrom
-                    const reqDateFrom = r.date_from ? r.date_from.split('T')[0] : null;
-                    const reqDateTo = r.date_to ? r.date_to.split('T')[0] : reqDateFrom;
-                    if (reqDateTo && reqDateTo < filterDateFrom) return false;
-                }
-                if (filterDateTo) {
-                    // La richiesta deve avere date_from <= filterDateTo
-                    const reqDateFrom = r.date_from ? r.date_from.split('T')[0] : null;
-                    if (reqDateFrom && reqDateFrom > filterDateTo) return false;
-                }
-                
-                return true;
-            });
+            let filtered = getFilteredRequests();
 
             // Aggiorna contatori filtrati
             updateFilteredCounts(filtered);
@@ -1209,10 +1254,11 @@
             const filterDateFrom = document.getElementById('filterDateFrom').value;
             const filterDateTo = document.getElementById('filterDateTo').value;
             const filterType = document.getElementById('filterType').value;
+            const filterGroupVal = document.getElementById('filterGroup').value;
             const searchUser = document.getElementById('searchUser').value.toLowerCase();
             
             // Se ci sono filtri attivi, mostra conteggi filtrati
-            if (filterDateFrom || filterDateTo || filterType || searchUser) {
+            if (filterDateFrom || filterDateTo || filterType || filterGroupVal || searchUser) {
                 const counts = { all: 0, pending: 0, approved: 0, rejected: 0 };
                 
                 // Filtra senza considerare currentFilter per avere i conteggi giusti
@@ -1222,13 +1268,17 @@
                     if (searchUser && !r.username.toLowerCase().includes(searchUser)) match = false;
                     
                     if (filterDateFrom) {
-                        const reqDateTo = (r.date_to || r.date_from)?.split('T')[0];
+                        const reqDateTo = parseApiDate(r.date_to) || parseApiDate(r.date_from);
                         if (reqDateTo && reqDateTo < filterDateFrom) match = false;
                     }
                     if (filterDateTo) {
-                        const reqDateFrom = r.date_from?.split('T')[0];
+                        const reqDateFrom = parseApiDate(r.date_from);
                         if (reqDateFrom && reqDateFrom > filterDateTo) match = false;
                     }
+                        if (filterGroupVal) {
+                            const reqGroupId = (r.group_id == null) ? null : String(r.group_id);
+                            if (reqGroupId === null || reqGroupId !== filterGroupVal) match = false;
+                        }
                     
                     if (match) {
                         counts.all++;
@@ -1246,11 +1296,119 @@
             }
         }
 
+        function getFilteredRequests() {
+            const filterType = document.getElementById('filterType').value;
+            const searchUser = document.getElementById('searchUser').value.toLowerCase();
+            const filterDateFrom = document.getElementById('filterDateFrom').value;
+            const filterDateTo = document.getElementById('filterDateTo').value;
+            const filterGroupVal = document.getElementById('filterGroup').value;
+
+            return allRequests.filter(r => {
+                if (currentFilter !== 'all' && r.status !== currentFilter) return false;
+                if (filterType && r.request_type_id != filterType) return false;
+                const reqGroupId = (r.group_id == null) ? null : String(r.group_id);
+                if (filterGroupVal && (reqGroupId === null || reqGroupId !== filterGroupVal)) return false;
+                if (searchUser && !r.username.toLowerCase().includes(searchUser)) return false;
+                if (filterDateFrom) {
+                    const reqDateFrom = parseApiDate(r.date_from);
+                    const reqDateTo = parseApiDate(r.date_to) || reqDateFrom;
+                    if (reqDateTo && reqDateTo < filterDateFrom) return false;
+                }
+                if (filterDateTo) {
+                    const reqDateFrom = parseApiDate(r.date_from);
+                    if (reqDateFrom && reqDateFrom > filterDateTo) return false;
+                }
+                return true;
+            });
+        }
+
+        function exportFilteredToExcel() {
+            if (typeof XLSX === 'undefined') {
+                alert('Libreria Excel non caricata. Controlla la connessione internet.');
+                return;
+            }
+            const filtered = getFilteredRequests();
+            if (filtered.length === 0) {
+                alert('Nessun dato da esportare con i filtri correnti.');
+                return;
+            }
+
+            const statusLabels = { pending: 'In attesa', approved: 'Approvata', rejected: 'Respinta' };
+            const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km', minutes: 'min' };
+
+            const rows = filtered.map(r => {
+                const fmtDate = (val) => {
+                    if (!val) return '';
+                    try { const d = new Date(val); return d.toLocaleDateString('it-IT'); } catch(e) { return val; }
+                };
+                const fmtDateTime = (val) => {
+                    if (!val) return '';
+                    try { const d = new Date(val); return d.toLocaleString('it-IT'); } catch(e) { return val; }
+                };
+
+                let tratteStr = '';
+                if (r.tratte && r.tratte.length > 0) {
+                    tratteStr = r.tratte.map(t => `${t.da} → ${t.a}: ${t.km} km`).join('; ');
+                }
+
+                let dettaglio = '';
+                if (r.extra_data) {
+                    const ed = r.extra_data;
+                    if (ed.created_reason === 'break_reduction_short_pause') {
+                        dettaglio = `Deroga Pausa: effettiva ${ed.effective_break_minutes || 0} min, riduzione ${ed.break_reduction_minutes || 0} min`;
+                    } else if (r.type_name === 'Giustificazione Ritardo') {
+                        dettaglio = `Ritardo: timbrata ${(ed.ora_timbrata || '').substring(0,5)}, turno ${(ed.turno_start || '').substring(0,5)}, ${ed.late_minutes || 0} min`;
+                    } else if (r.value_type === 'minutes') {
+                        dettaglio = `Extra: lavorate ${ed.worked_minutes || 0} min, pianificate ${ed.planned_minutes || 0} min`;
+                    }
+                }
+
+                return {
+                    'ID': r.id,
+                    'Utente': r.username,
+                    'Gruppo': r.group_name || '',
+                    'Tipologia': r.type_name || '',
+                    'Stato': statusLabels[r.status] || r.status,
+                    'Data Dal': fmtDate(r.date_from),
+                    'Data Al': fmtDate(r.date_to),
+                    'Valore': r.value != null ? r.value : '',
+                    'Unità': valueUnits[r.value_type] || r.value_type || '',
+                    'CDC': r.cdc || '',
+                    'Tratte': tratteStr,
+                    'Note': r.notes || '',
+                    'Dettaglio': dettaglio,
+                    'Revisionata da': r.reviewed_by || '',
+                    'Data Revisione': fmtDateTime(r.reviewed_ts),
+                    'Note Revisione': r.review_notes || '',
+                    'Data Creazione': fmtDateTime(r.created_ts),
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(rows);
+
+            // Auto-larghezza colonne
+            const colWidths = Object.keys(rows[0]).map(key => {
+                let max = key.length;
+                rows.forEach(r => {
+                    const val = String(r[key] || '');
+                    if (val.length > max) max = val.length;
+                });
+                return { wch: Math.min(max + 2, 50) };
+            });
+            ws['!cols'] = colWidths;
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Richieste');
+
+            const today = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(wb, `Richieste_${today}.xlsx`);
+        }
+
         function renderRequestCard(r) {
             console.log('Rendering request:', r.id, 'cdc:', r.cdc, 'attachment:', r.attachment_path);
             const statusClass = `status-${r.status}`;
             // Label personalizzate per Giustificazione Ritardo (type 19)
-            const statusLabels = r.request_type_id === 19
+            const statusLabels = r.type_name === 'Giustificazione Ritardo'
                 ? { pending: 'In attesa', approved: 'Giustificazione accettata', rejected: 'Ritardo registrato' }
                 : { pending: 'In attesa', approved: 'Approvata', rejected: 'Respinta' };
             const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km', minutes: 'min' };
@@ -1311,8 +1469,38 @@
                 // Funzione per rimuovere i secondi (HH:MM:SS -> HH:MM)
                 const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
                 
-                // Distingui tra Giustificazione Ritardo ed Extra Turno
-                if (r.request_type_id === 17) {
+                // Distingui tra Deroga Pausa Ridotta, Giustificazione Ritardo ed Extra Turno
+                if (ed.created_reason === 'break_reduction_short_pause') {
+                    const plannedBreak = Number(ed.planned_break_minutes || 0);
+                    const effectiveBreak = Number(ed.effective_break_minutes || 0);
+                    const roundedBreak = ed.rounded_break_minutes ? Number(ed.rounded_break_minutes) : null;
+                    const reduction = Number(ed.break_reduction_minutes || 0);
+                    const roundedBox = roundedBreak ? `
+                                <div class="overtime-box" style="border: 1px solid #f59e0b; background: #fffbeb;">
+                                    <div class="overtime-box-label">Pausa arrotondata</div>
+                                    <div class="overtime-box-value" style="font-weight: bold; color: #d97706;">${roundedBreak} min</div>
+                                </div>` : '';
+                    overtimeHtml = `
+                        <div class="request-overtime-details">
+                            <div class="overtime-header">☕ Deroga Pausa Ridotta</div>
+                            <div class="overtime-grid">
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">Pausa pianificata</div>
+                                    <div class="overtime-box-value">${plannedBreak} min</div>
+                                </div>
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">Pausa timbrata</div>
+                                    <div class="overtime-box-value" style="font-weight: bold; color: #dc2626;">${effectiveBreak} min</div>
+                                </div>
+                                ${roundedBox}
+                                <div class="overtime-box">
+                                    <div class="overtime-box-label">Riduzione</div>
+                                    <div class="overtime-box-value" style="font-weight: bold; color: #f59e0b;">-${reduction} min</div>
+                                </div>
+                            </div>
+                            ${ed.reason ? `<div class="overtime-source">📝 Motivazione utente: ${ed.reason}</div>` : ''}
+                        </div>`;
+                } else if (r.type_name === 'Fuori Flessibilità') {
                     // FUORI FLESSIBILITÀ (legacy - per richieste esistenti)
                     const turnoStart = formatTime(ed.turno_start);
                     const turnoEnd = formatTime(ed.turno_end);
@@ -1356,7 +1544,7 @@
                             </div>
                             <div class="overtime-source">${ed.auto_created ? '🤖 Rilevato automaticamente' : '📝 Inserito manualmente'}</div>
                         </div>`;
-                } else if (r.request_type_id === 19) {
+                } else if (r.type_name === 'Giustificazione Ritardo') {
                     // GIUSTIFICAZIONE RITARDO
                     const turnoStart = formatTime(ed.turno_start);
                     const oraTimbrata = formatTime(ed.ora_timbrata);
@@ -1515,7 +1703,7 @@
             
             // Dettagli permesso con orari (extra_data)
             let permissionHtml = '';
-            if (r.request_type_id === 3 && r.extra_data && r.extra_data.time_start && r.extra_data.time_end) {
+            if (r.type_name === 'Permesso' && r.extra_data && r.extra_data.time_start && r.extra_data.time_end) {
                 const ed = r.extra_data;
                 permissionHtml = `
                     <div class="request-permission-details">
@@ -1624,7 +1812,7 @@
             if (!r) return;
 
             currentRequestId = id;
-            document.getElementById('reviewNotes').value = '';
+            currentReq = r;
 
             const valueUnits = { hours: 'ore', days: 'giorni', amount: '€', km: 'km', minutes: 'min' };
             const valueUnit = valueUnits[r.value_type] || '';
@@ -1637,8 +1825,41 @@
             const overtimeRoundedStart = document.getElementById('overtimeRoundedStart');
             const overtimeRoundedEnd = document.getElementById('overtimeRoundedEnd');
             
+            // Gestione DEROGA PAUSA RIDOTTA
+            if (r.extra_data && r.extra_data.created_reason === 'break_reduction_short_pause') {
+                const ed = r.extra_data;
+                const plannedBreak = Number(ed.planned_break_minutes || 0);
+                const effectiveBreak = Number(ed.effective_break_minutes || 0);
+                const roundedBreak = ed.rounded_break_minutes ? Number(ed.rounded_break_minutes) : null;
+                const reduction = Number(ed.break_reduction_minutes || 0);
+                const reason = ed.reason || r.notes || '';
+                const roundedRow = roundedBreak ? `
+                    <div class="summary-row" style="background: #fffbeb; border-left: 3px solid #f59e0b; padding: 6px 8px;">
+                        <span class="summary-label">⏱️ Pausa arrotondata</span>
+                        <span class="summary-value" style="font-weight:bold;color:#d97706;">${roundedBreak} min</span>
+                    </div>` : '';
+
+                extraInfo = `
+                    <div class="summary-row"><span class="summary-label">Pausa pianificata</span><span class="summary-value">${plannedBreak} min</span></div>
+                    <div class="summary-row"><span class="summary-label">Pausa timbrata</span><span class="summary-value" style="font-weight:bold;color:#dc3545;">${effectiveBreak} min</span></div>
+                    ${roundedRow}
+                    <div class="summary-row"><span class="summary-label">Riduzione</span><span class="summary-value" style="font-weight:bold;color:#f59e0b;">-${reduction} min</span></div>
+                    ${reason ? `<div class="summary-row"><span class="summary-label">Motivazione</span><span class="summary-value">${reason}</span></div>` : ''}
+                    <hr style="margin: 8px 0; border-color: #e9ecef;">
+                    <div class="summary-row" style="background: #d4edda; padding: 8px; border-radius: 4px;">
+                        <span style="color: #155724; font-weight: 600;">✅ Se APPROVI</span>
+                        <div style="color: #155724; font-size: 0.85em; margin-top: 2px;">Si usa la pausa arrotondata (${roundedBreak || effectiveBreak} min)</div>
+                    </div>
+                    <div class="summary-row" style="background: #f8d7da; padding: 8px; border-radius: 4px; margin-top: 4px;">
+                        <span style="color: #721c24; font-weight: 600;">❌ Se RESPINGI</span>
+                        <div style="color: #721c24; font-size: 0.85em; margin-top: 2px;">Si applica la pausa pianificata (${plannedBreak} min)</div>
+                    </div>
+                `;
+
+                if (overtimeTimesGroup) overtimeTimesGroup.style.display = 'none';
+            }
             // Gestione FUORI FLESSIBILITÀ (request_type_id = 17)
-            if (r.request_type_id === 17 && r.extra_data) {
+            else if (r.type_name === 'Fuori Flessibilità' && r.extra_data) {
                 const ed = r.extra_data;
                 const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
                 
@@ -1743,8 +1964,8 @@
                     overtimeTimesGroup.style.display = 'none';
                 }
             }
-            // Gestione EXTRA TURNO (request_type_id = 9)
-            else if (r.request_type_id === 9 && r.extra_data) {
+            // Gestione EXTRA TURNO (request_type_id = 4)
+            else if (r.type_name === 'Extra Turno' && r.extra_data) {
                 const ed = r.extra_data;
                 
                 // Funzione per rimuovere i secondi (HH:MM:SS -> HH:MM)
@@ -1851,9 +2072,9 @@
                 if (overtimeTimesGroup) overtimeTimesGroup.style.display = 'none';
             }
 
-            // Gestione GIUSTIFICAZIONE RITARDO (request_type_id = 19)
+            // Gestione GIUSTIFICAZIONE RITARDO (request_type_id = 7)
             let lateArrivalInfo = '';
-            if (r.request_type_id === 19 && r.extra_data) {
+            if (r.type_name === 'Giustificazione Ritardo' && r.extra_data) {
                 const ed = r.extra_data;
                 const formatTime = (t) => t ? t.substring(0, 5) : '--:--';
                 
@@ -1894,9 +2115,9 @@
                 `;
             }
 
-            // Se è un permesso (request_type_id = 3), mostra anche gli orari
+            // Se è un permesso (request_type_id = 5), mostra anche gli orari
             let permissionTimeInfo = '';
-            if (r.request_type_id === 3 && r.extra_data && r.extra_data.time_start && r.extra_data.time_end) {
+            if (r.type_name === 'Permesso' && r.extra_data && r.extra_data.time_start && r.extra_data.time_end) {
                 const timeStart = r.extra_data.time_start;
                 const timeEnd = r.extra_data.time_end;
                 permissionTimeInfo = `<div class="summary-row"><span class="summary-label">Orario</span><span class="summary-value">dalle ore ${timeStart} alle ore ${timeEnd}</span></div>`;
@@ -1952,7 +2173,7 @@
             
             const notesLabel = document.querySelector('#reviewNotes')?.previousElementSibling;
             // Giustificazione Ritardo (ID 19)
-            if (r.request_type_id === 19) {
+            if (r.type_name === 'Giustificazione Ritardo') {
                 btnApprove.innerHTML = '✅ Accetta giustificazione';
                 btnApprove.className = 'btn btn-success';
                 btnApprove.style.background = '';
@@ -1960,7 +2181,15 @@
                 btnReject.className = 'btn btn-warning';
                 btnReject.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
                 if (notesLabel) notesLabel.textContent = 'Motivazione';
-            } else if (r.request_type_id === 17 && r.extra_data) {
+            } else if (r.extra_data && r.extra_data.created_reason === 'break_reduction_short_pause') {
+                btnApprove.innerHTML = '✅ Autorizza pausa ridotta';
+                btnApprove.className = 'btn btn-success';
+                btnApprove.style.background = '';
+                btnReject.innerHTML = '❌ Applica pausa pianificata';
+                btnReject.className = 'btn btn-danger';
+                btnReject.style.background = '';
+                if (notesLabel) notesLabel.textContent = 'Note revisione (opzionale)';
+            } else if (r.type_name === 'Fuori Flessibilità' && r.extra_data) {
                 const ed = r.extra_data;
                 const diffMinutes = ed.diff_minutes || 0;
                 const tipoTimbratura = ed.tipo_timbratura || 'fine_giornata';
@@ -2038,6 +2267,7 @@
         function closeModal() {
             document.getElementById('reviewModal').classList.remove('open');
             currentRequestId = null;
+            currentReq = null;
         }
 
         async function submitReview(status) {
@@ -2122,7 +2352,7 @@
                 
                 // Messaggio personalizzato per Giustificazione Ritardo (type 19)
                 let toastMsg;
-                if (currentReq && currentReq.request_type_id === 19) {
+                if (currentReq && currentReq.request_type_id === 7) {
                     toastMsg = status === 'approved' ? 'Giustificazione accettata' : 'Ritardo registrato';
                 } else {
                     toastMsg = status === 'approved' ? 'Richiesta approvata con successo' : 'Richiesta respinta';

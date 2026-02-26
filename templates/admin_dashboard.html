@@ -604,6 +604,7 @@
         </div>
         <div class="menu-items">
             <a href="/admin" class="menu-item active">📊 Dashboard</a>
+            <a href="/admin/payroll" class="menu-item">💰 HR / Payroll</a>
             <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
             <a href="/admin/presenze" class="menu-item">📋 Foglio Presenze</a>
             <div class="menu-divider"></div>
@@ -654,7 +655,6 @@
                     <select id="sourceFilter" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border, #e2e8f0); background: white; font-size: 14px;">
                         <option value="">Tutti</option>
                         <option value="Squadra">🏗️ Squadra</option>
-                        <option value="Magazzino">📦 Magazzino</option>
                     </select>
                 </div>
                 <button id="applyDate" class="btn-apply">Applica Filtri</button>
@@ -666,7 +666,7 @@
             <!-- Stat Cards -->
             <div class="stats-grid">
                 <div class="stat-card">
-                    <h4>Ore Magazzino</h4>
+                    <h4>Ore Produzione</h4>
                     <div class="stat-value" id="hoursTotal">-</div>
                     <span class="stat-unit">registro ore</span>
                     <p class="status" id="hoursStatus" style="margin-top: 8px;">Caricamento...</p>
@@ -765,7 +765,7 @@
 
     <script>
         window.__ADMIN_DASHBOARD__ = {
-            summaryUrl: "{{ url_for('api_admin_magazzino_summary') }}",
+            summaryUrl: "",
             dayUrl: "{{ url_for('api_admin_day_sessions') }}",
             exportUrl: "{{ url_for('api_admin_day_sessions_export_xlsx') }}",
             sessionsUrl: "{{ url_for('admin_sessions_page') }}",

@@ -14,6 +14,22 @@
             document.documentElement.dataset.theme = theme;
         })();
     </script>
+    <script>
+        // Stub globale per evitare "openPhoneAssignFromPlanning is not defined" se qualche
+        // elemento inline onclick viene eseguito prima che lo script principale sia inizializzato.
+        (function(){
+            window._queuedPhoneAssignCalls = window._queuedPhoneAssignCalls || [];
+            if (!window.openPhoneAssignFromPlanning) {
+                window.openPhoneAssignFromPlanning = function(projectCode, projectName){
+                    if (typeof window._real_openPhoneAssignFromPlanning === 'function') {
+                        try { window._real_openPhoneAssignFromPlanning(projectCode, projectName); } catch (e) { console.error(e); }
+                    } else {
+                        window._queuedPhoneAssignCalls.push([projectCode, projectName]);
+                    }
+                };
+            }
+        })();
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
         :root {
@@ -466,7 +482,8 @@
         /* Colonne specifiche */
         .col-check { width: 40px; text-align: center; }
         .col-operator { width: 200px; }
-        .col-function { width: 130px; }
+        .col-function { width: 150px; }
+        .function-group-label { font-size: 11px; color: #2563eb; font-weight: 600; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .col-location { min-width: 180px; }
         .col-vehicle { min-width: 160px; }
         .col-time { width: 120px; }
@@ -495,6 +512,12 @@
         .function-cell {
             color: var(--cyan);
             font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .function-cell:hover {
+            color: var(--brand);
+            text-decoration: underline;
         }
         .location-cell a {
             color: var(--warning);
@@ -511,6 +534,137 @@
         }
         .location-gps.ok { color: var(--success); }
         .location-gps.no { color: var(--danger); }
+        .location-change-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border: none;
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--primary);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            padding: 0;
+            margin-left: 4px;
+            vertical-align: middle;
+            transition: background 0.2s;
+        }
+        .location-change-btn:hover {
+            background: rgba(99, 102, 241, 0.3);
+        }
+        .location-cell {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        /* Location selector modal */
+        .location-selector-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        .location-selector-overlay.open { display: flex; }
+        .location-selector-box {
+            background: var(--bg-card, #fff);
+            border-radius: 16px;
+            padding: 24px;
+            width: 420px;
+            max-width: 95vw;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .location-selector-box h3 {
+            margin: 0 0 16px;
+            font-size: 16px;
+        }
+        .location-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .location-option:hover {
+            background: rgba(99, 102, 241, 0.08);
+            border-color: var(--primary);
+        }
+        .location-option.selected {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: var(--primary);
+        }
+        .location-option-name {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .location-option-address {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .location-option-badge {
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            background: var(--primary);
+            color: white;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .location-option-coords {
+            font-size: 10px;
+            color: var(--success);
+        }
+        .custom-locs {
+            display: block;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        .location-selector-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
+        .location-selector-actions button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-loc-cancel { background: var(--bg); color: var(--text); border: 1px solid var(--border) !important; }
+        .btn-loc-clear { background: #ef4444; color: white; }
+        .btn-loc-clear:hover { background: #dc2626; }
+        .loc-tab {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            background: var(--bg);
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .loc-tab.active {
+            background: var(--primary);
+            color: white;
+        }
+        .loc-tab:hover:not(.active) {
+            background: rgba(99, 102, 241, 0.1);
+        }
         .time-cell {
             font-weight: 600;
             color: var(--success);
@@ -557,6 +711,14 @@
             font-size: 11px;
             font-weight: 500;
             margin-left: auto;
+        }
+        .project-header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            flex-wrap: wrap;
+            justify-content: flex-end;
         }
         .project-manager-badge {
             background: #e3f2fd;
@@ -1464,6 +1626,117 @@
             opacity: 0.4;
         }
 
+        /* Fasi Funzione nel progetto */
+        .project-phases-container {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: rgba(67, 97, 238, 0.04);
+            border-radius: 8px;
+            border: 1px solid rgba(67, 97, 238, 0.12);
+        }
+        .project-phases-container .phases-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .project-phases-container .phases-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--brand, #4361ee);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0;
+        }
+        .phases-progress-bar {
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        .phases-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4361ee, #2ecc71);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        .phases-checklist {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        .phase-check-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background: #fff;
+            cursor: default;
+            font-size: 12px;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+        .phase-check-btn.completed {
+            background: rgba(46, 204, 113, 0.1);
+            border-color: rgba(46, 204, 113, 0.3);
+            color: #27ae60;
+        }
+        .phase-check-icon {
+            font-size: 14px;
+        }
+        .phase-check-label {
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .phase-in-progress {
+            display: inline-block;
+            margin-left: 8px;
+            font-size: 11px;
+            color: var(--info, #3b82f6);
+            background: rgba(59,130,246,0.08);
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .phases-counter {
+            font-size: 11px;
+            color: var(--muted, #888);
+            text-align: right;
+            margin-top: 4px;
+        }
+        .phase-check-btn .phase-operators {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-left: 4px;
+            padding: 1px 6px;
+            border-radius: 10px;
+            color: #4361ee;
+            background: rgba(67, 97, 238, 0.1);
+        }
+        .phase-check-btn.phase-active {
+            border-color: #4361ee;
+            background: rgba(67, 97, 238, 0.08);
+            box-shadow: 0 0 0 1px rgba(67, 97, 238, 0.2);
+        }
+        .phase-active-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #4361ee;
+            border-radius: 50%;
+            animation: pulseDot 1.2s ease-in-out infinite;
+        }
+        @keyframes pulseDot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+
         /* Responsive */
         @media (max-width: 1100px) {
             .projects-panel {
@@ -1493,6 +1766,269 @@
             .projects-panel {
                 width: 280px;
             }
+        }
+
+        /* ═══ Modal Fasi Funzione Config ═══ */
+        .fp-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.55);
+            z-index: 9000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(3px);
+        }
+        .fp-modal-overlay.open {
+            display: flex;
+        }
+        .fp-modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 95%;
+            max-width: 620px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 28px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            transform: scale(0.95);
+            opacity: 0;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+        .fp-modal-overlay.open .fp-modal {
+            transform: scale(1);
+            opacity: 1;
+        }
+        .fp-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+        .fp-modal-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: var(--text);
+        }
+        .fp-modal-header .fp-close {
+            background: none;
+            border: none;
+            color: var(--muted);
+            font-size: 22px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 8px;
+        }
+        .fp-modal-header .fp-close:hover {
+            background: rgba(255,255,255,0.08);
+            color: var(--text);
+        }
+        .fp-modal-desc {
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+        .fn-template {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: var(--bg-soft);
+            position: relative;
+        }
+        .fn-template-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .fn-template-header input {
+            flex: 1;
+            min-width: 420px; /* allarga il campo nome funzione */
+            max-width: 680px;
+            font-size: 15px;
+            font-weight: 600;
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+        }
+        .fn-template-header select {
+            width: 140px;
+            font-size: 13px;
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 8px;
+        }
+        .fn-template-header .btn-remove-fn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+        .fn-template-header .btn-remove-fn:hover {
+            background: rgba(239, 68, 68, 0.15);
+        }
+        .fn-phase-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+        .fn-phase-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .fn-phase-item .phase-order {
+            width: 28px;
+            height: 28px;
+            background: var(--brand);
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .fn-phase-item input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            padding: 4px 0;
+            color: var(--text);
+        }
+        .fn-phase-item input:focus {
+            outline: none;
+            border-bottom: 2px solid var(--brand);
+        }
+        .fn-phase-item .btn-remove-phase,
+        .fn-phase-item .btn-move-phase {
+            background: none;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 16px;
+            border-radius: 4px;
+        }
+        .fn-phase-item .btn-remove-phase:hover {
+            color: var(--danger);
+            background: rgba(239, 68, 68, 0.12);
+        }
+        .fn-phase-item .btn-move-phase:hover {
+            color: var(--brand);
+            background: var(--brand-soft);
+        }
+        .fn-phase-item .btn-move-phase:disabled {
+            opacity: 0.25;
+            cursor: default;
+        }
+        .fn-phase-actions {
+            display: flex;
+            gap: 2px;
+            align-items: center;
+        }
+        .btn-add-phase {
+            background: none;
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: var(--brand);
+            cursor: pointer;
+            font-size: 13px;
+            width: 100%;
+            text-align: center;
+        }
+        .btn-add-phase:hover {
+            background: rgba(56, 189, 248, 0.08);
+            border-color: var(--brand);
+        }
+        .fn-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 100;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .fn-suggestions .fn-suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text);
+        }
+        .fn-suggestions .fn-suggestion-item:hover {
+            background: var(--brand-soft);
+        }
+        .fp-modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+        .fp-modal-btn {
+            padding: 10px 22px;
+            border-radius: 10px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .fp-modal-btn.secondary {
+            background: var(--bg-soft);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .fp-modal-btn.secondary:hover {
+            background: var(--border);
+        }
+        .fp-modal-btn.primary {
+            background: var(--brand);
+            color: #fff;
+        }
+        .fp-modal-btn.primary:hover {
+            background: var(--brand-strong);
+        }
+        .fp-btn-add-fn {
+            background: var(--bg-soft);
+            border: 1px dashed var(--border);
+            border-radius: 10px;
+            padding: 10px 18px;
+            color: var(--brand);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            width: 100%;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        .fp-btn-add-fn:hover {
+            background: var(--brand-soft);
+            border-color: var(--brand);
         }
     </style>
 </head>
@@ -1669,6 +2205,25 @@
         <div class="loading-spinner"></div>
     </div>
 
+    <!-- Modal Configura Fasi Funzione -->
+    <div class="fp-modal-overlay" id="fpModalOverlay" onclick="if(event.target===this)closeFunctionPhasesModal()">
+        <div class="fp-modal">
+            <div class="fp-modal-header">
+                <h2>⚙️ Configura Fasi Funzione</h2>
+                <button class="fp-close" onclick="closeFunctionPhasesModal()">✕</button>
+            </div>
+            <p class="fp-modal-desc">
+                Definisci le sotto-fasi per ogni funzione di pianificazione (es. Montaggio → Carico mezzo, Montaggio F1, …)
+            </p>
+            <div id="fpContainer"></div>
+            <button type="button" class="fp-btn-add-fn" onclick="fpAddFunction()">➕ Aggiungi Funzione</button>
+            <div class="fp-modal-actions">
+                <button class="fp-modal-btn secondary" onclick="closeFunctionPhasesModal()">Annulla</button>
+                <button class="fp-modal-btn primary" onclick="fpSave()">💾 Salva</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Modifica Pausa -->
     <div class="break-modal-overlay" id="breakModalOverlay">
         <div class="break-modal">
@@ -1699,6 +2254,69 @@
                 <button class="break-modal-btn clear" onclick="clearBreak()">🗑️ Rimuovi</button>
                 <button class="break-modal-btn cancel" onclick="closeBreakModal()">Annulla</button>
                 <button class="break-modal-btn save" onclick="saveBreak()">💾 Salva</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Selettore Location Custom -->
+    <div class="location-selector-overlay" id="locationSelectorOverlay">
+        <div class="location-selector-box">
+            <h3>📍 Assegna Location</h3>
+            
+            <!-- Tab switch: Seleziona esistente / Crea nuova -->
+            <div style="display: flex; gap: 0; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
+                <button id="locTabSelect" class="loc-tab active" onclick="switchLocTab('select')">📋 Seleziona esistente</button>
+                <button id="locTabCreate" class="loc-tab" onclick="switchLocTab('create')">➕ Crea nuova</button>
+            </div>
+
+            <!-- Panel: seleziona location esistente -->
+            <div id="locPanelSelect">
+                <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 10px;">
+                    Scegli una location custom da assegnare all'operatore.
+                </p>
+                <div id="locationSelectorList" style="margin-bottom: 12px; max-height: 300px; overflow-y: auto;">
+                    <div style="color: var(--text-muted); text-align: center; padding: 20px;">Caricamento...</div>
+                </div>
+            </div>
+
+            <!-- Panel: crea nuova location custom -->
+            <div id="locPanelCreate" style="display: none;">
+                <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 10px;">
+                    Crea una nuova location custom e assegnala all'operatore.
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div>
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Nome *</label>
+                        <input type="text" id="locNewName" placeholder="es: Magazzino Secondario" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg); color: var(--text); box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Indirizzo</label>
+                        <input type="text" id="locNewAddress" placeholder="es: Via Roma 10, 72015 Fasano" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg); color: var(--text); box-sizing: border-box;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Latitudine *</label>
+                            <input type="number" id="locNewLat" placeholder="40.834500" step="0.000001" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg); color: var(--text); box-sizing: border-box;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Longitudine *</label>
+                            <input type="number" id="locNewLon" placeholder="17.365200" step="0.000001" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg); color: var(--text); box-sizing: border-box;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Raggio GPS (metri)</label>
+                        <input type="number" id="locNewRadius" value="300" min="10" max="5000" step="10" style="width: 100px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg); color: var(--text); box-sizing: border-box;">
+                    </div>
+                    <button onclick="createAndAssignCustomLocation()" style="padding: 10px; background: var(--success, #22c55e); color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">
+                        ✅ Crea e Assegna
+                    </button>
+                </div>
+            </div>
+
+            <input type="hidden" id="locationSelectorIdx">
+            <div class="location-selector-actions">
+                <button class="btn-loc-clear" onclick="clearCustomLocation()" title="Rimuovi location custom e ripristina quella da Rentman">🗑️ Ripristina Rentman</button>
+                <button class="btn-loc-cancel" onclick="closeLocationSelector()">Chiudi</button>
             </div>
         </div>
     </div>
@@ -1767,7 +2385,10 @@
         let isLoadingData = false; // Flag per evitare doppi caricamenti
         let dateCache = new Map(); // Cache per evitare risincronizzazioni
         let lastLoadedDate = null; // Data caricata precedentemente
-        let activeProjectFilter = null; // Filtro progetto attivo (null = tutti)
+        let activeProjectFilter = new Set(); // Filtro progetti attivi (vuoto = tutti)
+        let functionPhasesConfig = {}; // Config fasi funzione da settings
+        let projectPhasesState = {}; // Stato fasi per progetto { "projectKey|functionKey": [{phase_name, completed, completed_by}] }
+        let activeTimersData = {}; // Timer attivi { project_code: { activity_label: [username, ...] } }
 
         // Helper functions - definite prima dell'uso
         function formatDateISO(d) {
@@ -1786,6 +2407,489 @@
                 // Se non ci sono dati salvati, carica da Rentman
                 await loadPlannings();
             }
+        }
+
+        // Auto-refresh timer attivi ogni 30 secondi
+        setInterval(async () => {
+            if (!currentPlannings.length) return;
+            const oldData = JSON.stringify(activeTimersData);
+            await loadActiveTimers();
+            // Re-render solo se i dati sono cambiati
+            if (JSON.stringify(activeTimersData) !== oldData) {
+                renderPlannings(currentPlannings);
+            }
+        }, 30000);
+
+        // ═══════════════════════════════════════════════════════════════════
+        // FASI FUNZIONE - Helpers
+        // ═══════════════════════════════════════════════════════════════════
+        async function loadFunctionPhasesConfig() {
+            try {
+                const res = await fetch('/api/admin/function-phases');
+                const data = await res.json();
+                if (data.ok) functionPhasesConfig = data.function_phases || {};
+            } catch (e) {
+                console.warn('Errore caricamento config fasi:', e);
+            }
+        }
+        // Carica config all'avvio
+        loadFunctionPhasesConfig();
+
+        // ═══════════════════════════════════════════════════════════════════
+        // FASI FUNZIONE - Modal Configurazione
+        // ═══════════════════════════════════════════════════════════════════
+        let fpEditData = {}; // Copia locale per editing nel modal
+        let fpKnownFunctions = []; // Funzioni Rentman distinte (autocomplete)
+
+        async function loadFpDistinctFunctions() {
+            try {
+                const res = await fetch('/api/admin/function-phases/distinct-functions');
+                const data = await res.json();
+                if (data.ok) fpKnownFunctions = data.functions || [];
+            } catch (e) {
+                console.warn('Errore caricamento funzioni distinte:', e);
+            }
+        }
+        loadFpDistinctFunctions();
+
+        function openFunctionPhasesModal(functionName) {
+            if (functionName && functionName.trim()) {
+                // Aperto da click su funzione specifica: mostra SOLO quella
+                const fn = functionName.trim();
+                const allConfig = JSON.parse(JSON.stringify(functionPhasesConfig));
+                if (allConfig[fn]) {
+                    fpEditData = { [fn]: allConfig[fn] };
+                } else {
+                    fpEditData = { [fn]: { match_mode: 'exact', phases: [{ name: 'Fase 1', order: 1 }] } };
+                }
+            } else {
+                // Aperto senza contesto: mostra tutte le funzioni
+                fpEditData = JSON.parse(JSON.stringify(functionPhasesConfig));
+            }
+            fpRender();
+            document.getElementById('fpModalOverlay').classList.add('open');
+        }
+
+        function closeFunctionPhasesModal() {
+            document.getElementById('fpModalOverlay').classList.remove('open');
+        }
+
+        function fpEscapeHtml(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        function fpRender() {
+            const container = document.getElementById('fpContainer');
+            if (!container) return;
+            const keys = Object.keys(fpEditData);
+            if (keys.length === 0) {
+                container.innerHTML = '<p style="color: var(--muted); font-size: 14px; text-align: center; padding: 20px;">Nessun template fasi configurato. Clicca "Aggiungi Funzione" per iniziare.</p>';
+                return;
+            }
+            let html = '';
+            keys.forEach((fnKey, fnIdx) => {
+                const tmpl = fpEditData[fnKey];
+                const phases = tmpl.phases || [];
+                html += `<div class="fn-template" data-fn-idx="${fnIdx}">
+                    <div class="fn-template-header">
+                        <div style="position: relative; flex: 1;">
+                            <input type="text" value="${fpEscapeHtml(fnKey)}"
+                                   placeholder="Nome funzione (es. Montaggio)"
+                                   oninput="fpOnNameInput(this, ${fnIdx})"
+                                   onfocus="fpShowSuggestions(this, ${fnIdx})"
+                                   onblur="setTimeout(() => fpHideSuggestions(${fnIdx}), 200)">
+                            <div class="fn-suggestions" id="fpSug_${fnIdx}" style="display:none;"></div>
+                        </div>
+                        <button class="btn-remove-fn" onclick="fpRemoveFunction(${fnIdx})" title="Rimuovi funzione">✕</button>
+                    </div>
+                    <div class="fn-phase-list">`;
+                const pLen = phases.length;
+                phases.forEach((phase, phIdx) => {
+                    html += `<div class="fn-phase-item">
+                        <span class="phase-order">${phIdx + 1}</span>
+                        <input type="text" value="${fpEscapeHtml(phase.name || '')}"
+                               placeholder="Nome fase..."
+                               onchange="fpUpdatePhaseName(${fnIdx}, ${phIdx}, this.value)">
+                        <div class="fn-phase-actions">
+                            <button class="btn-move-phase" onclick="fpMovePhase(${fnIdx}, ${phIdx}, -1)" title="Sposta su" ${phIdx === 0 ? 'disabled' : ''}>▲</button>
+                            <button class="btn-move-phase" onclick="fpMovePhase(${fnIdx}, ${phIdx}, 1)" title="Sposta giù" ${phIdx === pLen - 1 ? 'disabled' : ''}>▼</button>
+                            <button class="btn-remove-phase" onclick="fpRemovePhase(${fnIdx}, ${phIdx})" title="Rimuovi">✕</button>
+                        </div>
+                    </div>`;
+                });
+                html += `</div>
+                    <button class="btn-add-phase" onclick="fpAddPhase(${fnIdx})">+ Aggiungi Fase</button>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function fpAddFunction() {
+            const newKey = 'Nuova Funzione ' + (Object.keys(fpEditData).length + 1);
+            fpEditData[newKey] = { match_mode: 'contains', phases: [{ name: 'Fase 1', order: 1 }] };
+            fpRender();
+        }
+
+        function fpRemoveFunction(fnIdx) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx < keys.length) {
+                delete fpEditData[keys[fnIdx]];
+                fpRender();
+            }
+        }
+
+        function fpUpdateMatchMode(fnIdx, mode) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx < keys.length) fpEditData[keys[fnIdx]].match_mode = mode;
+        }
+
+        function fpOnNameInput(input, fnIdx) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const oldKey = keys[fnIdx];
+            const newKey = input.value.trim();
+            if (newKey && newKey !== oldKey) {
+                const tmpl = fpEditData[oldKey];
+                delete fpEditData[oldKey];
+                fpEditData[newKey] = tmpl;
+            }
+            fpShowSuggestions(input, fnIdx);
+        }
+
+        function fpShowSuggestions(input, fnIdx) {
+            const sugDiv = document.getElementById('fpSug_' + fnIdx);
+            if (!sugDiv) return;
+            const val = input.value.trim().toLowerCase();
+            const used = new Set(Object.keys(fpEditData).map(k => k.toLowerCase()));
+            const matches = fpKnownFunctions.filter(fn =>
+                fn.toLowerCase().includes(val) && !used.has(fn.toLowerCase())
+            );
+            if (matches.length === 0 || !val) { sugDiv.style.display = 'none'; return; }
+            sugDiv.innerHTML = matches.slice(0, 8).map(fn =>
+                `<div class="fn-suggestion-item" onmousedown="fpSelectSuggestion(${fnIdx}, '${fpEscapeHtml(fn)}')">${fpEscapeHtml(fn)}</div>`
+            ).join('');
+            sugDiv.style.display = 'block';
+        }
+
+        function fpHideSuggestions(fnIdx) {
+            const d = document.getElementById('fpSug_' + fnIdx);
+            if (d) d.style.display = 'none';
+        }
+
+        function fpSelectSuggestion(fnIdx, fnName) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const oldKey = keys[fnIdx];
+            const tmpl = fpEditData[oldKey];
+            delete fpEditData[oldKey];
+            fpEditData[fnName] = tmpl;
+            fpRender();
+        }
+
+        function fpAddPhase(fnIdx) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const tmpl = fpEditData[keys[fnIdx]];
+            tmpl.phases = tmpl.phases || [];
+            tmpl.phases.push({ name: '', order: tmpl.phases.length + 1 });
+            fpRender();
+        }
+
+        function fpMovePhase(fnIdx, phIdx, direction) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const tmpl = fpEditData[keys[fnIdx]];
+            if (!tmpl.phases) return;
+            const newIdx = phIdx + direction;
+            if (newIdx < 0 || newIdx >= tmpl.phases.length) return;
+            // Swap
+            [tmpl.phases[phIdx], tmpl.phases[newIdx]] = [tmpl.phases[newIdx], tmpl.phases[phIdx]];
+            tmpl.phases.forEach((p, i) => p.order = i + 1);
+            fpRender();
+        }
+
+        function fpRemovePhase(fnIdx, phIdx) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const tmpl = fpEditData[keys[fnIdx]];
+            if (tmpl.phases && phIdx < tmpl.phases.length) {
+                tmpl.phases.splice(phIdx, 1);
+                tmpl.phases.forEach((p, i) => p.order = i + 1);
+                fpRender();
+            }
+        }
+
+        function fpUpdatePhaseName(fnIdx, phIdx, newName) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const tmpl = fpEditData[keys[fnIdx]];
+            if (tmpl.phases && phIdx < tmpl.phases.length) {
+                tmpl.phases[phIdx].name = newName.trim();
+            }
+        }
+
+        function fpCollectClean() {
+            const cleaned = {};
+            Object.entries(fpEditData).forEach(([key, tmpl]) => {
+                const k = key.trim();
+                if (!k) return;
+                const phases = (tmpl.phases || [])
+                    .filter(p => p.name && p.name.trim())
+                    .map((p, i) => ({ name: p.name.trim(), order: i + 1 }));
+                if (phases.length > 0) {
+                    cleaned[k] = { match_mode: tmpl.match_mode || 'contains', phases };
+                }
+            });
+            return cleaned;
+        }
+
+        async function fpSave() {
+            const edited = fpCollectClean();
+            // Merge: sovrapponi le funzioni editate alla config completa
+            const merged = JSON.parse(JSON.stringify(functionPhasesConfig));
+            // Rimuovi le chiavi che erano in fpEditData originale ma ora sono state cancellate
+            // (l'utente potrebbe aver rimosso una funzione dal modal)
+            const originalKeys = Object.keys(fpEditData);
+            // Applica le modifiche
+            for (const [key, val] of Object.entries(edited)) {
+                merged[key] = val;
+            }
+            // Se una chiave originale non è più in edited (è stata rimossa), rimuovila dal merge
+            // Ma solo se il modal era in modalità singola funzione: non rimuovere le altre
+            const payload = merged;
+            try {
+                const res = await fetch('/api/admin/function-phases', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ function_phases: payload })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    functionPhasesConfig = payload;
+                    closeFunctionPhasesModal();
+                    showMessage('Fasi funzione salvate!', 'success');
+                    // Re-render plannings per mostrare le fasi aggiornate
+                    if (currentPlannings.length > 0) {
+                        await Promise.all([loadProjectPhasesState(dateInput.value), loadActiveTimers()]);
+                        renderPlannings(currentPlannings);
+                    }
+                } else {
+                    showMessage('Errore salvataggio: ' + (data.error || ''), 'error');
+                }
+            } catch (e) {
+                showMessage('Errore: ' + e.message, 'error');
+            }
+        }
+
+        async function loadProjectPhasesState(dateStr) {
+            projectPhasesState = {};
+            if (!dateStr || !currentPlannings.length) return;
+
+            // Raccogli tutti i project_key unici
+            const projectKeys = new Set();
+            currentPlannings.forEach(p => {
+                const key = String(p.project_code || p.project_name || 'N/D');
+                projectKeys.add(key);
+            });
+
+            // Carica lo stato fasi per ogni progetto
+            const promises = [];
+            for (const pk of projectKeys) {
+                promises.push(
+                    fetch(`/api/project-phases?date=${encodeURIComponent(dateStr)}&project_key=${encodeURIComponent(pk)}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.ok && data.phases) {
+                                data.phases.forEach(ph => {
+                                    const stateKey = `${pk}|${ph.function_key}`;
+                                    if (!projectPhasesState[stateKey]) projectPhasesState[stateKey] = [];
+                                    projectPhasesState[stateKey].push(ph);
+                                });
+                            }
+                        })
+                        .catch(() => {})
+                );
+            }
+            await Promise.all(promises);
+        }
+
+        async function loadActiveTimers() {
+            try {
+                const res = await fetch('/api/production/active-timers');
+                const data = await res.json();
+                activeTimersData = data.ok ? (data.active_timers || {}) : {};
+                console.log('[ACTIVE_TIMERS] Dati ricevuti:', JSON.stringify(activeTimersData));
+            } catch(e) {
+                console.error('[ACTIVE_TIMERS] Errore:', e);
+                activeTimersData = {};
+            }
+        }
+
+        function getOperatorsOnPhase(projectKey, phaseName, functionKey) {
+            projectKey = String(projectKey || '');
+            let projectTimers = activeTimersData[projectKey];
+            if (!projectTimers) {
+                // Prova case-insensitive sul projectKey
+                for (const [key, val] of Object.entries(activeTimersData)) {
+                    if (key.toLowerCase() === projectKey.toLowerCase()) {
+                        projectTimers = val;
+                        break;
+                    }
+                }
+                if (!projectTimers) return [];
+            }
+            // Se abbiamo functionKey, prova prima la chiave composta func::phase
+            if (functionKey) {
+                const compoundKey = `${functionKey}::${phaseName}`;
+                const compoundOps = projectTimers[compoundKey];
+                if (compoundOps && compoundOps.length) return compoundOps;
+                // Prova case-insensitive
+                for (const [phKey, phOps] of Object.entries(projectTimers)) {
+                    if (phKey.toLowerCase() === compoundKey.toLowerCase()) {
+                        return phOps;
+                    }
+                }
+            }
+            // Fallback: chiave semplice (solo phaseName) — solo se NON abbiamo functionKey
+            // o se la chiave composta non ha trovato nulla e non ci sono ambiguità
+            if (!functionKey) {
+                return projectTimers[phaseName] || [];
+            }
+            // Fallback: prova chiave semplice (solo phaseName) anche con functionKey
+            // Necessario per timer individuali che salvano solo il nome fase
+            const simpleOps = projectTimers[phaseName];
+            if (simpleOps && simpleOps.length) return simpleOps;
+            // Case-insensitive sulla chiave semplice
+            const phLower = phaseName.toLowerCase();
+            for (const [phKey, phOps] of Object.entries(projectTimers)) {
+                if (phKey.toLowerCase() === phLower) {
+                    return phOps;
+                }
+            }
+            return [];
+        }
+
+        function getPhasesForFunction(functionName) {
+            if (!functionName) return null;
+            const fnLower = functionName.toLowerCase().trim();
+            for (const [key, tmpl] of Object.entries(functionPhasesConfig)) {
+                const keyLower = key.toLowerCase().trim();
+                if (fnLower === keyLower) {
+                    return { function_key: key, phases: (tmpl.phases || []).sort((a, b) => a.order - b.order) };
+                }
+            }
+            return null;
+        }
+
+        function getPhaseState(projectKey, functionKey, phaseName) {
+            const stateKey = `${projectKey}|${functionKey}`;
+            const phases = projectPhasesState[stateKey] || [];
+            return phases.find(p => (p.phase_name || '') === phaseName);
+        }
+
+        async function togglePhase(projectKey, functionKey, phaseName, phaseOrder, btn) {
+            const state = getPhaseState(projectKey, functionKey, phaseName);
+            const newCompleted = !(state && state.completed);
+            const dateStr = dateInput.value;
+
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/project-phases/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: dateStr,
+                        project_key: projectKey,
+                        function_key: functionKey,
+                        phase_name: phaseName,
+                        phase_order: phaseOrder,
+                        completed: newCompleted
+                    })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    // Aggiorna stato locale
+                    const stateKey = `${projectKey}|${functionKey}`;
+                    if (!projectPhasesState[stateKey]) projectPhasesState[stateKey] = [];
+                    const existing = projectPhasesState[stateKey].find(p => p.phase_name === phaseName);
+                    if (existing) {
+                        existing.completed = newCompleted ? 1 : 0;
+                        existing.completed_by = data.completed_by;
+                    } else {
+                        projectPhasesState[stateKey].push({
+                            phase_name: phaseName,
+                            phase_order: phaseOrder,
+                            function_key: functionKey,
+                            completed: newCompleted ? 1 : 0,
+                            completed_by: data.completed_by
+                        });
+                    }
+                    // Re-render solo le fasi di questo progetto
+                    updatePhaseUI(projectKey, functionKey);
+                }
+            } catch (e) {
+                console.error('Errore toggle fase:', e);
+            }
+            btn.disabled = false;
+        }
+
+        function updatePhaseUI(projectKey, functionKey) {
+            const container = document.querySelector(`.project-phases-container[data-project-key="${CSS.escape(projectKey)}"][data-function-key="${CSS.escape(functionKey)}"]`);
+            if (!container) return;
+
+            const phasesConfig = getPhasesForFunction(functionKey);
+            if (!phasesConfig) return;
+
+            const stateKey = `${projectKey}|${functionKey}`;
+            const statesArr = projectPhasesState[stateKey] || [];
+            const total = phasesConfig.phases.length;
+            const completed = phasesConfig.phases.filter(ph => {
+                const s = statesArr.find(st => st.phase_name === ph.name);
+                return s && s.completed;
+            }).length;
+
+            container.innerHTML = buildPhasesHTML(projectKey, functionKey, phasesConfig.phases, statesArr, completed, total);
+        }
+
+        function buildPhasesHTML(projectKey, functionKey, phases, statesArr, completed, total) {
+            const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+            let html = `<div class="phases-progress-bar">
+                <div class="phases-progress-fill" style="width: ${pct}%"></div>
+            </div>
+            <div class="phases-checklist">`;
+
+            phases.forEach(ph => {
+                const state = statesArr.find(st => st.phase_name === ph.name);
+                const isDone = state && state.completed;
+                const doneBy = isDone && state.completed_by ? ` (${state.completed_by})` : '';
+                const operators = getOperatorsOnPhase(projectKey, ph.name, functionKey);
+                const opCount = operators.length;
+                const isActive = opCount > 0;
+                const activeClass = isActive ? ' phase-active' : '';
+                const opBadge = isActive 
+                    ? `<span class="phase-operators"><span class="phase-active-dot"></span> ${opCount}</span>` 
+                    : '';
+                const titleText = isDone 
+                    ? 'Completata' + doneBy 
+                    : (isActive ? `In corso: ${operators.join(', ')}` : '');
+                html += `<span class="phase-check-btn ${isDone ? 'completed' : ''}${activeClass}" 
+                    title="${escapeHtml(titleText)}">
+                    <span class="phase-check-icon">${isDone ? '✅' : (isActive ? '🔵' : '⬜')}</span>
+                    <span class="phase-check-label">${escapeHtml(ph.name)}</span>
+                    ${isActive && !isDone ? '<span class="phase-in-progress">In corso</span>' : ''}
+                    ${opBadge}
+                </span>`;
+            });
+
+            html += `</div>
+            <div class="phases-counter">${completed}/${total}</div>`;
+            return html;
+        }
+
+        function escapeAttr(str) {
+            return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         }
 
         function updateLoadButtonText() {
@@ -1877,10 +2981,13 @@
             // Reset stato
             selectedIds.clear();
             isFromDatabase = false;
-            activeProjectFilter = null; // Reset filtro progetto
+            activeProjectFilter = new Set(); // Reset filtro progetto
 
             try {
-                // Prima carica i dati esistenti dal DB per preservare campi personalizzati
+                // Carica elenco custom location in cache (serve per mostrare nomi multipli)
+                await loadCustomLocations();
+            
+            // Prima carica i dati esistenti dal DB per preservare campi personalizzati
                 let savedDataMap = new Map();
                 try {
                     const savedRes = await fetch(`/api/admin/rentman-planning/saved?date=${encodeURIComponent(date)}`);
@@ -1962,9 +3069,11 @@
                             sent_ts: saved.sent_ts,
                             // Note: usa quelle di Rentman se presenti, altrimenti dal DB
                             remark: p.remark || saved.remark || '',
-                            remark_planner: p.remark_planner || saved.remark_planner || ''
+                            remark_planner: p.remark_planner || saved.remark_planner || '',
+                            custom_location_ids: saved.custom_location_ids || []
                         };
                     }
+                    if (!Array.isArray(p.custom_location_ids)) p.custom_location_ids = [];
                     return p;
                 });
 
@@ -1975,6 +3084,9 @@
                     if (timeA !== timeB) return timeA.localeCompare(timeB);
                     return (a.crew_name || '').localeCompare(b.crew_name || '', 'it');
                 });
+
+                // Carica stato fasi e timer attivi per la data
+                await Promise.all([loadProjectPhasesState(date), loadActiveTimers()]);
 
                 renderPlannings(currentPlannings);
                 updateSummary(currentPlannings);
@@ -2029,10 +3141,13 @@
             // Raggruppa per progetto
             const grouped = new Map();
             plannings.forEach((p, idx) => {
-                const key = p.project_code || p.project_name || 'N/D';
+                const key = String(p.project_code || p.project_name || 'N/D');
                 if (!grouped.has(key)) {
                     let vehicleData = [];
                     try { if (p.vehicle_data) vehicleData = JSON.parse(p.vehicle_data); } catch(e) {}
+                    // Dedup veicoli per id
+                    const seenVIds = new Set();
+                    vehicleData = vehicleData.filter(v => { if (seenVIds.has(v.id)) return false; seenVIds.add(v.id); return true; });
                     grouped.set(key, { name: p.project_name, code: p.project_code, location: p.location_name, project_manager: p.project_manager_name, vehicles: p.vehicle_names, vehicle_data: vehicleData, project_id: p.project_id, gestione_squadra: p.gestione_squadra || 0, items: [] });
                 }
                 grouped.get(key).items.push({ ...p, originalIdx: idx });
@@ -2050,26 +3165,28 @@
                 const leaders = group.items.filter(p => p.is_leader).map(p => p.crew_name).filter(Boolean);
                 const leaderNames = [...new Set(leaders)].join(', ');
 
-                html += `<tr class="project-row">
+                html += `<tr class="project-row" data-project-key="${escapeHtml(key)}">
                     <td colspan="8">
                         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                             <span style="font-weight: 700;">${escapeHtml(group.name || 'Progetto N/D')}</span>
                             ${group.code ? `<span style="color: var(--muted); font-weight: 500; font-size: 11px;">${escapeHtml(group.code)}</span>` : ''}
                             <span class="project-badge">${group.items.length} operatori</span>
-                            ${group.location ? `<span class="project-location">📍 ${escapeHtml(group.location)}</span>` : ''}
-                        </div>
-                        ${(group.project_manager || leaderNames) ? `
-                        <div class="project-details-row">
-                            ${group.project_manager ? `<span class="project-manager-badge">👤 Capo progetto: ${escapeHtml(group.project_manager)}</span>` : ''}
-                            ${leaderNames ? `<span class="project-leader-badge">⭐ Capo squadra: ${escapeHtml(leaderNames)}</span>` : ''}
-                        </div>
-                        ` : ''}
-                        <div class="project-details-row" style="margin-top: 4px;">
-                            <span class="gestione-squadra-toggle ${group.gestione_squadra ? 'active' : ''}" 
-                                  onclick="toggleGestioneSquadra('${escapeHtml(group.code)}', ${group.gestione_squadra ? 0 : 1})"
-                                  title="${group.gestione_squadra ? 'Gestione squadra attiva: il capo squadra gestisce le attività per tutti' : 'Attività individuale: ogni operatore sceglie la propria attività'}">
-                                ${group.gestione_squadra ? '👥 Gestione squadra' : '👤 Attività individuale'}
-                            </span>
+                            ${(() => {
+                                const toggleHtml = `<span class="gestione-squadra-toggle ${group.gestione_squadra ? 'active' : ''}"
+                                                            onclick="toggleGestioneSquadra('${escapeHtml(group.code)}', ${group.gestione_squadra ? 0 : 1})"
+                                                            title="${group.gestione_squadra ? 'Gestione squadra attiva' : 'Attività individuale'}">
+                                                        ${group.gestione_squadra ? '👥 Gestione squadra' : '👤 Attività individuale'}
+                                                    </span>`;
+                                return toggleHtml;
+                            })()}
+                            ${group.gestione_squadra ?
+                                `<span class="phone-assign-btn" data-project-code="${escapeHtml(group.code)}" data-project-name="${escapeHtml(group.name || '')}" style="background:#e8f5e9; color:#2e7d32; padding:3px 10px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid #a5d6a7; user-select:none;" title="Assegna telefono al progetto">📱 Assegna telefono</span>`
+                                : `<span class="phone-assign-btn disabled" style="background:#f5f5f5; color:#9e9e9e; padding:3px 10px; border-radius:8px; font-size:11px; font-weight:600; cursor:not-allowed; border:1px solid #e0e0e0; user-select:none;" title="Abilita 'Gestione squadra' per assegnare un telefono">📱 Assegna telefono</span>`
+                            }
+                            <div class="project-header-right">
+                                ${group.project_manager ? `<span class="project-manager-badge">👤 Capo progetto: ${escapeHtml(group.project_manager)}</span>` : ''}
+                                ${leaderNames ? `<span class="project-leader-badge">⭐ Capo squadra: ${escapeHtml(leaderNames)}</span>` : ''}
+                            </div>
                         </div>
                         ${group.vehicle_data.length > 0 ? `
                         <div class="project-vehicles-row" data-project-id="${group.project_id}" style="${group.vehicle_data.every(v => v.driver_crew_id) ? 'display:none' : ''}">
@@ -2092,6 +3209,47 @@
                                 ${uniqueRemarksPlanners.map(r => `<span class="note-planner" style="margin-right: 12px;">📋 ${escapeHtml(r)}</span>`).join('')}
                             </div>
                         ` : ''}
+                        ${(() => {
+                            // Mostra fasi per ogni funzione distinta nel gruppo
+                            const fnSet = new Set();
+                            group.items.forEach(it => { if (it.function_name) fnSet.add(it.function_name); });
+                            let phasesHtml = '';
+                            let toggleShown = false;
+                            const toggleHtml = `<span class="gestione-squadra-toggle ${group.gestione_squadra ? 'active' : ''}" \
+                                                    onclick="toggleGestioneSquadra('${escapeHtml(group.code)}', ${group.gestione_squadra ? 0 : 1})" \
+                                                    title="${group.gestione_squadra ? 'Gestione squadra attiva: il capo squadra gestisce le attività per tutti' : 'Attività individuale: ogni operatore sceglie la propria attività'}">\
+                                                ${group.gestione_squadra ? '👥 Gestione squadra' : '👤 Attività individuale'}\
+                                            </span>`;
+                            for (const fnName of fnSet) {
+                                const phConfig = getPhasesForFunction(fnName);
+                                if (!phConfig || !phConfig.phases.length) continue;
+                                const stateKey = key + '|' + phConfig.function_key;
+                                const statesArr = projectPhasesState[stateKey] || [];
+                                const total = phConfig.phases.length;
+                                const completed = phConfig.phases.filter(ph => {
+                                    const s = statesArr.find(st => st.phase_name === ph.name);
+                                    return s && s.completed;
+                                }).length;
+                                phasesHtml += `<div class="project-phases-container" 
+                                    data-project-key="${escapeHtml(key)}" 
+                                    data-function-key="${escapeHtml(phConfig.function_key)}">
+                                    <div class="phases-header">
+                                        <div class="phases-label">🔧 Fasi: ${escapeHtml(fnName)}</div>
+                                    </div>
+                                    ${buildPhasesHTML(key, phConfig.function_key, phConfig.phases, statesArr, completed, total)}
+                                </div>`;
+                                toggleShown = true;
+                            }
+                            // Se nessuna fase trovata, mostra comunque un contenitore vuoto (toggle mostrato solo nell'header)
+                            if (!phasesHtml) {
+                                phasesHtml = `<div class="project-phases-container" style="padding: 6px 12px;">
+                                    <div class="phases-header" style="margin-bottom: 0;">
+                                        <div></div>
+                                    </div>
+                                </div>`;
+                            }
+                            return phasesHtml;
+                        })()}
                     </td>
                 </tr>`;
 
@@ -2114,12 +3272,32 @@
                     const hasLocationCoords = p.location_lat && p.location_lon;
                     const hasGroupLocation = p.gps_timbratura_location;
                     
-                    // GPS info compatta
+                    // HTML per custom location assegnate (solo nomi)
+                    let customHtml = '';
+                    if (p.custom_location_ids && Array.isArray(p.custom_location_ids) && p.custom_location_ids.length) {
+                        const names = (cachedCustomLocations || [])
+                            .filter(loc => p.custom_location_ids.includes(loc.id))
+                            .map(loc => escapeHtml(loc.name));
+                        if (names.length) {
+                            customHtml = `<div class="custom-locs">🧷 ${names.join(', ')}</div>`;
+                        }
+                    }
+                    
+                    // GPS info compatta - mostra TUTTE le location dove è possibile timbrare
                     let gpsInfo = '';
-                    if (gpsMode === 'location') {
-                        gpsInfo = hasLocationCoords ? '🎯 Location' : '⚠️ No coord';
+                    const validLocs = [];
+                    // 1. Sede default del gruppo (sempre valida)
+                    if (p.gps_timbratura_location) {
+                        validLocs.push('📍 ' + escapeHtml(p.gps_timbratura_location.substring(0, 20)));
+                    }
+                    // 2. Location del progetto Rentman (se ha coordinate e diversa dalla sede gruppo)
+                    if (p.location_name && hasLocationCoords && p.location_name !== p.gps_timbratura_location) {
+                        validLocs.push('📍 ' + escapeHtml(p.location_name.substring(0, 20)));
+                    }
+                    if (validLocs.length > 0) {
+                        gpsInfo = validLocs.join('<br>');
                     } else {
-                        gpsInfo = hasGroupLocation ? `📍 ${escapeHtml(p.gps_timbratura_location.substring(0,20))}` : '⚠️ N/D';
+                        gpsInfo = '⚠️ N/D';
                     }
 
                     // Veicoli assegnati a questo operatore
@@ -2146,21 +3324,25 @@
                             </div>
                         </td>
                         <td class="col-function">
-                            <span class="function-cell">${escapeHtml(p.function_name || '—')}</span>
+                            <span class="function-cell" onclick="openFunctionPhasesModal('${escapeAttr(p.function_name || '')}')" title="Clicca per configurare le fasi">${escapeHtml(p.function_name || '—')}</span>
+                            ${p.function_group_name ? `<div class="function-group-label">${escapeHtml(p.function_group_name)}</div>` : ''}
                         </td>
                         <td class="col-location">
-                            ${p.location_name ? `
-                                <div class="location-cell">
-                                    ${hasLocationCoords ?
-                                        `<a href="https://www.google.com/maps?q=${p.location_lat},${p.location_lon}" target="_blank" class="location-gps ok">
-                                            ${escapeHtml(p.location_name.substring(0, 40))}${p.location_name.length > 40 ? '...' : ''} ✓
-                                        </a>` :
-                                        `<span class="location-gps no">
-                                            ${escapeHtml(p.location_name.substring(0, 40))}${p.location_name.length > 40 ? '...' : ''} ⚠
-                                        </span>`
-                                    }
+                            <div class="location-cell">
+                                ${p.location_name ? (hasLocationCoords ?
+                                    `<a href="https://www.google.com/maps?q=${p.location_lat},${p.location_lon}" target="_blank" class="location-gps ok">
+                                        ${escapeHtml(p.location_name.substring(0, 40))}${p.location_name.length > 40 ? '...' : ''} ✓
+                                    </a>` :
+                                    `<span class="location-gps no">
+                                        ${escapeHtml(p.location_name.substring(0, 40))}${p.location_name.length > 40 ? '...' : ''} ⚠
+                                    </span>`)
+                                    : `<span class="status-pending">—</span>`}
+                                <div style="display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle;">
+                                    <button class="location-change-btn" onclick="removeCustomLocationForIdx(${idx})" title="Rimuovi location custom assegnata">−</button>
+                                    <button class="location-change-btn" onclick="openLocationSelector(${idx})" title="Aggiungi o modifica location custom">＋</button>
                                 </div>
-                            ` : '<span class="status-pending">—</span>'}
+                                ${customHtml}
+                            </div>
                         </td>
                         <td class="col-vehicle">
                             <div class="operator-vehicles-container">${vehicleBadgesHtml}</div>
@@ -2187,6 +3369,11 @@
 
             planningList.innerHTML = html;
 
+            // Aggiungi badge telefono per operatori assegnati
+            try {
+                addPhoneBadges();
+            } catch (e) { console.error('Errore aggiunta phone badges', e); }
+
             // Aggiungi event listener ai checkbox
             document.querySelectorAll('.planning-checkbox').forEach(cb => {
                 cb.addEventListener('change', (e) => {
@@ -2199,6 +3386,37 @@
                     updateSendButtonState();
                 });
             });
+
+            // Aggiunge badge telefono accanto al nome operatore quando presente un assignment
+            function addPhoneBadges() {
+                const phones = (typeof _phonesCache !== 'undefined' && _phonesCache) ? _phonesCache : (window._phonesCache || []);
+                if (!phones || !phones.length) return;
+                // rimuovi badge preesistenti
+                document.querySelectorAll('.operator-phone-badge').forEach(n => n.remove());
+
+                phones.forEach(ph => {
+                    const assigns = ph.assignments || (ph.assignment ? [ph.assignment] : []);
+                    assigns.forEach(assignment => {
+                        const proj = String(assignment.project_code || '');
+                        const assignedTo = String(assignment.assigned_to || '');
+                        // trova row corrispondente
+                        const rows = document.querySelectorAll(`tr.operator-row[data-project="${proj}"]`);
+                        rows.forEach(r => {
+                            const crew = r.getAttribute('data-crew-name') || r.dataset.crewName || '';
+                            if (crew === assignedTo) {
+                                const nameDiv = r.querySelector('.operator-name');
+                                if (nameDiv) {
+                                    const span = document.createElement('span');
+                                    span.className = 'operator-phone-badge';
+                                    span.style.cssText = 'background:#e3f2fd;color:#1565c0;padding:2px 6px;border-radius:8px;margin-left:8px;font-size:12px;';
+                                    span.textContent = `📱 ${ph.phone_code}`;
+                                    nameDiv.appendChild(span);
+                                }
+                            }
+                        });
+                    });
+                });
+            }
 
             // Drag & Drop: trascina mezzo su operatore per assegnare autista
             let draggedVehicle = null;
@@ -2424,16 +3642,23 @@
                 });
                 
                 if (plannings.length > 0) {
+                    // Carica custom locations per poter visualizzare i nomi assegnati
+                    await loadCustomLocations();
+
                     // Mappa i campi dal DB ai nomi usati nel frontend
                     currentPlannings = plannings.map(p => ({
                         ...p,
                         start: p.plan_start || p.start,
                         end: p.plan_end || p.end,
-                        sent_to_webservice: !!p.sent_to_webservice
+                        sent_to_webservice: !!p.sent_to_webservice,
+                        custom_location_ids: Array.isArray(p.custom_location_ids) ? p.custom_location_ids : []
                     }));
                     selectedIds.clear();
                     isFromDatabase = true;
                     hasSavedData = true;
+
+                    // Carica stato fasi e timer attivi per la data
+                    await Promise.all([loadProjectPhasesState(date), loadActiveTimers()]);
 
                     dateLabel.textContent = '📋 ' + formatDateIT(date);
                     renderPlannings(currentPlannings);
@@ -2852,6 +4077,235 @@
             }
         }
 
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // SELETTORE LOCATION CUSTOM
+        // ═══════════════════════════════════════════════════════════════════════════════
+        let cachedCustomLocations = null;
+        async function loadCustomLocations() {
+            try {
+                const res = await fetch('/api/admin/locations/custom');
+                const data = await res.json();
+                cachedCustomLocations = data.locations || [];
+            } catch (err) {
+                console.error('Errore caricamento custom locations:', err);
+                cachedCustomLocations = [];
+            }
+        }
+
+        window.openLocationSelector = async function(idx) {
+            const planning = currentPlannings[idx];
+            if (!planning) return;
+            
+            // ensure array exists
+            if (!Array.isArray(planning.custom_location_ids)) {
+                planning.custom_location_ids = [];
+            }
+            document.getElementById('locationSelectorIdx').value = idx;
+            document.getElementById('locationSelectorOverlay').classList.add('open');
+            
+            const listEl = document.getElementById('locationSelectorList');
+            listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px;">⏳ Caricamento...</div>';
+            
+            try {
+                const res = await fetch('/api/admin/locations/custom');
+                const data = await res.json();
+                cachedCustomLocations = data.locations || [];
+                renderLocationSelectorList(idx);
+            } catch (err) {
+                console.error('Errore caricamento location custom:', err);
+                listEl.innerHTML = '<div style="color: var(--danger); text-align: center; padding: 20px;">Errore nel caricamento</div>';
+            }
+        }
+
+        // renderizza la lista delle custom locations all'interno del selettore (usata per aggiornare lo stato selected)
+        function renderLocationSelectorList(idx) {
+            const planning = currentPlannings[idx];
+            const listEl = document.getElementById('locationSelectorList');
+            if (!listEl) return;
+
+            if (!cachedCustomLocations || cachedCustomLocations.length === 0) {
+                listEl.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: var(--text-muted);">
+                        <div style="font-size: 32px; margin-bottom: 8px;">📍</div>
+                        <div>Nessuna location custom creata.</div>
+                        <div style="margin-top: 8px;"><a href="/admin/locations" target="_blank" style="color: var(--primary);">Crea una location custom →</a></div>
+                    </div>`;
+                return;
+            }
+
+            let html = '';
+            cachedCustomLocations.forEach(loc => {
+                const isSelected = Array.isArray(planning.custom_location_ids) && planning.custom_location_ids.includes(loc.id);
+                html += `
+                    <div class="location-option ${isSelected ? 'selected' : ''}" onclick="toggleCustomLocation(${idx}, ${loc.id}, '${escapeAttr(loc.name)}', ${loc.latitude}, ${loc.longitude}, ${loc.radius_meters}, '${escapeAttr(loc.address || '')}')">
+                        <div>
+                            <div class="location-option-name">${escapeHtml(loc.name)} <span class="location-option-badge">Custom</span></div>
+                            ${loc.address ? `<div class="location-option-address">📍 ${escapeHtml(loc.address)}</div>` : ''}
+                            <div class="location-option-coords">✓ ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} (${loc.radius_meters}m)</div>
+                        </div>
+                    </div>`;
+            });
+            listEl.innerHTML = html;
+        }
+
+        window.closeLocationSelector = function() {
+            document.getElementById('locationSelectorOverlay').classList.remove('open');
+            // Reset al tab "seleziona"
+            switchLocTab('select');
+        }
+
+        window.switchLocTab = function(tab) {
+            document.getElementById('locTabSelect').classList.toggle('active', tab === 'select');
+            document.getElementById('locTabCreate').classList.toggle('active', tab === 'create');
+            document.getElementById('locPanelSelect').style.display = tab === 'select' ? '' : 'none';
+            document.getElementById('locPanelCreate').style.display = tab === 'create' ? '' : 'none';
+        }
+
+        window.createAndAssignCustomLocation = async function() {
+            const idx = parseInt(document.getElementById('locationSelectorIdx').value);
+            const planning = currentPlannings[idx];
+            if (!planning) return;
+
+            const name = document.getElementById('locNewName').value.trim();
+            const address = document.getElementById('locNewAddress').value.trim();
+            const latitude = parseFloat(document.getElementById('locNewLat').value);
+            const longitude = parseFloat(document.getElementById('locNewLon').value);
+            const radius_meters = parseInt(document.getElementById('locNewRadius').value) || 300;
+
+            if (!name) { showMessage('Inserisci il nome della location', 'error'); return; }
+            if (isNaN(latitude) || isNaN(longitude)) { showMessage('Inserisci coordinate valide', 'error'); return; }
+            if (latitude < -90 || latitude > 90) { showMessage('Latitudine non valida (-90 a 90)', 'error'); return; }
+            if (longitude < -180 || longitude > 180) { showMessage('Longitudine non valida (-180 a 180)', 'error'); return; }
+
+            try {
+                // 1. Crea la location custom nel DB
+                const res = await fetch('/api/admin/locations/custom', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, address, latitude, longitude, radius_meters })
+                });
+                const data = await res.json();
+                if (!data.ok) {
+                    showMessage('Errore: ' + (data.error || 'Errore sconosciuto'), 'error');
+                    return;
+                }
+
+                // 2. Recupera l'ID della location appena creata
+                const listRes = await fetch('/api/admin/locations/custom');
+                const listData = await listRes.json();
+                const newLoc = (listData.locations || []).find(l => l.name === name);
+                const customLocId = newLoc ? newLoc.id : null;
+
+                // 3. Aggiungi al planning (senza sovrascrivere location Rentman)
+                if (!Array.isArray(planning.custom_location_ids)) {
+                    planning.custom_location_ids = [];
+                }
+                if (!planning.custom_location_ids.includes(customLocId)) {
+                    planning.custom_location_ids.push(customLocId);
+                }
+
+                closeLocationSelector();
+                renderPlannings(currentPlannings);
+
+                // Salva nel DB
+                const dateInput = document.getElementById('planningDate');
+                const planningDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+                await autoSaveToDb(planningDate, currentPlannings);
+
+                showMessage(`📍 Location "${name}" creata e assegnata!`, 'success');
+
+                // Reset form
+                document.getElementById('locNewName').value = '';
+                document.getElementById('locNewAddress').value = '';
+                document.getElementById('locNewLat').value = '';
+                document.getElementById('locNewLon').value = '';
+                document.getElementById('locNewRadius').value = '300';
+            } catch (err) {
+                console.error('Errore creazione location:', err);
+                showMessage('Errore nella creazione: ' + err.message, 'error');
+            }
+        }
+
+        document.getElementById('locationSelectorOverlay').addEventListener('click', function(e) {
+            if (e.target === this) closeLocationSelector();
+        });
+
+        // toggle a custom location in the planning's list
+        window.toggleCustomLocation = async function(idx, customLocId, locName, lat, lon, radius, address) {
+            const planning = currentPlannings[idx];
+            if (!planning) return;
+            if (!Array.isArray(planning.custom_location_ids)) {
+                planning.custom_location_ids = [];
+            }
+
+            const i = planning.custom_location_ids.indexOf(customLocId);
+            if (i === -1) {
+                planning.custom_location_ids.push(customLocId);
+            } else {
+                planning.custom_location_ids.splice(i, 1);
+            }
+
+            renderPlannings(currentPlannings);
+            // save to db
+            const dateInput = document.getElementById('planningDate');
+            const planningDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+            await autoSaveToDb(planningDate, currentPlannings);
+            
+            // aggiorna la lista del selettore (se aperta) per riflettere lo stato selected
+            try { renderLocationSelectorList(idx); } catch (e) { /* ignore */ }
+
+            const action = i === -1 ? 'aggiunta' : 'rimozione';
+            showMessage(`📍 ${action} location custom: ${locName}`, 'success');
+        }
+
+        window.clearCustomLocation = async function() {
+            const idx = parseInt(document.getElementById('locationSelectorIdx').value);
+            const planning = currentPlannings[idx];
+            if (!planning) return;
+            
+            planning.custom_location_ids = [];
+            
+            closeLocationSelector();
+            renderPlannings(currentPlannings);
+            
+            // Salva automaticamente nel DB
+            const dateInput = document.getElementById('planningDate');
+            const planningDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+            await autoSaveToDb(planningDate, currentPlannings);
+            
+            showMessage('📍 Location custom rimosse', 'success');
+        }
+
+        // rimuove le custom locations per un planning specifico (senza aprire il selettore)
+        window.removeCustomLocationForIdx = async function(idx) {
+            const planning = currentPlannings[idx];
+            if (!planning) return;
+
+            if (!Array.isArray(planning.custom_location_ids) || planning.custom_location_ids.length === 0) {
+                showMessage('Nessuna location custom assegnata', 'info');
+                return;
+            }
+
+            planning.custom_location_ids = [];
+            renderPlannings(currentPlannings);
+
+            // se il selettore è aperto per questo idx aggiorna la lista
+            try {
+                const overlay = document.getElementById('locationSelectorOverlay');
+                const curIdx = parseInt(document.getElementById('locationSelectorIdx').value || '-1');
+                if (overlay && overlay.classList.contains('open') && curIdx === idx) {
+                    renderLocationSelectorList(idx);
+                }
+            } catch (e) { /* ignore */ }
+
+            // Salva automaticamente nel DB
+            const dateInput = document.getElementById('planningDate');
+            const planningDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+            await autoSaveToDb(planningDate, currentPlannings);
+
+            showMessage('📍 Location custom rimosse', 'success');
+        }
+
         window.toggleGestioneSquadra = async function(projectCode, newValue) {
             const dateInput = document.getElementById('planningDate');
             const planningDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
@@ -2953,7 +4407,7 @@
             const projectsMap = new Map();
             
             currentPlannings.forEach((p, idx) => {
-                const key = p.project_code || p.project_name || 'N/D';
+                const key = String(p.project_code || p.project_name || 'N/D');
                 
                 if (!projectsMap.has(key)) {
                     projectsMap.set(key, {
@@ -2983,7 +4437,7 @@
                 .sort((a, b) => a[1].name.localeCompare(b[1].name, 'it'));
             
             let html = `
-                <div class="projects-filter-all ${activeProjectFilter === null ? 'active' : ''}" 
+                <div class="projects-filter-all ${activeProjectFilter.size === 0 ? 'active' : ''}" 
                      onclick="filterByProject(null)">
                     <span style="font-weight: 700;">📋 Tutti i Progetti</span>
                     <span style="font-size: 13px; color: var(--muted);">${currentPlannings.length} turni</span>
@@ -2991,11 +4445,11 @@
             `;
             
             projectsList.forEach(([key, proj]) => {
-                const isActive = activeProjectFilter === key;
+                const isActive = activeProjectFilter.has(key);
                 const allSent = proj.sentCount === proj.indexes.length && proj.indexes.length > 0;
                 
                 html += `
-                    <div class="project-card ${isActive ? 'active' : ''}" onclick="filterByProject('${escapeHtml(key)}')">
+                    <div class="project-card ${isActive ? 'active' : ''}" data-project-key="${escapeHtml(key)}" onclick="filterByProject('${escapeHtml(key)}')">
                         <div class="project-card-header">
                             <div>
                                 <div class="project-card-name">${escapeHtml(proj.name)}</div>
@@ -3023,50 +4477,52 @@
         }
         
         window.filterByProject = function(projectCode) {
-            activeProjectFilter = projectCode;
+            if (projectCode === null) {
+                // "Tutti i Progetti" - resetta il filtro
+                activeProjectFilter.clear();
+            } else {
+                // Toggle: se già selezionato lo deseleziona, altrimenti lo aggiunge
+                if (activeProjectFilter.has(projectCode)) {
+                    activeProjectFilter.delete(projectCode);
+                } else {
+                    activeProjectFilter.add(projectCode);
+                }
+            }
+            
+            const showAll = activeProjectFilter.size === 0;
             
             // Aggiorna lo stato attivo nel pannello
             document.querySelectorAll('.project-card, .projects-filter-all').forEach(el => {
                 el.classList.remove('active');
             });
             
-            if (projectCode === null) {
+            if (showAll) {
                 document.querySelector('.projects-filter-all').classList.add('active');
             } else {
                 document.querySelectorAll('.project-card').forEach(el => {
-                    if (el.onclick.toString().includes(`'${projectCode}'`)) {
+                    if (activeProjectFilter.has(el.dataset.projectKey)) {
                         el.classList.add('active');
                     }
                 });
             }
             
-            // Evidenzia/filtra i turni nella lista
-            document.querySelectorAll('.planning-item').forEach(item => {
-                const idx = parseInt(item.dataset.idx);
-                const planning = currentPlannings[idx];
-                
-                item.classList.remove('project-highlight', 'project-dimmed');
-                
-                if (projectCode === null) {
-                    // Mostra tutti senza highlight
-                    return;
-                }
-                
-                const itemProjectCode = planning.project_code || planning.project_name || 'N/D';
-                if (itemProjectCode === projectCode) {
-                    item.classList.add('project-highlight');
+            // Mostra/nascondi i project-row (header progetto)
+            document.querySelectorAll('.project-row').forEach(row => {
+                if (showAll) {
+                    row.style.display = '';
                 } else {
-                    item.classList.add('project-dimmed');
+                    row.style.display = activeProjectFilter.has(row.dataset.projectKey) ? '' : 'none';
                 }
             });
             
-            // Se un progetto è selezionato, scrolla al primo turno di quel progetto
-            if (projectCode !== null) {
-                const firstMatch = document.querySelector('.planning-item.project-highlight');
-                if (firstMatch) {
-                    firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Mostra/nascondi le operator-row
+            document.querySelectorAll('.operator-row').forEach(row => {
+                if (showAll) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = activeProjectFilter.has(row.dataset.project) ? '' : 'none';
                 }
-            }
+            });
             
             // Aggiorna il pannello per mostrare lo stato attivo
             updateProjectsPanel();
@@ -3093,7 +4549,7 @@
             currentPlannings.forEach(p => {
                 if (!p.location_name) return;
                 
-                const key = p.location_id || p.location_name;
+                const key = String(p.location_id || p.location_name);
                 if (!locationsMap.has(key)) {
                     locationsMap.set(key, {
                         id: p.location_id,
@@ -3293,7 +4749,7 @@
             
             // Trova tutti i planning con questa location
             const planningsToUpdate = currentPlannings.filter(p => {
-                const key = p.location_id || p.location_name;
+                const key = String(p.location_id || p.location_name);
                 return String(key) === locationKey;
             });
             
@@ -3362,7 +4818,7 @@
             const selectedDate = dateInput.value;
             
             // Reset filtro progetto
-            activeProjectFilter = null;
+            activeProjectFilter = new Set();
             
             // Se è già caricata in cache, usa quella
             if (dateCache.has(selectedDate)) {
@@ -3372,6 +4828,9 @@
                 isFromDatabase = cached.isFromDatabase;
                 selectedIds = new Set();
                 lastLoadedDate = selectedDate;
+                
+                // Carica stato fasi e timer attivi per la data
+                await Promise.all([loadProjectPhasesState(selectedDate), loadActiveTimers()]);
                 
                 // Rivisualizza i dati dalla cache
                 dateLabel.textContent = '📋 ' + formatDateIT(selectedDate);
@@ -3432,6 +4891,278 @@
                     badge.style.display = 'inline-block';
                 }
             }).catch(() => {});
+
+        // Esponi funzioni al global scope per onclick handlers
+        window.openFunctionPhasesModal = openFunctionPhasesModal;
+        window.closeFunctionPhasesModal = closeFunctionPhasesModal;
+        window.fpAddFunction = fpAddFunction;
+        window.fpRemoveFunction = fpRemoveFunction;
+        window.fpUpdateMatchMode = fpUpdateMatchMode;
+        window.fpOnNameInput = fpOnNameInput;
+        window.fpShowSuggestions = fpShowSuggestions;
+        window.fpHideSuggestions = fpHideSuggestions;
+        window.fpSelectSuggestion = fpSelectSuggestion;
+        window.fpAddPhase = fpAddPhase;
+        window.fpMovePhase = fpMovePhase;
+        window.fpRemovePhase = fpRemovePhase;
+        window.fpUpdatePhaseName = fpUpdatePhaseName;
+        window.fpSave = fpSave;
+        window.togglePhase = togglePhase;
+
+        // ═══════════════════════════════════════════════════════════════
+        // TELEFONI AZIENDALI - Assegnazione da pianificazione
+        // ═══════════════════════════════════════════════════════════════
+
+        let _phonesCache = [];
+        let _phoneSelectedCode = null;
+        let _phoneCurrentProject = '';
+
+        async function loadPhonesData() {
+            try {
+                const res = await fetch('/api/phones');
+                const data = await res.json();
+                if (data.ok) _phonesCache = data.phones || [];
+            } catch (e) {
+                console.error('Errore caricamento telefoni:', e);
+            }
+        }
+
+        // Carica telefoni all'avvio
+        loadPhonesData();
+
+        // Event delegation: gestisce click sul pulsante telefono in header progetto
+        document.addEventListener('click', (e) => {
+            const btn = e.target && e.target.closest && e.target.closest('.phone-assign-btn');
+            if (!btn) return;
+            if (btn.classList && btn.classList.contains('disabled')) return; // ignore disabled buttons
+            const code = btn.getAttribute('data-project-code');
+            const name = btn.getAttribute('data-project-name');
+            if (!code) return;
+            try { openPhoneAssignFromPlanning(code, name); } catch (err) { console.error('openPhoneAssignFromPlanning non disponibile', err); }
+        });
+
+        function openPhoneAssignFromPlanning(projectCode, projectName) {
+            _phoneCurrentProject = projectCode;
+            _phoneSelectedCode = null;
+
+            // Crea overlay modal
+            let overlay = document.getElementById('phoneAssignOverlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'phoneAssignOverlay';
+                overlay.style.cssText = `
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999;
+                    display: flex; align-items: center; justify-content: center;
+                `;
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) overlay.style.display = 'none';
+                });
+                document.body.appendChild(overlay);
+            }
+            overlay.style.display = 'flex';
+
+            // Popola operatori dalla pianificazione corrente
+            const operators = [];
+            const seen = new Set();
+            currentPlannings.forEach(p => {
+                if (p.project_code === projectCode && p.crew_name && !seen.has(p.crew_name)) {
+                    seen.add(p.crew_name);
+                    operators.push({ name: p.crew_name, value: p.crew_name });
+                }
+            });
+            operators.sort((a, b) => a.name.localeCompare(b.name));
+
+            // Trova il caposquadra (leader) del progetto, se presente
+            const leaderRow = currentPlannings.find(pp => pp.project_code === projectCode && pp.is_leader);
+            const leaderName = leaderRow ? (leaderRow.crew_name || '') : null;
+
+            // Trova assegnazione corrente per questo progetto
+            const currentAssign = _phonesCache.find(p => {
+                const assigns = p.assignments || (p.assignment ? [p.assignment] : []);
+                return assigns.some(a => a.project_code === projectCode);
+            });
+            const currentAssignForProject = currentAssign ? (
+                (currentAssign.assignments || [currentAssign.assignment]).find(a => a.project_code === projectCode)
+            ) : null;
+
+            overlay.innerHTML = `
+                <div style="background: var(--bg-card, #fff); border-radius: 16px; padding: 24px; max-width: 440px; width: 90%; box-shadow: 0 16px 48px rgba(0,0,0,0.2);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h3 style="margin: 0; font-size: 18px;">📱 Assegna Telefono</h3>
+                        <button onclick="document.getElementById('phoneAssignOverlay').style.display='none'" 
+                                style="background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary);">&times;</button>
+                    </div>
+                    <p style="margin: 0 0 4px; font-size: 13px; color: var(--text-secondary);">Progetto: <strong>${escapeHtml(projectName || projectCode)}</strong></p>
+                    ${currentAssign && currentAssignForProject ? `<p style="margin: 0 0 12px; font-size: 13px; color: #1565c0;">📱 Attualmente: Tel. <strong>${currentAssign.phone_code}</strong> → ${escapeHtml(currentAssignForProject.assigned_to)}
+                        <button onclick="releasePhoneFromPlanning('${currentAssign.phone_code}', '${escapeHtml(_phoneCurrentProject)}')" style="margin-left:8px; background:#ef4444; color:white; border:none; border-radius:6px; padding:3px 8px; font-size:11px; cursor:pointer;">Rilascia</button>
+                    </p>` : '<p style="margin: 0 0 12px; font-size: 13px; color: var(--text-secondary);">Nessun telefono assegnato</p>'}
+                    <div style="margin-bottom: 12px;">
+                        <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Caposquadra</label>
+                        <select id="phoneOpSelect" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border, #ddd); font-size: 14px; background: var(--bg-card, #fff); color: var(--text-primary, #333);">
+                            ${operators.map(op => {
+                                const isSelected = (leaderName && op.value === leaderName) || (!leaderName && currentAssign && op.value === (currentAssign.assignment.assigned_to || ''));
+                                return `<option value="${escapeHtml(op.value)}" ${isSelected ? 'selected' : ''}>${escapeHtml(op.name)}</option>`;
+                            }).join('')}
+                        </select>
+                    </div>
+                    <div id="phoneGridPlanning" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; margin-bottom: 16px;"></div>
+                    <button id="phoneConfirmBtn" disabled onclick="confirmPhoneAssignPlanning()"
+                            style="width: 100%; padding: 12px; border: none; border-radius: 10px; background: var(--brand, #2563eb); color: white; font-size: 15px; font-weight: 600; cursor: pointer; opacity: 0.5;">
+                        Assegna
+                    </button>
+                </div>
+            `;
+
+            // Popola griglia telefoni
+            const grid = document.getElementById('phoneGridPlanning');
+
+            // ── Calcola orario turno corrente per verifiche sovrapposizione ──
+            const curPlan = currentPlannings.find(p => p.project_code === projectCode);
+            const curStart = curPlan && curPlan.plan_start ? new Date(curPlan.plan_start) : null;
+            const curEnd = curPlan && curPlan.plan_end ? new Date(curPlan.plan_end) : null;
+
+            function shiftsOverlap(s1, e1, s2, e2) {
+                if (!s1 || !e1 || !s2 || !e2) return false;
+                return s1 < e2 && s2 < e1;
+            }
+            function getShiftTimesForProject(projCode) {
+                const pp = currentPlannings.find(p => p.project_code === projCode);
+                if (!pp || !pp.plan_start || !pp.plan_end) return [null, null];
+                return [new Date(pp.plan_start), new Date(pp.plan_end)];
+            }
+
+            _phonesCache.forEach(phone => {
+                if (!phone.active) return;
+                const allAssigns = phone.assignments || (phone.assignment ? [phone.assignment] : []);
+                const isCurrentProject = allAssigns.some(a => a.project_code === projectCode);
+                const otherAssigns = allAssigns.filter(a => a.project_code !== projectCode);
+                const hasOtherAssigns = otherAssigns.length > 0;
+
+                // Controlla se il telefono è occupato in un turno sovrapposto
+                let isOverlapping = false;
+                let overlappingPerson = '';
+                if (hasOtherAssigns && curStart && curEnd) {
+                    for (const oa of otherAssigns) {
+                        const [oStart, oEnd] = getShiftTimesForProject(oa.project_code);
+                        if (shiftsOverlap(curStart, curEnd, oStart, oEnd)) {
+                            isOverlapping = true;
+                            overlappingPerson = oa.assigned_to || '';
+                            break;
+                        }
+                    }
+                }
+
+                const btn = document.createElement('button');
+                btn.style.cssText = `
+                    padding: 10px 6px; border-radius: 10px; 
+                    border: 2px solid ${isCurrentProject ? '#2563eb' : isOverlapping ? '#ef4444' : 'var(--border, #ddd)'};
+                    background: ${isCurrentProject ? 'rgba(37,99,235,0.08)' : isOverlapping ? 'rgba(239,68,68,0.06)' : 'var(--bg-card, #fff)'}; 
+                    color: var(--text-primary, #333); cursor: ${isOverlapping ? 'not-allowed' : 'pointer'};
+                    font-size: 13px; font-weight: 600; text-align: center; transition: all 0.2s;
+                    ${isOverlapping ? 'opacity: 0.5;' : ''}
+                `;
+                // Mostra stato: Libero, assegnato a questo progetto, sovrapposto, o in uso
+                let statusHtml;
+                if (isCurrentProject) {
+                    const thisAssign = allAssigns.find(a => a.project_code === projectCode);
+                    statusHtml = `<span style="font-size:10px; color:#2563eb;">🔵 ${escapeHtml(thisAssign.assigned_to)}</span>`;
+                    if (hasOtherAssigns) {
+                        statusHtml += `<br><span style="font-size:9px; color:#f59e0b;">+${otherAssigns.length} altro/i</span>`;
+                    }
+                } else if (isOverlapping) {
+                    statusHtml = `<span style="font-size:10px; color:#ef4444;">🔴 ${escapeHtml(overlappingPerson)}</span>`;
+                } else if (hasOtherAssigns) {
+                    statusHtml = `<span style="font-size:10px; color:#16a34a;">✅ Libero</span><br><span style="font-size:9px; color:#f59e0b;">(in uso su altro turno)</span>`;
+                } else {
+                    statusHtml = `<span style="font-size:10px; color:#16a34a;">✅ Libero</span>`;
+                }
+                btn.innerHTML = `📱 <strong>${phone.phone_code}</strong><br>${statusHtml}`;
+                if (isCurrentProject) {
+                    _phoneSelectedCode = phone.phone_code;
+                    const confBtn = document.getElementById('phoneConfirmBtn');
+                    if (confBtn) { confBtn.disabled = false; confBtn.style.opacity = '1'; }
+                }
+                if (!isOverlapping) {
+                    btn.addEventListener('click', () => {
+                        grid.querySelectorAll('button').forEach(b => { b.style.borderColor = 'var(--border, #ddd)'; b.style.background = 'var(--bg-card, #fff)'; });
+                        btn.style.borderColor = '#2563eb';
+                        btn.style.background = 'rgba(37,99,235,0.08)';
+                        _phoneSelectedCode = phone.phone_code;
+                        const confBtn = document.getElementById('phoneConfirmBtn');
+                        if (confBtn) { confBtn.disabled = false; confBtn.style.opacity = '1'; }
+                    });
+                }
+                grid.appendChild(btn);
+            });
+        }
+
+        async function confirmPhoneAssignPlanning() {
+            if (!_phoneSelectedCode || !_phoneCurrentProject) return;
+            const userSelect = document.getElementById('phoneOpSelect');
+            const assignedTo = userSelect ? userSelect.value : '';
+            if (!assignedTo) { showMessage('Seleziona un operatore', 'error'); return; }
+
+            // Trova la funzione dell'operatore selezionato dalla pianificazione
+            const opPlanning = currentPlannings.find(p => p.project_code === _phoneCurrentProject && p.crew_name === assignedTo);
+            const functionName = opPlanning ? (opPlanning.function_name || '').trim() : '';
+
+            try {
+                const res = await fetch('/api/phones/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone_code: _phoneSelectedCode,
+                        project_code: _phoneCurrentProject,
+                        assigned_to: assignedTo,
+                        function_name: functionName || undefined,
+                    }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showMessage(`📱 Telefono ${_phoneSelectedCode} assegnato a ${assignedTo}`, 'success');
+                    document.getElementById('phoneAssignOverlay').style.display = 'none';
+                    await loadPhonesData();
+                    renderPlannings(currentPlannings);
+                } else {
+                    showMessage(data.error || 'Errore assegnazione', 'error');
+                }
+            } catch (e) {
+                showMessage('Errore di connessione', 'error');
+            }
+        }
+
+        async function releasePhoneFromPlanning(phoneCode, projectCode) {
+            try {
+                const res = await fetch('/api/phones/release', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone_code: phoneCode, project_code: projectCode || undefined }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showMessage(`📱 Telefono ${phoneCode} rilasciato`, 'success');
+                    document.getElementById('phoneAssignOverlay').style.display = 'none';
+                    await loadPhonesData();
+                    renderPlannings(currentPlannings);
+                } else {
+                    showMessage(data.error || 'Errore rilascio', 'error');
+                }
+            } catch (e) {
+                showMessage('Errore di connessione', 'error');
+            }
+        }
+
+        // Espone la funzione reale e svuota la coda degli invocatori stub, se presente
+        window._real_openPhoneAssignFromPlanning = openPhoneAssignFromPlanning;
+        if (window._queuedPhoneAssignCalls && window._queuedPhoneAssignCalls.length) {
+            try {
+                window._queuedPhoneAssignCalls.forEach(args => { try { openPhoneAssignFromPlanning(...args); } catch (e) { console.error(e); } });
+            } catch (e) { console.error('Errore flush phone queue', e); }
+            window._queuedPhoneAssignCalls = [];
+        }
+        window.openPhoneAssignFromPlanning = openPhoneAssignFromPlanning;
+        window.confirmPhoneAssignPlanning = confirmPhoneAssignPlanning;
+        window.releasePhoneFromPlanning = releasePhoneFromPlanning;
 
     })();
     </script>

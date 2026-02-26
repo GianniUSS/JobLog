@@ -1,8 +1,8 @@
 # JOBLogApp — Handover Document
 
-> **Ultimo aggiornamento:** 17 febbraio 2026  
+> **Ultimo aggiornamento:** 23 febbraio 2026  
 > **Stack:** Flask 3.0 · Python 3.11 · MySQL 8 · PWA · Vanilla JS  
-> **File principale:** `app.py` (~24.000 righe, ~400 funzioni, ~174 route)
+> **File principale:** `app.py` (~25.180 righe, ~395 funzioni, ~163 route)
 
 ---
 
@@ -14,7 +14,7 @@
 - **Timbrature** — Clock-in/out con QR code, GPS o manuale, arrotondamento configurabile
 - **Pianificazione Rentman** — Sincronizzazione turni da Rentman, assegnazione veicoli/autisti
 - **Gestione richieste** — Ferie, permessi, straordinari, ritardi, rimborsi
-- **Timer produzione** — Tracciamento attività in tempo reale per operatori e magazzino
+- **Timer produzione** — Tracciamento attività in tempo reale per operatori produzione
 - **Push notifications** — Notifiche real-time via Web Push (VAPID)
 - **Cedolino** — Sincronizzazione timbrature con CedolinoWeb per elaborazione buste paga
 - **Documenti** — Distribuzione circolari, comunicazioni, buste paga con conferma lettura
@@ -26,22 +26,21 @@
 
 ```
 JOBLogApp/
-├── app.py                          # Backend monolitico Flask (~23.500 righe)
+├── app.py                          # Backend monolitico Flask (~24.750 righe)
 ├── rentman_client.py               # Client API Rentman (~787 righe)
 ├── config.json                     # Configurazione (DB, VAPID, Cedolino, GPS)
 ├── requirements.txt                # Dipendenze Python
 ├── users.json / projects.json      # Dati legacy/demo
 ├── vapid.json                      # Chiavi VAPID per push
-├── templates/                      # 32 template Jinja2
+├── templates/                      # 31 template Jinja2
 │   ├── admin_*.html                # 19 pagine admin
 │   ├── user_*.html                 # 7 pagine utente
-│   ├── magazzino.html              # Modulo magazzino
 │   ├── login.html / index.html     # Auth e homepage
 │   └── partials/admin_menu.html    # Menu laterale admin
 ├── static/
 │   ├── sw.js                       # Service Worker PWA (~510 righe)
 │   ├── manifest.json               # PWA manifest
-│   ├── js/                         # JS modulari (dashboard, magazzino, ecc.)
+│   ├── js/                         # JS modulari (dashboard, sessioni, ecc.)
 │   ├── icons/                      # Icone PWA (72→512px)
 │   └── uploads/                    # File caricati
 ├── scripts/                        # Script di supporto
@@ -88,14 +87,14 @@ JOBLogApp/
 
 ---
 
-## 4. Database — 33 Tabelle
+## 4. Database — 36 Tabelle
 
 ### Tabelle Core
 
 | Tabella | Scopo |
 |---------|-------|
 | `app_users` | Utenti (username, password hash, ruolo, gruppo, `cedolino_group_id`) |
-| `user_groups` | Gruppi utenti (Produzione, Magazzino, Impiegati, ecc.) |
+| `user_groups` | Gruppi utenti (Produzione, Impiegati, ecc.) |
 | `timbrature` | Timbrature registrate (tipo, ora, ora_mod, data, username) |
 | `user_requests` | Richieste utenti (ferie, permessi, ritardi, extra turno) |
 | `request_types` | Tipologie richieste configurabili (value_type, external_id) |
@@ -116,10 +115,9 @@ JOBLogApp/
 | `activities` | Attività di progetto (label, durata pianificata) |
 | `event_log` | Log eventi (move, start, pause, resume, stop) |
 | `member_state` | Stato corrente operatori (running, paused, activity) |
-| `warehouse_active_timers` | Timer magazzino/produzione attivi |
+| `warehouse_active_timers` | Timer produzione attivi |
 | `warehouse_sessions` | Sessioni di lavoro completate |
-| `warehouse_activities` | Attività magazzino configurate |
-| `warehouse_manual_projects` | Progetti manuali magazzino |
+| `warehouse_activities` | Attività produzione configurate |
 | `activity_session_overrides` | Override manuali per sessioni |
 
 ### Tabelle Cedolino/Documenti
@@ -157,6 +155,9 @@ JOBLogApp/
 | `local_equipment` | Attrezzatura locale |
 | `project_materials_cache` | Cache materiali da Rentman |
 | `project_photos` | Foto progetto |
+| `company_phones` | Registro telefoni aziendali (phone_code PK, label, active) |
+| `phone_assignments` | Assegnazioni telefono→operatore→progetto (phone_code, project_code, activity_id, assigned_to) |
+| `project_phases_state` | Stato fasi per progetto/funzione (completed, completed_by, date) |
 
 ---
 
@@ -165,9 +166,8 @@ JOBLogApp/
 | Ruolo | Permessi |
 |-------|----------|
 | `user` | Timbrature, richieste personali, visualizzazione turni/documenti |
-| `supervisor` | Come admin ma senza gestione utenti/sistema |
+| `supervisor` | Come admin ma senza gestione utenti/sistema. Assegnato automaticamente via telefono aziendale (`/login?phone=XXX`) — vedi Sezione 29 |
 | `admin` | Tutto: gestione utenti, gruppi, regole, planning, review richieste |
-| `magazzino` | Accesso al modulo magazzino |
 
 - **Sessioni:** Flask-Session filesystem, 24h lifetime
 - **Cookie persistente:** `joblog_auth` (30 giorni), salvato in `persistent_sessions`
@@ -183,10 +183,9 @@ JOBLogApp/
 | Admin Pages | 20 | `/admin/...` | Pagine HTML admin |
 | User API | 15 | `/api/user/...` | Turni, timbrature, richieste, documenti, notifiche |
 | User Pages | 6 | `/user/...` | Pagine HTML utente |
-| Magazzino | 12 | `/api/magazzino/...` | Progetti, attività, sessioni, timer |
 | Push | 7 | `/api/push/...` | Subscribe, notifiche, status |
 | Timbratura | 7 | `/api/timbratura/...` | Registrazione, validazione QR/GPS |
-| Production | 4 | `/api/production/...` | Timer attività produzione, lookup progetto |
+| Production | 5 | `/api/production/...` | Timer attività produzione, lookup progetto, timer attivi |
 
 ---
 
@@ -205,7 +204,7 @@ Verifica flessibilità → verifica_flessibilita_timbrata()
     ↓
 Verifica ritardo → _detect_late_arrival() → Se ritardo: _create_late_arrival_request()
     ↓
-Verifica extra turno → _detect_extra_turno() → Se extra: _create_auto_extra_turno_request()
+Verifica extra turno (blocco inline in POST /api/timbratura) → Se extra: _create_auto_extra_turno_request()
     ↓
 Gestione timer produzione → Start/Pause/Resume/Stop automatico
     ↓
@@ -268,11 +267,13 @@ extra_data JSON: {
 ## 9. Extra Turno / Fuori Flessibilità
 
 ### Extra Turno (Request Type: "Extra Turno")
-- Rilevato da `_detect_extra_turno()` quando:
+- Rilevato nel blocco inline di `POST /api/timbratura` (fine_giornata) quando:
   - Ingresso prima di `turno_start - anticipo_max_minuti`
   - Uscita dopo `turno_end + flessibilità` (in daily mode)
 - Creato automaticamente: `_create_auto_extra_turno_request()`
 - Value type: `minutes`
+
+> Nota: `_detect_extra_turno()` è mantenuta nel codice per retrocompatibilità/refactor futuro, ma il flusso attuale usa il blocco inline.
 
 ### Formula ora_mod (daily mode) — `_calcola_ora_fine_daily()`
 ```
@@ -520,7 +521,7 @@ Se fallisce → retry automatico (_cedolino_retry_worker, ogni 5 min, max 10 ten
 | `admin_sessions.html` | Report sessioni attività |
 | `admin_presenze.html` | Report presenze mensili + export |
 | `admin_activity_analysis.html` | Analisi attività con grafici |
-| `admin_rentman_planning.html` | Pianificazione turni Rentman (~3.420 righe) |
+| `admin_rentman_planning.html` | Pianificazione turni Rentman (~4.350 righe) |
 | `admin_user_requests.html` | Revisione richieste utenti (~2.000 righe) |
 | `admin_users.html` | Gestione utenti |
 | `admin_groups.html` | Gestione gruppi |
@@ -540,7 +541,7 @@ Se fallisce → retry automatico (_cedolino_retry_worker, ogni 5 min, max 10 ten
 
 | Template | Scopo |
 |----------|-------|
-| `user_home.html` | Homepage + timbrature (~6.120 righe) |
+| `user_home.html` | Homepage + timbrature (~8.090 righe) |
 | `user_requests.html` | Richieste personali |
 | `user_turni.html` | Visualizzazione turni |
 | `user_notifications.html` | Notifiche push |
@@ -554,7 +555,6 @@ Se fallisce → retry automatico (_cedolino_retry_worker, ogni 5 min, max 10 ten
 |----------|-------|
 | `login.html` | Pagina login |
 | `index.html` | Redirect/landing |
-| `magazzino.html` | Modulo magazzino |
 | `qr_timbratura.html` | Visualizzazione QR code |
 
 ---
@@ -576,7 +576,7 @@ Se fallisce → retry automatico (_cedolino_retry_worker, ogni 5 min, max 10 ten
 |----------|-------|
 | `_detect_late_arrival()` | Rileva ritardo rispetto a `turno_start + late_threshold` |
 | `_create_late_arrival_request()` | Crea richiesta Giustificazione Ritardo + notifiche |
-| `_detect_extra_turno()` | Rileva ingresso anticipato / uscita posticipata |
+| `_detect_extra_turno()` | Helper legacy (non usata nel flusso principale attuale) |
 | `_create_auto_extra_turno_request()` | Crea richiesta Extra Turno automatica |
 | `_create_flex_request()` | Crea richiesta Fuori Flessibilità (type_id=17) |
 
@@ -754,3 +754,470 @@ Push notification → Utente con esito
 - **Backend API `/api/timbratura/oggi`**: restituisce Extra Turno con qualsiasi stato (non solo pending), include `ora_mod` da `extra_data`
 - **Retrocompatibilità**: richieste vecchie senza nuovi campi mostrano solo "Extra: +Xh Xm"
 - Commits: `5ace3d4`, `40e9886`, `f8c3f8c`, `160a43b`, `75d908b`, `7d79039`
+
+### Fix Critici Timbratura (17/02) — COMPLETATO
+- **Fix bloccante Extra Turno**: risolto `NameError: name 'user_rules' is not defined` nel blocco `POST /api/timbratura` durante `fine_giornata`.
+  - Fix: uso di `rules_for_extra` al posto di `user_rules` per `arrotondamento_giornaliero_minuti/tipo`.
+  - Impatto: prima il calcolo extra risultava positivo nei log ma la richiesta non veniva creata (`extra_turno_data=None` in risposta).
+- **Produzione senza flessibilità (hardening)**:
+  - In `get_user_timbratura_rules()` per gruppi `is_production=1` la flessibilità viene forzata a `0` (ingresso/uscita), indipendentemente dai valori salvati.
+  - I trigger flex ingresso/uscita restano comunque skippati per produzione (difesa su più livelli).
+- **Notifica push Flex coerente**:
+  - Titolo push differenziato per `inizio_giornata` vs `fine_giornata` (non più sempre "Richiesta anticipo ingresso").
+- **Anti-duplicato richieste automatiche**:
+  - Aggiunto controllo su `user_requests` (stato `pending`, stesso utente/data/tipo) in:
+    - `_create_flex_request()`
+    - `_create_auto_extra_turno_request()`
+    - `_create_late_arrival_request()`
+
+### Nota Operativa (Debug locale)
+- Gli script di debug che importano `mysql.connector` richiedono `mysql-connector-python` installato nel venv locale (`.venv-1`).
+
+---
+
+## 26. Modifiche Recenti (19 febbraio 2026)
+
+### Deroga Pausa Ridotta — Fix completo pipeline daily mode — COMPLETATO (19/02)
+
+#### Problema
+Con la `rounding_mode = 'daily'` e una Deroga Pausa Ridotta approvata (pausa timbrata 29 min invece dei 60 pianificati), il sistema:
+- Calcolava `fine_giornata.ora_mod` usando `effective_break_minutes=29` invece di `rounded_break_minutes=30`
+- Il frontend mostrava l'uscita raw (18:14) al posto dell'`ora_mod` (18:00) in tutti i widget
+- Lo storico calcolava ore nette con la pausa pianificata (60 min) invece di quella approvata (30 min)
+- Il turno del giorno sbagliato (sempre Lunedì) veniva usato per la pausa pianificata in storico
+
+#### Fix 1 — `_process_break_reduction_review()` (`app.py` ~riga 19947)
+```python
+rounded_break = int(extra.get("rounded_break_minutes", 0) or 0)
+# Se approved: usa pausa arrotondata (rounded_break) → ora_mod fine_giornata corretta
+# Fallback su effective_break se rounded_break non disponibile (record vecchi)
+forced_break = (rounded_break or effective_break) if status == "approved" else planned_break
+```
+- **Prima**: con `effective_break=29` → ore_nette=555 → extra=75 → blocco→60 → diff=15 → `ora_mod=17:59`
+- **Dopo**: con `rounded_break=30` → ore_nette=554 → extra=74 → blocco→60 → diff=14 → `ora_mod=18:00` ✓
+
+#### Fix 2 — Storico per-day shift (`app.py` ~riga 23067)
+- Sostituita la query `ORDER BY day_of_week ASC LIMIT 1` (prendeva sempre Lunedì) con un dizionario `shifts_by_dow = {day_of_week: shift}` popolato da `SELECT ... ORDER BY day_of_week ASC`
+- Per ogni giorno del mese: `day_of_week = datetime.strptime(data, '%Y-%m-%d').weekday()` → `day_shift = shifts_by_dow.get(day_of_week)`
+- Corregge il calcolo di `pausa_turno_minuti` e `turno_inizio/fine` per ogni giorno
+
+#### Fix 3 — Storico calcolo ore con deroga approvata (`app.py` ~riga 23198)
+```python
+br_day = break_reduction_by_date.get(data)
+if br_day and br_day.get('status') == 'approved' and pausa_minuti > 0:
+    pausa_per_calcolo = pausa_minuti          # 30 min (da ora_mod fine_pausa)
+else:
+    pausa_per_calcolo = pausa_turno_minuti if pausa_minuti > 0 else 0  # 60 min pianificata
+```
+
+#### Fix 4 — Template `user_storico_timbrature.html` — Uscita in TIMBRATURE CONFERMATE
+- `brApproved` ora definito in cima (prima del blocco `fineT`), condiviso da tutti i sotto-blocchi
+- Uscita usa `fineT.ora_mod` quando `hasExtraApproved || brApproved` (non solo extra turno)
+- Ore lorde calcolate con `uscita = fineT.ora_mod` quando `hasExtraApproved || brApproved`
+- Pausa: label `'Pausa (deroga approvata)'` + nota `pausa pianificata: 1:00` se deroga attiva
+- Ore nette: usa `calcRiepilogo.ore_nette_minuti` dal backend (coerente con il TOTALE)
+
+#### Fix 5 — Template `user_home.html` — Widget "Storico Timbrature Oggi"
+- Fine Giornata in `daily mode` ora mostra `ora` barrata + `ora_mod` verde anche se non c'è `pendingOvertime`
+- Aggiunto check `brApprovedToday`: cerca `allTimbrature.find(x => x.tipo === 'fine_pausa' && x.break_reduction_request?.status === 'approved')`
+- Se `brApprovedToday` → uscita = `18:14` (barrata) + `18:00` (verde)
+
+#### Fix 6 — Script DB una-tantum `_fix_fg_oramod.py`
+- Script eseguito per aggiornare i record già approvati con la vecchia logica
+- Legge `effective_break_minutes` da `extra_data`, calcola `rounded_break = ceil(effective / blocco)`
+- Ricalcola `ora_mod` per `fine_giornata` e aggiorna DB
+- Esito: `giannipi 2026-02-19` → `fine_giornata.ora_mod = 18:00:00` ✓
+
+### Extra Turno = Anticipo — Nessuna richiesta ET creata — COMPLETATO (19/02)
+
+#### Problema
+Quando `anticipo == extra_turno_minutes` (ingresso anticipato copre esattamente lo straordinario), veniva comunque creata una richiesta Extra Turno e compariva il badge "Extra Turno in attesa" nel widget storico.
+
+#### Fix (`app.py` ~riga 6213)
+Spostato il check anticipo **PRIMA** della chiamata a `_create_auto_extra_turno_request()`:
+```python
+# Legge flessibilità dal DB
+flex_row_pre = db.execute(...)  # anticipo approvato per utente/data
+if flex_row_pre and abs(flex_val_pre - extra_minutes) < 1:
+    extra_turno_skip_motivation = True
+    app.logger.info("Extra Turno SKIP: anticipo == extra → nessuna richiesta ET creata")
+
+# Crea ET solo se NON già coperta dall'anticipo
+if not extra_turno_skip_motivation:
+    extra_turno_request_id = _create_auto_extra_turno_request(...)
+```
+
+### Formula `ora_mod` (daily mode) — Sezione aggiornata
+
+> Integra quanto in Sezione 9 (Extra Turno)
+
+```
+# Con deroga pausa ridotta approvata:
+ore_nette = uscita_reale - ingresso - rounded_break    # es. 18:14 - 08:30 - 30 = 554
+ore_arrotondate = turno_base + floor((ore_nette - turno_base) / blocco) * blocco
+                = 480 + floor(74/30)*30 = 480+60 = 540
+differenza = ore_nette - ore_arrotondate = 554 - 540 = 14
+ora_mod = uscita_reale - differenza = 18:14 - 14 = 18:00 ✓
+
+# Senza deroga (pausa standard):
+ore_nette = 18:14 - 08:30 - 60 = 524   → ora_mod = 17:59 (o simile)
+```
+
+### Note Operative Aggiunte
+- **Processi multipli Flask** (porta 5000): verificare con `netstat -ano | findstr "LISTENING" | findstr ":5000"`, killare i PIDs duplicati prima di riavviare
+- **Service Worker**: il SW aggiornato rimane in `waiting` finché non si fa `skipWaiting` o si chiude il tab. Usare DevTools → Application → Service Workers → `skipWaiting` + hard refresh
+- **Record DB esistenti**: il fix `_fix_fg_oramod.py` ricalcola `fine_giornata.ora_mod` per deroghe già approvate. Da eseguire una-tantum dopo ogni deploy che modifica la logica `_process_break_reduction_review`
+
+---
+
+## 27. Modifiche Recenti (20 febbraio 2026)
+
+### Mancata Timbratura per Gruppi Produzione — COMPLETATO (20/02)
+
+#### Descrizione
+Operatori dei gruppi produzione (`is_production=1`) possono dichiarare una "mancata timbratura" quando non hanno timbrato in tempo. La funzionalità sblocca immediatamente il timeframe e mostra il popup di selezione attività produzione.
+
+#### Flusso
+```
+Utente clicca "Mancata Timbratura" nel menu timbratura
+    ↓
+Popup con: tipo (ingresso/pausa/fine_pausa/uscita), ora, motivazione obbligatoria
+    ↓
+POST /api/user/requests → request_type_id=13, value_type='timbratura'
+    ↓
+Backend: INSERT in timbrature (status='pending_review', method='manual_request')
+    ↓
+calcola_ora_mod() applicata → arrotondamento (es. 07:13 → 07:15)
+    ↓
+Sblocco immediato timeframe (la timbratura è registrata subito)
+    ↓
+Se inizio_giornata e is_production_group → redirect con popup attività produzione
+    ↓
+Timbratura_ts per attività produzione usa ora_mod (non ora reale)
+    ↓
+Badge "In attesa di revisione" nello storico timbrature
+    ↓
+Admin approva/rifiuta → _process_approved_mancata_timbratura()
+```
+
+#### Arrotondamento
+L'ora dichiarata viene arrotondata tramite `calcola_ora_mod()`:
+- **Turno source**: `employee_shifts` (day_of_week) → fallback `rentman_plannings` (crew_id, planning_date)
+- **Regole**: `get_user_timbratura_rules(db, username)` → anticipo_max, tolleranza_ritardo, arrotondamento 15min
+- Applicato sia alla registrazione iniziale sia all'approvazione (`_process_approved_mancata_timbratura()`)
+- CedolinoWeb riceve `ora_mod` calcolata (non l'ora dichiarata dall'utente)
+
+#### Request Type ID 13 — Mancata Timbratura
+```json
+extra_data: {
+  "tipo_timbratura": "ingresso",
+  "ora_timbratura": "07:13",
+  "motivazione": "Dimenticato di timbrare"
+}
+```
+
+#### Dettagli tecnici
+- **Status timbratura**: `pending_review` finché admin non approva/rifiuta
+- **Badge storico**: giallo "⏳ In attesa di revisione" / verde "✅ Approvata" / rosso "❌ Rifiutata"
+- **Approvazione**: `_process_approved_mancata_timbratura()` aggiorna `timbrature.status='approved'` e sincronizza con CedolinoWeb
+- **Rifiuto**: elimina la timbratura registrata
+- **Redirect dopo invio**: `/?from_mancata_timbratura=1` + sessionStorage per popup attività
+
+### Rimozione Pagina Magazzino — COMPLETATO (20/02)
+
+#### Cosa è stato rimosso
+- **File eliminati**: `templates/magazzino.html`, `static/js/magazzino.js`, `MAGAZZINO_IMPROVEMENTS.md`
+- **Route**: `/magazzino` (pagina) + tutti gli endpoint `/api/magazzino/*` (~726 righe)
+- **Endpoint admin**: `/api/admin/magazzino/summary`
+- **Costanti**: `ROLE_MAGAZZINO`, `WAREHOUSE_MANUAL_PROJECTS_TABLE_*`
+- **Funzioni**: `_magazzino_only()` (guard), `ensure_warehouse_manual_projects_table()`
+- **Ruolo**: "magazzino" rimosso da `VALID_USER_ROLES`, login session, role parsing
+- **Template**: `magazzino_enabled` rimosso da tutti i `render_template`, nav link rimosso da 6 template utente
+- **Admin UI**: opzione ruolo "Magazzino" rimossa da admin_users, filtro sorgente da admin_dashboard/sessions, modulo da admin_company_settings
+
+#### Cosa è stato MANTENUTO (usato dai gruppi produzione)
+- **Tabelle**: `warehouse_active_timers`, `warehouse_sessions`, `warehouse_activities`
+- **Helper**: `_start_production_timer()`, `_pause_production_timer()`, `_resume_production_timer()`, `_stop_production_timer()`
+- **API**: `/api/production/timer/start`, `/api/production/timer/switch`, `/api/production/timer`, `/api/production/project-lookup`
+- **Admin views**: Sessioni admin mostrano dati produzione (etichetta rinominata "Magazzino" → "Produzione")
+
+### Fasi Funzione (Function Phases) — COMPLETATO (20/02)
+
+#### Descrizione
+Sistema di fasi lavorative configurabili per funzione (es. "Montaggio" ha fasi: Carico, Scarico, Montaggio struttura...). Le fasi appaiono nel popup di selezione attività sulla home operatore e sono visibili nella pagina pianificazione admin.
+
+#### Architettura
+- **Storage**: `company_settings.custom_settings.function_phases` (JSON in MySQL)
+- **Matching**: EXACT only (case-insensitive) — es. "montaggio Teli Masseria Eccellenza" NON matcha "Montaggio"
+- **Stato fasi progetto**: tabella `project_phases_state` (project_key, function_key, phase_name, completed, completed_by, date)
+
+#### Configurazione fasi
+- **Dove**: pagina pianificazione admin (`admin_rentman_planning.html`) — click sul nome funzione nella colonna FUNZIONE
+- **Modal**: mostra la singola funzione cliccata, con fasi riordinabili (▲/▼) e aggiungibili/rimuovibili
+- **Salvataggio**: `POST /api/admin/function-phases` — merge con config esistente (non sovrascrive altre funzioni)
+- **API lettura**: `GET /api/admin/function-phases` — restituisce tutte le configurazioni
+
+#### Funzioni configurate
+| Funzione | Fasi |
+|----------|------|
+| Montaggio | Carico mezzo, Scarico mezzo in location, Montaggio struttura, Finalizzazione montaggio, Trasporto verso location |
+| Allestimento | Carico Mezzo, Trasporto in location, Scarico Mezzo, Allestimento Fase 1, Allestimento Fase 2, Rientro in magazzino |
+| Servizio di Pulizie | Trasporto in location, Pulizia Bagni, Pulizie Uffici, Rientro in sede |
+| montaggio Teli Masseria Eccellenza | Carico, Trasporto in location, Scarico, Montaggio teli, Rientro in magazzino |
+
+#### Home operatore — Popup selezione fase
+- **Trigger**: "Inizio Giornata" e "Cambia Attività" (se la funzione del turno ha fasi configurate)
+- **Funzione**: `showPhaseSelectionPopup()` (async) — carica fasi + stato timer corrente
+- **Fase attiva**: mostrata come "IN CORSO" con pallino pulsante, bloccata (non cliccabile)
+- **"Extra attività"**: pulsante nel popup per inserire attività libera con testo personalizzato
+- **Chiusura fase precedente**: quando si cambia attività, la fase precedente viene chiusa automaticamente via `POST /api/production/timer/toggle`
+- **Race condition fix**: `_loadTurnoPhasesPromise` traccia il caricamento asincrono, `showProductionActivityPopup` aspetta il completamento
+- **Fasi NON mostrate** nella box home (solo nei popup)
+
+#### Pianificazione admin — Visualizzazione fasi
+- **Badge fasi**: mostrati sotto ogni header progetto, raggruppati per funzione
+- **Stato**: icone ✅ (completata), 🔵 (operatori attivi), ⬜ (non iniziata)
+- **Non cliccabili**: i badge sono `<span>` read-only, senza `onclick`
+- **Conteggio operatori attivi**: quando un operatore ha un timer attivo su una fase, appare un badge blu con pallino pulsante e il numero di operatori (tooltip mostra i nomi)
+- **Barra progresso**: mostra percentuale fasi completate per funzione
+
+#### API timer attivi
+- **Endpoint**: `GET /api/production/active-timers` — restituisce tutti i timer attivi (`warehouse_active_timers WHERE running=1`) raggruppati per `project_code` → `activity_label` → `[username, ...]`
+- **Auto-refresh**: ogni 30 secondi la pagina planning richiama l'API e aggiorna i badge se i dati sono cambiati
+- **Frontend**: `loadActiveTimers()` salva in `activeTimersData`, `getOperatorsOnPhase(projectKey, phaseName)` cerca operatori per fase (con fallback case-insensitive)
+
+#### File modificati
+- `app.py`: endpoint `GET /api/production/active-timers`, `get_phases_for_function()` (exact-only)
+- `admin_rentman_planning.html`: `buildPhasesHTML()`, `loadActiveTimers()`, `getOperatorsOnPhase()`, CSS `.phase-operators`, `.phase-active`, `.phase-active-dot`, `@keyframes pulseDot`, auto-refresh 30s
+- `user_home.html`: `showPhaseSelectionPopup()`, `selectPhaseForActivity()`, `confirmExtraActivity()`, `loadTurnoPhases()`, `_loadTurnoPhasesPromise`
+
+---
+
+## 28. Modifiche Recenti (23 febbraio 2026)
+
+### Flusso Modale "Cambia Attività" — Revisione completa UX — COMPLETATO (23/02)
+
+#### Descrizione
+Rivisitazione completa del flusso di cambio attività/progetto nella modale fullscreen. L'ordine è invertito: prima si sceglie l'attività, poi il progetto (e non viceversa). Dopo aver selezionato un progetto, si vedono **solo** le attività senza card superflue.
+
+#### Modifiche al flusso
+
+1. **Attività prima del progetto**: `openSwitchActivityModal()` mostra direttamente la griglia attività (`showSwitchActivityGrid('planned')`) invece di aprire il numpad
+2. **Numpad rimosso dalla griglia**: `gridActivityClick()` non apre più il numpad — usa direttamente il progetto già disponibile (`_switchOverrideProject || _switchGridProject || _switchCurrentProject`) e chiama `confirmSwitchActivity()` immediatamente. Numpad solo come fallback se nessun progetto è disponibile
+3. **Attività subito dopo progetto**: `numpadConfirm()` Caso 3 chiama `showSwitchActivityGrid('manual')` direttamente (senza mostrare la card progetto manuale)
+4. **Sblocco attività su cambio progetto**: `_rebuildActivityGrid(unlockAll)` rigenera la griglia dinamicamente sbloccando tutte le attività quando il progetto è diverso da quello in corso
+5. **Vista pulita**: dopo selezione progetto da numpad, le card superiori (IN CORSO, Pianificato, Cambia Progetto) vengono nascoste — visibile solo header progetto + griglia attività
+
+#### Funzioni modificate (`user_home.html`)
+
+| Funzione | Modifica |
+|----------|----------|
+| `openSwitchActivityModal()` | Mostra griglia attività direttamente, non numpad |
+| `gridActivityClick()` | Usa progetto disponibile → `confirmSwitchActivity()` senza numpad |
+| `showSwitchActivityGrid(source)` | Nasconde `switchTopCards` per source='manual', chiama `_rebuildActivityGrid()` |
+| `_rebuildActivityGrid(unlockAll)` | **NUOVA** — rigenera HTML griglia, sblocca tutte le attività se `unlockAll=true`, mostra header "PROGETTO SELEZIONATO P. XXXX" |
+| `hideSwitchActivityGrid()` | Ripristina visibilità `switchTopCards` |
+| `numpadConfirm()` Caso 3 | Va diretto a `showSwitchActivityGrid('manual')` + toast |
+| `confirmStartProductionActivity()` | Se `projectCode` esiste → avvia direttamente, numpad solo se manca progetto |
+
+#### Elementi HTML aggiunti
+- `<div id="switchTopCards">`: wrapper per pulsante "Cambia Progetto" + card IN CORSO + card Pianificato
+- Header "PROGETTO SELEZIONATO" in `_rebuildActivityGrid()` con codice e nome progetto
+
+#### Variabili di stato
+| Variabile | Scopo |
+|-----------|-------|
+| `_switchOverrideProject` | Progetto selezionato manualmente da numpad `{code, name}` |
+| `_switchCurrentProject` | Progetto del timer attivo `{code, name}` |
+| `_switchGridProject` | Progetto contestuale per la griglia `{code, name}` |
+| `_pendingGridActivity` | Attività in attesa di progetto (usata solo come fallback) |
+
+### Pulsante "Cambia Progetto" ingrandito — COMPLETATO (23/02)
+- Padding: `16px 20px`, font-size: `16px`, border-radius: `12px`
+- Box-shadow più pronunciato: `0 3px 10px rgba(59,130,246,0.35)`
+
+### Chip "Sedi" e "Info turno" — Redesign omogeneo — COMPLETATO (23/02)
+
+#### Problema
+I chip "Sedi" e "Info turno" nella card turno avevano uno stile diverso (sfondo più scuro, bordi più spessi, font-weight diverso) rispetto alle righe orario/funzione/location sopra.
+
+#### Fix
+- **CSS `.action-chips`**: layout cambiato da `flex` a `grid` con `grid-template-columns: 1fr 1fr`, `margin-top: 0`
+- **CSS `.action-chip`**: allineato allo stile di `.turno-detail` — stessi `background: rgba(255,255,255,0.15)`, `backdrop-filter: blur(10px)`, `border-radius: 6px`, `border: 1px solid rgba(255,255,255,0.25)`, `font-size: 14px`, `font-weight: 600`
+- **Aggiunto**: stato `:active` con `background: rgba(255,255,255,0.25)`, icone in `<span class="icon">`
+- **HTML**: `turno-details` div ora ha `id="turnoDetailsGrid"`, i chip vengono appendati all'interno della griglia dei dettagli (non più come elemento separato sotto `timbraturaEl`)
+- **Risultato**: chip visivamente identici alle righe informative sopra, integrati nella stessa griglia
+
+### Fix `plannedBreakMinutes` non definita — COMPLETATO (23/02)
+
+#### Problema
+Premendo "Fine Giornata" compariva `ReferenceError: plannedBreakMinutes is not defined` nella funzione `checkBreakBeforeEndDay()` (riga ~3341 di `user_home.html`), bloccando il flusso.
+
+#### Causa
+La variabile `plannedBreakMinutes` era definita solo all'interno di `checkBreakReduction()` (scope locale), ma veniva usata anche in `checkBreakBeforeEndDay()` senza essere dichiarata lì.
+
+#### Fix (`user_home.html` ~riga 3296)
+Aggiunto calcolo locale di `plannedBreakMinutes` dentro `checkBreakBeforeEndDay()`:
+```javascript
+let plannedBreakMinutes = 0;
+if (turnoConPausa.break_start && turnoConPausa.break_end) {
+    const bs = parseTimeToMinutes(turnoConPausa.break_start);
+    const be = parseTimeToMinutes(turnoConPausa.break_end);
+    if (bs != null && be != null && be > bs) plannedBreakMinutes = be - bs;
+} else {
+    plannedBreakMinutes = Number(turnoConPausa.break_minutes || 0) || 0;
+}
+```
+
+### Active Timers: Matching fasi individuali nella pianificazione — COMPLETATO (23/02)
+
+#### Problema
+Con gestione singola (non squadra), quando un operatore avviava un timer su una fase (es. "Carico Mezzo"), nella pagina pianificazione admin il chip della fase non mostrava il pallino blu/operatori attivi.
+
+#### Causa
+I timer individuali (`warehouse_active_timers`) salvano solo `activity_label` (nome fase, es. "Carico Mezzo"), senza la funzione. La pagina planning cercava la chiave composta `"Allestimento::Carico Mezzo"` in `activeTimersData`, che conteneva solo la chiave semplice `"Carico Mezzo"` → nessun match → nessun badge attivo.
+
+#### Fix 1 — Backend (`app.py` — API `/api/production/active-timers`)
+Aggiunta generazione automatica di chiavi composte `funzione::fase` per i timer individuali:
+```python
+fn_phases_cfg = get_function_phases_config(db)
+for pc, labels in list(result.items()):
+    for al, usernames in list(labels.items()):
+        if '::' in al: continue  # già compound
+        for func_key, tmpl in fn_phases_cfg.items():
+            for ph in tmpl.get('phases', []):
+                if ph.get('name','').lower().strip() == al.lower().strip():
+                    compound_key = f"{func_key}::{al}"
+                    # aggiungi compound key
+```
+
+#### Fix 2 — Frontend (`admin_rentman_planning.html` — `getOperatorsOnPhase()`)
+Aggiunto fallback sulla chiave semplice (solo `phaseName`) quando la chiave composta non trova match:
+```javascript
+// Fallback: prova chiave semplice anche con functionKey
+const simpleOps = projectTimers[phaseName];
+if (simpleOps && simpleOps.length) return simpleOps;
+```
+
+### Auto-completamento fase su Fine Giornata — COMPLETATO (24/02)
+
+#### Problema
+Quando un operatore faceva "Fine Giornata" con un timer attivo su una fase, il timer veniva fermato e la sessione salvata, ma la fase non veniva mai marcata come completata nella tabella `project_phase_progress`. Questo causava che nella pagina pianificazione la fase restasse ⬜ (non completata) anche se l'operatore l'aveva effettivamente svolta.
+
+#### Causa
+Il completamento fase avveniva solo nel frontend `selectPhaseForActivity()` quando si **cambiava** attività (switch), non quando si fermava il timer (fine giornata).
+
+#### Fix — Backend (`app.py` — funzione `_auto_complete_phase_on_stop()`)
+Nuova funzione helper chiamata automaticamente da `_stop_production_timer()`:
+- Cerca `activity_label` nelle fasi configurate (`get_function_phases_config`)
+- Se trovata, fa UPSERT in `project_phase_progress` con `completed=1`
+- Logica: match case-insensitive tra `activity_label` e nomi fasi di tutte le funzioni
+- Chiamata in un try/except per non bloccare lo stop del timer in caso di errore
+
+```python
+# In _stop_production_timer(), dopo il salvataggio sessione:
+try:
+    _auto_complete_phase_on_stop(db, username, proj_code, activity)
+except Exception as phase_err:
+    app.logger.warning(f"Errore auto-completamento fase: {phase_err}")
+```
+
+### Gestione Squadra: Skip popup attività per operatori — COMPLETATO (24/02)
+
+#### Problema
+Operatori con turno in `gestione_squadra=1` vedevano comunque il popup di selezione attività/fasi dopo "Inizio Giornata", quando l'attività dovrebbe essere gestita esclusivamente dal capo squadra.
+
+#### Fix — Backend (`app.py` ~riga 7089)
+- Il loop sui turni odierni salta i turni con `gestione_squadra=1` (e utente non-leader) per la selezione di `turno_per_popup`
+- Aggiunto flag `all_gestione_squadra`: se tutti i turni sono gestione_squadra, non genera `production_activity` nella risposta
+- L'`else` finale (nessun `turno_per_popup`) genera il popup manuale solo se `not all_gestione_squadra`
+
+#### Fix — Frontend (`user_home.html` — `showProductionActivityPopup()`)
+Guard aggiuntivo come difesa in profondità:
+```javascript
+const isGestioneSquadra = allTurni.length > 0 && allTurni.every(t => t.gestione_squadra && !t.is_leader);
+if (isGestioneSquadra) {
+    showToast('✓ Timbratura registrata', 'success');
+    return;
+}
+```
+
+---
+
+## 29. Telefoni Aziendali e Modalità Supervisor
+
+> Feature pre-esistente, documentata qui per completezza.
+
+### Descrizione
+Sistema per assegnare telefoni aziendali ai caposquadra. Quando un operatore accede all'app tramite il link del telefono assegnato (`/login?phone=XXX`), viene promosso a **supervisor** con dashboard operativa dedicata, filtrata per il progetto e la funzione associati al telefono.
+
+### Tabelle
+
+| Tabella | Colonne principali | Scopo |
+|---------|-------------------|-------|
+| `company_phones` | `phone_code` (PK, VARCHAR 3), `label`, `active` | Registro telefoni aziendali |
+| `phone_assignments` | `phone_code`, `project_code`, `activity_id`, `assigned_to`, `assigned_username`, `assigned_at`, `released_at` | Assegnazioni attive telefono→operatore→progetto |
+
+### Flusso Assegnazione (Admin)
+
+```
+Admin pianificazione → header progetto → 📱 "Assegna telefono"
+    ↓
+Modal: griglia telefoni (liberi/occupati) + lista operatori del progetto
+    ↓
+POST /api/phones/assign → { phone_code, project_code, assigned_to, activity_id }
+    ↓
+Rilascio eventuale assegnazione precedente + INSERT nuova assegnazione
+```
+
+- **Dove**: `admin_rentman_planning.html` — pulsante "📱 Assegna telefono" nell'header progetto (solo se `gestione_squadra=1`)
+- **Anche**: `index.html` (dashboard supervisor) — modal "📱 Assegna Telefono"
+
+### Flusso Login Telefono
+
+```
+Operatore apre /login?phone=XXX → phone_code salvato in localStorage
+    ↓
+Login con credenziali → POST /api/login con phone_code
+    ↓
+Backend: cerca assegnazione attiva per phone_code in phone_assignments
+    ↓
+Verifica che assigned_username == utente loggato (o match fuzzy _resolve_crew_username)
+    ↓
+Se match → session: is_supervisor=True, user_role='supervisor',
+           supervisor_project_code, supervisor_activity_id
+    ↓
+Redirect a index.html (dashboard supervisor) invece di user_home.html
+```
+
+### API
+
+| Endpoint | Metodo | Scopo |
+|----------|--------|-------|
+| `GET /api/phones` | GET | Lista telefoni con stato assegnazione corrente |
+| `POST /api/phones/assign` | POST | Assegna telefono a operatore per progetto |
+| `POST /api/phones/release` | POST | Rilascia telefono (termina assegnazione) |
+| `GET /api/phones/my-assignment` | GET | Assegnazione corrente dell'utente loggato |
+
+### Sessione Supervisor
+| Chiave sessione | Scopo |
+|----------------|-------|
+| `phone_code` | Codice telefono usato per login |
+| `is_supervisor` | `True` — promuove a ruolo supervisor |
+| `user_role` | `'supervisor'` — determina routing e permessi |
+| `supervisor_project_code` | Progetto associato al telefono |
+| `supervisor_activity_id` | Activity ID per filtrare funzione (opzionale) |
+
+### Dashboard Supervisor (`index.html`)
+- Mostra la stessa interfaccia del dashboard admin, ma filtrata per il progetto assegnato
+- Se `supervisor_activity_id` è presente: team e attività filtrate per quella funzione
+- `phone_mode` disabilita alcuni elementi di navigazione (menu ridotto)
+- Variabili JS: `window.__SAVED_SUPERVISOR_PROJECT__`, `window.__PHONE_MODE__`
+
+### Telefoni di Default
+La funzione `seed_default_phones(db)` inserisce automaticamente i telefoni predefiniti se la tabella è vuota.
+
+### Note
+- Il link telefono persiste via `localStorage` (`preinstall_phone`): anche dopo l'installazione PWA il phone_code viene recuperato
+- Se l'utente non corrisponde all'assegnazione, il login procede come utente normale (senza promozione supervisor)
+- Il badge 📱 appare accanto al nome dell'operatore in pianificazione quando ha un telefono assegnato

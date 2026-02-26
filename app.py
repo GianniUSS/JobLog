@@ -488,8 +488,7 @@ VALID_RUN_STATES = {RUN_STATE_PAUSED, RUN_STATE_RUNNING, RUN_STATE_FINISHED}
 ROLE_USER = "user"
 ROLE_SUPERVISOR = "supervisor"
 ROLE_ADMIN = "admin"
-ROLE_MAGAZZINO = "magazzino"
-VALID_USER_ROLES = {ROLE_USER, ROLE_SUPERVISOR, ROLE_ADMIN, ROLE_MAGAZZINO}
+VALID_USER_ROLES = {ROLE_USER, ROLE_SUPERVISOR, ROLE_ADMIN}
 
 
 # Permission check helpers
@@ -569,8 +568,6 @@ def _role_from_legacy_entry(entry: Mapping[str, Any]) -> str:
             return ROLE_ADMIN
         if normalized == ROLE_SUPERVISOR:
             return ROLE_SUPERVISOR
-        if normalized == ROLE_MAGAZZINO:
-            return ROLE_MAGAZZINO
 
     is_admin_flag = entry.get("is_admin")
     if isinstance(is_admin_flag, bool) and is_admin_flag:
@@ -720,7 +717,6 @@ def _apply_user_session(user_row: Mapping[str, Any]) -> None:
     session['user_role'] = role
     session['is_admin'] = role == ROLE_ADMIN
     session['is_supervisor'] = role in {ROLE_SUPERVISOR, ROLE_ADMIN}
-    session['is_magazzino'] = role in {ROLE_MAGAZZINO, ROLE_ADMIN}
     
     # Ripristina il progetto salvato per i supervisor
     if role in {ROLE_SUPERVISOR, ROLE_ADMIN}:
@@ -730,25 +726,6 @@ def _apply_user_session(user_row: Mapping[str, Any]) -> None:
         if current_project_code:
             session['supervisor_project_code'] = current_project_code
             session['supervisor_project_name'] = current_project_name or current_project_code
-
-
-def _magazzino_only() -> Optional[ResponseReturnValue]:
-    """Verifica accesso al magazzino: admin, magazzinieri, o utenti se modulo abilitato."""
-    role = session.get('user_role')
-    
-    # Admin e magazzinieri hanno sempre accesso
-    if role in {ROLE_MAGAZZINO, ROLE_ADMIN}:
-        return None
-    
-    # Per altri utenti, verifica se il modulo magazzino è abilitato
-    db = get_db()
-    if is_module_enabled(db, "magazzino"):
-        return None  # Accesso consentito
-    
-    # Accesso negato
-    if request.path.startswith('/api/'):
-        return jsonify({"error": "forbidden"}), 403
-    return ("Forbidden", 403)
 
 
 @app.before_request
@@ -1721,6 +1698,8 @@ MYSQL_SCHEMA_STATEMENTS: List[str] = [
         planned_members INT NULL,
         planned_duration_ms BIGINT NULL,
         notes TEXT NULL,
+        phase_id TEXT NULL,
+        phase_label TEXT NULL,
         PRIMARY KEY (activity_id, project_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
@@ -1735,6 +1714,7 @@ MYSQL_SCHEMA_STATEMENTS: List[str] = [
         elapsed_cached BIGINT NOT NULL DEFAULT 0,
         pause_start BIGINT,
         entered_ts BIGINT,
+        current_phase VARCHAR(255),
         PRIMARY KEY (member_key, project_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
@@ -1803,6 +1783,8 @@ REQUIRED_ACTIVITY_COLUMNS: Dict[str, str] = {
     "planned_members": "INTEGER",
     "planned_duration_ms": "BIGINT",
     "notes": "TEXT",
+    "phase_id": "TEXT",
+    "phase_label": "TEXT",
 }
 
 _ACTIVITY_SCHEMA_READY = False
@@ -2091,13 +2073,11 @@ def fetch_rentman_plan(project_code: str, project_date: Optional[str] = None) ->
         )
         subprojects = []
 
-    allowed_subprojects: Set[int] = set()
     subproject_labels: Dict[int, str] = {}
     for sub in subprojects:
         sub_id = parse_reference(sub.get("id")) or sub.get("id")
         if not isinstance(sub_id, int):
             continue
-
         label = (
             sub.get("displayname")
             or sub.get("name")
@@ -2106,17 +2086,7 @@ def fetch_rentman_plan(project_code: str, project_date: Optional[str] = None) ->
         )
         subproject_labels[sub_id] = str(label)
 
-        if _is_truthy(sub.get("is_planning")):
-            allowed_subprojects.add(sub_id)
-
-    app.logger.info("Rentman: subprojects pianificati=%s", sorted(allowed_subprojects))
-    filter_subprojects = bool(allowed_subprojects)
-    if subprojects and not allowed_subprojects:
-        app.logger.warning(
-            "Rentman: subprojects presenti ma nessuno con is_planning=true per %s",
-            project_code,
-        )
-
+    # ── Funzioni del progetto ──────────────────────────────────────────
     try:
         functions = client.get_project_functions(project_id)
         app.logger.info(
@@ -2133,71 +2103,124 @@ def fetch_rentman_plan(project_code: str, project_date: Optional[str] = None) ->
         )
         functions = []
 
-    filtered_functions: List[Dict[str, Any]] = []
-    function_ids: List[int] = []
-    seen_function_ids: Set[int] = set()
+    # ── Function Groups (fasi) del progetto ────────────────────────────
+    try:
+        function_groups = client.get_project_function_groups(project_id)
+        app.logger.info(
+            "Rentman: payload function groups=\n%s",
+            json.dumps(function_groups, ensure_ascii=False, indent=2),
+        )
+    except (RentmanNotFound, RentmanAPIError) as exc:
+        app.logger.warning("Rentman: function groups non disponibili per %s: %s", project_code, exc)
+        function_groups = []
+
+    # Mappa group_id → info fase
+    group_map: Dict[int, Dict[str, Any]] = {}
+    for grp in function_groups:
+        grp_id = parse_reference(grp.get("id")) or grp.get("id")
+        if isinstance(grp_id, int):
+            group_map[grp_id] = {
+                "name": grp.get("name") or grp.get("displayname") or f"Fase {grp_id}",
+                "planperiod_start": _normalize_datetime(grp.get("planperiod_start")),
+                "planperiod_end": _normalize_datetime(grp.get("planperiod_end")),
+            }
+
+    # Mappa function_id → entry per lookup rapido
+    function_map: Dict[int, Dict[str, Any]] = {}
     for entry in functions:
         func_id = parse_reference(entry.get("id")) or entry.get("id")
-        if not isinstance(func_id, int):
-            continue
-        subproject_id = parse_reference(entry.get("subproject")) or entry.get("subproject")
-        if filter_subprojects:
-            if not isinstance(subproject_id, int):
-                continue
-            if subproject_id not in allowed_subprojects:
-                continue
-        if func_id in seen_function_ids:
-            continue
-        filtered_functions.append(entry)
-        function_ids.append(func_id)
-        seen_function_ids.add(func_id)
+        if isinstance(func_id, int) and func_id not in function_map:
+            function_map[func_id] = entry
 
-    crew_assignments: List[Dict[str, Any]] = []
-    if function_ids:
+    # ── Crew dalla pianificazione del progetto ─────────────────────────
+    # Usiamo /projects/{id}/projectcrew che restituisce TUTTA la crew
+    # pianificata con i rispettivi planperiod_start / planperiod_end.
+    crew_assignments = client.get_project_crew(project_id)
+    app.logger.info(
+        "Rentman: crew pianificata totale=%d record",
+        len(crew_assignments),
+    )
+
+    # Se non ci sono record dalla rotta diretta, fallback per function_ids
+    if not crew_assignments and function_map:
+        all_function_ids = list(function_map)
         try:
-            crew_assignments = client.get_project_crew_by_function_ids(function_ids)
+            crew_assignments = client.get_project_crew_by_function_ids(all_function_ids)
             app.logger.info(
-                "Rentman: payload crew assignments=\n%s",
-                json.dumps(crew_assignments, ensure_ascii=False, indent=2),
+                "Rentman: fallback crew by function_ids=%d record",
+                len(crew_assignments),
             )
-        except RentmanNotFound:
-            crew_assignments = []
-        except RentmanAPIError as exc:
-            app.logger.error(
-                "Rentman: errore leggendo il planning crew del progetto %s: %s",
-                project_code,
-                exc,
-            )
+        except (RentmanNotFound, RentmanAPIError) as exc:
+            app.logger.warning("Rentman: fallback crew fallito: %s", exc)
             crew_assignments = []
 
+    if crew_assignments:
+        app.logger.info(
+            "Rentman: payload crew assignments=\n%s",
+            json.dumps(crew_assignments, ensure_ascii=False, indent=2),
+        )
+
+    # ── Filtra crew per planperiod (data della pianificazione) ─────────
+    def _crew_matches_date(assignment: Dict[str, Any], target_date: str) -> bool:
+        """Verifica se il planperiod del record crew include la data selezionata."""
+        ps = _normalize_datetime(assignment.get("planperiod_start"))
+        pe = _normalize_datetime(assignment.get("planperiod_end"))
+        return _activity_matches_date(ps, pe, target_date)
+
+    filtered_crew = crew_assignments
+    if project_date and crew_assignments:
+        date_filtered = [a for a in crew_assignments if _crew_matches_date(a, project_date)]
+        if date_filtered:
+            app.logger.info(
+                "Rentman: crew filtrata per data '%s': %d/%d record",
+                project_date,
+                len(date_filtered),
+                len(crew_assignments),
+            )
+            filtered_crew = date_filtered
+        else:
+            app.logger.warning(
+                "Rentman: nessuna crew per data '%s', uso tutta la crew (%d record)",
+                project_date,
+                len(crew_assignments),
+            )
+
+    # ── Determina le funzioni usate dalla crew ─────────────────────────
+    used_function_ids: Set[int] = set()
+    for assignment in filtered_crew:
+        func_id = parse_reference(assignment.get("function"))
+        if isinstance(func_id, int):
+            used_function_ids.add(func_id)
+
+    app.logger.info("Rentman: funzioni usate dalla crew=%s", sorted(used_function_ids))
+
+    # ── Costruisci attività dalle funzioni che hanno crew ──────────────
     activity_lookup: Dict[int, str] = {}
     activities: List[Dict[str, Any]] = []
-    for entry in filtered_functions:
-        func_id = parse_reference(entry.get("id")) or entry.get("id")
-        if not isinstance(func_id, int) or func_id in activity_lookup:
+    for func_id in sorted(used_function_ids):
+        entry = function_map.get(func_id)
+        if not entry:
+            # Funzione non trovata nel payload functions — crea entry minimale
+            activity_id = f"rentman-f-{func_id}"
+            activities.append({
+                "id": activity_id,
+                "label": f"Funzione {func_id} [ID {func_id}]",
+                "plan_start": None,
+                "plan_end": None,
+                "phase_id": None,
+                "phase_label": None,
+            })
+            activity_lookup[func_id] = activity_id
             continue
 
-        subproject_ref = entry.get("subproject")
-        subproject_id = parse_reference(subproject_ref)
-        subproject_label: Optional[str] = None
-        if isinstance(subproject_id, int):
-            subproject_label = subproject_labels.get(subproject_id) or str(subproject_id)
-        elif isinstance(subproject_ref, str):
-            if subproject_ref.startswith("/subprojects/"):
-                subproject_label = subproject_ref.split("/")[-1]
-            else:
-                subproject_label = subproject_ref
-
-        normalized_subproject = (
-            str(subproject_label).strip().lower() if subproject_label else ""
+        activity_id = f"rentman-f-{func_id}"
+        label = (
+            entry.get("name")
+            or entry.get("displayname")
+            or entry.get("description")
+            or f"Funzione {func_id}"
         )
-        if "produzione" not in normalized_subproject:
-            app.logger.debug(
-                "Rentman: funzione %s esclusa per sottoprogetto '%s'",
-                func_id,
-                subproject_label,
-            )
-            continue
+        label = f"{label} [ID {func_id}]"
 
         plan_start = (
             _normalize_datetime(entry.get("planperiod_start"))
@@ -2208,38 +2231,22 @@ def fetch_rentman_plan(project_code: str, project_date: Optional[str] = None) ->
             or _normalize_datetime(entry.get("usageperiod_end"))
         )
 
-        if project_date:
-            if not _activity_matches_date(plan_start, plan_end, project_date):
-                app.logger.debug(
-                    "Rentman: funzione %s esclusa per data '%s' (start: %s, end: %s)",
-                    func_id,
-                    project_date,
-                    plan_start,
-                    plan_end,
-                )
-                continue
+        # Determina la fase (function group) della funzione
+        func_group_ref = entry.get("group")
+        func_group_id = parse_reference(func_group_ref) if func_group_ref else None
+        phase_info = group_map.get(func_group_id) if isinstance(func_group_id, int) else None
 
-        activity_id = f"rentman-f-{func_id}"
-        label = (
-            entry.get("name")
-            or entry.get("displayname")
-            or entry.get("description")
-            or f"Funzione {func_id}"
-        )
-
-        label = f"{label} [ID {func_id}]"
-
-        activities.append(
-            {
-                "id": activity_id,
-                "label": str(label),
-                "plan_start": plan_start,
-                "plan_end": plan_end,
-            }
-        )
+        activities.append({
+            "id": activity_id,
+            "label": str(label),
+            "plan_start": plan_start,
+            "plan_end": plan_end,
+            "phase_id": f"rentman-fg-{func_group_id}" if phase_info else None,
+            "phase_label": phase_info["name"] if phase_info else None,
+        })
         activity_lookup[func_id] = activity_id
 
-    activities.sort(key=lambda item: item["label"].lower())
+    activities.sort(key=lambda item: (item.get("phase_label") or "", item["label"].lower()))
     app.logger.info(
         "Rentman: funzioni considerate=%s",
         json.dumps(activities, ensure_ascii=False, indent=2),
@@ -2247,7 +2254,7 @@ def fetch_rentman_plan(project_code: str, project_date: Optional[str] = None) ->
 
     valid_function_ids: Set[int] = set(activity_lookup)
     crew_ids: Set[int] = set()
-    for assignment in crew_assignments:
+    for assignment in filtered_crew:
         member_id = parse_reference(assignment.get("crewmember"))
         function_id = parse_reference(assignment.get("function"))
         if not isinstance(function_id, int) or function_id not in valid_function_ids:
@@ -2281,7 +2288,7 @@ def fetch_rentman_plan(project_code: str, project_date: Optional[str] = None) ->
 
     team: List[Dict[str, Any]] = []
     seen_members: Set[str] = set()
-    for assignment in crew_assignments:
+    for assignment in filtered_crew:
         assignment_id = assignment.get("id")
         member_id = parse_reference(assignment.get("crewmember"))
         function_id = parse_reference(assignment.get("function"))
@@ -3215,6 +3222,8 @@ def init_db() -> None:
                 planned_members INTEGER,
                 planned_duration_ms INTEGER,
                 notes TEXT,
+                phase_id TEXT,
+                phase_label TEXT,
                 PRIMARY KEY (activity_id, project_code)
             );
 
@@ -3228,6 +3237,7 @@ def init_db() -> None:
                 elapsed_cached INTEGER NOT NULL DEFAULT 0,
                 pause_start INTEGER,
                 entered_ts INTEGER,
+                current_phase TEXT,
                 PRIMARY KEY (member_key, project_code)
             );
 
@@ -3325,6 +3335,15 @@ def init_db() -> None:
 def _ensure_entered_ts_column(db: DatabaseLike, column_type: str) -> None:
     try:
         db.execute(f"ALTER TABLE member_state ADD COLUMN entered_ts {column_type}")
+    except Exception:
+        return
+
+
+def _ensure_member_state_current_phase(db: DatabaseLike) -> None:
+    """Add current_phase column to member_state if it doesn't exist."""
+    try:
+        col_type = "VARCHAR(255)" if DB_VENDOR == "mysql" else "TEXT"
+        db.execute(f"ALTER TABLE member_state ADD COLUMN current_phase {col_type}")
     except Exception:
         return
 
@@ -3467,11 +3486,12 @@ def clear_project_state(db: DatabaseLike, project_code: Optional[str] = None) ->
 
 def has_active_member_sessions(db: DatabaseLike) -> bool:
     """Restituisce True se esistono timer in corso o posti in pausa."""
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
 
     row = db.execute(
-        """
+        f"""
         SELECT 1 FROM member_state
-        WHERE running=? OR pause_start IS NOT NULL OR COALESCE(elapsed_cached, 0) > 0
+        WHERE running={placeholder} OR pause_start IS NOT NULL OR COALESCE(elapsed_cached, 0) > 0
         LIMIT 1
         """,
         (RUN_STATE_RUNNING,),
@@ -3517,6 +3537,8 @@ def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
                 planned_members,
                 planned_duration_ms,
                 activity.get("notes"),
+                activity.get("phase_id"),
+                activity.get("phase_label"),
             )
         )
 
@@ -3524,8 +3546,8 @@ def apply_project_plan(db: DatabaseLike, plan: Dict[str, Any]) -> None:
         """
         INSERT INTO activities(
             activity_id, project_code, label, sort_order, plan_start, plan_end,
-            planned_members, planned_duration_ms, notes
-        ) VALUES(?,?,?,?,?,?,?,?,?)
+            planned_members, planned_duration_ms, notes, phase_id, phase_label
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
         """,
         activity_rows,
     )
@@ -3620,7 +3642,6 @@ def get_db() -> DatabaseLike:
             ensure_persistent_session_table(g.db)
             ensure_equipment_checks_table(g.db)
             ensure_project_materials_cache_table(g.db)
-            ensure_warehouse_manual_projects_table(g.db)
         except Exception:
             app.logger.exception("Impossibile aggiornare lo schema attività")
     return g.db
@@ -4177,6 +4198,14 @@ def build_session_rows(
         if end_event:
             net_duration_ms = int(end_event["details"].get("duration_ms", total_duration_ms))
             pause_duration_ms = int(end_event["details"].get("pause_ms", max(0, total_duration_ms - net_duration_ms)))
+            # Se la durata reale (duration_ms) è molto maggiore del tempo trascorso
+            # tra il primo move event e il finish, il vero inizio era precedente
+            # (tipico quando il move iniziale non viene loggato, es. caricamento da Rentman)
+            real_total = net_duration_ms + pause_duration_ms
+            if real_total > total_duration_ms + 5000:  # tolleranza 5s
+                computed_start_ms = int(end_dt.timestamp() * 1000) - real_total
+                start_dt = datetime.fromtimestamp(computed_start_ms / 1000, tz=timezone.utc)
+                total_duration_ms = real_total
         else:
             pause_duration_ms = max(0, total_duration_ms - net_duration_ms)
 
@@ -4831,7 +4860,8 @@ def login():
     """Render login page. Redirect to home if already logged in."""
     if 'user' in session:
         return redirect(url_for('home'))
-    return render_template("login.html")
+    phone_code = request.args.get('phone', '').strip()
+    return render_template("login.html", phone_code=phone_code)
 
 
 @app.get("/api/ping")
@@ -4867,7 +4897,64 @@ def api_login():
 
     username = user_row.get('username') or _normalize_username(username_input)
     _apply_user_session({**dict(user_row), 'username': username})
-    response = jsonify({'success': True})
+
+    # Gestione telefono aziendale: salva phone_code in sessione
+    phone_code = (data.get('phone_code') or '').strip()
+    if phone_code:
+        # Cerca un'assegnazione attiva per questo telefono
+        phone_allowed = False
+        try:
+            db2 = get_db()
+            ensure_phone_assignments_table(db2)
+            ph = "%s" if DB_VENDOR == "mysql" else "?"
+            assign = db2.execute(
+                f"""SELECT project_code, activity_id, assigned_to, assigned_username FROM phone_assignments
+                    WHERE phone_code = {ph} AND released_at IS NULL
+                    ORDER BY assigned_at DESC LIMIT 1""",
+                (phone_code,)
+            ).fetchone()
+            if assign:
+                assigned_username = (assign['assigned_username'] if isinstance(assign, dict) else assign[3]) or ''
+                assigned_to_name = (assign['assigned_to'] if isinstance(assign, dict) else assign[2]) or ''
+                proj_code = assign['project_code'] if isinstance(assign, dict) else assign[0]
+                # Verifica che l'utente corrisponda
+                if assigned_username and assigned_username.lower() == username.lower():
+                    phone_allowed = True
+                elif not assigned_username:
+                    # Fallback: match per nome se assigned_username non ancora popolato
+                    resolved = _resolve_crew_username(db2, assigned_to_name)
+                    if resolved and resolved.lower() == username.lower():
+                        phone_allowed = True
+                        # Aggiorna assigned_username per futuri login
+                        try:
+                            assign_id = assign['id'] if isinstance(assign, dict) else None
+                            if assign_id:
+                                db2.execute(f"UPDATE phone_assignments SET assigned_username = {ph} WHERE id = {ph}", (resolved, assign_id))
+                                db2.commit()
+                        except Exception:
+                            pass
+                if phone_allowed:
+                    session['phone_code'] = phone_code
+                    session['is_supervisor'] = True
+                    session['user_role'] = ROLE_SUPERVISOR
+                    session['supervisor_project_code'] = proj_code
+                    # ── Salva activity_id per filtrare la funzione dell'operatore ──
+                    phone_act_id = (assign['activity_id'] if isinstance(assign, dict) else assign[1]) or None
+                    if phone_act_id:
+                        session['supervisor_activity_id'] = phone_act_id
+                        app.logger.info("[PHONE] Activity scope: %s", phone_act_id)
+                    else:
+                        session.pop('supervisor_activity_id', None)
+                    app.logger.info("[PHONE] Login telefono %s per %s -> supervisor, progetto %s, activity=%s", phone_code, username, proj_code, phone_act_id)
+                else:
+                    app.logger.warning("[PHONE] Utente %s tentato login su telefono %s assegnato a %s (%s) -> RIFIUTATO",
+                                       username, phone_code, assigned_to_name, assigned_username)
+            else:
+                app.logger.warning("[PHONE] Telefono %s non ha assegnazioni attive, login normale per %s", phone_code, username)
+        except Exception as e:
+            app.logger.error("[PHONE] Errore verifica telefono: %s", e)
+
+    response = jsonify({'success': True, 'phone_mode': phone_allowed if phone_code else False})
     try:
         token_value, expires_ts = _store_persistent_session(username)
     except Exception:
@@ -4895,18 +4982,17 @@ def home() -> ResponseReturnValue:
         return redirect(url_for('login'))
     if session.get('is_admin'):
         return redirect(url_for('admin_dashboard_page'))
-    if session.get('user_role') == ROLE_MAGAZZINO:
-        return redirect(url_for('magazzino_home'))
+
     # Utenti "user" senza ruolo specifico - mostrano pagina minima con solo logout
-    if session.get('user_role') == ROLE_USER:
+    # Ma se is_supervisor è True (es. login da telefono aziendale), mostra dashboard supervisor
+    if session.get('user_role') == ROLE_USER and not session.get('is_supervisor'):
         db = get_db()
         display_name = session.get('user_display') or session.get('user_name') or session.get('user')
         primary_name = session.get('user_name') or display_name or session.get('user')
         initials = session.get('user_initials') or compute_initials(primary_name or "")
         user_role = session.get('user_role', 'user')
         username = session.get('user')
-        # Verifica se il modulo magazzino è abilitato
-        magazzino_enabled = is_module_enabled(db, "magazzino")
+        # Verifica se il modulo produzione è abilitato
         return render_template(
             "user_home.html",
             user_name=primary_name,
@@ -4914,7 +5000,6 @@ def home() -> ResponseReturnValue:
             user_initials=initials,
             user_role=user_role,
             username=username,
-            magazzino_enabled=magazzino_enabled,
         )
     # Supervisor e altri ruoli - mostrano dashboard operativa completa
     db = get_db()
@@ -4962,6 +5047,8 @@ def home() -> ResponseReturnValue:
             "name": session.get('supervisor_project_name') or supervisor_project_code,
         }
 
+    phone_mode = bool(session.get('phone_code'))
+
     return render_template(
         "index.html",
         user_name=primary_name,
@@ -4974,6 +5061,7 @@ def home() -> ResponseReturnValue:
         initial_project=initial_project,
         saved_supervisor_project=saved_supervisor_project,
         header_clock=header_clock,
+        phone_mode=phone_mode,
     )
 
 
@@ -5083,6 +5171,7 @@ def api_timbratura_oggi():
         
         # Determina se c'è una richiesta Giustificazione Ritardo per questa timbratura
         late_arrival_request = None
+        flex_request = None
         if tipo == 'inizio_giornata':
             # Cerca richiesta di ritardo per oggi
             late_req = db.execute(f"""
@@ -5103,6 +5192,98 @@ def api_timbratura_oggi():
                     "id": req_id,
                     "status": req_status
                 }
+
+                        # Cerca richiesta Anticipo Ingresso per oggi (compatibile con nome legacy)
+            flex_req = db.execute(f"""
+                SELECT r.id, r.status, r.notes, r.review_notes
+                FROM user_requests r
+                LEFT JOIN request_types rt ON r.request_type_id = rt.id
+                WHERE r.username = {placeholder}
+                  AND r.date_from = {placeholder}
+                                    AND (
+                                                rt.name = 'Fuori Flessibilità'
+                                                OR rt.name = 'Richiesta anticipo ingresso'
+                                            )
+                ORDER BY r.created_ts DESC
+                LIMIT 1
+            """, (username, today)).fetchone()
+
+            if flex_req:
+                flex_req_id = flex_req['id'] if isinstance(flex_req, dict) else flex_req[0]
+                flex_req_status = flex_req['status'] if isinstance(flex_req, dict) else flex_req[1]
+                flex_req_notes = flex_req['notes'] if isinstance(flex_req, dict) else flex_req[2]
+                flex_req_review_notes = flex_req['review_notes'] if isinstance(flex_req, dict) else flex_req[3]
+                flex_request = {
+                    "id": flex_req_id,
+                    "status": flex_req_status,
+                    "notes": flex_req_notes,
+                    "review_notes": flex_req_review_notes,
+                }
+        
+        # Cerca richiesta Deroga Pausa Ridotta per fine_pausa
+        break_reduction_request = None
+        if tipo == 'fine_pausa':
+            br_req = db.execute(f"""
+                SELECT r.id, r.status, r.notes, r.extra_data
+                FROM user_requests r
+                JOIN request_types rt ON r.request_type_id = rt.id
+                WHERE r.username = {placeholder}
+                  AND r.date_from = {placeholder}
+                  AND rt.name = 'Deroga Pausa Ridotta'
+                ORDER BY r.created_ts DESC
+                LIMIT 1
+            """, (username, today)).fetchone()
+            
+            if br_req:
+                br_id = br_req['id'] if isinstance(br_req, dict) else br_req[0]
+                br_status = br_req['status'] if isinstance(br_req, dict) else br_req[1]
+                br_notes = br_req['notes'] if isinstance(br_req, dict) else br_req[2]
+                br_extra = br_req['extra_data'] if isinstance(br_req, dict) else br_req[3]
+                br_extra_data = {}
+                if br_extra:
+                    try:
+                        br_extra_data = json.loads(br_extra) if isinstance(br_extra, str) else br_extra
+                    except Exception:
+                        pass
+                break_reduction_request = {
+                    "id": br_id,
+                    "status": br_status,
+                    "notes": br_notes,
+                    "planned_break_minutes": br_extra_data.get('planned_break_minutes'),
+                    "effective_break_minutes": br_extra_data.get('effective_break_minutes'),
+                    "rounded_break_minutes": br_extra_data.get('rounded_break_minutes'),
+                    "break_reduction_minutes": br_extra_data.get('break_reduction_minutes'),
+                }
+        
+        # Cerca richiesta Mancata Timbratura pendente per timbrature pre-inserite (produzione)
+        mancata_timbratura_request = None
+        if method == 'manual_request' and location_name == 'Mancata Timbratura':
+            tipo_to_timb = {
+                'inizio_giornata': 'ingresso',
+                'fine_giornata': 'uscita',
+                'inizio_pausa': 'pausa_in',
+                'fine_pausa': 'pausa_out'
+            }
+            tipo_timb = tipo_to_timb.get(tipo, '')
+            mt_req = db.execute(f"""
+                SELECT r.id, r.status
+                FROM user_requests r
+                JOIN request_types rt ON r.request_type_id = rt.id
+                WHERE r.username = {placeholder}
+                  AND r.date_from = {placeholder}
+                  AND rt.name = 'Mancata Timbratura'
+                  AND r.extra_data LIKE {placeholder}
+                ORDER BY r.created_ts DESC
+                LIMIT 1
+            """, (username, today, f'%"tipo_timbratura":%"{tipo_timb}"%')).fetchone()
+            
+            if mt_req:
+                mt_id = mt_req['id'] if isinstance(mt_req, dict) else mt_req[0]
+                mt_status = mt_req['status'] if isinstance(mt_req, dict) else mt_req[1]
+                mancata_timbratura_request = {
+                    "id": mt_id,
+                    "status": mt_status
+                }
         
         timbrature.append({
             "id": timbratura_id,
@@ -5117,7 +5298,10 @@ def api_timbratura_oggi():
             "location_name": location_name,
             "pending_extra_turno": pending_extra_turno,
             "sync_error": sync_error if pending_extra_turno else None,
-            "late_arrival_request": late_arrival_request
+            "late_arrival_request": late_arrival_request,
+            "flex_request": flex_request,
+            "break_reduction_request": break_reduction_request,
+            "mancata_timbratura_request": mancata_timbratura_request
         })
     
     # Verifica se c'è uno straordinario (qualsiasi stato) per oggi
@@ -5241,14 +5425,14 @@ def api_timbratura_registra():
                         # Cerca turno Rentman di oggi per l'utente (solo se inviato)
                         rentman_row = db.execute(f"""
                             SELECT location_name, location_id,
-                                   timbratura_gps_mode, gps_timbratura_location
-                            FROM rentman_plannings 
-                            WHERE crew_id = {placeholder} 
-                              AND planning_date = {placeholder} 
+                                   timbratura_gps_mode, gps_timbratura_location, custom_location_ids
+                            FROM rentman_plannings
+                            WHERE crew_id = {placeholder}
+                              AND planning_date = {placeholder}
                               AND sent_to_webservice = 1
                             ORDER BY plan_start ASC LIMIT 1
                         """, (crew_id, today)).fetchone()
-                        
+
                         if rentman_row:
                             if isinstance(rentman_row, dict):
                                 loc_name = rentman_row.get('location_name')
@@ -5267,6 +5451,44 @@ def api_timbratura_registra():
                             cached_coords = get_location_cache(db, loc_name, loc_id)
                             if cached_coords:
                                 loc_lat, loc_lon, loc_radius = cached_coords
+
+                            # Carica eventuali location custom assegnate al planning (custom_location_ids)
+                            custom_locs = []
+                            try:
+                                raw_custom = rentman_row.get('custom_location_ids') if isinstance(rentman_row, dict) else rentman_row[4]
+                                if raw_custom:
+                                    import json as _json
+                                    parsed = None
+                                    if isinstance(raw_custom, str):
+                                        try:
+                                            parsed = _json.loads(raw_custom)
+                                        except Exception:
+                                            # potrebbe essere già un list-like string, ignora
+                                            parsed = None
+                                    elif isinstance(raw_custom, (list, tuple)):
+                                        parsed = list(raw_custom)
+
+                                    if parsed:
+                                        # recupera righe da location_cache
+                                        placeholder_ids = ",".join(["%s"] * len(parsed)) if DB_VENDOR == "mysql" else ",".join(["?"] * len(parsed))
+                                        rows = db.execute(f"SELECT id, location_name, latitude, longitude, radius_meters, address FROM location_cache WHERE id IN ({placeholder_ids})", tuple(parsed) if isinstance(parsed, (list, tuple)) else (parsed,)).fetchall()
+                                        for r in rows:
+                                            rid = r['id'] if isinstance(r, dict) else r[0]
+                                            name = r['location_name'] if isinstance(r, dict) else r[1]
+                                            lat = float(r['latitude'] if isinstance(r, dict) else r[2])
+                                            lon = float(r['longitude'] if isinstance(r, dict) else r[3])
+                                            rad = int(r['radius_meters'] if isinstance(r, dict) else r[4]) if (r['radius_meters'] if isinstance(r, dict) else r[4]) else 300
+                                            addr = (r['address'] if isinstance(r, dict) else r[5]) or ''
+                                            custom_locs.append({
+                                                'id': rid,
+                                                'name': name,
+                                                'latitude': lat,
+                                                'longitude': lon,
+                                                'radius_meters': rad,
+                                                'address': addr
+                                            })
+                            except Exception as _e:
+                                app.logger.warning(f"Errore caricamento custom_location_ids per rentman_row: {_e}")
                             
                             app.logger.info(f"Timbratura GPS: mode={gps_mode}, loc_name={loc_name}, loc_lat={loc_lat}, loc_lon={loc_lon}, loc_radius={loc_radius}, group_gps_name={group_gps_name}")
                             app.logger.info(f"GPS locations configurate: {[l.get('name') for l in gps_locations]}")
@@ -5311,6 +5533,20 @@ def api_timbratura_registra():
                                                     'radius_meters': g_radius or 300
                                                 }
                                                 app.logger.info(f"Timbratura GPS Rentman: usando coordinate gruppo '{group_gps_name}' per {username}")
+                                # se abbiamo location custom per il planning, aggiungile
+                                if custom_locs:
+                                    try:
+                                        # aggiungi in coda le custom locations così vengono considerate nella validazione
+                                        for cl in custom_locs:
+                                            gps_locations.append({
+                                                'name': cl.get('name'),
+                                                'latitude': cl.get('latitude'),
+                                                'longitude': cl.get('longitude'),
+                                                'radius_meters': cl.get('radius_meters', 300)
+                                            })
+                                        app.logger.info(f"Validazione GPS: aggiunte {len(custom_locs)} location custom al set di validazione per {username}")
+                                    except Exception:
+                                        pass
             except Exception as e:
                 app.logger.warning(f"Errore lettura turno Rentman per GPS: {e}")
             
@@ -5474,6 +5710,8 @@ def api_timbratura_registra():
     ora_mod = None
     turno_start = None
     turno_end = None
+    day_of_week = datetime.now().weekday()
+    rounding_mode = 'single'
     flex_warning = None  # DEPRECATO - mantenuto per compatibilità
     flex_request_id = None  # DEPRECATO - mantenuto per compatibilità
     try:
@@ -5571,49 +5809,237 @@ def api_timbratura_registra():
                                 app.logger.info(f"Turno trovato in rentman_plannings per {username}: {turno_start} - {turno_end}")
         
         # Per fine_pausa, applica le regole sulla durata della pausa
+        _br_fine_pausa_rounded_min = None  # Minuti pausa arrotondati (per richiesta admin)
         if tipo == 'fine_pausa':
-            # Recupera l'ora di inizio pausa (l'ultima non chiusa)
-            inizio_pausa_rows = db.execute(
-                f"""SELECT ora, ora_mod FROM timbrature 
-                   WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'inizio_pausa'
-                   ORDER BY created_ts DESC LIMIT 1""",
-                (username, today)
-            ).fetchone()
+            # Se c'è una motivazione per pausa ridotta, NON arrotondare ora_mod.
+            # Lascia ora_mod = ora (tempo reale) in attesa dell'approvazione admin.
+            # L'admin deciderà se autorizzare la pausa ridotta (keep reale) o rifiutarla (applica pianificata).
+            has_break_reduction_reason = bool(((break_info or {}).get('break_reduction_reason') or '').strip())
             
-            if inizio_pausa_rows:
-                inizio_ora_mod = inizio_pausa_rows['ora_mod'] if isinstance(inizio_pausa_rows, dict) else inizio_pausa_rows[1]
-                if not inizio_ora_mod:
-                    inizio_ora_mod = inizio_pausa_rows['ora'] if isinstance(inizio_pausa_rows, dict) else inizio_pausa_rows[0]
-                
-                # Formatta l'ora di inizio pausa
-                if hasattr(inizio_ora_mod, 'strftime'):
-                    inizio_str = inizio_ora_mod.strftime("%H:%M")
+            if has_break_reduction_reason:
+                # Arrotonda la pausa reale ai 15 minuti più vicini (per eccesso)
+                # Recupera inizio_pausa per calcolare la durata arrotondata
+                ip_rows_br = db.execute(
+                    f"""SELECT ora, ora_mod FROM timbrature 
+                       WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'inizio_pausa'
+                       ORDER BY created_ts DESC LIMIT 1""",
+                    (username, today)
+                ).fetchone()
+                if ip_rows_br:
+                    ip_ora_br = ip_rows_br['ora_mod'] if isinstance(ip_rows_br, dict) else ip_rows_br[1]
+                    if not ip_ora_br:
+                        ip_ora_br = ip_rows_br['ora'] if isinstance(ip_rows_br, dict) else ip_rows_br[0]
+                    if hasattr(ip_ora_br, 'strftime'):
+                        ip_str_br = ip_ora_br.strftime("%H:%M")
+                    else:
+                        ip_str_br = str(ip_ora_br)[:5]
+                    ip_min_br = int(ip_str_br.split(':')[0]) * 60 + int(ip_str_br.split(':')[1])
+                    fp_min_br = int(ora[:2]) * 60 + int(ora[3:5])
+                    durata_reale = fp_min_br - ip_min_br
+                    # Arrotonda ai 15 minuti più vicini
+                    # TODO FUTURO: rendere configurabile l'intervallo di arrotondamento
+                    arrotondamento = 15
+                    durata_arrotondata = ((durata_reale + arrotondamento // 2) // arrotondamento) * arrotondamento
+                    new_fp_min = ip_min_br + durata_arrotondata
+                    _br_fine_pausa_rounded_min = durata_arrotondata  # Salva per la richiesta admin
+                    ora_mod = f"{new_fp_min // 60:02d}:{new_fp_min % 60:02d}:00"
+                    app.logger.info(f"Pausa ridotta con motivazione: durata reale={durata_reale}m, arrotondata={durata_arrotondata}m, ora_mod={ora_mod} (in attesa approvazione admin)")
                 else:
-                    inizio_str = str(inizio_ora_mod)[:5]
-                
-                # Calcola durata modificata usando le regole pause
-                durata_mod = calcola_pausa_mod(inizio_str, ora[:5], rules)
-                
-                # Calcola ora_mod di fine_pausa = inizio_pausa_mod + durata_mod
-                inizio_parts = inizio_str.split(':')
-                inizio_min = int(inizio_parts[0]) * 60 + int(inizio_parts[1])
-                fine_mod_min = inizio_min + durata_mod
-                
-                h = fine_mod_min // 60
-                m = fine_mod_min % 60
-                ora_mod = f"{h:02d}:{m:02d}:00"
-                
-                app.logger.info(f"Pausa: {inizio_str} -> {ora[:5]} (durata effettiva {int(ora[:2])*60+int(ora[3:5]) - inizio_min} min, durata mod {durata_mod} min, fine mod {ora_mod})")
+                    ora_mod = ora  # Fallback: nessun inizio pausa trovato
+                    app.logger.info(f"Pausa ridotta: inizio_pausa non trovato, ora_mod = ora reale ({ora})")
             else:
-                ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
+                # Arrotondamento normale della pausa
+                # Recupera l'ora di inizio pausa (l'ultima non chiusa)
+                inizio_pausa_rows = db.execute(
+                    f"""SELECT ora, ora_mod FROM timbrature 
+                       WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'inizio_pausa'
+                       ORDER BY created_ts DESC LIMIT 1""",
+                    (username, today)
+                ).fetchone()
+                
+                if inizio_pausa_rows:
+                    inizio_ora_mod = inizio_pausa_rows['ora_mod'] if isinstance(inizio_pausa_rows, dict) else inizio_pausa_rows[1]
+                    if not inizio_ora_mod:
+                        inizio_ora_mod = inizio_pausa_rows['ora'] if isinstance(inizio_pausa_rows, dict) else inizio_pausa_rows[0]
+                    
+                    # Formatta l'ora di inizio pausa
+                    if hasattr(inizio_ora_mod, 'strftime'):
+                        inizio_str = inizio_ora_mod.strftime("%H:%M")
+                    else:
+                        inizio_str = str(inizio_ora_mod)[:5]
+                    
+                    # Calcola durata modificata usando le regole pause
+                    durata_mod = calcola_pausa_mod(inizio_str, ora[:5], rules)
+                    
+                    # Calcola ora_mod di fine_pausa = inizio_pausa_mod + durata_mod
+                    inizio_parts = inizio_str.split(':')
+                    inizio_min = int(inizio_parts[0]) * 60 + int(inizio_parts[1])
+                    fine_mod_min = inizio_min + durata_mod
+                    
+                    h = fine_mod_min // 60
+                    m = fine_mod_min % 60
+                    ora_mod = f"{h:02d}:{m:02d}:00"
+                    
+                    app.logger.info(f"Pausa: {inizio_str} -> {ora[:5]} (durata effettiva {int(ora[:2])*60+int(ora[3:5]) - inizio_min} min, durata mod {durata_mod} min, fine mod {ora_mod})")
+                else:
+                    ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
         elif rounding_mode == 'daily' and tipo == 'fine_giornata':
             # Per daily mode: calcola l'ora di uscita che porta esattamente alle ore del turno
             ora_mod = _calcola_ora_fine_daily(db, username, today, ora, turno_start, turno_end, rules, placeholder, break_info=break_info)
         else:
             ora_mod = calcola_ora_mod(ora, tipo, turno_start, rules)
         
-        # Verifica flessibilità DISABILITATA - logica unificata con Ritardo + Extra Turno
-        # La flessibilità viene usata solo per l'arrotondamento in daily mode, non genera più richieste
+        # Verifica anticipo eccessivo in ingresso (richiesta motivazione)
+        # Se l'utente timbra prima di (turno_start - anticipo_max_minuti),
+        # crea automaticamente una richiesta "Fuori Flessibilità".
+        if tipo == 'inizio_giornata' and turno_start:
+            try:
+                ora_parts = ora[:5].split(':')
+                turno_parts = turno_start.split(':')
+                ora_min = int(ora_parts[0]) * 60 + int(ora_parts[1])
+                turno_min = int(turno_parts[0]) * 60 + int(turno_parts[1])
+                diff_minutes = ora_min - turno_min  # negativo = anticipo
+
+                anticipo_max = int(rules.get('anticipo_max_minuti', 30) or 30)
+                flessibilita_ingresso = int(rules.get('flessibilita_ingresso_minuti', anticipo_max) or anticipo_max)
+
+                # Gruppi di produzione NON hanno flessibilità → skip
+                _is_prod_flex_ing = False
+                try:
+                    _upfi = db.execute(
+                        f"SELECT g.is_production FROM app_users u JOIN user_groups g ON u.group_id = g.id WHERE u.username = {placeholder}",
+                        (username,)
+                    ).fetchone()
+                    _is_prod_flex_ing = bool((_upfi['is_production'] if isinstance(_upfi, dict) else _upfi[0]) if _upfi else False)
+                except Exception:
+                    pass
+
+                anticipo_assoluto = abs(diff_minutes)
+                # Trigger su uscita dalla flessibilità ingresso (richiesta motivazione)
+                if diff_minutes < 0 and anticipo_assoluto >= flessibilita_ingresso and not _is_prod_flex_ing:
+                    message = (
+                        f"Timbrata in anticipo di {anticipo_assoluto} minuti "
+                        f"(turno {turno_start}, flessibilità ingresso {flessibilita_ingresso} min)"
+                    )
+
+                    arrotondamento_minuti = int(
+                        rules.get('arrotondamento_giornaliero_minuti', 30) or 30
+                    )
+
+                    flex_request_id = _create_flex_request(
+                        db=db,
+                        username=username,
+                        date_str=today,
+                        tipo=tipo,
+                        ora_timbrata=ora,
+                        ora_mod=ora_mod,
+                        diff_minutes=diff_minutes,
+                        message=message,
+                        placeholder=placeholder,
+                        turno_start=turno_start,
+                        turno_end=turno_end,
+                        arrotondamento_minuti=arrotondamento_minuti,
+                    )
+
+                    if flex_request_id:
+                        flex_warning = {
+                            "detected": True,
+                            "tipo": tipo,
+                            "message": message,
+                            "diff_minutes": diff_minutes,
+                            "request_id": flex_request_id,
+                        }
+                        app.logger.info(
+                            "Ingresso anticipato oltre limite: creata richiesta Fuori Flessibilità id=%s per %s",
+                            flex_request_id,
+                            username,
+                        )
+            except Exception as flex_e:
+                app.logger.warning(f"Errore verifica anticipo ingresso/flex request: {flex_e}")
+
+        # Verifica uscita oltre flessibilità (messaggio + richiesta)
+        # NOTA: i gruppi di produzione NON hanno flessibilità → skip
+        flex_exit_debug = {}
+        _is_production_flex = False
+        try:
+            _upfx = db.execute(
+                f"SELECT g.is_production FROM app_users u JOIN user_groups g ON u.group_id = g.id WHERE u.username = {placeholder}",
+                (username,)
+            ).fetchone()
+            _is_production_flex = bool((_upfx['is_production'] if isinstance(_upfx, dict) else _upfx[0]) if _upfx else False)
+        except Exception:
+            pass
+        
+        if tipo == 'fine_giornata':
+            flex_exit_debug['turno_end'] = turno_end
+            flex_exit_debug['ora'] = ora[:5]
+            flex_exit_debug['has_turno_end'] = turno_end is not None
+            flex_exit_debug['is_production'] = _is_production_flex
+        
+        if tipo == 'fine_giornata' and turno_end and not _is_production_flex:
+            try:
+                ora_parts = ora[:5].split(':')
+                turno_parts = turno_end.split(':')
+                ora_min = int(ora_parts[0]) * 60 + int(ora_parts[1])
+                turno_min = int(turno_parts[0]) * 60 + int(turno_parts[1])
+                diff_minutes = ora_min - turno_min  # positivo = uscita dopo
+
+                flessibilita_uscita = int(rules.get('flessibilita_uscita_minuti', 30) or 30)
+                
+                flex_exit_debug['ora_min'] = ora_min
+                flex_exit_debug['turno_min'] = turno_min
+                flex_exit_debug['diff_minutes'] = diff_minutes
+                flex_exit_debug['flessibilita_uscita'] = flessibilita_uscita
+                flex_exit_debug['should_trigger'] = diff_minutes > flessibilita_uscita
+
+                if diff_minutes > flessibilita_uscita:
+                    oltre_min = diff_minutes - flessibilita_uscita
+                    message = (
+                        f"Uscita oltre di {oltre_min} minuti "
+                        f"(turno {turno_end}, flessibilità uscita {flessibilita_uscita} min)"
+                    )
+
+                    arrotondamento_minuti = int(
+                        rules.get('arrotondamento_giornaliero_minuti', 30) or 30
+                    )
+
+                    flex_request_id = _create_flex_request(
+                        db=db,
+                        username=username,
+                        date_str=today,
+                        tipo=tipo,
+                        ora_timbrata=ora,
+                        ora_mod=ora_mod,
+                        diff_minutes=diff_minutes,
+                        message=message,
+                        placeholder=placeholder,
+                        turno_start=turno_start,
+                        turno_end=turno_end,
+                        arrotondamento_minuti=arrotondamento_minuti,
+                    )
+                    
+                    flex_exit_debug['flex_request_id'] = flex_request_id
+
+                    if flex_request_id:
+                        flex_warning = {
+                            "detected": True,
+                            "tipo": tipo,
+                            "message": message,
+                            "diff_minutes": diff_minutes,
+                            "request_id": flex_request_id,
+                        }
+                        app.logger.info(
+                            "Uscita oltre flessibilità: creata richiesta id=%s per %s",
+                            flex_request_id,
+                            username,
+                        )
+                    else:
+                        flex_exit_debug['flex_request_failed'] = True
+            except Exception as flex_e:
+                flex_exit_debug['error'] = str(flex_e)
+                app.logger.warning(f"Errore verifica uscita oltre flessibilità/flex request: {flex_e}")
+        
+        app.logger.info(f"FLEX_EXIT_DEBUG {username}: {json.dumps(flex_exit_debug)}")
         
         app.logger.info(f"Ora mod calcolata: {ora} -> {ora_mod} (turno: {turno_start} - {turno_end}, tipo: {tipo}, mode: {rounding_mode})")
     except Exception as e:
@@ -5621,12 +6047,164 @@ def api_timbratura_registra():
         import traceback
         app.logger.error(traceback.format_exc())
         ora_mod = ora  # Fallback: usa ora originale
-    
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # REGOLA PAUSA RIDOTTA: se pausa timbrata è inferiore di >=30 min
+    # rispetto alla pianificata, richiede motivazione utente + approvazione admin.
+    # Il check avviene al momento del fine_pausa.
+    # ═══════════════════════════════════════════════════════════════════════════
+    break_reduction_data = None
+    break_reduction_request_id = None
+    if tipo == 'fine_pausa':
+        try:
+            planned_break_data = _get_planned_break_minutes_for_day(
+                db=db,
+                username=username,
+                date_str=today,
+                day_of_week=day_of_week,
+                placeholder=placeholder,
+            )
+            planned_break_minutes = int(planned_break_data.get('minutes', 0) or 0)
+            
+            # Al momento del fine_pausa, il record fine_pausa NON è ancora nel DB.
+            # Cerco l'ultimo inizio_pausa e uso 'ora' corrente come fine pausa.
+            inizio_pausa_row = db.execute(
+                f"""SELECT ora FROM timbrature
+                   WHERE username = {placeholder} AND data = {placeholder}
+                     AND tipo = 'inizio_pausa'
+                   ORDER BY created_ts DESC LIMIT 1""",
+                (username, today)
+            ).fetchone()
+            
+            effective_break_minutes = 0
+            if inizio_pausa_row:
+                ip_ora = inizio_pausa_row['ora'] if isinstance(inizio_pausa_row, dict) else inizio_pausa_row[0]
+                ip_min = _safe_time_to_minutes(ip_ora)
+                fp_min = _safe_time_to_minutes(ora)  # 'ora' è l'orario del fine_pausa corrente
+                if ip_min is not None and fp_min is not None and fp_min >= ip_min:
+                    effective_break_minutes = fp_min - ip_min
+            
+            app.logger.info(
+                "Break reduction check: user=%s planned=%s effective=%s (inizio_pausa→%s, fine_pausa→%s)",
+                username, planned_break_minutes, effective_break_minutes,
+                inizio_pausa_row['ora'] if inizio_pausa_row and isinstance(inizio_pausa_row, dict) else (inizio_pausa_row[0] if inizio_pausa_row else 'N/A'),
+                ora
+            )
+            
+            break_reduction_minutes = planned_break_minutes - effective_break_minutes
+
+            if planned_break_minutes > 0 and effective_break_minutes > 0 and break_reduction_minutes >= 30:
+                reason = ((break_info or {}).get('break_reduction_reason') or '').strip()
+                if not reason:
+                    return jsonify({
+                        "error": (
+                            "Pausa ridotta rilevata: la pausa effettuata è inferiore di "
+                            f"{break_reduction_minutes} minuti rispetto al pianificato. "
+                            "Inserisci una motivazione per proseguire."
+                        ),
+                        "need_break_reduction_reason": True,
+                        "break_reduction": {
+                            "planned_break_minutes": planned_break_minutes,
+                            "effective_break_minutes": effective_break_minutes,
+                            "break_reduction_minutes": break_reduction_minutes,
+                        }
+                    }), 400
+
+                break_reduction_data = {
+                    "planned_break_minutes": planned_break_minutes,
+                    "effective_break_minutes": effective_break_minutes,
+                    "break_reduction_minutes": break_reduction_minutes,
+                    "rounded_break_minutes": _br_fine_pausa_rounded_min,
+                    "break_source": planned_break_data.get('source'),
+                    "break_start": planned_break_data.get('break_start'),
+                    "break_end": planned_break_data.get('break_end'),
+                    "reason": reason,
+                    "turno_start": turno_start,
+                    "turno_end": turno_end,
+                    "ora_timbrata": ora,
+                    "ora_mod": ora_mod,
+                }
+                app.logger.info(
+                    "Break reduction detected: user=%s date=%s planned=%s effective=%s reduction=%s",
+                    username,
+                    today,
+                    planned_break_minutes,
+                    effective_break_minutes,
+                    break_reduction_minutes,
+                )
+        except Exception as br_e:
+            app.logger.warning(f"Errore verifica pausa ridotta: {br_e}")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # REGOLA PAUSA ASSENTE: se a fine_giornata non è stata timbrata nessuna pausa
+    # ma ne era pianificata una, richiede motivazione (stessa logica Deroga Pausa Ridotta)
+    # ═══════════════════════════════════════════════════════════════════════════
+    if tipo == 'fine_giornata' and break_reduction_data is None:
+        try:
+            planned_break_data_fg = _get_planned_break_minutes_for_day(
+                db=db,
+                username=username,
+                date_str=today,
+                day_of_week=day_of_week,
+                placeholder=placeholder,
+            )
+            planned_break_minutes_fg = int(planned_break_data_fg.get('minutes', 0) or 0)
+
+            if planned_break_minutes_fg > 0:
+                # Verifica se è stata registrata almeno una pausa oggi
+                pausa_row = db.execute(
+                    f"""SELECT COUNT(*) as cnt FROM timbrature
+                       WHERE username = {placeholder} AND data = {placeholder}
+                         AND tipo IN ('inizio_pausa', 'fine_pausa')""",
+                    (username, today)
+                ).fetchone()
+                n_pause = (pausa_row['cnt'] if isinstance(pausa_row, dict) else pausa_row[0]) if pausa_row else 0
+
+                if n_pause == 0:
+                    # Nessuna pausa timbrata: riduzione totale = tutta la pausa pianificata
+                    reason = ((break_info or {}).get('break_reduction_reason') or '').strip()
+                    if not reason:
+                        return jsonify({
+                            "error": (
+                                f"Pausa non timbrata: era prevista una pausa di {planned_break_minutes_fg} minuti "
+                                "che non risulta effettuata. Inserisci una motivazione per proseguire."
+                            ),
+                            "need_break_reduction_reason": True,
+                            "break_reduction": {
+                                "planned_break_minutes": planned_break_minutes_fg,
+                                "effective_break_minutes": 0,
+                                "break_reduction_minutes": planned_break_minutes_fg,
+                            }
+                        }), 400
+
+                    break_reduction_data = {
+                        "planned_break_minutes": planned_break_minutes_fg,
+                        "effective_break_minutes": 0,
+                        "break_reduction_minutes": planned_break_minutes_fg,
+                        "rounded_break_minutes": None,
+                        "break_source": planned_break_data_fg.get('source'),
+                        "break_start": planned_break_data_fg.get('break_start'),
+                        "break_end": planned_break_data_fg.get('break_end'),
+                        "reason": reason,
+                        "turno_start": turno_start,
+                        "turno_end": turno_end,
+                        "ora_timbrata": ora,
+                        "ora_mod": ora_mod,
+                    }
+                    app.logger.info(
+                        "Break assente a fine_giornata: user=%s date=%s planned=%s effective=0",
+                        username, today, planned_break_minutes_fg,
+                    )
+        except Exception as br_fg_e:
+            app.logger.warning(f"Errore verifica pausa assente a fine_giornata: {br_fg_e}")
+
     # ═══════════════════════════════════════════════════════════════════════════
     # RILEVAMENTO EXTRA TURNO
     # ═══════════════════════════════════════════════════════════════════════════
     extra_turno_request_id = None
     extra_turno_data = None
+    extra_turno_skip_motivation = False
+    extra_turno_anticipo_notes = None
     
     # Verifica se il modulo straordinari è attivo prima di rilevare Extra Turno
     # Extra Turno scatta SOLO a fine_giornata quando le ore lavorate superano le ore pianificate
@@ -5833,8 +6411,8 @@ def api_timbratura_registra():
                         )
                     
                     # Blocco straordinario dalle regole del gruppo
-                    blocco_str = user_rules.get('arrotondamento_giornaliero_minuti', 30)
-                    tipo_arrot = user_rules.get('arrotondamento_giornaliero_tipo', 'floor')
+                    blocco_str = rules_for_extra.get('arrotondamento_giornaliero_minuti', 30)
+                    tipo_arrot = rules_for_extra.get('arrotondamento_giornaliero_tipo', 'floor')
                     # Calcola straordinario lordo (prima dell'arrotondamento a blocchi)
                     extra_minutes_lordo = worked_minutes - planned_minutes
                     
@@ -5865,13 +6443,43 @@ def api_timbratura_registra():
                         username, worked_minutes, planned_minutes, extra_minutes
                     )
                     
-                    extra_turno_request_id = _create_auto_extra_turno_request(
-                        db=db,
-                        username=username,
-                        date_str=today,
-                        extra_data=extra_turno_data,
-                        notes=f"Extra Turno rilevato automaticamente - {extra_minutes} min oltre le {planned_minutes // 60}h{planned_minutes % 60:02d} pianificate"
-                    )
+                    # ── Verifica anticipo == extra turno PRIMA di creare la richiesta ──
+                    # Se esiste un'autorizzazione Fuori Flessibilità (tipo 17) per oggi
+                    # con lo stesso numero di minuti dell'extra turno, l'anticipo copre
+                    # già il tempo extra → NON creare la richiesta ET, skip popup
+                    try:
+                        flex_row_pre = db.execute(
+                            f"""SELECT id, value_amount, notes FROM user_requests
+                               WHERE username = {placeholder}
+                                 AND request_type_id = (SELECT id FROM request_types WHERE name = 'Fuori Flessibilità' LIMIT 1)
+                                 AND date_from = {placeholder}
+                                 AND status != 'rejected'
+                               ORDER BY created_ts DESC LIMIT 1""",
+                            (username, today)
+                        ).fetchone()
+                        if flex_row_pre:
+                            flex_val_pre = float(flex_row_pre['value_amount'] if isinstance(flex_row_pre, dict) else flex_row_pre[1]) if (flex_row_pre['value_amount'] if isinstance(flex_row_pre, dict) else flex_row_pre[1]) else 0
+                            flex_notes_pre = (flex_row_pre['notes'] if isinstance(flex_row_pre, dict) else flex_row_pre[2]) or ''
+                            if abs(flex_val_pre - extra_minutes) < 1:
+                                # Anticipo autorizzato == Extra Turno → nessuna richiesta ET
+                                extra_turno_skip_motivation = True
+                                extra_turno_anticipo_notes = flex_notes_pre
+                                app.logger.info(
+                                    "Extra Turno SKIP: anticipo autorizzato=%.0f min == extra=%.0f min → nessuna richiesta ET creata",
+                                    flex_val_pre, extra_minutes
+                                )
+                    except Exception as skip_pre_e:
+                        app.logger.warning(f"Errore verifica anticipo pre-ET: {skip_pre_e}")
+                    
+                    # Crea la richiesta ET solo se NON è già coperta dall'anticipo
+                    if not extra_turno_skip_motivation:
+                        extra_turno_request_id = _create_auto_extra_turno_request(
+                            db=db,
+                            username=username,
+                            date_str=today,
+                            extra_data=extra_turno_data,
+                            notes=f"Extra Turno rilevato automaticamente - {extra_minutes} min oltre le {planned_minutes // 60}h{planned_minutes % 60:02d} pianificate"
+                        )
                 else:
                     app.logger.info(
                         "Extra Turno NON rilevato per %s: worked=%s min <= planned=%s min",
@@ -6036,7 +6644,16 @@ def api_timbratura_registra():
     # e invia a CedolinoWeb
     # ═══════════════════════════════════════════════════════════════════════════
     created_break_records = []
+    break_debug = {}  # Debug info per risposta API
+    
+    if tipo == 'fine_giornata':
+        break_debug['break_info_received'] = break_info is not None
+        break_debug['break_info_value'] = str(break_info) if break_info else None
+        break_debug['condition_confirmed'] = bool(break_info and break_info.get('break_confirmed'))
+        break_debug['condition_not_stamped'] = bool(break_info and not break_info.get('break_stamped'))
+    
     if tipo == 'fine_giornata' and break_info and break_info.get('break_confirmed') and not break_info.get('break_stamped'):
+        break_debug['entered_creation_block'] = True
         try:
             # Verifica che non ci siano già pause timbraste oggi
             existing_pausa = db.execute(
@@ -6046,40 +6663,176 @@ def api_timbratura_registra():
                 (username, today)
             ).fetchone()
             existing_count = existing_pausa['cnt'] if isinstance(existing_pausa, dict) else existing_pausa[0]
+            break_debug['existing_pausa_count'] = existing_count
             
             if existing_count == 0:
                 # Recupera break_start e break_end dalla configurazione turno
                 break_start_str = None
                 break_end_str = None
-                try:
-                    ensure_employee_shifts_table(db)
-                    brow = db.execute(
-                        f"""SELECT break_start, break_end FROM employee_shifts 
-                           WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1""",
-                        (username, day_of_week)
-                    ).fetchone()
-                    if brow:
-                        _bs = brow['break_start'] if isinstance(brow, dict) else brow[0]
-                        _be = brow['break_end'] if isinstance(brow, dict) else brow[1]
-                        if _bs and _be:
-                            if hasattr(_bs, 'total_seconds'):
-                                total_sec = int(_bs.total_seconds())
-                                break_start_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}:00"
-                            elif hasattr(_bs, 'strftime'):
-                                break_start_str = _bs.strftime("%H:%M:%S")
-                            else:
-                                bs_s = str(_bs)[:5]
-                                break_start_str = f"{bs_s}:00"
-                            if hasattr(_be, 'total_seconds'):
-                                total_sec = int(_be.total_seconds())
-                                break_end_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}:00"
-                            elif hasattr(_be, 'strftime'):
-                                break_end_str = _be.strftime("%H:%M:%S")
-                            else:
-                                be_s = str(_be)[:5]
-                                break_end_str = f"{be_s}:00"
-                except Exception as e:
-                    app.logger.warning(f"Errore lettura break da employee_shifts per pausa confermata: {e}")
+                break_minutes_info = None
+                break_source = None  # Traccia da dove arrivano i dati
+
+                # ── Priorità 1: dati passati dal frontend nel break_info ──
+                if break_info:
+                    bi_start = break_info.get('break_start')
+                    bi_end = break_info.get('break_end')
+                    bi_minutes = break_info.get('break_minutes')
+                    break_debug['p1_bi_start'] = str(bi_start)
+                    break_debug['p1_bi_end'] = str(bi_end)
+                    break_debug['p1_bi_minutes'] = str(bi_minutes)
+
+                    if bi_start and bi_end:
+                        break_start_str = f"{str(bi_start)[:5]}:00"
+                        break_end_str = f"{str(bi_end)[:5]}:00"
+                        break_source = "frontend_break_info"
+                    try:
+                        if bi_minutes is not None:
+                            break_minutes_info = int(float(bi_minutes))
+                    except Exception:
+                        break_minutes_info = None
+
+                # ── Priorità 2: employee_shifts (SOLO se P1 non ha trovato orari) ──
+                if not break_start_str or not break_end_str:
+                    try:
+                        ensure_employee_shifts_table(db)
+                        brow = db.execute(
+                            f"""SELECT break_start, break_end FROM employee_shifts 
+                               WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1""",
+                            (username, day_of_week)
+                        ).fetchone()
+                        break_debug['p2_employee_shifts_found'] = brow is not None
+                        if brow:
+                            _bs = brow['break_start'] if isinstance(brow, dict) else brow[0]
+                            _be = brow['break_end'] if isinstance(brow, dict) else brow[1]
+                            break_debug['p2_bs'] = str(_bs)
+                            break_debug['p2_be'] = str(_be)
+                            if _bs and _be:
+                                if hasattr(_bs, 'total_seconds'):
+                                    total_sec = int(_bs.total_seconds())
+                                    break_start_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}:00"
+                                elif hasattr(_bs, 'strftime'):
+                                    break_start_str = _bs.strftime("%H:%M:%S")
+                                else:
+                                    bs_s = str(_bs)[:5]
+                                    break_start_str = f"{bs_s}:00"
+                                if hasattr(_be, 'total_seconds'):
+                                    total_sec = int(_be.total_seconds())
+                                    break_end_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}:00"
+                                elif hasattr(_be, 'strftime'):
+                                    break_end_str = _be.strftime("%H:%M:%S")
+                                else:
+                                    be_s = str(_be)[:5]
+                                    break_end_str = f"{be_s}:00"
+                                break_source = "employee_shifts"
+                    except Exception as e:
+                        break_debug['p2_error'] = str(e)
+                        app.logger.warning(f"Errore lettura break da employee_shifts per pausa confermata: {e}")
+
+                # ── Priorità 3: Rentman plannings (SOLO se P1 e P2 non hanno trovato) ──
+                if not break_start_str or not break_end_str:
+                    try:
+                        user_row_break = db.execute(
+                            f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+                            (username,)
+                        ).fetchone()
+                        crew_id_break = None
+                        if user_row_break:
+                            crew_id_break = user_row_break['rentman_crew_id'] if isinstance(user_row_break, dict) else user_row_break[0]
+                        break_debug['p3_crew_id'] = str(crew_id_break)
+
+                        if crew_id_break:
+                            # Cerca pausa in TUTTI i turni, non solo il primo
+                            rentman_break_rows = db.execute(
+                                f"""SELECT break_start, break_end, break_minutes, plan_start, plan_end FROM rentman_plannings
+                                   WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+                                     AND (is_obsolete IS NULL OR is_obsolete = 0)
+                                   ORDER BY plan_start ASC""",
+                                (crew_id_break, today)
+                            ).fetchall()
+                            break_debug['p3_rentman_rows_count'] = len(rentman_break_rows) if rentman_break_rows else 0
+
+                            for idx_rb, rentman_break_row in enumerate(rentman_break_rows or []):
+                                _rbs = rentman_break_row['break_start'] if isinstance(rentman_break_row, dict) else rentman_break_row[0]
+                                _rbe = rentman_break_row['break_end'] if isinstance(rentman_break_row, dict) else rentman_break_row[1]
+                                _rbm = rentman_break_row['break_minutes'] if isinstance(rentman_break_row, dict) else rentman_break_row[2]
+                                _rps = rentman_break_row['plan_start'] if isinstance(rentman_break_row, dict) else rentman_break_row[3]
+                                _rpe = rentman_break_row['plan_end'] if isinstance(rentman_break_row, dict) else rentman_break_row[4]
+                                break_debug[f'p3_row{idx_rb}'] = f"bs={_rbs}, be={_rbe}, bm={_rbm}, ps={_rps}, pe={_rpe}"
+
+                                # 3a: usa break_start/break_end direttamente
+                                if _rbs and _rbe and not break_start_str:
+                                    if hasattr(_rbs, 'strftime'):
+                                        break_start_str = _rbs.strftime("%H:%M:%S")
+                                    else:
+                                        rbs_s = str(_rbs)[:5]
+                                        break_start_str = f"{rbs_s}:00"
+
+                                    if hasattr(_rbe, 'strftime'):
+                                        break_end_str = _rbe.strftime("%H:%M:%S")
+                                    else:
+                                        rbe_s = str(_rbe)[:5]
+                                        break_end_str = f"{rbe_s}:00"
+                                    break_source = f"rentman_break_times_row{idx_rb}"
+                                    break
+
+                                # 3b: solo break_minutes → calcola intervallo centrato
+                                if (not break_start_str or not break_end_str) and _rbm:
+                                    try:
+                                        break_minutes_val = int(float(_rbm))
+                                    except Exception:
+                                        break_minutes_val = 0
+
+                                    if break_minutes_val > 0:
+                                        ps_str = None
+                                        pe_str = None
+
+                                        if _rps:
+                                            ps_str = _rps.strftime("%H:%M") if hasattr(_rps, 'strftime') else str(_rps)[11:16] if len(str(_rps)) > 11 else str(_rps)[:5]
+                                        if _rpe:
+                                            pe_str = _rpe.strftime("%H:%M") if hasattr(_rpe, 'strftime') else str(_rpe)[11:16] if len(str(_rpe)) > 11 else str(_rpe)[:5]
+
+                                        if not ps_str:
+                                            ps_str = turno_start
+                                        if not pe_str:
+                                            pe_str = turno_end
+
+                                        break_debug[f'p3_row{idx_rb}_compute'] = f"bm={break_minutes_val}, ps={ps_str}, pe={pe_str}"
+
+                                        if ps_str and pe_str:
+                                            try:
+                                                ps_min = int(ps_str[:2]) * 60 + int(ps_str[3:5])
+                                                pe_min = int(pe_str[:2]) * 60 + int(pe_str[3:5])
+                                                if pe_min > ps_min and break_minutes_val < (pe_min - ps_min):
+                                                    break_start_min = ps_min + ((pe_min - ps_min - break_minutes_val) // 2)
+                                                    break_end_min = break_start_min + break_minutes_val
+                                                    break_start_str = f"{break_start_min // 60:02d}:{break_start_min % 60:02d}:00"
+                                                    break_end_str = f"{break_end_min // 60:02d}:{break_end_min % 60:02d}:00"
+                                                    break_source = f"rentman_break_minutes_computed_row{idx_rb}"
+                                                    break
+                                            except Exception as comp_e:
+                                                break_debug[f'p3_row{idx_rb}_compute_error'] = str(comp_e)
+                    except Exception as e:
+                        break_debug['p3_error'] = str(e)
+                        app.logger.warning(f"Errore fallback break da rentman_plannings per pausa confermata: {e}")
+
+                # ── Priorità 4: Fallback finale con break_minutes_info + turno_start/turno_end ──
+                if (not break_start_str or not break_end_str) and break_minutes_info and turno_start and turno_end:
+                    break_debug['p4_fallback'] = f"bm={break_minutes_info}, ts={turno_start}, te={turno_end}"
+                    try:
+                        ts_min = int(turno_start[:2]) * 60 + int(turno_start[3:5])
+                        te_min = int(turno_end[:2]) * 60 + int(turno_end[3:5])
+                        if te_min > ts_min and break_minutes_info < (te_min - ts_min):
+                            bs_min = ts_min + ((te_min - ts_min - break_minutes_info) // 2)
+                            be_min = bs_min + break_minutes_info
+                            break_start_str = f"{bs_min // 60:02d}:{bs_min % 60:02d}:00"
+                            break_end_str = f"{be_min // 60:02d}:{be_min % 60:02d}:00"
+                            break_source = "final_fallback_turno"
+                    except Exception as ff_e:
+                        break_debug['p4_error'] = str(ff_e)
+                
+                break_debug['final_break_start'] = break_start_str
+                break_debug['final_break_end'] = break_end_str
+                break_debug['break_source'] = break_source
                 
                 if break_start_str and break_end_str:
                     now_ts = now_ms()
@@ -6099,12 +6852,34 @@ def api_timbratura_registra():
                         {'tipo': 'inizio_pausa', 'ora': break_start_str, 'timeframe': TIMEFRAME_INIZIO_PAUSA},
                         {'tipo': 'fine_pausa', 'ora': break_end_str, 'timeframe': TIMEFRAME_FINE_PAUSA},
                     ]
+                    break_debug['records_created'] = True
                     app.logger.info(
-                        "Pausa confermata per %s: create timbrature inizio_pausa %s e fine_pausa %s (method=confirmed_by_user)",
-                        username, break_start_str, break_end_str
+                        "Pausa confermata per %s: create timbrature inizio_pausa %s e fine_pausa %s (method=confirmed_by_user, source=%s)",
+                        username, break_start_str, break_end_str, break_source
                     )
+                else:
+                    break_debug['records_created'] = False
+                    break_debug['failure_reason'] = 'break_start or break_end non trovati in nessuna sorgente'
+                    app.logger.warning(
+                        "Pausa confermata per %s MA orari pausa non trovati! Debug: %s",
+                        username, json.dumps(break_debug)
+                    )
+            else:
+                break_debug['skipped_reason'] = f'existing_pausa_count={existing_count}'
         except Exception as e:
-            app.logger.error(f"Errore creazione timbrature pausa confermata: {e}")
+            break_debug['exception'] = str(e)
+            import traceback
+            break_debug['traceback'] = traceback.format_exc()
+            app.logger.error(f"Errore creazione timbrature pausa confermata: {e}\n{traceback.format_exc()}")
+    elif tipo == 'fine_giornata':
+        if not break_info:
+            break_debug['skipped_reason'] = 'break_info is None/empty'
+        elif not break_info.get('break_confirmed'):
+            break_debug['skipped_reason'] = 'break_confirmed is False'
+        elif break_info.get('break_stamped'):
+            break_debug['skipped_reason'] = 'break already stamped'
+    
+    app.logger.info(f"BREAK_DEBUG {username}: {json.dumps(break_debug)}")
     
     # Pulisce dati timbratura dalla sessione
     session.pop("timbratura_method", None)
@@ -6231,6 +7006,17 @@ def api_timbratura_registra():
                     app.logger.error(f"Errore invio pausa confermata a CedolinoWeb: {e}")
         except Exception as e:
             app.logger.error(f"Errore preparazione invio pause confermate: {e}")
+
+    # Se rilevata pausa ridotta significativa, crea richiesta admin
+    if break_reduction_data:
+        break_reduction_request_id = _create_break_reduction_request(
+            db=db,
+            username=username,
+            date_str=today,
+            break_data=break_reduction_data,
+            reason=break_reduction_data.get('reason', ''),
+            placeholder=placeholder,
+        )
     
     db.commit()
     
@@ -6253,7 +7039,9 @@ def api_timbratura_registra():
             "minutes": extra_turno_data.get("extra_minutes"),
             "worked_minutes": extra_turno_data.get("worked_minutes"),
             "planned_minutes": extra_turno_data.get("planned_minutes"),
-            "request_id": extra_turno_request_id
+            "request_id": extra_turno_request_id,
+            "skip_motivation": extra_turno_skip_motivation,
+            "anticipo_notes": extra_turno_anticipo_notes,
         }
     
     # Se c'è un Late Arrival rilevato, informa il frontend
@@ -6268,6 +7056,27 @@ def api_timbratura_registra():
             "flessibilita_ingresso_minuti": late_arrival_data.get("flessibilita_ingresso_minuti", 0),
             "is_production": _is_production_late
         }
+
+    # Se c'è un Fuori Flessibilità rilevato, informa il frontend
+    if flex_warning and flex_request_id:
+        response_data["flex_warning"] = flex_warning
+
+    if break_reduction_data and break_reduction_request_id:
+        response_data["break_reduction_request"] = {
+            "detected": True,
+            "request_id": break_reduction_request_id,
+            "planned_break_minutes": break_reduction_data.get("planned_break_minutes"),
+            "effective_break_minutes": break_reduction_data.get("effective_break_minutes"),
+            "break_reduction_minutes": break_reduction_data.get("break_reduction_minutes"),
+        }
+    
+    # Debug info per diagnostica pausa confermata e flessibilità uscita
+    if tipo == 'fine_giornata':
+        response_data["_break_debug"] = break_debug
+        try:
+            response_data["_flex_exit_debug"] = flex_exit_debug
+        except NameError:
+            response_data["_flex_exit_debug"] = {"error": "flex_exit_debug not in scope (ora_mod exception?)"}
     
     # ═══════════════════════════════════════════════════════════════════
     # GRUPPI DI PRODUZIONE - Gestione automatica attività
@@ -6337,6 +7146,62 @@ def api_timbratura_registra():
                     # Gestione squadra NON attiva → popup attività individuale
                     turno_per_popup = t
                     break
+
+                # Verifica se TUTTI i turni sono gestione_squadra (per l'utente non-leader)
+                all_gestione_squadra = turni_oggi and len(turni_oggi) > 0 and all(
+                    (bool(t['gestione_squadra'] if isinstance(t, dict) else (t[6] if len(t) > 6 else False))
+                     and not bool(t['is_leader'] if isinstance(t, dict) else (t[3] if len(t) > 3 else False)))
+                    for t in turni_oggi
+                )
+
+                # Inizio giornata: proponi popup attività
+                # - con dati pianificati se disponibili
+                # - in modalità manuale (progetto + attività) se non c'è turno/mansione
+                # - MA NON se tutti i turni sono gestione_squadra (attività gestite dal caposquadra)
+                if tipo == 'inizio_giornata':
+                    if turno_per_popup:
+                        popup_proj = turno_per_popup['project_code'] if isinstance(turno_per_popup, dict) else turno_per_popup[0]
+                        popup_name = turno_per_popup['project_name'] if isinstance(turno_per_popup, dict) else turno_per_popup[1]
+                        popup_func = turno_per_popup['function_name'] if isinstance(turno_per_popup, dict) else turno_per_popup[2]
+                        if popup_func:
+                            response_data["production_activity"] = {
+                                "detected": True,
+                                "project_code": popup_proj,
+                                "project_name": popup_name,
+                                "activity_label": popup_func,
+                                "action": "start",
+                                "timbratura_ts": created_ts
+                            }
+                            app.logger.info(f"Proposta avvio attività produzione: {popup_func} per {username} (progetto senza gestione squadra)")
+                        else:
+                            response_data["production_activity"] = {
+                                "detected": True,
+                                "project_code": "",
+                                "project_name": "",
+                                "activity_label": "",
+                                "action": "start",
+                                "manual_selection": True,
+                                "requires_project_selection": True,
+                                "requires_activity_selection": True,
+                                "timbratura_ts": created_ts
+                            }
+                            app.logger.info(f"Popup attività produzione manuale: nessuna mansione pianificata per {username}")
+                    elif all_gestione_squadra:
+                        # Tutti i turni sono gestione_squadra → nessun popup, solo timbratura
+                        app.logger.info(f"Skip popup attività per {username}: tutti i turni sono gestione_squadra")
+                    else:
+                        response_data["production_activity"] = {
+                            "detected": True,
+                            "project_code": "",
+                            "project_name": "",
+                            "activity_label": "",
+                            "action": "start",
+                            "manual_selection": True,
+                            "requires_project_selection": True,
+                            "requires_activity_selection": True,
+                            "timbratura_ts": created_ts
+                        }
+                        app.logger.info(f"Popup attività produzione manuale: nessun turno pianificato per {username}")
                 
                 if turno_info:
                     if isinstance(turno_info, dict):
@@ -6351,22 +7216,6 @@ def api_timbratura_registra():
                         user_is_leader = bool(turno_info[3])
                     
                     app.logger.info(f"Turno produzione: project={proj_code}, funzione={func_name}, is_leader={user_is_leader}")
-                    
-                    # Proponi avvio attività dal turno senza gestione squadra
-                    if turno_per_popup and tipo == 'inizio_giornata':
-                        popup_proj = turno_per_popup['project_code'] if isinstance(turno_per_popup, dict) else turno_per_popup[0]
-                        popup_name = turno_per_popup['project_name'] if isinstance(turno_per_popup, dict) else turno_per_popup[1]
-                        popup_func = turno_per_popup['function_name'] if isinstance(turno_per_popup, dict) else turno_per_popup[2]
-                        if popup_func:
-                            response_data["production_activity"] = {
-                                "detected": True,
-                                "project_code": popup_proj,
-                                "project_name": popup_name,
-                                "activity_label": popup_func,
-                                "action": "start",
-                                "timbratura_ts": created_ts
-                            }
-                            app.logger.info(f"Proposta avvio attività produzione: {popup_func} per {username} (progetto senza gestione squadra)")
                     
                     # Gestisci pausa/resume/stop SEMPRE se c'è un timer attivo (indipendentemente dal leader)
                     if tipo == 'inizio_pausa':
@@ -6410,6 +7259,50 @@ def api_timbratura_registra():
     app.logger.info(f"Risposta timbratura per {username}: extra_turno_data={extra_turno_data}, flex_warning={flex_warning}, late_arrival_data={late_arrival_data}, response_data={response_data}")
     
     return jsonify(response_data)
+
+
+@app.get("/api/check_break_needed")
+@login_required
+def api_check_break_needed():
+    """Verifica se oggi è prevista una pausa (da employee_shifts o Rentman) e se è già stata timbrata."""
+    username = session.get('user_id')
+    if not username:
+        return jsonify({"error": "Non autenticato"}), 401
+    db = get_db()
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    today = datetime.now().strftime('%Y-%m-%d')
+    day_of_week = datetime.now().weekday()  # 0=lunedì … 6=domenica
+
+    planned_minutes = 0
+    try:
+        planned_break_data = _get_planned_break_minutes_for_day(
+            db=db,
+            username=username,
+            date_str=today,
+            day_of_week=day_of_week,
+            placeholder=placeholder,
+        )
+        planned_minutes = int(planned_break_data.get('minutes', 0) or 0)
+    except Exception as e:
+        app.logger.warning(f"api_check_break_needed: errore _get_planned: {e}")
+
+    has_pausa = False
+    try:
+        pausa_row = db.execute(
+            f"""SELECT COUNT(*) as cnt FROM timbrature
+               WHERE username = {placeholder} AND data = {placeholder}
+                 AND tipo IN ('inizio_pausa', 'fine_pausa')""",
+            (username, today)
+        ).fetchone()
+        n_pause = (pausa_row['cnt'] if isinstance(pausa_row, dict) else pausa_row[0]) if pausa_row else 0
+        has_pausa = n_pause > 0
+    except Exception as e:
+        app.logger.warning(f"api_check_break_needed: errore query timbrature: {e}")
+
+    return jsonify({
+        "planned_break_minutes": planned_minutes,
+        "has_pausa_timbrata": has_pausa,
+    })
 
 
 @app.post("/api/user/change-password")
@@ -6464,6 +7357,68 @@ def api_user_change_password():
     app.logger.info(f"Utente {username} ha cambiato la propria password")
     
     return jsonify({"success": True, "message": "Password aggiornata con successo"})
+
+
+def _build_valid_locations(group_default_loc, timbratura_location, timbratura_lat, timbratura_lon, timbratura_radius, location_name, location_lat, location_lon, location_radius, gps_mode, custom_locations=None):
+    """Costruisce la lista delle locations valide per la timbratura GPS.
+    Include sempre la sede default del gruppo + la location del turno (Rentman) se presente e diversa
+    + eventuali custom locations assegnate al planning."""
+    valid = []
+    seen_names = set()
+
+    app.logger.info(f"_build_valid_locations CALLED: group_default={group_default_loc}, timbratura_location={timbratura_location}, "
+                    f"timbratura_lat={timbratura_lat}, timbratura_lon={timbratura_lon}, "
+                    f"location_name={location_name}, location_lat={location_lat}, location_lon={location_lon}, location_radius={location_radius}, gps_mode={gps_mode}, custom_locations={custom_locations}")
+
+    # 1. Sede default del gruppo (sempre valida)
+    if group_default_loc and group_default_loc.get('latitude') and group_default_loc.get('longitude'):
+        valid.append(group_default_loc)
+        seen_names.add(group_default_loc['name'])
+        app.logger.info(f"_build_valid_locations: +sede gruppo '{group_default_loc['name']}'")
+    else:
+        app.logger.warning(f"_build_valid_locations: sede gruppo MANCANTE o senza coordinate: {group_default_loc}")
+
+    # 2. Location del turno Rentman (se ha coordinate e non è già presente)
+    #    Sempre inclusa indipendentemente dal gps_mode
+    if location_name and location_lat and location_lon and location_name not in seen_names:
+        valid.append({
+            "name": location_name,
+            "latitude": float(location_lat),
+            "longitude": float(location_lon),
+            "radius_meters": location_radius or 300
+        })
+        seen_names.add(location_name)
+        app.logger.info(f"_build_valid_locations: +location Rentman '{location_name}'")
+    else:
+        app.logger.info(f"_build_valid_locations: location Rentman NON aggiunta: name={location_name}, lat={location_lat}, lon={location_lon}, already_seen={location_name in seen_names if location_name else 'N/A'}")
+
+    # 3. GPS timbratura location (se diversa da sede gruppo e da location Rentman)
+    if timbratura_location and timbratura_lat and timbratura_lon and timbratura_location not in seen_names:
+        valid.append({
+            "name": timbratura_location,
+            "latitude": float(timbratura_lat),
+            "longitude": float(timbratura_lon),
+            "radius_meters": timbratura_radius or 300
+        })
+        seen_names.add(timbratura_location)
+        app.logger.info(f"_build_valid_locations: +timbratura location '{timbratura_location}'")
+
+    # 4. Custom locations assegnate al planning (da custom_location_ids)
+    if custom_locations:
+        for cl in custom_locations:
+            cl_name = cl.get('name', '')
+            if cl_name and cl_name not in seen_names and cl.get('latitude') and cl.get('longitude'):
+                valid.append({
+                    "name": cl_name,
+                    "latitude": float(cl['latitude']),
+                    "longitude": float(cl['longitude']),
+                    "radius_meters": cl.get('radius_meters', 300)
+                })
+                seen_names.add(cl_name)
+                app.logger.info(f"_build_valid_locations: +custom location '{cl_name}'")
+
+    app.logger.info(f"_build_valid_locations RESULT: {len(valid)} locations: {[v.get('name') for v in valid]}")
+    return valid
 
 
 @app.get("/api/user/turno-oggi")
@@ -6538,6 +7493,25 @@ def api_user_turno_oggi():
                     if not timbratura_lat:
                         app.logger.warning(f"⚠️ employee_shifts: Location '{location_name}' NON trovata nelle gps_locations: {[l.get('name') for l in gps_locations]}")
                 
+                # Recupera sede default del gruppo per employee_shifts
+                es_group_default = None
+                try:
+                    es_group_row = db.execute(
+                        f"""SELECT ug.gps_location_name
+                            FROM app_users au JOIN user_groups ug ON au.group_id = ug.id
+                            WHERE au.username = {placeholder}""",
+                        (username,)
+                    ).fetchone()
+                    if es_group_row:
+                        es_gps_name = es_group_row['gps_location_name'] if isinstance(es_group_row, dict) else es_group_row[0]
+                        if es_gps_name:
+                            for loc in gps_locations:
+                                if loc.get('name') == es_gps_name:
+                                    es_group_default = {"name": es_gps_name, "latitude": loc.get('latitude'), "longitude": loc.get('longitude'), "radius_meters": loc.get('radius_meters', 300)}
+                                    break
+                except Exception:
+                    pass
+
                 turno = {
                     "project_code": "UFFICIO",
                     "project_name": "Lavoro in ufficio",
@@ -6557,6 +7531,7 @@ def api_user_turno_oggi():
                     "timbratura_lon": timbratura_lon,
                     "timbratura_radius": timbratura_radius,
                     "gps_mode": "group",
+                    "valid_locations": _build_valid_locations(es_group_default, location_name, timbratura_lat, timbratura_lon, timbratura_radius, location_name, None, None, None, "group"),
                 }
                 return jsonify({"turno": turno, "turni": [turno]})
             
@@ -6592,7 +7567,8 @@ def api_user_turno_oggi():
             f"""
             SELECT project_code, project_name, function_name, plan_start, plan_end,
                    hours_planned, remark, is_leader, transport, break_start, break_end, break_minutes,
-                   location_name, timbratura_gps_mode, gps_timbratura_location, location_id, remark_planner
+                   location_name, timbratura_gps_mode, gps_timbratura_location, location_id, remark_planner,
+                   custom_location_ids, gestione_squadra
             FROM rentman_plannings
             WHERE crew_id = {placeholder} AND planning_date = {placeholder} AND sent_to_webservice = 1
               AND (is_obsolete = 0 OR is_obsolete IS NULL)
@@ -6603,6 +7579,39 @@ def api_user_turno_oggi():
         
         if not planning:
             return jsonify({"turno": None, "turni": [], "message": "Nessun turno per oggi"})
+        
+        # Recupera la sede default del gruppo dell'utente
+        group_default_location = None  # {name, latitude, longitude, radius_meters}
+        try:
+            group_row = db.execute(
+                f"""SELECT ug.gps_location_name
+                    FROM app_users au
+                    JOIN user_groups ug ON au.group_id = ug.id
+                    WHERE au.username = {placeholder}""",
+                (username,)
+            ).fetchone()
+            if group_row:
+                gps_loc_name = group_row['gps_location_name'] if isinstance(group_row, dict) else group_row[0]
+                if gps_loc_name:
+                    # Cerca le coordinate nelle gps_locations della config aziendale
+                    settings = get_company_settings(db)
+                    custom = settings.get('custom_settings', {})
+                    timbratura_cfg = custom.get('timbratura', {})
+                    cfg_locations = timbratura_cfg.get('gps_locations', [])
+                    for loc in cfg_locations:
+                        if loc.get('name') == gps_loc_name:
+                            group_default_location = {
+                                "name": gps_loc_name,
+                                "latitude": loc.get('latitude'),
+                                "longitude": loc.get('longitude'),
+                                "radius_meters": loc.get('radius_meters', 300)
+                            }
+                            app.logger.info(f"✅ Sede default gruppo per {username}: '{gps_loc_name}' ({group_default_location['latitude']}, {group_default_location['longitude']})")
+                            break
+                    if not group_default_location:
+                        app.logger.warning(f"⚠️ Sede default gruppo '{gps_loc_name}' non trovata in gps_locations config")
+        except Exception as e:
+            app.logger.warning(f"Errore recupero sede default gruppo: {e}")
         
         turni = []
         for row in planning:
@@ -6635,6 +7644,8 @@ def api_user_turno_oggi():
                 gps_timbratura_location = row.get('gps_timbratura_location')
                 location_id = row.get('location_id')
                 remark_planner = row.get('remark_planner')
+                raw_custom_loc_ids = row.get('custom_location_ids')
+                row_gestione_squadra = bool(row.get('gestione_squadra'))
             else:
                 break_start = format_time_value(row[9] if len(row) > 9 else None)
                 break_end = format_time_value(row[10] if len(row) > 10 else None)
@@ -6644,6 +7655,8 @@ def api_user_turno_oggi():
                 gps_timbratura_location = row[14] if len(row) > 14 else None
                 location_id = row[15] if len(row) > 15 else None
                 remark_planner = row[16] if len(row) > 16 else None
+                raw_custom_loc_ids = row[17] if len(row) > 17 else None
+                row_gestione_squadra = bool(row[18]) if len(row) > 18 else False
             
             # Coordinate dalla cache globale
             location_lat, location_lon, location_radius = None, None, 300
@@ -6721,10 +7734,47 @@ def api_user_turno_oggi():
             else:
                 app.logger.warning(f"DEBUG: gps_mode sconosciuto: '{gps_mode}'")
             
+            # 4. Carica eventuali custom locations dal campo custom_location_ids del planning
+            planning_custom_locs = []
+            try:
+                if raw_custom_loc_ids:
+                    import json as _json
+                    parsed_ids = None
+                    if isinstance(raw_custom_loc_ids, str):
+                        try:
+                            parsed_ids = _json.loads(raw_custom_loc_ids)
+                        except Exception:
+                            parsed_ids = None
+                    elif isinstance(raw_custom_loc_ids, (list, tuple)):
+                        parsed_ids = list(raw_custom_loc_ids)
+
+                    if parsed_ids:
+                        ensure_location_cache_table(db)
+                        ph = ",".join(["%s"] * len(parsed_ids)) if DB_VENDOR == "mysql" else ",".join(["?"] * len(parsed_ids))
+                        cl_rows = db.execute(
+                            f"SELECT id, location_name, latitude, longitude, radius_meters, address FROM location_cache WHERE id IN ({ph})",
+                            tuple(parsed_ids)
+                        ).fetchall()
+                        for cr in cl_rows:
+                            c_name = cr['location_name'] if isinstance(cr, dict) else cr[1]
+                            c_lat = cr['latitude'] if isinstance(cr, dict) else cr[2]
+                            c_lon = cr['longitude'] if isinstance(cr, dict) else cr[3]
+                            c_rad = cr['radius_meters'] if isinstance(cr, dict) else cr[4]
+                            planning_custom_locs.append({
+                                'name': c_name,
+                                'latitude': float(c_lat) if c_lat else None,
+                                'longitude': float(c_lon) if c_lon else None,
+                                'radius_meters': int(c_rad) if c_rad else 300
+                            })
+                        app.logger.info(f"DEBUG: Loaded {len(planning_custom_locs)} custom locations for planning: {[cl['name'] for cl in planning_custom_locs]}")
+            except Exception as cl_err:
+                app.logger.warning(f"Errore caricamento custom_location_ids per turno-oggi: {cl_err}")
+
             turni.append({
                 "project_code": row['project_code'] if isinstance(row, dict) else row[0],
                 "project_name": row['project_name'] if isinstance(row, dict) else row[1],
                 "function": row['function_name'] if isinstance(row, dict) else row[2],
+                "planning_date": today,
                 "start": start_str,
                 "end": end_str,
                 "hours": float(row['hours_planned'] if isinstance(row, dict) else row[5] or 0),
@@ -6742,6 +7792,8 @@ def api_user_turno_oggi():
                 "timbratura_lat": timbratura_lat,
                 "timbratura_lon": timbratura_lon,
                 "timbratura_radius": timbratura_radius,
+                "gestione_squadra": row_gestione_squadra,
+                "valid_locations": _build_valid_locations(group_default_location, timbratura_location, timbratura_lat, timbratura_lon, timbratura_radius, location_name, location_lat, location_lon, location_radius, gps_mode, custom_locations=planning_custom_locs),
             })
         
         return jsonify({"turno": turni[0] if turni else None, "turni": turni})
@@ -7149,33 +8201,484 @@ def api_user_turni():
         return jsonify({"error": f"Errore: {str(e)}", "turni": []}), 500
 
 
-@app.get("/magazzino")
+# ============================================================
+# TABELLE TELEFONI AZIENDALI
+# ============================================================
+
+COMPANY_PHONES_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS company_phones (
+    phone_code VARCHAR(3) PRIMARY KEY,
+    label VARCHAR(50) NOT NULL,
+    active TINYINT DEFAULT 1,
+    created_ts BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+COMPANY_PHONES_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS company_phones (
+    phone_code TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    active INTEGER DEFAULT 1,
+    created_ts INTEGER NOT NULL
+)
+"""
+
+PHONE_ASSIGNMENTS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS phone_assignments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    phone_code VARCHAR(3) NOT NULL,
+    project_code VARCHAR(128) NOT NULL,
+    activity_id VARCHAR(64) DEFAULT NULL,
+    assigned_to VARCHAR(190) NOT NULL,
+    assigned_username VARCHAR(190) DEFAULT NULL,
+    assigned_at BIGINT NOT NULL,
+    released_at BIGINT DEFAULT NULL,
+    INDEX idx_phone_assign_code (phone_code),
+    INDEX idx_phone_assign_user (assigned_to),
+    INDEX idx_phone_assign_project (project_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+PHONE_ASSIGNMENTS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS phone_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_code TEXT NOT NULL,
+    project_code TEXT NOT NULL,
+    activity_id TEXT DEFAULT NULL,
+    assigned_to TEXT NOT NULL,
+    assigned_username TEXT DEFAULT NULL,
+    assigned_at INTEGER NOT NULL,
+    released_at INTEGER DEFAULT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_phone_assign_code ON phone_assignments(phone_code);
+CREATE INDEX IF NOT EXISTS idx_phone_assign_user ON phone_assignments(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_phone_assign_project ON phone_assignments(project_code);
+"""
+
+
+def ensure_company_phones_table(db: DatabaseLike) -> None:
+    statement = COMPANY_PHONES_TABLE_MYSQL if DB_VENDOR == "mysql" else COMPANY_PHONES_TABLE_SQLITE
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+
+
+def ensure_phone_assignments_table(db: DatabaseLike) -> None:
+    statement = PHONE_ASSIGNMENTS_TABLE_MYSQL if DB_VENDOR == "mysql" else PHONE_ASSIGNMENTS_TABLE_SQLITE
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        cursor = db.execute(sql)
+        try:
+            cursor.close()
+        except AttributeError:
+            pass
+    # Migrazione: aggiungi colonna assigned_username se mancante
+    try:
+        if DB_VENDOR == "mysql":
+            db.execute("ALTER TABLE phone_assignments ADD COLUMN assigned_username VARCHAR(190) DEFAULT NULL")
+        else:
+            db.execute("ALTER TABLE phone_assignments ADD COLUMN assigned_username TEXT DEFAULT NULL")
+        db.commit()
+    except Exception:
+        pass  # colonna già presente
+
+
+def _resolve_crew_username(db: DatabaseLike, crew_name: str) -> Optional[str]:
+    """Cerca di associare un nome crew (Rentman) a un username in app_users.
+
+    Strategia (in ordine di priorità):
+    1. full_name esatto (case-insensitive)
+    2. display_name esatto (case-insensitive)
+    3. Il primo nome del crew (prima parola) corrisponde al username
+    """
+    if not crew_name:
+        return None
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    crew_lower = crew_name.strip().lower()
+    rows = db.execute(
+        "SELECT username, display_name, full_name FROM app_users WHERE is_active = 1"
+    ).fetchall()
+    # 1. full_name esatto
+    for r in rows:
+        fn = (r['full_name'] if isinstance(r, dict) else r[2]) or ''
+        if fn.strip().lower() == crew_lower:
+            return r['username'] if isinstance(r, dict) else r[0]
+    # 2. display_name esatto
+    for r in rows:
+        dn = (r['display_name'] if isinstance(r, dict) else r[1]) or ''
+        if dn.strip().lower() == crew_lower:
+            return r['username'] if isinstance(r, dict) else r[0]
+    # 3. match primo nome ↔ username
+    first_name = crew_lower.split()[0] if crew_lower else ''
+    if first_name:
+        for r in rows:
+            uname = (r['username'] if isinstance(r, dict) else r[0]) or ''
+            if uname.lower() == first_name:
+                return uname
+    return None
+
+
+def seed_default_phones(db: DatabaseLike) -> None:
+    """Inserisce i telefoni predefiniti 001-007 se la tabella è vuota."""
+    ensure_company_phones_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    row = db.execute("SELECT COUNT(*) AS cnt FROM company_phones").fetchone()
+    cnt = row['cnt'] if isinstance(row, dict) else row[0]
+    if cnt == 0:
+        now_ts = int(time.time() * 1000)
+        for i in range(1, 8):
+            code = f"{i:03d}"
+            label = f"Telefono Squadra {i}"
+            db.execute(
+                f"INSERT INTO company_phones (phone_code, label, active, created_ts) VALUES ({placeholder}, {placeholder}, 1, {placeholder})",
+                (code, label, now_ts)
+            )
+        db.commit()
+        app.logger.info("Inseriti 7 telefoni aziendali predefiniti (001-007)")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# API TELEFONI AZIENDALI
+# ═══════════════════════════════════════════════════════════════════
+
+@app.get("/api/phones")
 @login_required
-def magazzino_home() -> ResponseReturnValue:
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
+def api_get_phones() -> ResponseReturnValue:
+    """Lista tutti i telefoni aziendali con stato assegnazione corrente."""
+    db = get_db()
+    ensure_company_phones_table(db)
+    ensure_phone_assignments_table(db)
+    seed_default_phones(db)
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    # ── Auto-rilascio assegnazioni vecchie (giorni passati) ──
+    # Le assegnazioni che appartengono a turni di giorni precedenti vengono chiuse automaticamente
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_start_ts = int(datetime.strptime(today_str, "%Y-%m-%d").timestamp() * 1000)
+    stale = db.execute(
+        f"""SELECT pa.id, pa.phone_code, pa.project_code FROM phone_assignments pa
+            WHERE pa.released_at IS NULL AND pa.assigned_at < {placeholder}""",
+        (today_start_ts,)
+    ).fetchall()
+    if stale:
+        now_ts = int(time.time() * 1000)
+        for s_row in stale:
+            s_id = s_row['id'] if isinstance(s_row, dict) else s_row[0]
+            db.execute(
+                f"UPDATE phone_assignments SET released_at = {placeholder} WHERE id = {placeholder}",
+                (now_ts, s_id)
+            )
+        db.commit()
+        app.logger.info("[PHONE] Auto-rilasciate %d assegnazioni di giorni precedenti", len(stale))
+    
+    phones = []
+    rows = db.execute("SELECT phone_code, label, active FROM company_phones ORDER BY phone_code").fetchall()
+    for r in rows:
+        code = r['phone_code'] if isinstance(r, dict) else r[0]
+        label = r['label'] if isinstance(r, dict) else r[1]
+        active = r['active'] if isinstance(r, dict) else r[2]
+        
+        # Trova TUTTE le assegnazioni attive (released_at IS NULL)
+        assigns = db.execute(
+            f"""SELECT assigned_to, project_code, activity_id, assigned_at 
+                FROM phone_assignments 
+                WHERE phone_code = {placeholder} AND released_at IS NULL 
+                ORDER BY assigned_at DESC""",
+            (code,)
+        ).fetchall()
+        
+        # Campo "assignment" per compatibilità (primo = più recente)
+        assignment = None
+        assignments_list = []
+        for assign in assigns:
+            a = {
+                "assigned_to": assign['assigned_to'] if isinstance(assign, dict) else assign[0],
+                "project_code": assign['project_code'] if isinstance(assign, dict) else assign[1],
+                "activity_id": assign['activity_id'] if isinstance(assign, dict) else assign[2],
+                "assigned_at": assign['assigned_at'] if isinstance(assign, dict) else assign[3],
+            }
+            assignments_list.append(a)
+        if assignments_list:
+            assignment = assignments_list[0]
+        
+        phones.append({
+            "phone_code": code,
+            "label": label,
+            "active": bool(active),
+            "assignment": assignment,
+            "assignments": assignments_list,
+        })
+    
+    return jsonify({"ok": True, "phones": phones})
+
+
+@app.post("/api/phones/assign")
+@login_required
+def api_assign_phone() -> ResponseReturnValue:
+    """Assegna un telefono a un caposquadra per un progetto/attività.
+    
+    Body JSON: { phone_code, project_code, activity_id (opzionale), assigned_to }
+    """
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "Accesso negato"}), 403
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati mancanti"}), 400
+
+    phone_code = str(data.get("phone_code") or "").strip()
+    project_code = str(data.get("project_code") or "").strip()
+    assigned_to = str(data.get("assigned_to") or "").strip()
+    activity_id = str(data.get("activity_id") or "").strip() or None
+    function_name = str(data.get("function_name") or "").strip() or None
+
+    if not phone_code or not project_code or not assigned_to:
+        return jsonify({"error": "phone_code, project_code e assigned_to obbligatori"}), 400
 
     db = get_db()
-    display_name = session.get('user_display') or session.get('user_name') or session.get('user')
-    primary_name = session.get('user_name') or display_name or session.get('user')
-    initials = session.get('user_initials') or compute_initials(primary_name or "")
-    header_clock = datetime.now().strftime("%d/%m/%Y | %H:%M")
-    user_role = session.get('user_role', 'user')
-    
-    # Company logo
-    settings = get_company_settings(db)
-    company_logo = settings.get('logo_url') if settings else None
+    ensure_company_phones_table(db)
+    ensure_phone_assignments_table(db)
 
-    return render_template(
-        "magazzino.html",
-        user_name=primary_name,
-        user_display=display_name,
-        user_initials=initials,
-        user_role=user_role,
-        header_clock=header_clock,
-        company_logo=company_logo,
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    now_ts = int(time.time() * 1000)
+
+    # Verifica che il telefono esista e sia attivo
+    phone = db.execute(
+        f"SELECT phone_code FROM company_phones WHERE phone_code = {placeholder} AND active = 1",
+        (phone_code,)
+    ).fetchone()
+    if not phone:
+        return jsonify({"error": f"Telefono {phone_code} non trovato o disattivato"}), 404
+
+    # ── Validazione sovrapposizione turni ──
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Recupera l'orario del turno corrente (progetto che si sta assegnando)
+    current_plan = db.execute(
+        f"""SELECT plan_start, plan_end FROM rentman_plannings
+            WHERE project_code = {placeholder} AND planning_date = {placeholder}
+            AND is_obsolete = 0 LIMIT 1""",
+        (project_code, today_str)
+    ).fetchone()
+    cur_start = None
+    cur_end = None
+    if current_plan:
+        raw_start = current_plan['plan_start'] if isinstance(current_plan, dict) else current_plan[0]
+        raw_end = current_plan['plan_end'] if isinstance(current_plan, dict) else current_plan[1]
+        try:
+            cur_start = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00")) if raw_start else None
+            cur_end = datetime.fromisoformat(str(raw_end).replace("Z", "+00:00")) if raw_end else None
+        except Exception:
+            pass
+
+    def _shifts_overlap(s1, e1, s2, e2):
+        """Ritorna True se i due intervalli si sovrappongono."""
+        if not s1 or not e1 or not s2 or not e2:
+            return False
+        return s1 < e2 and s2 < e1
+
+    # 1) Verifica: lo stesso telefono non può essere assegnato a turni sovrapposti
+    existing_phone_assigns = db.execute(
+        f"""SELECT project_code, assigned_to FROM phone_assignments
+            WHERE phone_code = {placeholder} AND released_at IS NULL AND project_code != {placeholder}""",
+        (phone_code, project_code)
+    ).fetchall()
+
+    for epa in existing_phone_assigns:
+        other_proj = epa['project_code'] if isinstance(epa, dict) else epa[0]
+        other_person = epa['assigned_to'] if isinstance(epa, dict) else epa[1]
+        other_plan = db.execute(
+            f"""SELECT plan_start, plan_end FROM rentman_plannings
+                WHERE project_code = {placeholder} AND planning_date = {placeholder}
+                AND is_obsolete = 0 LIMIT 1""",
+            (other_proj, today_str)
+        ).fetchone()
+        if other_plan:
+            o_raw_start = other_plan['plan_start'] if isinstance(other_plan, dict) else other_plan[0]
+            o_raw_end = other_plan['plan_end'] if isinstance(other_plan, dict) else other_plan[1]
+            try:
+                o_start = datetime.fromisoformat(str(o_raw_start).replace("Z", "+00:00")) if o_raw_start else None
+                o_end = datetime.fromisoformat(str(o_raw_end).replace("Z", "+00:00")) if o_raw_end else None
+            except Exception:
+                o_start = o_end = None
+            if _shifts_overlap(cur_start, cur_end, o_start, o_end):
+                app.logger.warning("[PHONE] Telefono %s già assegnato a %s nel progetto %s con turno sovrapposto", phone_code, other_person, other_proj)
+                return jsonify({"error": f"Il telefono {phone_code} è già assegnato a {other_person} in un turno sovrapposto ({other_proj})"}), 409
+
+    # 2) Verifica: la stessa persona non può avere 2+ telefoni in turni sovrapposti
+    existing_person_assigns = db.execute(
+        f"""SELECT phone_code, project_code FROM phone_assignments
+            WHERE assigned_to = {placeholder} AND released_at IS NULL AND project_code != {placeholder}""",
+        (assigned_to, project_code)
+    ).fetchall()
+
+    for epa2 in existing_person_assigns:
+        other_phone = epa2['phone_code'] if isinstance(epa2, dict) else epa2[0]
+        other_proj2 = epa2['project_code'] if isinstance(epa2, dict) else epa2[1]
+        other_plan2 = db.execute(
+            f"""SELECT plan_start, plan_end FROM rentman_plannings
+                WHERE project_code = {placeholder} AND planning_date = {placeholder}
+                AND is_obsolete = 0 LIMIT 1""",
+            (other_proj2, today_str)
+        ).fetchone()
+        if other_plan2:
+            o2_raw_start = other_plan2['plan_start'] if isinstance(other_plan2, dict) else other_plan2[0]
+            o2_raw_end = other_plan2['plan_end'] if isinstance(other_plan2, dict) else other_plan2[1]
+            try:
+                o2_start = datetime.fromisoformat(str(o2_raw_start).replace("Z", "+00:00")) if o2_raw_start else None
+                o2_end = datetime.fromisoformat(str(o2_raw_end).replace("Z", "+00:00")) if o2_raw_end else None
+            except Exception:
+                o2_start = o2_end = None
+            if _shifts_overlap(cur_start, cur_end, o2_start, o2_end):
+                app.logger.warning("[PHONE] Persona %s ha già telefono %s nel progetto %s con turno sovrapposto", assigned_to, other_phone, other_proj2)
+                return jsonify({"error": f"{assigned_to} ha già il telefono {other_phone} assegnato in un turno sovrapposto ({other_proj2})"}), 409
+
+    # Anche se stesso progetto: controlla che la persona non abbia già un altro telefono sullo stesso progetto
+    existing_same_proj = db.execute(
+        f"""SELECT phone_code FROM phone_assignments
+            WHERE assigned_to = {placeholder} AND project_code = {placeholder} AND phone_code != {placeholder} AND released_at IS NULL""",
+        (assigned_to, project_code, phone_code)
+    ).fetchone()
+    if existing_same_proj:
+        other_ph_same = existing_same_proj['phone_code'] if isinstance(existing_same_proj, dict) else existing_same_proj[0]
+        app.logger.warning("[PHONE] Persona %s ha già telefono %s sullo stesso progetto %s", assigned_to, other_ph_same, project_code)
+        return jsonify({"error": f"{assigned_to} ha già il telefono {other_ph_same} assegnato sullo stesso progetto"}), 409
+
+    # ── Risolvi activity_id dalla funzione dell'operatore ──
+    # Se il frontend ha inviato function_name, cerchiamo l'activity corrispondente
+    if not activity_id and function_name:
+        act_row = db.execute(
+            f"SELECT activity_id FROM activities WHERE project_code = {placeholder} AND label LIKE {placeholder} LIMIT 1",
+            (project_code, f"{function_name}%")
+        ).fetchone()
+        if act_row:
+            activity_id = act_row["activity_id"] if isinstance(act_row, dict) else act_row[0]
+            app.logger.info("[PHONE] Risolto activity_id=%s da function_name=%s", activity_id, function_name)
+    # Fallback: se ancora nessun activity_id, cerca dalla pianificazione dell'operatore
+    if not activity_id:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        plan_row = db.execute(
+            f"""SELECT function_name FROM rentman_plannings
+                WHERE crew_name = {placeholder} AND project_code = {placeholder}
+                AND planning_date = {placeholder} LIMIT 1""",
+            (assigned_to, project_code, today_str)
+        ).fetchone()
+        if plan_row:
+            fn = (plan_row["function_name"] if isinstance(plan_row, dict) else plan_row[0] or "").strip()
+            if fn:
+                act_row2 = db.execute(
+                    f"SELECT activity_id FROM activities WHERE project_code = {placeholder} AND label LIKE {placeholder} LIMIT 1",
+                    (project_code, f"{fn}%")
+                ).fetchone()
+                if act_row2:
+                    activity_id = act_row2["activity_id"] if isinstance(act_row2, dict) else act_row2[0]
+                    app.logger.info("[PHONE] Risolto activity_id=%s da planning function=%s", activity_id, fn)
+
+    # Rilascia solo l'assegnazione precedente dello stesso telefono PER LO STESSO PROGETTO
+    # (permette allo stesso telefono di essere assegnato a più turni/progetti diversi)
+    db.execute(
+        f"UPDATE phone_assignments SET released_at = {placeholder} WHERE phone_code = {placeholder} AND project_code = {placeholder} AND released_at IS NULL",
+        (now_ts, phone_code, project_code)
     )
+
+    # Risolvi il crew_name → username in app_users (match fuzzy: primo nome)
+    assigned_username = _resolve_crew_username(db, assigned_to)
+
+    # Crea nuova assegnazione
+    db.execute(
+        f"""INSERT INTO phone_assignments (phone_code, project_code, activity_id, assigned_to, assigned_username, assigned_at)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})""",
+        (phone_code, project_code, activity_id, assigned_to, assigned_username, now_ts)
+    )
+    db.commit()
+
+    app.logger.info(f"[PHONE] Telefono {phone_code} assegnato a {assigned_to} (username={assigned_username}) per progetto {project_code}, activity_id={activity_id}")
+    return jsonify({"ok": True, "phone_code": phone_code, "assigned_to": assigned_to, "assigned_username": assigned_username, "activity_id": activity_id})
+
+
+@app.post("/api/phones/release")
+@login_required
+def api_release_phone() -> ResponseReturnValue:
+    """Rilascia un telefono (termina assegnazione corrente).
+    
+    Body JSON: { phone_code }
+    """
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "Accesso negato"}), 403
+
+    data = request.get_json()
+    phone_code = (data.get("phone_code") or "").strip() if data else ""
+    if not phone_code:
+        return jsonify({"error": "phone_code obbligatorio"}), 400
+    project_code = (data.get("project_code") or "").strip() if data else ""
+
+    db = get_db()
+    ensure_phone_assignments_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    now_ts = int(time.time() * 1000)
+
+    if project_code:
+        # Rilascia solo l'assegnazione per questo specifico progetto
+        db.execute(
+            f"UPDATE phone_assignments SET released_at = {placeholder} WHERE phone_code = {placeholder} AND project_code = {placeholder} AND released_at IS NULL",
+            (now_ts, phone_code, project_code)
+        )
+        app.logger.info(f"[PHONE] Telefono {phone_code} rilasciato dal progetto {project_code}")
+    else:
+        # Rilascia tutte le assegnazioni del telefono
+        db.execute(
+            f"UPDATE phone_assignments SET released_at = {placeholder} WHERE phone_code = {placeholder} AND released_at IS NULL",
+            (now_ts, phone_code)
+        )
+        app.logger.info(f"[PHONE] Telefono {phone_code} rilasciato (tutte le assegnazioni)")
+    db.commit()
+
+    return jsonify({"ok": True})
+
+
+@app.get("/api/phones/my-assignment")
+@login_required
+def api_phone_my_assignment() -> ResponseReturnValue:
+    """Restituisce l'assegnazione corrente del telefono per l'utente loggato (se presente via phone param)."""
+    phone_code = session.get("phone_code")
+    if not phone_code:
+        return jsonify({"ok": True, "assignment": None})
+
+    db = get_db()
+    ensure_phone_assignments_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    username = session.get("user")
+    assign = db.execute(
+        f"""SELECT phone_code, project_code, activity_id, assigned_to, assigned_at
+            FROM phone_assignments 
+            WHERE phone_code = {placeholder} AND assigned_to = {placeholder} AND released_at IS NULL
+            ORDER BY assigned_at DESC LIMIT 1""",
+        (phone_code, username)
+    ).fetchone()
+
+    if not assign:
+        return jsonify({"ok": True, "assignment": None})
+
+    return jsonify({
+        "ok": True,
+        "assignment": {
+            "phone_code": assign['phone_code'] if isinstance(assign, dict) else assign[0],
+            "project_code": assign['project_code'] if isinstance(assign, dict) else assign[1],
+            "activity_id": assign['activity_id'] if isinstance(assign, dict) else assign[2],
+            "assigned_to": assign['assigned_to'] if isinstance(assign, dict) else assign[3],
+            "assigned_at": assign['assigned_at'] if isinstance(assign, dict) else assign[4],
+        }
+    })
 
 
 # Tabella per tracciare i timer magazzino attivi lato server
@@ -7278,33 +8781,6 @@ CREATE TABLE IF NOT EXISTS warehouse_sessions (
 CREATE INDEX IF NOT EXISTS idx_wh_sessions_project ON warehouse_sessions(project_code);
 CREATE INDEX IF NOT EXISTS idx_wh_sessions_created ON warehouse_sessions(created_ts);
 CREATE INDEX IF NOT EXISTS idx_wh_sessions_user ON warehouse_sessions(username);
-"""
-
-
-# Progetti manuali magazzino (persistenza cross-device per utente)
-WAREHOUSE_MANUAL_PROJECTS_TABLE_MYSQL = """
-CREATE TABLE IF NOT EXISTS warehouse_manual_projects (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    project_code VARCHAR(128) NOT NULL,
-    name VARCHAR(255) DEFAULT NULL,
-    username VARCHAR(190) NOT NULL,
-    created_ts BIGINT NOT NULL,
-    UNIQUE KEY uniq_wh_manual_user_code (username, project_code),
-    INDEX idx_wh_manual_user (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-"""
-
-
-WAREHOUSE_MANUAL_PROJECTS_TABLE_SQLITE = """
-CREATE TABLE IF NOT EXISTS warehouse_manual_projects (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_code TEXT NOT NULL,
-    name TEXT,
-    username TEXT NOT NULL,
-    created_ts INTEGER NOT NULL,
-    UNIQUE(username, project_code)
-);
-CREATE INDEX IF NOT EXISTS idx_wh_manual_user ON warehouse_manual_projects(username);
 """
 
 
@@ -7644,6 +9120,14 @@ def _stop_production_timer(db: DatabaseLike, username: str, project_code: str | 
             db.execute(f"DELETE FROM warehouse_active_timers WHERE id = {placeholder}", (timer_id,))
             db.commit()
             app.logger.info(f"Timer produzione fermato e salvato: {username} - {elapsed_ms}ms")
+            
+            # ── Auto-completamento fase attiva ──
+            # Se l'activity_label corrisponde a una fase configurata, marcala come completata
+            try:
+                _auto_complete_phase_on_stop(db, username, proj_code, activity)
+            except Exception as phase_err:
+                app.logger.warning(f"Errore auto-completamento fase: {phase_err}")
+            
             return True
         return False
     except Exception as e:
@@ -7651,752 +9135,207 @@ def _stop_production_timer(db: DatabaseLike, username: str, project_code: str | 
         return False
 
 
-def ensure_warehouse_manual_projects_table(db: DatabaseLike) -> None:
-    statement = (
-        WAREHOUSE_MANUAL_PROJECTS_TABLE_MYSQL
-        if DB_VENDOR == "mysql"
-        else WAREHOUSE_MANUAL_PROJECTS_TABLE_SQLITE
-    )
-    for stmt in statement.strip().split(";"):
-        sql = stmt.strip()
-        if not sql:
-            continue
-        cursor = db.execute(sql)
-        try:
-            cursor.close()
-        except AttributeError:
-            pass
-
-
-@app.get("/api/magazzino/projects/today")
-@login_required
-def api_magazzino_projects_today() -> ResponseReturnValue:
-    """Recupera progetti attivi per la data specificata.
-
-    Secondo la documentazione API Rentman (oas.json):
-    - I progetti (projects) NON hanno un campo status diretto
-    - Lo STATUS è nel SUBPROJECT (/subprojects) come riferimento "/statuses/ID"
-    - Ogni progetto ha almeno un subproject
-
-    Logica: recuperiamo i subprojects, filtriamo per status e data,
-    poi raggruppiamo per progetto padre.
+def _auto_complete_phase_on_stop(db: DatabaseLike, username: str, project_code: str, activity_label: str) -> None:
+    """Marca automaticamente come completata la fase attiva quando il timer viene fermato (fine giornata/cambio attività).
+    
+    Cerca nelle fasi configurate se l'activity_label corrisponde a un nome fase,
+    e se trovata la marca come completata in project_phase_progress.
     """
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    requested = _normalize_date(request.args.get("date"))
-    target_date = requested or datetime.now().date().isoformat()
-    debug = _is_truthy(request.args.get("debug"))
-
-    rentman_info: Dict[str, Any] = {"available": False, "used": False}
-
-    # Keywords per filtrare gli status
-    allowed_status_keywords: Tuple[str, ...] = (
-        "confermat",
-        "confirm",
-        "in location",
-        "locat",
-        "pronto",
-        "ready",
-    )
-    cancelled_keywords: Tuple[str, ...] = ("annull", "cancel")
-
-    def normalize_status(value: str) -> str:
-        cleaned = str(value or "").strip().lower()
-        cleaned = cleaned.replace("_", " ")
-        return " ".join(cleaned.split())
-
-    def is_status_allowed(status_name: str) -> bool:
-        normalized = normalize_status(status_name)
-        if any(kw in normalized for kw in cancelled_keywords):
-            return False
-        if any(kw in normalized for kw in allowed_status_keywords):
-            return True
-        return False
-
-    def subproject_matches_date(subproject: Mapping[str, Any], target: date) -> bool:
-        date_fields = [
-            ("equipment_period_from", "equipment_period_to"),
-            ("usageperiod_start", "usageperiod_end"),
-            ("planperiod_start", "planperiod_end"),
-        ]
-        for start_key, end_key in date_fields:
-            start_val = _parse_date_any(subproject.get(start_key))
-            end_val = _parse_date_any(subproject.get(end_key))
-            if start_val is not None or end_val is not None:
-                if start_val is None:
-                    start_val = end_val
-                if end_val is None:
-                    end_val = start_val
-                if start_val and end_val:
-                    if end_val < start_val:
-                        start_val, end_val = end_val, start_val
-                    if start_val <= target <= end_val:
-                        return True
-        return False
-
-    client = get_rentman_client()
-    if client:
-        rentman_info["available"] = True
-        scan_limit = _coerce_int(os.environ.get("JOBLOG_RENTMAN_SUBPROJECT_SCAN_LIMIT")) or 15000
-        scan_limit = max(1000, min(scan_limit, 30000))
-
-        # 1) Recupera status map
-        status_map: Dict[int, str] = {}
-        try:
-            for entry in client.get_project_statuses():
-                status_id = entry.get("id")
-                if isinstance(status_id, int):
-                    status_name = entry.get("displayname") or entry.get("name") or str(status_id)
-                    status_map[status_id] = str(status_name)
-        except Exception:
-            status_map = {}
-
-        # 2) Recupera tutti i subprojects
-        subprojects_all: List[Dict[str, Any]] = []
-        rentman_error_type: Optional[str] = None
-        rentman_error_detail: Optional[str] = None
-        try:
-            for sub in client.iter_collection("/subprojects", limit_total=scan_limit):
-                subprojects_all.append(sub)
-        except Exception as exc:
-            app.logger.exception("Rentman: errore durante scansione subprojects")
-            rentman_error_type = type(exc).__name__
-            rentman_error_detail = str(exc)
-
-        if rentman_error_type is None:
-            target_date_obj = _parse_date_any(target_date)
-            if target_date_obj is None:
-                target_date_obj = datetime.now().date()
-
-            # 3) Filtra subprojects per status e data
-            valid_subprojects: List[Dict[str, Any]] = []
-            projects_seen: Set[str] = set()
-
-            for sub in subprojects_all:
-                status_ref = sub.get("status")
-                status_id = parse_reference(status_ref)
-                status_name = status_map.get(status_id, "") if isinstance(status_id, int) else ""
-
-                if not is_status_allowed(status_name):
-                    continue
-
-                if not subproject_matches_date(sub, target_date_obj):
-                    continue
-
-                project_ref = sub.get("project")
-                if not project_ref:
-                    continue
-
-                valid_subprojects.append({
-                    "subproject_id": sub.get("id"),
-                    "project_ref": project_ref,
-                    "status_id": status_id,
-                    "status_name": status_name,
-                })
-                projects_seen.add(project_ref)
-
-            # 4) Recupera dettagli progetti padre
-            projects_rentman: List[Dict[str, Any]] = []
-            seen_codes: Set[str] = set()
-
-            for project_ref in projects_seen:
-                project_id = parse_reference(project_ref)
-                if project_id is None:
-                    continue
-
-                try:
-                    payload = client._request("GET", f"/projects/{project_id}")
-                    project_data = payload.get("data", {})
-
-                    code = str(project_data.get("number") or project_data.get("reference") or project_id).strip().upper()
-                    if not code or code in seen_codes:
-                        continue
-                    seen_codes.add(code)
-
-                    name = project_data.get("displayname") or project_data.get("name") or code
-                    projects_rentman.append({"code": code, "name": str(name)})
-                except Exception:
-                    continue
-
-            rentman_info["used"] = True
-            projects_rentman.sort(key=lambda item: (str(item.get("code") or ""), str(item.get("name") or "")))
-
-            response: Dict[str, Any] = {
-                "ok": True,
-                "date": target_date,
-                "projects": projects_rentman,
-                "count": len(projects_rentman),
-                "source": "rentman",
-            }
-            if debug:
-                response["debug"] = {
-                    "scan_limit": scan_limit,
-                    "subprojects_total": len(subprojects_all),
-                    "subprojects_valid": len(valid_subprojects),
-                    "status_map_count": len(status_map),
-                    "status_map": status_map,
-                }
-            return jsonify(response)
-
-        if debug:
-            if rentman_error_type:
-                rentman_info["error"] = rentman_error_type
-            if rentman_error_detail:
-                rentman_info["error_detail"] = rentman_error_detail[:1200]
-    else:
-        rentman_info["available"] = False
-        rentman_info["reason"] = "client_unavailable"
-
-    # Fallback locale: projects.json (solo se Rentman non è disponibile o ha fallito)
-    catalog = load_external_projects()
-    projects: List[Dict[str, Any]] = []
-    for entry in catalog.values():
-        code = str(entry.get("project_code") or "").strip().upper()
-        name = str(entry.get("project_name") or code).strip() or code
-        activities_any = entry.get("activities")
-        activities: List[Any] = activities_any if isinstance(activities_any, list) else []
-        active = False
-        for act in activities:
-            if not isinstance(act, dict):
-                continue
-            if _activity_matches_date(act.get("plan_start"), act.get("plan_end"), target_date):
-                active = True
+    if not activity_label or not project_code:
+        return
+    
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    today = get_simulated_today().strftime('%Y-%m-%d')
+    
+    # Cerca in tutte le funzioni configurate se activity_label è una fase
+    fn_phases_cfg = get_function_phases_config(db)
+    al_lower = activity_label.lower().strip()
+    
+    matched_function_key = None
+    matched_phase = None
+    
+    for func_key, tmpl in fn_phases_cfg.items():
+        for ph in tmpl.get('phases', []):
+            if (ph.get('name') or '').lower().strip() == al_lower:
+                matched_function_key = func_key
+                matched_phase = ph
                 break
-        if active:
-            projects.append({"code": code, "name": name})
-
-    projects.sort(key=lambda item: (str(item.get("code") or ""), str(item.get("name") or "")))
-    response_local: Dict[str, Any] = {"ok": True, "date": target_date, "projects": projects, "count": len(projects), "source": "local"}
-    if debug:
-        response_local["debug"] = {"rentman": rentman_info}
-    return jsonify(response_local)
-
-
-@app.get("/api/magazzino/projects/manual")
-@login_required
-def api_magazzino_projects_manual_list() -> ResponseReturnValue:
-    """Restituisce i progetti manuali salvati per l'utente (persistenti cross-device)."""
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    db = get_db()
-    ensure_warehouse_manual_projects_table(db)
-    username = session.get("user")
-    rows = db.execute(
-        """
-        SELECT project_code AS code, name, created_ts
-        FROM warehouse_manual_projects
-        WHERE username = ?
-        ORDER BY created_ts DESC
-        LIMIT 500
-        """,
-        (username,),
-    ).fetchall()
-    items = [dict(row) for row in rows] if rows else []
-    return jsonify({"ok": True, "items": items})
-
-
-@app.post("/api/magazzino/projects/manual")
-@login_required
-def api_magazzino_projects_manual_upsert() -> ResponseReturnValue:
-    """Salva o aggiorna un progetto manuale per l'utente corrente."""
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    data = request.get_json(silent=True) or {}
-    code = _normalize_text(data.get("code"))
-    name = _normalize_text(data.get("name"))
-    if not code:
-        return jsonify({"ok": False, "error": "missing_code"}), 400
-
-    db = get_db()
-    ensure_warehouse_manual_projects_table(db)
-    username = session.get("user")
-    now = now_ms()
-
-    if DB_VENDOR == "mysql":
-        db.execute(
-            """
-            INSERT INTO warehouse_manual_projects(project_code, name, username, created_ts)
-            VALUES(%s,%s,%s,%s)
-            ON DUPLICATE KEY UPDATE name=VALUES(name), created_ts=VALUES(created_ts)
-            """,
-            (code, name, username, now),
-        )
-    else:
-        db.execute(
-            """
-            INSERT INTO warehouse_manual_projects(project_code, name, username, created_ts)
-            VALUES(?,?,?,?)
-            ON CONFLICT(username, project_code) DO UPDATE SET name=excluded.name, created_ts=excluded.created_ts
-            """,
-            (code, name, username, now),
-        )
-    try:
-        db.commit()
-    except Exception:
-        pass
-    return jsonify({"ok": True, "code": code, "name": name, "created_ts": now})
-
-
-@app.get("/api/magazzino/projects/lookup")
-@login_required
-def api_magazzino_projects_lookup() -> ResponseReturnValue:
-    """Recupera un progetto per codice (numero) anche fuori data odierna.
-
-    Prova prima Rentman (se configurato), altrimenti il catalogo locale.
-    """
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    code = _normalize_text(request.args.get("code")).upper()
-    if not code:
-        return jsonify({"ok": False, "error": "missing_code"}), 400
-
-    project: Optional[Dict[str, str]] = None
-    source = "local"
-    debug = _is_truthy(request.args.get("debug"))
-    rentman_debug: Dict[str, Any] = {}
-
-    client = get_rentman_client()
-    if client:
-        try:
-            # Riduci batch per evitare limiti dimensione risposta Rentman
-            batch = 150  # < 300 e payload più piccolo
-            max_total = 7500
-            scanned = 0
-            found = False
-            offset = 0
-
-            def norm(val: str) -> str:
-                return str(val or "").strip().upper()
-
-            while scanned < max_total:
-                payload = client._request(
-                    "GET",
-                    "/projects",
-                    params={
-                        "limit": batch,
-                        "offset": offset,
-                        "fields": "number,reference,displayname,name",
-                    },
-                )
-                data = payload.get("data") if isinstance(payload, dict) else None
-                if debug:
-                    rentman_debug.setdefault("pages", []).append(len(data) if isinstance(data, list) else None)
-                if not isinstance(data, list) or not data:
-                    break
-
-                for entry in data:
-                    num = norm(entry.get("number") or entry.get("reference"))
-                    disp = norm(entry.get("displayname") or entry.get("name"))
-                    if num == code or disp == code or code in num:
-                        name = entry.get("displayname") or entry.get("name") or num
-                        project = {"code": num or code, "name": str(name)}
-                        source = "rentman"
-                        found = True
-                        break
-
-                scanned += len(data)
-                if found:
-                    break
-                if len(data) < batch:
-                    break
-                offset += batch
-
-            if debug:
-                rentman_debug["scanned"] = scanned
-                rentman_debug["found"] = bool(project)
-
-        except Exception as exc:
-            project = None
-            if debug:
-                rentman_debug["error"] = True
-                rentman_debug["error_type"] = type(exc).__name__
-                rentman_debug["error_detail"] = str(exc)[:400]
-
-    if project is None:
-        catalog = load_external_projects()
-        entry = catalog.get(code)
-        if entry:
-            name = str(entry.get("project_name") or code).strip() or code
-            project = {"code": code, "name": name}
-            source = "local"
-
-    if project is None:
-        resp: Dict[str, Any] = {"ok": False, "error": "not_found"}
-        if debug:
-            resp["rentman_debug"] = rentman_debug
-        return jsonify(resp), 404
-
-    resp: Dict[str, Any] = {"ok": True, "project": project, "source": source}
-    if debug:
-        resp["rentman_debug"] = rentman_debug
-    return jsonify(resp)
-
-
-@app.get("/api/magazzino/activities")
-@login_required
-def api_magazzino_activities_list() -> ResponseReturnValue:
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    project_code = _normalize_text(request.args.get("project_code")).upper()
-    if not project_code:
-        return jsonify({"ok": False, "error": "missing_project_code"}), 400
-
-    db = get_db()
-    ensure_warehouse_activities_table(db)
-    rows = db.execute(
-        """
-        SELECT id, project_code, activity_label, note, username, created_ts
-        FROM warehouse_activities
-        WHERE project_code = ?
-        ORDER BY created_ts DESC
-        LIMIT 200
-        """,
-        (project_code,),
-    ).fetchall()
-    items = [dict(row) for row in rows] if rows else []
-    return jsonify({"ok": True, "project_code": project_code, "items": items})
-
-
-@app.post("/api/magazzino/activities")
-@login_required
-def api_magazzino_activities_create() -> ResponseReturnValue:
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    data = request.get_json(silent=True) or {}
-    project_code = _normalize_text(data.get("project_code")).upper()
-    activity_label = _normalize_text(data.get("activity_label"))
-    note = _normalize_text(data.get("note"))
-    if not project_code:
-        return jsonify({"ok": False, "error": "missing_project_code"}), 400
-    if not activity_label:
-        return jsonify({"ok": False, "error": "missing_activity_label"}), 400
-
-    db = get_db()
-    ensure_warehouse_activities_table(db)
-    now = now_ms()
-    username = session.get("user")
-    db.execute(
-        """
-        INSERT INTO warehouse_activities(project_code, activity_label, note, username, created_ts)
-        VALUES(?,?,?,?,?)
-        """,
-        (project_code, activity_label, note or None, username, now),
-    )
-    try:
-        db.commit()
-    except Exception:
-        pass
-    return jsonify({"ok": True, "created_ts": now})
-
-
-# ============== Sessioni Magazzino (Timer) ==============
-
-@app.get("/api/magazzino/sessions")
-@login_required
-def api_magazzino_sessions_list() -> ResponseReturnValue:
-    """Lista sessioni di lavoro magazzino di oggi (solo utente corrente)."""
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    import json as json_module
+        if matched_function_key:
+            break
     
-    project_code = _normalize_text(request.args.get("project_code")).upper()
-    current_user = session.get("user")
-
-    db = get_db()
-    ensure_warehouse_sessions_table(db)
-
-    # Filtra sessioni di oggi per l'utente corrente
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_ms = int(today_start.timestamp() * 1000)
-
-    # Filtra sempre per utente corrente, opzionalmente anche per progetto
-    if project_code:
-        rows = db.execute(
-            """
-            SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, intervals, note, username, created_ts
-            FROM warehouse_sessions
-            WHERE project_code = ? AND username = ? AND created_ts >= ?
-            ORDER BY created_ts DESC
-            LIMIT 100
-            """,
-            (project_code, current_user, today_start_ms),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            """
-            SELECT id, project_code, activity_label, elapsed_ms, start_ts, end_ts, intervals, note, username, created_ts
-            FROM warehouse_sessions
-            WHERE username = ? AND created_ts >= ?
-            ORDER BY created_ts DESC
-            LIMIT 100
-            """,
-            (current_user, today_start_ms),
-        ).fetchall()
+    if not matched_function_key or not matched_phase:
+        app.logger.debug(f"[AUTO-PHASE] Nessuna fase trovata per activity_label='{activity_label}'")
+        return
     
-    items = []
-    for row in (rows or []):
-        item = dict(row)
-        # Parsa intervals da JSON
-        if item.get("intervals"):
-            try:
-                item["intervals"] = json_module.loads(item["intervals"])
-            except:
-                item["intervals"] = []
-        else:
-            # Se non ci sono intervals ma c'è start/end, crea un array con un singolo intervallo
-            if item.get("start_ts") and item.get("end_ts"):
-                item["intervals"] = [{"start": item["start_ts"], "end": item["end_ts"]}]
-            else:
-                item["intervals"] = []
-        items.append(item)
+    phase_name = matched_phase.get('name', '')
+    phase_order = matched_phase.get('order', 0)
+    now_ts = int(time.time() * 1000)
     
-    return jsonify({"ok": True, "items": items})
-
-
-@app.post("/api/magazzino/sessions")
-@login_required
-def api_magazzino_sessions_create() -> ResponseReturnValue:
-    """Salva una nuova sessione di lavoro magazzino."""
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    data = request.get_json(silent=True) or {}
-    project_code = _normalize_text(data.get("project_code")).upper()
-    activity_label = _normalize_text(data.get("activity_label"))
-    elapsed_ms = _coerce_int(data.get("elapsed_ms"))
-    start_ts = _coerce_int(data.get("start_ts"))
-    end_ts = _coerce_int(data.get("end_ts"))
-    note = _normalize_text(data.get("note"))
-
-    if not project_code:
-        return jsonify({"ok": False, "error": "missing_project_code"}), 400
-    if not activity_label:
-        return jsonify({"ok": False, "error": "missing_activity_label"}), 400
-    if elapsed_ms is None or elapsed_ms < 0:
-        elapsed_ms = 0
-
-    db = get_db()
-    ensure_warehouse_sessions_table(db)
-    now = now_ms()
-    username = session.get("user")
-
-    # Salva il primo intervallo
-    import json as json_module
-    intervals = json_module.dumps([{"start": start_ts, "end": end_ts}]) if start_ts and end_ts else None
-
-    db.execute(
-        """
-        INSERT INTO warehouse_sessions(project_code, activity_label, elapsed_ms, start_ts, end_ts, intervals, note, username, created_ts)
-        VALUES(?,?,?,?,?,?,?,?,?)
-        """,
-        (project_code, activity_label, elapsed_ms, start_ts, end_ts, intervals, note or None, username, now),
-    )
-    try:
-        db.commit()
-    except Exception:
-        pass
-    return jsonify({"ok": True, "created_ts": now, "elapsed_ms": elapsed_ms, "start_ts": start_ts, "end_ts": end_ts})
-
-
-@app.put("/api/magazzino/sessions/<int:session_id>")
-@login_required
-def api_magazzino_sessions_update(session_id: int) -> ResponseReturnValue:
-    """Aggiorna una sessione esistente (aggiunge tempo o modifica orari)."""
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    import json as json_module
-    
-    data = request.get_json(silent=True) or {}
-    add_elapsed_ms = _coerce_int(data.get("add_elapsed_ms"))  # Tempo da aggiungere
-    new_start_ts = _coerce_int(data.get("start_ts"))  # Inizio nuovo intervallo
-    new_end_ts = _coerce_int(data.get("end_ts"))  # Fine nuovo intervallo
-    interval_start = _coerce_int(data.get("interval_start"))  # Inizio del nuovo intervallo di lavoro
-
-    db = get_db()
-    ensure_warehouse_sessions_table(db)
-    username = session.get("user")
-
-    # Verifica che la sessione esista e appartenga all'utente
-    row = db.execute(
-        "SELECT id, elapsed_ms, start_ts, end_ts, intervals FROM warehouse_sessions WHERE id = ? AND username = ?",
-        (session_id, username)
+    # Verifica se già completata
+    ensure_project_phase_progress_table(db)
+    existing = db.execute(
+        f"""SELECT completed FROM project_phase_progress
+            WHERE project_date = {placeholder} AND project_key = {placeholder}
+              AND function_key = {placeholder} AND phase_name = {placeholder}""",
+        (today, project_code, matched_function_key, phase_name)
     ).fetchone()
     
-    if not row:
-        return jsonify({"ok": False, "error": "session_not_found"}), 404
-
-    current_elapsed = row["elapsed_ms"] or 0
-    current_start = row["start_ts"]
-    current_intervals = []
+    if existing:
+        is_completed = existing['completed'] if isinstance(existing, dict) else existing[0]
+        if is_completed:
+            app.logger.debug(f"[AUTO-PHASE] Fase '{phase_name}' già completata per {project_code}")
+            return
     
-    # Carica intervalli esistenti
-    if row["intervals"]:
-        try:
-            current_intervals = json_module.loads(row["intervals"])
-        except:
-            current_intervals = []
-    
-    # Se non ci sono intervalli ma c'è start_ts/end_ts, crea il primo
-    if not current_intervals and current_start and row["end_ts"]:
-        current_intervals = [{"start": current_start, "end": row["end_ts"]}]
-
-    # Calcola nuovi valori
-    new_elapsed = current_elapsed
-    if add_elapsed_ms and add_elapsed_ms > 0:
-        new_elapsed = current_elapsed + add_elapsed_ms
-        # Aggiungi nuovo intervallo
-        if interval_start and new_end_ts:
-            current_intervals.append({"start": interval_start, "end": new_end_ts})
-        elif new_end_ts:
-            # Usa end_ts - elapsed come inizio approssimativo
-            current_intervals.append({"start": new_end_ts - add_elapsed_ms, "end": new_end_ts})
-
-    # Se vengono passati nuovi orari senza add_elapsed (modifica manuale)
-    final_start = current_start  # Mantieni l'inizio originale
-    final_end = new_end_ts if new_end_ts else row["end_ts"]
-    
-    # Se modifica manuale degli orari (senza add_elapsed)
-    if not add_elapsed_ms and (new_start_ts is not None or new_end_ts is not None):
-        final_start = new_start_ts if new_start_ts is not None else current_start
-        final_end = new_end_ts if new_end_ts is not None else row["end_ts"]
-
-    intervals_json = json_module.dumps(current_intervals) if current_intervals else None
-
-    db.execute(
-        """
-        UPDATE warehouse_sessions 
-        SET elapsed_ms = ?, start_ts = ?, end_ts = ?, intervals = ?
-        WHERE id = ? AND username = ?
-        """,
-        (new_elapsed, final_start, final_end, intervals_json, session_id, username)
-    )
-    try:
-        db.commit()
-    except Exception:
-        pass
-
-    return jsonify({
-        "ok": True, 
-        "id": session_id,
-        "elapsed_ms": new_elapsed, 
-        "start_ts": final_start, 
-        "end_ts": final_end,
-        "intervals": current_intervals
-    })
-
-
-@app.post("/api/magazzino/timer")
-@login_required
-def api_magazzino_timer_save() -> ResponseReturnValue:
-    """Salva/aggiorna lo stato del timer magazzino sul server."""
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    data = request.get_json(silent=True) or {}
-    project_code = _normalize_text(data.get("project_code")).upper()
-    project_name = _normalize_text(data.get("project_name"))
-    activity_label = _normalize_text(data.get("activity_label"))
-    notes = _normalize_text(data.get("notes"))
-    running = data.get("running", False)
-    paused = data.get("paused", False)
-    start_ts = _coerce_int(data.get("start_ts"))
-    elapsed_ms = _coerce_int(data.get("elapsed_ms")) or 0
-    pause_start_ts = _coerce_int(data.get("pause_start_ts"))
-
-    if not project_code or not activity_label or not start_ts:
-        return jsonify({"ok": False, "error": "missing_required_fields"}), 400
-
-    db = get_db()
-    ensure_warehouse_active_timers_table(db)
-    username = session.get("user")
-    now = now_ms()
-    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
-
-    # Upsert: se esiste aggiorna, altrimenti inserisci
+    # UPSERT: marca come completata
     if DB_VENDOR == "mysql":
-        db.execute(
-            f"""
-            INSERT INTO warehouse_active_timers 
-            (username, project_code, project_name, activity_label, notes, running, paused, start_ts, elapsed_ms, pause_start_ts, updated_ts)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        db.execute(f"""
+            INSERT INTO project_phase_progress 
+                (project_date, project_key, function_key, phase_name, phase_order, completed, completed_at, completed_by, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 1, {placeholder}, {placeholder}, {placeholder}, {placeholder})
             ON DUPLICATE KEY UPDATE
-                project_code = VALUES(project_code),
-                project_name = VALUES(project_name),
-                activity_label = VALUES(activity_label),
-                notes = VALUES(notes),
-                running = VALUES(running),
-                paused = VALUES(paused),
-                start_ts = VALUES(start_ts),
-                elapsed_ms = VALUES(elapsed_ms),
-                pause_start_ts = VALUES(pause_start_ts),
+                completed = 1,
+                completed_at = VALUES(completed_at),
+                completed_by = VALUES(completed_by),
                 updated_ts = VALUES(updated_ts)
-            """,
-            (username, project_code, project_name, activity_label, notes, 1 if running else 0, 1 if paused else 0, start_ts, elapsed_ms, pause_start_ts, now)
-        )
+        """, (today, project_code, matched_function_key, phase_name, phase_order,
+              now_ts, username, now_ts, now_ts))
     else:
-        db.execute(
-            f"""
-            INSERT OR REPLACE INTO warehouse_active_timers 
-            (username, project_code, project_name, activity_label, notes, running, paused, start_ts, elapsed_ms, pause_start_ts, updated_ts)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
-            """,
-            (username, project_code, project_name, activity_label, notes, 1 if running else 0, 1 if paused else 0, start_ts, elapsed_ms, pause_start_ts, now)
-        )
+        db.execute(f"""
+            INSERT INTO project_phase_progress 
+                (project_date, project_key, function_key, phase_name, phase_order, completed, completed_at, completed_by, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 1, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            ON CONFLICT(project_date, project_key, function_key, phase_name) DO UPDATE SET
+                completed = 1,
+                completed_at = excluded.completed_at,
+                completed_by = excluded.completed_by,
+                updated_ts = excluded.updated_ts
+        """, (today, project_code, matched_function_key, phase_name, phase_order,
+              now_ts, username, now_ts, now_ts))
     
-    try:
-        db.commit()
-    except Exception:
-        pass
-
-    return jsonify({"ok": True})
-
-
-@app.delete("/api/magazzino/timer")
-@login_required
-def api_magazzino_timer_clear() -> ResponseReturnValue:
-    """Rimuove il timer attivo dell'utente (quando ferma il timer)."""
-    guard = _magazzino_only()
-    if guard is not None:
-        return guard
-
-    db = get_db()
-    ensure_warehouse_active_timers_table(db)
-    username = session.get("user")
-    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
-
-    db.execute(
-        f"DELETE FROM warehouse_active_timers WHERE username = {placeholder}",
-        (username,)
-    )
-    try:
-        db.commit()
-    except Exception:
-        pass
-
-    return jsonify({"ok": True})
+    db.commit()
+    app.logger.info(f"[AUTO-PHASE] Fase '{phase_name}' completata automaticamente per {username} (progetto {project_code}, funzione {matched_function_key})")
 
 
 # ═══════════════════════════════════════════════════════════════════
 # API TIMER PRODUZIONE - Per gruppi di produzione senza leader
 # ═══════════════════════════════════════════════════════════════════
+
+@app.get("/api/production/active-timers")
+@login_required
+def api_production_active_timers() -> ResponseReturnValue:
+    """Restituisce tutti i timer attivi raggruppati per project_code e activity_label.
+    
+    Include sia i timer individuali (warehouse_active_timers) sia gli operatori
+    gestiti dal supervisore (member_state) mappati alla fase corrente.
+    """
+    db = get_db()
+    ensure_warehouse_active_timers_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    
+    rows = db.execute(
+        "SELECT username, project_code, activity_label FROM warehouse_active_timers WHERE running = 1"
+    ).fetchall()
+    
+    result = {}  # { project_code: { activity_label: [username/member_name, ...] } }
+    for row in rows:
+        if isinstance(row, dict):
+            pc = row['project_code'] or ''
+            al = row['activity_label'] or ''
+            un = row['username'] or ''
+        else:
+            pc = row[1] or ''
+            al = row[2] or ''
+            un = row[0] or ''
+        if pc not in result:
+            result[pc] = {}
+        if al not in result[pc]:
+            result[pc][al] = []
+        result[pc][al].append(un)
+    
+    # ── Aggiungi chiavi composte func::phase per timer individuali ──
+    # I timer individuali salvano solo activity_label (nome fase), senza la funzione.
+    # Per il matching nella pagina planning (che usa func::phase), generiamo le chiavi composte
+    # confrontando activity_label con la config function_phases.
+    try:
+        fn_phases_cfg = get_function_phases_config(db)
+        for pc, labels in list(result.items()):
+            for al, usernames in list(labels.items()):
+                # Cerca se al è un nome di fase in qualche funzione
+                if '::' in al:
+                    continue  # già compound
+                al_lower = al.lower().strip()
+                for func_key, tmpl in fn_phases_cfg.items():
+                    phases = tmpl.get('phases', [])
+                    for ph in phases:
+                        if (ph.get('name') or '').lower().strip() == al_lower:
+                            compound_key = f"{func_key}::{al}"
+                            if compound_key not in result[pc]:
+                                result[pc][compound_key] = []
+                            for u in usernames:
+                                if u not in result[pc][compound_key]:
+                                    result[pc][compound_key].append(u)
+                            break
+    except Exception as e:
+        app.logger.warning(f"[active-timers] Errore generazione chiavi composte: {e}")
+    
+    # ── Includi anche operatori dal flusso supervisore (member_state) ──
+    # Quando gestione_squadra è attiva, il supervisore gestisce gli operatori
+    # tramite member_state/activities, non warehouse_active_timers.
+    try:
+        _ensure_member_state_current_phase(db)
+        ms_rows = db.execute(
+            """SELECT ms.member_name, ms.project_code, ms.activity_id,
+                      a.label AS activity_label, ms.current_phase
+               FROM member_state ms
+               LEFT JOIN activities a ON ms.activity_id = a.activity_id
+               WHERE ms.running = 1 AND ms.activity_id IS NOT NULL"""
+        ).fetchall()
+        
+        if ms_rows:
+            for ms_row in ms_rows:
+                if isinstance(ms_row, dict):
+                    m_name = ms_row.get('member_name') or ''
+                    m_pc = ms_row.get('project_code') or ''
+                    m_label = ms_row.get('activity_label') or ''
+                    m_phase = ms_row.get('current_phase') or ''
+                else:
+                    m_name = ms_row[0] or ''
+                    m_pc = ms_row[1] or ''
+                    m_label = ms_row[3] or ''
+                    m_phase = ms_row[4] or ''
+                
+                if not m_pc or not m_label:
+                    continue
+                
+                # Usa la fase individuale dal DB; se non disponibile, mostra il nome funzione
+                import re as _re_at
+                func_name = _re_at.sub(r'\s*\[ID\s+\d+\]$', '', m_label, flags=_re_at.IGNORECASE).strip()
+                phase_label = m_phase if m_phase else func_name
+                
+                if not phase_label:
+                    continue
+                
+                if m_pc not in result:
+                    result[m_pc] = {}
+                
+                # Chiave semplice (retrocompatibile)
+                if phase_label not in result[m_pc]:
+                    result[m_pc][phase_label] = []
+                if m_name not in result[m_pc][phase_label]:
+                    result[m_pc][phase_label].append(m_name)
+                
+                # Chiave composta func::phase per disambiguare fasi con stesso nome in funzioni diverse
+                if func_name and m_phase:
+                    compound_key = f"{func_name}::{m_phase}"
+                    if compound_key not in result[m_pc]:
+                        result[m_pc][compound_key] = []
+                    if m_name not in result[m_pc][compound_key]:
+                        result[m_pc][compound_key].append(m_name)
+    except Exception as e:
+        app.logger.warning(f"[active-timers] Errore lettura member_state: {e}")
+    
+    return jsonify({"ok": True, "active_timers": result})
+
 
 @app.post("/api/production/timer/start")
 @login_required
@@ -9024,10 +9963,22 @@ def api_state():
             }
         )
 
-    activity_rows = db.execute(
-        f"SELECT activity_id, label FROM activities WHERE project_code = {placeholder} ORDER BY sort_order, label",
-        (project_code,)
-    ).fetchall()
+    # ── Se il supervisor è loggato tramite telefono con una funzione specifica,
+    #    filtra le attività e i membri per quella funzione. ──
+    supervisor_activity_id = session.get('supervisor_activity_id')
+
+    if supervisor_activity_id:
+        activity_rows = db.execute(
+            f"""SELECT activity_id, label, phase_id, phase_label FROM activities
+                WHERE project_code = {placeholder} AND activity_id = {placeholder}
+                ORDER BY sort_order, label""",
+            (project_code, supervisor_activity_id)
+        ).fetchall()
+    else:
+        activity_rows = db.execute(
+            f"SELECT activity_id, label, phase_id, phase_label FROM activities WHERE project_code = {placeholder} ORDER BY sort_order, label",
+            (project_code,)
+        ).fetchall()
 
     activity_meta = load_activity_meta(db)
 
@@ -9049,12 +10000,20 @@ def api_state():
             "planned_members": meta_entry.get("planned_members"),
             "planned_duration_ms": meta_entry.get("planned_duration_ms"),
             "actual_runtime_ms": meta_entry.get("actual_runtime_ms", 0),
+            "phase_id": row["phase_id"],
+            "phase_label": row["phase_label"],
         }
 
-    members = db.execute(
-        f"SELECT * FROM member_state WHERE project_code = {placeholder} ORDER BY member_name",
-        (project_code,)
-    ).fetchall()
+    if supervisor_activity_id:
+        members = db.execute(
+            f"SELECT * FROM member_state WHERE project_code = {placeholder} AND activity_id = {placeholder} ORDER BY member_name",
+            (project_code, supervisor_activity_id)
+        ).fetchall()
+    else:
+        members = db.execute(
+            f"SELECT * FROM member_state WHERE project_code = {placeholder} ORDER BY member_name",
+            (project_code,)
+        ).fetchall()
 
     team: List[Dict[str, Any]] = []
     active_members: List[Dict[str, Any]] = []
@@ -9068,6 +10027,12 @@ def api_state():
     for row in members:
         running_state = int(row["running"])
         last_start_ts = row["entered_ts"] or row["start_ts"]
+        # current_phase column may not exist yet
+        current_phase = None
+        try:
+            current_phase = row["current_phase"]
+        except (KeyError, IndexError):
+            pass
         member = {
             "member_key": row["member_key"],
             "member_name": row["member_name"],
@@ -9077,6 +10042,7 @@ def api_state():
             "elapsed": compute_elapsed(row, now),
             "paused": row["member_key"] in paused_keys,
             "last_start_ts": last_start_ts,
+            "current_phase": current_phase,
         }
         if row["activity_id"] and row["activity_id"] in activity_map:
             activity_map[row["activity_id"]]["members"].append(member)
@@ -9121,6 +10087,21 @@ def api_state():
         "name": project_name or project_code,
     }
 
+    # ── Fasi operative: config + progresso ──────────────────────────
+    function_phases_config = get_function_phases_config(db)
+    phase_progress_list: List[Dict[str, Any]] = []
+    if function_phases_config:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        ensure_project_phase_progress_table(db)
+        pp_rows = db.execute(
+            f"""SELECT * FROM project_phase_progress
+                WHERE project_date = {placeholder} AND project_key = {placeholder}
+                ORDER BY function_key, phase_order""",
+            (today_str, project_code)
+        ).fetchall()
+        for r in pp_rows:
+            phase_progress_list.append(dict(r) if not isinstance(r, dict) else r)
+
     return jsonify(
         {
             "team": team,
@@ -9128,6 +10109,8 @@ def api_state():
             "allPaused": all_paused,
             "timestamp": now,
             "project": project_info,
+            "function_phases_config": function_phases_config,
+            "phase_progress": phase_progress_list,
         }
     )
 
@@ -9590,6 +10573,152 @@ def api_load_project():
     )
 
 
+def _mark_phase_completed_on_move(
+    db: DatabaseLike,
+    project_code: str,
+    activity_id: str,
+    phase_name: str,
+    completed_by: str,
+) -> None:
+    """Marca una fase come completata in project_phase_progress quando il supervisor cambia fase."""
+    import re as _re_mp
+    ensure_project_phase_progress_table(db)
+
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Recupera il function_key dall'activity_id (es. "rentman-f-18393" → label "Allestimento")
+    act_row = db.execute(
+        f"SELECT label FROM activities WHERE activity_id={placeholder} AND project_code={placeholder}",
+        (activity_id, project_code),
+    ).fetchone()
+    if not act_row:
+        return
+    raw_label = act_row["label"] or ""
+    function_name = _re_mp.sub(r'\s*\[ID\s+\d+\]$', '', raw_label, flags=_re_mp.IGNORECASE).strip()
+    if not function_name:
+        return
+
+    # Trova il function_key corrispondente nella config fasi
+    fn_config = get_function_phases_config(db)
+    matched_key = None
+    fn_lower = function_name.lower()
+    for key in fn_config:
+        if key.lower().strip() == fn_lower:
+            matched_key = key
+            break
+    if not matched_key:
+        return
+
+    # Trova l'ordine della fase
+    phase_order = 0
+    for ph in fn_config[matched_key].get("phases", []):
+        if ph.get("name", "").strip().lower() == phase_name.strip().lower():
+            phase_order = ph.get("order", 0)
+            break
+
+    now_ts = int(time.time() * 1000)
+    username = completed_by or "supervisor"
+
+    if DB_VENDOR == "mysql":
+        db.execute(f"""
+            INSERT INTO project_phase_progress
+                (project_date, project_key, function_key, phase_name, phase_order, completed, completed_at, completed_by, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 1, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            ON DUPLICATE KEY UPDATE
+                completed = 1,
+                completed_at = VALUES(completed_at),
+                completed_by = VALUES(completed_by),
+                updated_ts = VALUES(updated_ts)
+        """, (today_str, project_code, matched_key, phase_name, phase_order, now_ts, username, now_ts, now_ts))
+    else:
+        db.execute(f"""
+            INSERT INTO project_phase_progress
+                (project_date, project_key, function_key, phase_name, phase_order, completed, completed_at, completed_by, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 1, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            ON CONFLICT(project_date, project_key, function_key, phase_name) DO UPDATE SET
+                completed = 1,
+                completed_at = excluded.completed_at,
+                completed_by = excluded.completed_by,
+                updated_ts = excluded.updated_ts
+        """, (today_str, project_code, matched_key, phase_name, phase_order, now_ts, username, now_ts, now_ts))
+
+
+def _mark_all_phases_completed_for_activity(
+    db: DatabaseLike,
+    project_code: str,
+    activity_id: str,
+    completed_by: str,
+) -> None:
+    """Marca TUTTE le fasi di una funzione come completate quando l'attività viene terminata."""
+    import re as _re_ap
+    ensure_project_phase_progress_table(db)
+
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Recupera il function_key dall'activity_id
+    act_row = db.execute(
+        f"SELECT label FROM activities WHERE activity_id={placeholder} AND project_code={placeholder}",
+        (activity_id, project_code),
+    ).fetchone()
+    if not act_row:
+        return
+    raw_label = act_row["label"] or ""
+    function_name = _re_ap.sub(r'\s*\[ID\s+\d+\]$', '', raw_label, flags=_re_ap.IGNORECASE).strip()
+    if not function_name:
+        return
+
+    # Trova il function_key nella config fasi
+    fn_config = get_function_phases_config(db)
+    matched_key = None
+    fn_lower = function_name.lower()
+    for key in fn_config:
+        if key.lower().strip() == fn_lower:
+            matched_key = key
+            break
+    if not matched_key:
+        return
+
+    phases = fn_config[matched_key].get("phases", [])
+    if not phases:
+        return
+
+    now_ts = int(time.time() * 1000)
+    username = completed_by or "supervisor"
+
+    for ph in phases:
+        ph_name = ph.get("name", "").strip()
+        ph_order = ph.get("order", 0)
+        if not ph_name:
+            continue
+        if DB_VENDOR == "mysql":
+            db.execute(f"""
+                INSERT INTO project_phase_progress
+                    (project_date, project_key, function_key, phase_name, phase_order, completed, completed_at, completed_by, created_ts, updated_ts)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 1, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+                ON DUPLICATE KEY UPDATE
+                    completed = CASE WHEN completed = 0 THEN 1 ELSE completed END,
+                    completed_at = CASE WHEN completed = 0 THEN VALUES(completed_at) ELSE completed_at END,
+                    completed_by = CASE WHEN completed = 0 THEN VALUES(completed_by) ELSE completed_by END,
+                    updated_ts = VALUES(updated_ts)
+            """, (today_str, project_code, matched_key, ph_name, ph_order, now_ts, username, now_ts, now_ts))
+        else:
+            db.execute(f"""
+                INSERT INTO project_phase_progress
+                    (project_date, project_key, function_key, phase_name, phase_order, completed, completed_at, completed_by, created_ts, updated_ts)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 1, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+                ON CONFLICT(project_date, project_key, function_key, phase_name) DO UPDATE SET
+                    completed = CASE WHEN project_phase_progress.completed = 0 THEN 1 ELSE project_phase_progress.completed END,
+                    completed_at = CASE WHEN project_phase_progress.completed = 0 THEN excluded.completed_at ELSE project_phase_progress.completed_at END,
+                    completed_by = CASE WHEN project_phase_progress.completed = 0 THEN excluded.completed_by ELSE project_phase_progress.completed_by END,
+                    updated_ts = excluded.updated_ts
+            """, (today_str, project_code, matched_key, ph_name, ph_order, now_ts, username, now_ts, now_ts))
+
+    app.logger.info("Tutte le fasi di %s marcate come completate per progetto %s da %s",
+                     matched_key, project_code, username)
+
+
 @app.post("/api/move")
 @login_required
 def api_move():
@@ -9597,6 +10726,7 @@ def api_move():
     member_key = (data.get("member_key") or "").strip()
     member_name = (data.get("member_name") or "").strip()
     activity_id = data.get("activity_id")
+    phase_name = (data.get("phase_name") or "").strip() or None
 
     if isinstance(activity_id, str):
         activity_id = activity_id.strip()
@@ -9657,13 +10787,19 @@ def api_move():
     normalized_target = str(activity_id) if activity_id else None
     same_activity = normalized_previous is not None and normalized_previous == normalized_target
 
+    # Rileva cambio fase nella stessa attività
+    previous_phase = row_value(existing, "current_phase") or None
+    phase_changed = same_activity and phase_name is not None and phase_name != previous_phase
+
     running = RUN_STATE_RUNNING if activity_id else RUN_STATE_PAUSED
     start_ts = now if running else None
-    reset_elapsed = bool(activity_id) and not same_activity
+    reset_elapsed = (bool(activity_id) and not same_activity) or phase_changed
     elapsed_cached = 0 if reset_elapsed else prev_elapsed
     next_entered_ts = previous_entered_ts
     if activity_id and not same_activity:
         next_entered_ts = now
+    if phase_changed:
+        next_entered_ts = now  # Nuovo ingresso per la nuova fase
     if not activity_id:
         next_entered_ts = None
 
@@ -9675,13 +10811,48 @@ def api_move():
             meta_changed = increment_activity_runtime(activity_meta, normalized_previous, prev_elapsed)
         auto_closed_previous = True
 
+    # ── Cambio fase nella stessa attività: chiudi la fase precedente ──
+    phase_finish_logged = False
+    if phase_changed and prev_elapsed > 0 and previous_phase:
+        activity_start_ts = find_last_move_ts(db, member_key, normalized_previous)
+        if activity_start_ts is None:
+            activity_start_ts = previous_entered_ts or existing["start_ts"]
+        total_ms = max(0, now - activity_start_ts) if activity_start_ts else prev_elapsed
+        pause_ms = max(0, total_ms - prev_elapsed)
+
+        finish_payload = {
+            "member_name": existing["member_name"],
+            "activity_id": normalized_previous,
+            "duration_ms": prev_elapsed,
+            "total_ms": total_ms,
+            "pause_ms": pause_ms,
+            "auto_close": True,
+            "project_code": project_code,
+            "phase_name": previous_phase,
+            "phase_change": True,
+        }
+        db.execute(
+            f"INSERT INTO event_log(ts, kind, member_key, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder})",
+            (now, "finish_activity", member_key, json.dumps(finish_payload), project_code),
+        )
+        phase_finish_logged = True
+
+        # Marca la fase precedente come completata in project_phase_progress
+        try:
+            _mark_phase_completed_on_move(db, project_code, normalized_previous, previous_phase, member_name)
+        except Exception as e:
+            app.logger.warning("Errore marcatura fase completata per %s: %s", member_key, e)
+
+    # Ensure current_phase column exists
+    _ensure_member_state_current_phase(db)
+
     db.execute(
         f"""
         UPDATE member_state
-        SET activity_id={placeholder}, running={placeholder}, start_ts={placeholder}, elapsed_cached={placeholder}, pause_start=NULL, entered_ts={placeholder}
+        SET activity_id={placeholder}, running={placeholder}, start_ts={placeholder}, elapsed_cached={placeholder}, pause_start=NULL, entered_ts={placeholder}, current_phase={placeholder}
         WHERE member_key={placeholder} AND project_code={placeholder}
         """,
-        (activity_id, running, start_ts, elapsed_cached, next_entered_ts, member_key, project_code),
+        (activity_id, running, start_ts, elapsed_cached, next_entered_ts, phase_name, member_key, project_code),
     )
 
     if meta_changed:
@@ -9717,8 +10888,10 @@ def api_move():
         "from": previous_activity,
         "to": activity_id,
         "member_name": member_name,
-        "duration_ms": prev_elapsed,
+        "duration_ms": prev_elapsed if not phase_changed else 0,
         "project_code": project_code,
+        "phase_name": phase_name,
+        "from_phase": previous_phase if phase_changed else None,
     }
     db.execute(
         f"INSERT INTO event_log(ts, kind, member_key, details, project_code) VALUES({placeholder},{placeholder},{placeholder},{placeholder},{placeholder})",
@@ -10199,6 +11372,26 @@ def api_member_finish():
 
     if meta_changed:
         save_activity_meta(db, activity_meta)
+
+    # ── Marca tutte le fasi come completate quando l'ultimo membro finisce ──
+    # Controlla se rimangono altri membri attivi in questa attività
+    remaining = db.execute(
+        f"""SELECT COUNT(*) as cnt FROM member_state
+            WHERE activity_id={placeholder} AND project_code={placeholder}
+              AND member_key != {placeholder}
+              AND activity_id IS NOT NULL""",
+        (member["activity_id"], project_code, member_key),
+    ).fetchone()
+    remaining_count = remaining["cnt"] if remaining else 0
+    if remaining_count == 0:
+        # Ultimo membro: marca tutte le fasi della funzione come completate
+        try:
+            _mark_all_phases_completed_for_activity(
+                db, project_code, member["activity_id"],
+                completed_by=member["member_name"],
+            )
+        except Exception as exc:
+            app.logger.warning("Errore marcatura fasi su finish: %s", exc)
 
     db.commit()
     return jsonify({"ok": True})
@@ -10928,77 +12121,6 @@ def api_admin_employees_list() -> ResponseReturnValue:
     return jsonify({"ok": True, "employees": employees})
 
 
-@app.get("/api/admin/magazzino/summary")
-@login_required
-def api_admin_magazzino_summary() -> ResponseReturnValue:
-    """Riepilogo ore magazzino per progetto (range date)."""
-    if not is_admin_or_supervisor():
-        return jsonify({"error": "forbidden"}), 403
-
-    # Supporto range date: date_start/date_end oppure date singola (retrocompatibilità)
-    date_start = parse_iso_date(request.args.get("date_start")) or parse_iso_date(request.args.get("date")) or datetime.now().date()
-    date_end = parse_iso_date(request.args.get("date_end")) or date_start
-    
-    # Assicura che date_end >= date_start
-    if date_end < date_start:
-        date_start, date_end = date_end, date_start
-
-    start_dt = datetime.combine(date_start, datetime.min.time())
-    end_dt = datetime.combine(date_end, datetime.min.time()) + timedelta(days=1)
-    start_ms = int(start_dt.timestamp() * 1000)
-    end_ms = int(end_dt.timestamp() * 1000)
-
-    db = get_db()
-    ensure_warehouse_sessions_table(db)
-
-    rows = db.execute(
-        """
-        SELECT project_code, COUNT(*) AS sessions, COALESCE(SUM(elapsed_ms), 0) AS total_ms
-        FROM warehouse_sessions
-        WHERE created_ts >= ? AND created_ts < ?
-        GROUP BY project_code
-        ORDER BY total_ms DESC, project_code ASC
-        """,
-        (start_ms, end_ms),
-    ).fetchall()
-
-    team_sessions = build_session_rows(
-        db,
-        start_date=date_start,
-        end_date=date_end,
-    )
-    team_total_ms = sum(_coerce_int(s.get("net_ms")) or 0 for s in team_sessions)
-    team_total_sessions = len(team_sessions)
-
-    items: List[Dict[str, Any]] = []
-    total_ms = 0
-    total_sessions = 0
-    for row in rows or []:
-        ms_value = _coerce_int(row["total_ms"]) or 0
-        sessions_count = _coerce_int(row["sessions"]) or 0
-        total_ms += ms_value
-        total_sessions += sessions_count
-        items.append(
-            {
-                "project_code": row["project_code"],
-                "sessions": sessions_count,
-                "total_ms": ms_value,
-            }
-        )
-
-    return jsonify(
-        {
-            "ok": True,
-            "date": date_start.isoformat() if date_start == date_end else f"{date_start.isoformat()} - {date_end.isoformat()}",
-            "items": items,
-            "total_ms": total_ms,
-            "total_sessions": total_sessions,
-            "team_total_ms": team_total_ms,
-            "team_total_sessions": team_total_sessions,
-        }
-    )
-
-
 # ═══════════════════════════════════════════════════════════════════
 # DEBUG: SIMULATED DATE API
 # ═══════════════════════════════════════════════════════════════════
@@ -11071,7 +12193,7 @@ def api_admin_open_sessions() -> ResponseReturnValue:
         f"""
         SELECT ms.member_key, ms.member_name, ms.activity_id, ms.running, 
                ms.start_ts, ms.elapsed_cached, ms.pause_start, ms.entered_ts,
-               ms.project_code,
+               ms.project_code, ms.current_phase,
                a.label AS activity_label,
                a.notes AS activity_notes
         FROM member_state ms
@@ -11094,29 +12216,114 @@ def api_admin_open_sessions() -> ResponseReturnValue:
     for pr in pause_rows:
         pause_counts[pr["member_key"]] = pr["pause_count"]
 
+    # ── Carica configurazione fasi e progresso per arricchire l'attività ──
+    function_phases_config = get_function_phases_config(db)
+    phase_progress_by_fn: Dict[str, Dict[str, bool]] = {}  # { function_key: { phase_name: completed } }
+    if function_phases_config:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        ensure_project_phase_progress_table(db)
+        # Raccogliamo per tutti i project_code attivi
+        project_codes = list({r["project_code"] for r in rows if r["project_code"]})
+        for pc in project_codes:
+            pp_rows = db.execute(
+                f"""SELECT function_key, phase_name, completed FROM project_phase_progress
+                    WHERE project_date = {placeholder} AND project_key = {placeholder}""",
+                (today_str, pc)
+            ).fetchall()
+            for ppr in pp_rows:
+                fk = ppr["function_key"]
+                pn = ppr["phase_name"]
+                comp = bool(ppr["completed"])
+                if fk not in phase_progress_by_fn:
+                    phase_progress_by_fn[fk] = {}
+                phase_progress_by_fn[fk][pn] = comp
+
+    def _resolve_current_phase(activity_label_raw: str) -> str | None:
+        """Dato un activity_label come 'Montaggio [ID 18422]', restituisce la fase corrente (prima non completata)."""
+        if not activity_label_raw or not function_phases_config:
+            return None
+        import re as _re
+        func_name = _re.sub(r'\s*\[ID\s+\d+\]$', '', activity_label_raw, flags=_re.IGNORECASE).strip()
+        if not func_name:
+            return None
+        fn_lower = func_name.lower()
+        for key, template in function_phases_config.items():
+            if key.lower().strip() == fn_lower:
+                phases = sorted(template.get('phases', []), key=lambda x: x.get('order', 0))
+                progress = phase_progress_by_fn.get(key, {})
+                for ph in phases:
+                    if not progress.get(ph.get('name', ''), False):
+                        return ph.get('name', '')
+                # Tutte completate
+                if phases:
+                    return "✅ Completato"
+                return None
+        return None
+
     open_sessions = []
     for row in rows:
-        elapsed = compute_elapsed(row, now)
-        start_ts = row["entered_ts"] or row["start_ts"]
         running_state = int(row["running"])
+        real_start_ts = row["start_ts"]
+        elapsed_cached = row["elapsed_cached"] or 0
+        pause_start = row["pause_start"]
+
+        # ── Skip operatori solo assegnati ma non avviati ──
+        # running=0 (RUN_STATE_PAUSED=0) con start_ts=NULL e elapsed=0
+        # significa che sono stati assegnati dal supervisor ma non hanno
+        # ancora avviato il timer → non mostrare in "Sessioni Aperte"
+        # PERÒ: se ci sono fasi completate per la funzione dell'operatore,
+        # significa che ha realmente lavorato (anche se project_load ha resettato)
+        if (running_state != RUN_STATE_RUNNING
+                and real_start_ts is None
+                and elapsed_cached == 0
+                and pause_start is None):
+            # Controlla se la funzione associata ha fasi completate
+            has_phase_progress = False
+            act_label_raw = row["activity_label"] or ""
+            if act_label_raw and function_phases_config:
+                import re as _re_skip
+                _fn = _re_skip.sub(r'\s*\[ID\s+\d+\]$', '', act_label_raw, flags=_re_skip.IGNORECASE).strip()
+                if _fn:
+                    for _fk in function_phases_config:
+                        if _fk.lower().strip() == _fn.lower():
+                            fn_prog = phase_progress_by_fn.get(_fk, {})
+                            has_phase_progress = any(fn_prog.values())
+                            break
+            if not has_phase_progress:
+                continue
+
+        elapsed = compute_elapsed(row, now)
+        start_ts = real_start_ts or row["entered_ts"] or now
         member_key = row["member_key"]
-        
+
+        raw_label = row["activity_label"] or row["activity_id"]
+        # Usa la fase individuale dall'operatore (current_phase in member_state)
+        member_phase = row.get("current_phase") if isinstance(row, dict) else None
+        if member_phase:
+            display_label = f"{raw_label} — 📍 {member_phase}"
+        else:
+            display_label = raw_label
+
+        # Distingui "in pausa" reale da "non ancora avviato"
+        is_paused = (running_state == RUN_STATE_PAUSED
+                     and (pause_start is not None or elapsed_cached > 0))
+
         open_sessions.append({
             "source": "team",
             "member_key": member_key,
             "member_name": row["member_name"],
             "activity_id": row["activity_id"],
-            "activity_label": row["activity_label"] or row["activity_id"],
+            "activity_label": display_label,
             "project_code": row["project_code"],
             "running": running_state == RUN_STATE_RUNNING,
-            "paused": running_state == RUN_STATE_PAUSED or row["pause_start"] is not None,
+            "paused": is_paused,
             "start_ts": start_ts,
             "elapsed_ms": elapsed,
             "pause_count": pause_counts.get(member_key, 0),
             "notes": row["activity_notes"] or "",
         })
 
-    # Aggiungi timer attivi del magazzino
+    # Aggiungi timer attivi della produzione
     ensure_warehouse_active_timers_table(db)
     wh_rows = db.execute(
         """
@@ -11139,7 +12346,7 @@ def api_admin_open_sessions() -> ResponseReturnValue:
             "member_key": f"wh_{wh['username']}",
             "member_name": wh["username"],
             "activity_id": wh["activity_label"],
-            "activity_label": f"{wh['activity_label']} (Magazzino)",
+            "activity_label": f"{wh['activity_label']} (Produzione)",
             "project_code": wh["project_code"],
             "project_name": wh["project_name"],
             "running": bool(wh["running"]) and not bool(wh["paused"]),
@@ -11187,6 +12394,137 @@ def api_admin_day_sessions() -> ResponseReturnValue:
         end_date=date_end,
         project_filter=project_filter,
     )
+
+    # ── Spezza le sessioni di squadra in sotto-righe per fase (con inizio/fine per fase) ──
+    _fn_phases_cfg = get_function_phases_config(db)
+    if _fn_phases_cfg and team_sessions:
+        import re as _re_ds
+        ensure_project_phase_progress_table(db)
+        _pc_set = {s["project_code"] for s in team_sessions if s.get("project_code")}
+
+        # Struttura: { "date|pc": { fn_key: [ {name, order, completed, completed_at} ] } }
+        _pp_by_date_fn: Dict[str, Dict[str, list]] = {}
+        _cur = date_start
+        while _cur <= date_end:
+            _d_str = _cur.isoformat()
+            for _pc in _pc_set:
+                _ppkey = f"{_d_str}|{_pc}"
+                _pp_rows = db.execute(
+                    f"""SELECT function_key, phase_name, phase_order, completed, completed_at
+                        FROM project_phase_progress
+                        WHERE project_date = {placeholder} AND project_key = {placeholder}
+                        ORDER BY function_key, phase_order""",
+                    (_d_str, _pc)
+                ).fetchall()
+                _pp_map: Dict[str, list] = {}
+                for _ppr in _pp_rows:
+                    _fk = _ppr["function_key"]
+                    if _fk not in _pp_map:
+                        _pp_map[_fk] = []
+                    _pp_map[_fk].append({
+                        "name": _ppr["phase_name"],
+                        "order": _ppr["phase_order"],
+                        "completed": bool(_ppr["completed"]),
+                        "completed_at": _coerce_int(_ppr["completed_at"]),
+                    })
+                _pp_by_date_fn[_ppkey] = _pp_map
+            _cur += timedelta(days=1)
+
+        def _split_session_by_phases(sess: Dict[str, Any]) -> List[Dict[str, Any]]:
+            """Se la sessione ha fasi configurate, la spezza in sotto-righe per fase."""
+            raw_label = sess.get("activity_label") or sess.get("activity_id") or ""
+            if not raw_label:
+                return [sess]
+            func_name = _re_ds.sub(r'\s*\[ID\s+\d+\]$', '', raw_label, flags=_re_ds.IGNORECASE).strip()
+            if not func_name:
+                return [sess]
+
+            s_ts = sess.get("start_ts") or 0
+            s_date_str = datetime.fromtimestamp(s_ts / 1000).strftime("%Y-%m-%d") if s_ts else date_start.isoformat()
+            s_pc = sess.get("project_code") or ""
+            ppkey = f"{s_date_str}|{s_pc}"
+            fn_progress_map = _pp_by_date_fn.get(ppkey, {})
+
+            # Trova la config fasi corrispondente
+            matched_key = None
+            fn_lower = func_name.lower()
+            for key in _fn_phases_cfg:
+                if key.lower().strip() == fn_lower:
+                    matched_key = key
+                    break
+            if not matched_key:
+                return [sess]
+
+            phase_records = fn_progress_map.get(matched_key, [])
+            if not phase_records:
+                # Nessun progresso registrato: usa la config template per mostrare almeno la prima fase
+                template = _fn_phases_cfg[matched_key]
+                tpl_phases = sorted(template.get('phases', []), key=lambda x: x.get('order', 0))
+                if not tpl_phases:
+                    return [sess]
+                # Nessuna fase completata — mostra la sessione intera con la prima fase corrente
+                first_ph = tpl_phases[0].get('name', '')
+                sess_copy = dict(sess)
+                sess_copy["activity_label"] = f"{raw_label} — 📍 {first_ph}"
+                return [sess_copy]
+
+            # Ordina per order
+            phase_records.sort(key=lambda x: x["order"])
+
+            sess_start = sess.get("start_ts") or 0
+            sess_end = sess.get("end_ts") or 0
+            sess_status = sess.get("status") or "completed"
+
+            sub_rows: List[Dict[str, Any]] = []
+            phase_start = sess_start
+
+            for i, ph in enumerate(phase_records):
+                ph_name = ph["name"]
+                ph_completed = ph["completed"]
+                ph_completed_at = ph["completed_at"]
+
+                if ph_completed and ph_completed_at:
+                    # Fase completata: inizio = phase_start, fine = completed_at
+                    phase_end = ph_completed_at
+                    phase_net_ms = max(0, phase_end - phase_start)
+                    sub_rows.append(_make_phase_row(
+                        sess, raw_label, ph_name, phase_start, phase_end,
+                        phase_net_ms, status="completed", icon="✅"
+                    ))
+                    phase_start = phase_end  # La prossima fase inizia dove finisce questa
+                elif not ph_completed:
+                    # Fase corrente (non completata): da phase_start a session_end
+                    phase_end = sess_end
+                    phase_net_ms = max(0, phase_end - phase_start)
+                    sub_rows.append(_make_phase_row(
+                        sess, raw_label, ph_name, phase_start, phase_end,
+                        phase_net_ms, status=sess_status, icon="📍"
+                    ))
+                    break  # Le fasi successive non sono ancora iniziate
+
+            return sub_rows if sub_rows else [sess]
+
+        def _make_phase_row(
+            base: Dict[str, Any], raw_label: str, phase_name: str,
+            start_ts: int, end_ts: int, net_ms: int,
+            status: str = "completed", icon: str = "✅"
+        ) -> Dict[str, Any]:
+            """Crea una sotto-riga sessione per una singola fase."""
+            row = dict(base)
+            row["activity_label"] = f"{raw_label} — {icon} {phase_name}"
+            row["start_ts"] = start_ts
+            row["end_ts"] = end_ts
+            row["net_ms"] = net_ms
+            row["pause_ms"] = 0
+            row["pause_count"] = 0
+            row["status"] = status
+            return row
+
+        # Ricostruisci la lista di sessioni espandendo le fasi
+        expanded: List[Dict[str, Any]] = []
+        for _sess in team_sessions:
+            expanded.extend(_split_session_by_phases(_sess))
+        team_sessions = expanded
 
     ensure_warehouse_sessions_table(db)
     
@@ -11255,9 +12593,9 @@ def api_admin_day_sessions() -> ResponseReturnValue:
                 act_label = s.get("activity_label") or s.get("activity_id") or "Altro"
                 activity_hours[act_label] = activity_hours.get(act_label, 0) + (_coerce_int(s.get("net_ms")) or 0)
         
-        # Aggiungi ore magazzino
+        # Aggiungi ore produzione
         for s in magazzino_sessions:
-            act_label = s.get("activity_label") or "Magazzino"
+            act_label = s.get("activity_label") or "Produzione"
             activity_hours[act_label] = activity_hours.get(act_label, 0) + (_coerce_int(s.get("elapsed_ms")) or 0)
         
         # Converti in lista per il frontend (usa combined_total_ms per percentuali)
@@ -13486,6 +14824,7 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     location_id INT,
     location_name VARCHAR(500),
     location_address VARCHAR(500),
+    custom_location_ids TEXT DEFAULT NULL COMMENT 'JSON array di ID location_cache assegnate',
     location_lat DECIMAL(12,8) DEFAULT NULL COMMENT 'Latitudine location',
     location_lon DECIMAL(12,8) DEFAULT NULL COMMENT 'Longitudine location',
     timbratura_gps_mode VARCHAR(20) DEFAULT 'group',
@@ -13536,6 +14875,7 @@ CREATE TABLE IF NOT EXISTS rentman_plannings (
     location_id INTEGER,
     location_name TEXT,
     location_address TEXT,
+    custom_location_ids TEXT DEFAULT NULL,
     location_lat REAL DEFAULT NULL,
     location_lon REAL DEFAULT NULL,
     timbratura_gps_mode TEXT DEFAULT 'group',
@@ -13602,6 +14942,51 @@ CREATE TABLE IF NOT EXISTS vehicle_driver_assignments (
 );
 CREATE INDEX IF NOT EXISTS idx_vda_date ON vehicle_driver_assignments(planning_date);
 CREATE INDEX IF NOT EXISTS idx_vda_project ON vehicle_driver_assignments(project_id);
+"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  FASI FUNZIONE - Sotto-attività per funzioni di pianificazione
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PROJECT_PHASE_PROGRESS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS project_phase_progress (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_date DATE NOT NULL,
+    project_key VARCHAR(300) NOT NULL COMMENT 'Identificativo progetto (project_code o project_name)',
+    function_key VARCHAR(200) NOT NULL COMMENT 'Chiave template fasi (es. Montaggio)',
+    phase_name VARCHAR(200) NOT NULL,
+    phase_order INT NOT NULL DEFAULT 0,
+    completed TINYINT(1) DEFAULT 0,
+    completed_at BIGINT DEFAULT NULL,
+    completed_by VARCHAR(100) DEFAULT NULL,
+    notes TEXT DEFAULT NULL,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    UNIQUE KEY uq_project_phase (project_date, project_key, function_key, phase_name),
+    INDEX idx_pp_date (project_date),
+    INDEX idx_pp_project (project_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+PROJECT_PHASE_PROGRESS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS project_phase_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_date TEXT NOT NULL,
+    project_key TEXT NOT NULL,
+    function_key TEXT NOT NULL,
+    phase_name TEXT NOT NULL,
+    phase_order INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER DEFAULT 0,
+    completed_at INTEGER DEFAULT NULL,
+    completed_by TEXT DEFAULT NULL,
+    notes TEXT DEFAULT NULL,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL,
+    UNIQUE(project_date, project_key, function_key, phase_name)
+);
+CREATE INDEX IF NOT EXISTS idx_pp_date ON project_phase_progress(project_date);
+CREATE INDEX IF NOT EXISTS idx_pp_project ON project_phase_progress(project_key);
 """
 
 
@@ -14031,6 +15416,9 @@ def ensure_request_types_table(db: DatabaseLike) -> None:
     # Assicura che esista il tipo "Giustificazione Ritardo"
     _ensure_late_arrival_request_type(db)
 
+    # Assicura che esista il tipo "Deroga Pausa Ridotta"
+    _ensure_break_reduction_request_type(db)
+
 
 def ensure_user_requests_table(db: DatabaseLike) -> None:
     """Crea la tabella user_requests se non esiste e aggiunge colonne mancanti."""
@@ -14190,6 +15578,16 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
         except Exception as e:
             app.logger.warning(f"Migrazione rentman_plannings pausa: {e}")
         
+        # Migrazione: aggiungi colonna custom_location_ids se non esiste
+        try:
+            cursor = db.execute("SHOW COLUMNS FROM rentman_plannings LIKE 'custom_location_ids'")
+            if not cursor.fetchone():
+                db.execute("ALTER TABLE rentman_plannings ADD COLUMN custom_location_ids TEXT AFTER location_address")
+                db.commit()
+                app.logger.info("Migrazione rentman_plannings: aggiunta colonna custom_location_ids")
+        except Exception as e:
+            app.logger.warning(f"Migrazione rentman_plannings custom_location_ids: {e}")
+
         # Migrazione: aggiungi colonna timbratura_gps_mode se non esiste
         try:
             cursor = db.execute("SHOW COLUMNS FROM rentman_plannings LIKE 'timbratura_gps_mode'")
@@ -14199,7 +15597,7 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
                 app.logger.info("Migrazione rentman_plannings: aggiunta colonna timbratura_gps_mode")
         except Exception as e:
             app.logger.warning(f"Migrazione rentman_plannings timbratura_gps_mode: {e}")
-        
+
         # Migrazione: aggiungi colonna gps_timbratura_location se non esiste
         try:
             cursor = db.execute("SHOW COLUMNS FROM rentman_plannings LIKE 'gps_timbratura_location'")
@@ -14219,6 +15617,13 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
                 app.logger.info("Migrazione rentman_plannings: aggiunta colonna is_obsolete")
         except Exception as e:
             app.logger.warning(f"Migrazione rentman_plannings is_obsolete: {e}")
+    # fine if DB_VENDOR mysql
+    else:
+        # SQLite migrations for additional columns
+        try:
+            db.execute("ALTER TABLE rentman_plannings ADD COLUMN custom_location_ids TEXT")
+        except Exception:
+            pass
         
         # Migrazione: aggiungi colonne location_lat e location_lon se non esistono
         try:
@@ -14271,8 +15676,8 @@ def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
                 app.logger.info("Migrazione rentman_plannings: aggiunta colonna gestione_squadra")
         except Exception as e:
             app.logger.warning(f"Migrazione rentman_plannings gestione_squadra: {e}")
-    else:
-        # SQLite migrations
+    # SQLite migrations (quando non Mysql)
+    if DB_VENDOR != "mysql":
         migrations_sqlite = [
             "ALTER TABLE rentman_plannings ADD COLUMN break_start TEXT DEFAULT NULL",
             "ALTER TABLE rentman_plannings ADD COLUMN break_end TEXT DEFAULT NULL",
@@ -14313,6 +15718,68 @@ def ensure_vehicle_drivers_table(db: DatabaseLike) -> None:
                 pass
         except Exception:
             pass
+
+
+def ensure_project_phase_progress_table(db: DatabaseLike) -> None:
+    """Crea la tabella project_phase_progress se non esiste."""
+    statement = (
+        PROJECT_PHASE_PROGRESS_TABLE_MYSQL if DB_VENDOR == "mysql" else PROJECT_PHASE_PROGRESS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        try:
+            cursor = db.execute(sql)
+            try:
+                cursor.close()
+            except AttributeError:
+                pass
+        except Exception:
+            pass
+    db.commit()
+
+
+def get_function_phases_config(db: DatabaseLike) -> dict:
+    """Legge la configurazione fasi funzione da custom_settings.
+    
+    Returns:
+        dict con chiave = nome funzione, valore = { 'match_mode': 'contains'|'exact',
+                                                      'phases': [{'name': str, 'order': int}] }
+    """
+    settings = get_company_settings(db)
+    custom = settings.get('custom_settings', {}) if isinstance(settings.get('custom_settings'), dict) else {}
+    return custom.get('function_phases', {})
+
+
+def get_phases_for_function(db: DatabaseLike, function_name: str) -> list:
+    """Trova le fasi applicabili a una funzione, in base al matching.
+    
+    Returns:
+        list di {'name': str, 'order': int, 'function_key': str} ordinate per order.
+        Vuoto se nessun template corrisponde.
+    """
+    if not function_name:
+        return []
+    config = get_function_phases_config(db)
+    fn_lower = function_name.lower().strip()
+    
+    for key, template in config.items():
+        key_lower = key.lower().strip()
+        
+        if fn_lower == key_lower:
+            phases = template.get('phases', [])
+            result = []
+            for p in phases:
+                result.append({
+                    'name': p.get('name', ''),
+                    'order': p.get('order', 0),
+                    'function_key': key
+                })
+            result.sort(key=lambda x: x['order'])
+            return result
+    
+    return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -14473,7 +15940,7 @@ def admin_locations_page() -> ResponseReturnValue:
 @app.get("/api/admin/locations")
 @login_required
 def api_admin_locations_list() -> ResponseReturnValue:
-    """Restituisce tutte le location da Rentman con stato coordinate."""
+    """Restituisce tutte le location (da Rentman + custom) con stato coordinate."""
     if not is_admin_or_supervisor():
         return jsonify({"error": "Accesso negato"}), 403
 
@@ -14490,6 +15957,7 @@ def api_admin_locations_list() -> ResponseReturnValue:
     """).fetchall()
 
     locations = []
+    seen_names = set()
     for row in locations_rows:
         location_name = row["location_name"] if isinstance(row, dict) else row[0]
         location_address = row["location_address"] if isinstance(row, dict) else row[1]
@@ -14504,6 +15972,33 @@ def api_admin_locations_list() -> ResponseReturnValue:
             "latitude": cached[0] if cached else None,
             "longitude": cached[1] if cached else None,
             "radius_meters": cached[2] if cached else 300,
+            "is_custom": False,
+        })
+        seen_names.add(location_name)
+
+    # Aggiungi le location custom dalla tabella location_cache
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    custom_rows = db.execute(
+        "SELECT id, location_name, latitude, longitude, radius_meters, address FROM location_cache WHERE is_custom = 1 ORDER BY location_name"
+    ).fetchall()
+    for row in custom_rows:
+        loc_name = row["location_name"] if isinstance(row, dict) else row[1]
+        if loc_name in seen_names:
+            continue
+        loc_lat = row["latitude"] if isinstance(row, dict) else row[2]
+        loc_lon = row["longitude"] if isinstance(row, dict) else row[3]
+        loc_radius = row["radius_meters"] if isinstance(row, dict) else row[4]
+        loc_address = row["address"] if isinstance(row, dict) else row[5]
+        loc_id = row["id"] if isinstance(row, dict) else row[0]
+        locations.append({
+            "name": loc_name,
+            "address": loc_address or "",
+            "has_cache": True,
+            "latitude": float(loc_lat) if loc_lat else None,
+            "longitude": float(loc_lon) if loc_lon else None,
+            "radius_meters": int(loc_radius) if loc_radius else 300,
+            "is_custom": True,
+            "custom_id": loc_id,
         })
 
     return jsonify({"locations": locations})
@@ -14535,6 +16030,156 @@ def api_admin_locations_save(location_name: str) -> ResponseReturnValue:
     save_location_cache(db, location_name, latitude, longitude, radius_meters=radius_meters)
 
     return jsonify({"ok": True, "message": f"Coordinate salvate per {location_name} (raggio: {radius_meters}m)"})
+
+
+@app.post("/api/admin/locations/custom")
+@login_required
+def api_admin_locations_create_custom() -> ResponseReturnValue:
+    """Crea una nuova location custom (non da Rentman)."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "Accesso negato"}), 403
+
+    data = request.get_json() or {}
+    location_name = (data.get("name") or "").strip()
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+    radius_meters = data.get("radius_meters", 300)
+    address = (data.get("address") or "").strip()
+
+    if not location_name:
+        return jsonify({"error": "Nome location richiesto"}), 400
+    if latitude is None or longitude is None:
+        return jsonify({"error": "Latitudine e longitudine richieste"}), 400
+
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+        radius_meters = int(radius_meters) if radius_meters else 300
+    except (ValueError, TypeError):
+        return jsonify({"error": "Coordinate non valide"}), 400
+
+    if latitude < -90 or latitude > 90:
+        return jsonify({"error": "Latitudine non valida (-90 a 90)"}), 400
+    if longitude < -180 or longitude > 180:
+        return jsonify({"error": "Longitudine non valida (-180 a 180)"}), 400
+
+    db = get_db()
+    ensure_location_cache_table(db)
+
+    # Controlla se esiste già una location con lo stesso nome
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    existing = db.execute(
+        f"SELECT id FROM location_cache WHERE location_name = {placeholder}",
+        (location_name,)
+    ).fetchone()
+    if existing:
+        return jsonify({"error": f"Una location con il nome '{location_name}' esiste già"}), 409
+
+    save_location_cache(db, location_name, latitude, longitude, radius_meters=radius_meters, is_custom=1, address=address)
+    app.logger.info(f"📍 Location custom creata: {location_name} ({latitude}, {longitude}), raggio={radius_meters}m")
+
+    return jsonify({"ok": True, "message": f"Location custom '{location_name}' creata con successo"})
+
+
+@app.put("/api/admin/locations/custom/<int:location_id>")
+@login_required
+def api_admin_locations_update_custom(location_id: int) -> ResponseReturnValue:
+    """Aggiorna una location custom esistente."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "Accesso negato"}), 403
+
+    data = request.get_json() or {}
+    location_name = (data.get("name") or "").strip()
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+    radius_meters = data.get("radius_meters", 300)
+    address = (data.get("address") or "").strip()
+
+    if not location_name:
+        return jsonify({"error": "Nome location richiesto"}), 400
+    if latitude is None or longitude is None:
+        return jsonify({"error": "Latitudine e longitudine richieste"}), 400
+
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+        radius_meters = int(radius_meters) if radius_meters else 300
+    except (ValueError, TypeError):
+        return jsonify({"error": "Coordinate non valide"}), 400
+
+    db = get_db()
+    ensure_location_cache_table(db)
+
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    now = int(datetime.now().timestamp() * 1000)
+
+    db.execute(
+        f"UPDATE location_cache SET location_name = {placeholder}, latitude = {placeholder}, longitude = {placeholder}, radius_meters = {placeholder}, address = {placeholder}, updated_ts = {placeholder} WHERE id = {placeholder} AND is_custom = 1",
+        (location_name, latitude, longitude, radius_meters, address, now, location_id)
+    )
+    db.commit()
+
+    return jsonify({"ok": True, "message": f"Location custom '{location_name}' aggiornata"})
+
+
+@app.delete("/api/admin/locations/custom/<int:location_id>")
+@login_required
+def api_admin_locations_delete_custom(location_id: int) -> ResponseReturnValue:
+    """Elimina una location custom."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "Accesso negato"}), 403
+
+    db = get_db()
+    ensure_location_cache_table(db)
+
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    # Verifica che sia davvero una location custom
+    row = db.execute(
+        f"SELECT location_name FROM location_cache WHERE id = {placeholder} AND is_custom = 1",
+        (location_id,)
+    ).fetchone()
+
+    if not row:
+        return jsonify({"error": "Location custom non trovata"}), 404
+
+    location_name = row["location_name"] if isinstance(row, dict) else row[0]
+
+    db.execute(
+        f"DELETE FROM location_cache WHERE id = {placeholder} AND is_custom = 1",
+        (location_id,)
+    )
+    db.commit()
+
+    app.logger.info(f"🗑️ Location custom eliminata: {location_name} (id={location_id})")
+    return jsonify({"ok": True, "message": f"Location custom '{location_name}' eliminata"})
+
+
+@app.get("/api/admin/locations/custom")
+@login_required
+def api_admin_locations_list_custom() -> ResponseReturnValue:
+    """Restituisce solo le location custom (per il selettore nel planning)."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "Accesso negato"}), 403
+
+    db = get_db()
+    ensure_location_cache_table(db)
+
+    rows = db.execute(
+        "SELECT id, location_name, latitude, longitude, radius_meters, address FROM location_cache WHERE is_custom = 1 ORDER BY location_name"
+    ).fetchall()
+
+    locations = []
+    for row in rows:
+        locations.append({
+            "id": row["id"] if isinstance(row, dict) else row[0],
+            "name": row["location_name"] if isinstance(row, dict) else row[1],
+            "latitude": float(row["latitude"] if isinstance(row, dict) else row[2]),
+            "longitude": float(row["longitude"] if isinstance(row, dict) else row[3]),
+            "radius_meters": int(row["radius_meters"] if isinstance(row, dict) else row[4]) if (row["radius_meters"] if isinstance(row, dict) else row[4]) else 300,
+            "address": (row["address"] if isinstance(row, dict) else row[5]) or "",
+        })
+
+    return jsonify({"locations": locations})
 
 
 @app.get("/api/admin/rentman-planning")
@@ -14591,6 +16236,8 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
     vehicle_cache: Dict[int, Any] = {}  # vehicle_id -> vehicle data
     project_vehicles_cache: Dict[int, str] = {}  # project_id -> vehicle names string
     project_manager_cache: Dict[int, str] = {}  # project_id -> manager name
+    function_group_cache: Dict[int, Dict[str, Any]] = {}  # function_group_id -> group data
+    project_function_groups_loaded: Set[int] = set()  # project_ids già caricati
     
     # Pre-carica mapping rentman_crew_id -> group_id da app_users
     ensure_user_groups_table(db)
@@ -14657,6 +16304,7 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
         project_code = ""
         project_id = None
         function_name = ""
+        function_group_name = ""
         subproject_id = None
         location_id = None
         location_name = ""
@@ -14671,6 +16319,16 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
         if function_id and function_id in function_cache:
             fd = function_cache[function_id]
             function_name = fd.get("name") or fd.get("displayname") or ""
+            
+            # Estrai function group (fase) dalla funzione
+            group_ref = fd.get("group", "")
+            if group_ref and "/projectfunctiongroups/" in str(group_ref):
+                try:
+                    fg_id = int(str(group_ref).split("/")[-1])
+                    if fg_id in function_group_cache:
+                        function_group_name = function_group_cache[fg_id].get("name", "")
+                except (ValueError, IndexError):
+                    pass
             
             # Estrai subproject dalla funzione
             subproject_ref = fd.get("subproject", "")
@@ -14741,6 +16399,30 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                         project_name = pd.get("name") or pd.get("displayname") or ""
                         project_code = pd.get("number") or pd.get("reference") or ""
                         
+                        # Carica function groups (fasi) per questo progetto (una volta sola)
+                        if project_id not in project_function_groups_loaded:
+                            project_function_groups_loaded.add(project_id)
+                            try:
+                                fgroups = client.get_project_function_groups(project_id)
+                                for fg in fgroups:
+                                    fg_id = fg.get("id")
+                                    if isinstance(fg_id, int) and fg_id not in function_group_cache:
+                                        function_group_cache[fg_id] = fg
+                                app.logger.info("Rentman: function groups per progetto %s: %d", project_id, len(fgroups))
+                            except Exception as exc:
+                                app.logger.warning("Rentman: errore caricando function groups per progetto %s: %s", project_id, exc)
+                            # Aggiorna function_group_name se il lookup precedente non l'aveva trovato
+                            if not function_group_name and function_id and function_id in function_cache:
+                                fd2 = function_cache[function_id]
+                                gr2 = fd2.get("group", "")
+                                if gr2 and "/projectfunctiongroups/" in str(gr2):
+                                    try:
+                                        fg_id2 = int(str(gr2).split("/")[-1])
+                                        if fg_id2 in function_group_cache:
+                                            function_group_name = function_group_cache[fg_id2].get("name", "")
+                                    except (ValueError, IndexError):
+                                        pass
+
                         # Fallback: se non abbiamo location dal subproject, prova dal progetto
                         if not location_id:
                             proj_location_ref = pd.get("location", "")
@@ -14885,6 +16567,7 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
             # Veicoli assegnati al progetto (strutturato con id/nome/targa)
             if project_id not in project_vehicles_cache:
                 vehicle_list = []  # lista di dict {id, name, plate}
+                seen_vehicle_ids: set = set()  # deduplicazione per vehicle id
                 try:
                     proj_vehicles = client.get_project_vehicles(project_id)
                     for pv in proj_vehicles:
@@ -14892,6 +16575,8 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                         if vehicle_ref and "/" in vehicle_ref:
                             try:
                                 vid = int(vehicle_ref.split("/")[-1])
+                                if vid in seen_vehicle_ids:
+                                    continue  # skip duplicato
                                 if vid not in vehicle_cache:
                                     v_data = client.get_vehicle(vid)
                                     if v_data:
@@ -14902,6 +16587,7 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
                                     v_plate = vd.get("licenseplate") or ""
                                     if v_name or v_plate:
                                         vehicle_list.append({"id": vid, "name": v_name, "plate": v_plate})
+                                        seen_vehicle_ids.add(vid)
                             except (ValueError, IndexError):
                                 pass
                 except Exception as e:
@@ -14925,6 +16611,7 @@ def api_admin_rentman_planning() -> ResponseReturnValue:
             "crew_id": crew_id,
             "crew_name": crew_name,
             "function_name": function_name,
+            "function_group_name": function_group_name,
             "project_name": project_name,
             "project_code": project_code,
             "project_id": project_id,
@@ -15398,12 +17085,25 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
     synced_crews = set()  # Track già sincronizzati per evitare duplicati
 
     def parse_iso_datetime(dt_str: str | None) -> str | None:
-        """Converte datetime ISO in formato MySQL compatibile."""
+        """Converte datetime ISO o HTTP-date in formato MySQL compatibile."""
         if not dt_str:
             return None
+        # Se è già un oggetto datetime (non stringa), convertilo
+        if hasattr(dt_str, 'strftime'):
+            return dt_str.strftime('%Y-%m-%d %H:%M:%S')
+        dt_str = str(dt_str).strip()
+        # Già nel formato MySQL? (YYYY-MM-DD HH:MM:SS)
+        import re as _re
+        if _re.match(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}$', dt_str):
+            return dt_str.replace('T', ' ')
         try:
-            # Prova a parsare datetime ISO con timezone
             from datetime import datetime as dt_parse
+            # Gestisci formato HTTP-date RFC 2822 (es. "Sat, 21 Feb 2026 07:30:00 GMT")
+            if ',' in dt_str and 'GMT' in dt_str:
+                from email.utils import parsedate_to_datetime
+                parsed = parsedate_to_datetime(dt_str)
+                return parsed.strftime('%Y-%m-%d %H:%M:%S')
+            # Prova a parsare datetime ISO con timezone
             # Rimuovi timezone se presente e converti
             if '+' in dt_str:
                 dt_str = dt_str.split('+')[0]
@@ -15412,10 +17112,12 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
             # Converti in formato MySQL
             parsed = dt_parse.fromisoformat(dt_str)
             return parsed.strftime('%Y-%m-%d %H:%M:%S')
-        except Exception:
+        except Exception as e:
+            app.logger.warning(f"⚠️ parse_iso_datetime fallito per '{dt_str}': {e}")
             return dt_str
 
     for p in plannings:
+      try:
         # IMPORTANTE: usa rentman_id se presente, altrimenti id
         # Quando i dati vengono dal merge frontend, 'id' è l'ID del DB
         rentman_id = p.get("rentman_id") or p.get("id")
@@ -15443,6 +17145,16 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
         # Converti datetime in formato MySQL compatibile
         plan_start = parse_iso_datetime(p.get("plan_start"))
         plan_end = parse_iso_datetime(p.get("plan_end"))
+        
+        # Normalizza anche break_start/break_end (possono arrivare come timedelta o stringhe varie)
+        break_start_val = p.get("break_start")
+        break_end_val = p.get("break_end")
+        if break_start_val and hasattr(break_start_val, 'total_seconds'):
+            break_start_val = str(break_start_val)
+        if break_end_val and hasattr(break_end_val, 'total_seconds'):
+            break_end_val = str(break_end_val)
+        
+        app.logger.info(f"💾 SAVE: rentman_id={rentman_id}, plan_start={plan_start}, custom_location_ids={p.get('custom_location_ids')}")
 
         # Estrai project_id dalla funzione (se disponibile)
         project_id = p.get("project_id")
@@ -15451,12 +17163,12 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
         # Check if exists
         if DB_VENDOR == "mysql":
             existing = db.execute(
-                "SELECT id, sent_to_webservice, plan_start, plan_end FROM rentman_plannings WHERE rentman_id = %s AND planning_date = %s",
+                "SELECT id, sent_to_webservice, plan_start, plan_end, custom_location_ids FROM rentman_plannings WHERE rentman_id = %s AND planning_date = %s",
                 (rentman_id, target_date)
             ).fetchone()
         else:
             existing = db.execute(
-                "SELECT id, sent_to_webservice, plan_start, plan_end FROM rentman_plannings WHERE rentman_id = ? AND planning_date = ?",
+                "SELECT id, sent_to_webservice, plan_start, plan_end, custom_location_ids FROM rentman_plannings WHERE rentman_id = ? AND planning_date = ?",
                 (rentman_id, target_date)
             ).fetchone()
 
@@ -15467,6 +17179,17 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
             # Nota: preserva le note esistenti se quelle da Rentman sono vuote
             new_remark = p.get("remark") or None
             new_remark_planner = p.get("remark_planner") or None
+            # Prepara JSON per custom_location_ids — preserva quelli esistenti nel DB se non arrivano dal client
+            incoming_custom_ids = p.get("custom_location_ids")
+            if incoming_custom_ids:
+                custom_ids_json = json.dumps(incoming_custom_ids)
+            else:
+                # Preserva il valore già salvato nel DB (es. durante sync da Rentman)
+                existing_custom = existing[4] if existing and len(existing) > 4 else None
+                if existing_custom:
+                    custom_ids_json = existing_custom if isinstance(existing_custom, str) else json.dumps(existing_custom)
+                else:
+                    custom_ids_json = json.dumps([])
             
             if DB_VENDOR == "mysql":
                 db.execute("""
@@ -15474,6 +17197,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         crew_id = %s, crew_name = %s, function_id = %s, function_name = %s,
                         project_id = %s, project_name = %s, project_code = %s,
                         subproject_id = %s, location_id = %s, location_name = %s, location_address = %s,
+                        custom_location_ids = %s,
                         location_lat = %s, location_lon = %s,
                         gps_timbratura_location = %s,
                         plan_start = %s, plan_end = %s,
@@ -15489,10 +17213,11 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
                     project_id, p.get("project_name"), p.get("project_code"),
                     p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
+                    custom_ids_json,
                     p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"),
                     plan_start, plan_end,
-                    p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
+                    break_start_val, break_end_val, p.get("break_minutes"),
                     hours_planned, hours_registered,
                     new_remark, new_remark_planner, 1 if p.get("is_leader") else 0, p.get("transport"),
                     p.get("project_manager_name"), p.get("vehicle_names"), p.get("vehicle_data"),
@@ -15505,6 +17230,7 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                         crew_id = ?, crew_name = ?, function_id = ?, function_name = ?,
                         project_id = ?, project_name = ?, project_code = ?,
                         subproject_id = ?, location_id = ?, location_name = ?, location_address = ?,
+                        custom_location_ids = ?,
                         location_lat = ?, location_lon = ?,
                         gps_timbratura_location = ?,
                         plan_start = ?, plan_end = ?,
@@ -15520,10 +17246,11 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     p.get("crew_id"), p.get("crew_name"), function_id, p.get("function_name"),
                     project_id, p.get("project_name"), p.get("project_code"),
                     p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
+                    custom_ids_json,
                     p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"),
                     plan_start, plan_end,
-                    p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
+                    break_start_val, break_end_val, p.get("break_minutes"),
                     hours_planned, hours_registered,
                     new_remark, new_remark_planner, 1 if p.get("is_leader") else 0, p.get("transport"),
                     p.get("project_manager_name"), p.get("vehicle_names"), p.get("vehicle_data"),
@@ -15539,20 +17266,22 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     INSERT INTO rentman_plannings (
                         rentman_id, planning_date, crew_id, crew_name, function_id, function_name,
                         project_id, project_name, project_code, subproject_id, location_id, location_name, location_address,
+                        custom_location_ids,
                         location_lat, location_lon,
                         gps_timbratura_location, timbratura_gps_mode,
                         plan_start, plan_end, break_start, break_end, break_minutes,
                         hours_planned, hours_registered, remark, remark_planner, is_leader, transport,
                         project_manager_name, vehicle_names, vehicle_data,
                         sent_to_webservice, created_ts, updated_ts
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)
                 """, (
                     rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
                     function_id, p.get("function_name"), project_id, p.get("project_name"),
                     p.get("project_code"), p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
+                    json.dumps(p.get("custom_location_ids") or []),
                     p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"), p.get("timbratura_gps_mode") or "group",
-                    plan_start, plan_end, p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
+                    plan_start, plan_end, break_start_val, break_end_val, p.get("break_minutes"),
                     hours_planned, hours_registered, p.get("remark"), p.get("remark_planner"),
                     1 if p.get("is_leader") else 0, p.get("transport"),
                     p.get("project_manager_name"), p.get("vehicle_names"), p.get("vehicle_data"),
@@ -15563,26 +17292,30 @@ def api_admin_rentman_planning_save() -> ResponseReturnValue:
                     INSERT INTO rentman_plannings (
                         rentman_id, planning_date, crew_id, crew_name, function_id, function_name,
                         project_id, project_name, project_code, subproject_id, location_id, location_name, location_address,
+                        custom_location_ids,
                         location_lat, location_lon,
                         gps_timbratura_location, timbratura_gps_mode,
                         plan_start, plan_end, break_start, break_end, break_minutes,
                         hours_planned, hours_registered, remark, remark_planner, is_leader, transport,
                         project_manager_name, vehicle_names, vehicle_data,
                         sent_to_webservice, created_ts, updated_ts
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """, (
                     rentman_id, target_date, p.get("crew_id"), p.get("crew_name"),
                     function_id, p.get("function_name"), project_id, p.get("project_name"),
                     p.get("project_code"), p.get("subproject_id"), p.get("location_id"), p.get("location_name"), p.get("location_address"),
+                    json.dumps(p.get("custom_location_ids") or []),
                     p.get("location_lat"), p.get("location_lon"),
                     p.get("gps_timbratura_location"), p.get("timbratura_gps_mode") or "group",
-                    plan_start, plan_end, p.get("break_start"), p.get("break_end"), p.get("break_minutes"),
+                    plan_start, plan_end, break_start_val, break_end_val, p.get("break_minutes"),
                     hours_planned, hours_registered, p.get("remark"), p.get("remark_planner"),
                     1 if p.get("is_leader") else 0, p.get("transport"),
                     p.get("project_manager_name"), p.get("vehicle_names"), p.get("vehicle_data"),
                     now_ms, now_ms
                 ))
             saved += 1
+      except Exception as save_err:
+        app.logger.error(f"❌ Errore salvataggio planning rentman_id={p.get('rentman_id') or p.get('id')}: {save_err}")
 
     # Raccogli tutti i rentman_id ricevuti dalla sincronizzazione
     # IMPORTANTE: il frontend invia sia 'rentman_id' (originale Rentman) che 'id' (può essere DB id o Rentman id)
@@ -15686,14 +17419,15 @@ def api_admin_rentman_planning_saved() -> ResponseReturnValue:
             cols = ["id", "rentman_id", "planning_date", "crew_id", "crew_name", "function_id",
                     "function_name", "project_id", "project_name", "project_code",
                     "subproject_id", "location_id", "location_name", "location_address",
+                    "custom_location_ids",
                     "location_lat", "location_lon",
                     "timbratura_gps_mode", "gps_timbratura_location",
                     "plan_start", "plan_end", "break_start", "break_end", "break_minutes",
                     "hours_planned", "hours_registered", "remark", "remark_planner", "is_leader",
                     "transport", "project_manager_name", "vehicle_names", "vehicle_data",
                     "sent_to_webservice", "sent_ts", "webservice_response",
-                    "created_ts", "updated_ts", "is_obsolete",
-                    "gestione_squadra"]
+                    "is_obsolete", "gestione_squadra",
+                    "created_ts", "updated_ts"]
             plannings.append(dict(zip(cols, row)))
 
     # Arricchisci vehicle_data con le assegnazioni autisti salvate
@@ -15720,6 +17454,14 @@ def api_admin_rentman_planning_saved() -> ResponseReturnValue:
                     driver_assignments[key] = {"crew_id": dr[2], "name": dr[3]}
         except Exception as e:
             app.logger.warning(f"Errore caricamento assegnazioni autisti (saved): {e}")
+
+        # converti campo custom_location_ids dal DB (JSON string) in lista
+        for p in plannings:
+            if isinstance(p.get("custom_location_ids"), str):
+                try:
+                    p["custom_location_ids"] = json.loads(p["custom_location_ids"])
+                except Exception:
+                    p["custom_location_ids"] = []
 
         for p in plannings:
             vd_str = p.get("vehicle_data", "")
@@ -15860,6 +17602,168 @@ def api_admin_rentman_planning_send() -> ResponseReturnValue:
         "notifications_sent": notifications_sent,
         "errors": errors,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  FASI FUNZIONE - ROUTES API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/admin/function-phases")
+@login_required
+def api_get_function_phases() -> ResponseReturnValue:
+    """Restituisce la configurazione dei template fasi per funzione."""
+    db = get_db()
+    config = get_function_phases_config(db)
+    return jsonify({"ok": True, "function_phases": config})
+
+
+@app.post("/api/admin/function-phases")
+@login_required
+def api_save_function_phases() -> ResponseReturnValue:
+    """Salva la configurazione dei template fasi per funzione."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Non autorizzato"}), 403
+
+    data = request.get_json()
+    if data is None:
+        return jsonify({"error": "Dati mancanti"}), 400
+
+    function_phases = data.get("function_phases", {})
+
+    db = get_db()
+    settings = get_company_settings(db)
+    custom = settings.get("custom_settings", {})
+    if not isinstance(custom, dict):
+        custom = {}
+    custom["function_phases"] = function_phases
+
+    # Salva usando il metodo esistente
+    settings["custom_settings"] = custom
+    username = session.get("user") or session.get("username") or "admin"
+    save_company_settings(db, settings, username)
+
+    return jsonify({"ok": True, "message": "Template fasi salvati"})
+
+
+@app.get("/api/admin/function-phases/distinct-functions")
+@login_required
+def api_get_distinct_functions() -> ResponseReturnValue:
+    """Restituisce la lista delle funzioni distinte presenti nei planning."""
+    db = get_db()
+    ensure_rentman_plannings_table(db)
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    rows = db.execute(
+        "SELECT DISTINCT function_name FROM rentman_plannings WHERE function_name IS NOT NULL AND function_name != '' ORDER BY function_name"
+    ).fetchall()
+    functions = []
+    for r in rows:
+        fn = r["function_name"] if isinstance(r, dict) else r[0]
+        if fn:
+            functions.append(fn)
+    return jsonify({"ok": True, "functions": functions})
+
+
+@app.get("/api/project-phases")
+@login_required
+def api_get_project_phases() -> ResponseReturnValue:
+    """Restituisce lo stato delle fasi per un progetto+data+funzione.
+    
+    Query params: date, project_key, function_key (opzionale, se non fornito restituisce tutte le funzioni)
+    """
+    db = get_db()
+    ensure_project_phase_progress_table(db)
+
+    date_str = request.args.get("date")
+    project_key = request.args.get("project_key")
+
+    if not date_str or not project_key:
+        return jsonify({"error": "Parametri date e project_key obbligatori"}), 400
+
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    function_key = request.args.get("function_key")
+
+    if function_key:
+        rows = db.execute(
+            f"""SELECT * FROM project_phase_progress 
+                WHERE project_date = {placeholder} AND project_key = {placeholder} AND function_key = {placeholder}
+                ORDER BY phase_order""",
+            (date_str, project_key, function_key)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            f"""SELECT * FROM project_phase_progress 
+                WHERE project_date = {placeholder} AND project_key = {placeholder}
+                ORDER BY function_key, phase_order""",
+            (date_str, project_key)
+        ).fetchall()
+
+    phases = []
+    for r in rows:
+        if isinstance(r, dict):
+            phases.append(r)
+        else:
+            phases.append(dict(r))
+
+    return jsonify({"ok": True, "phases": phases})
+
+
+@app.post("/api/project-phases/toggle")
+@login_required
+def api_toggle_project_phase() -> ResponseReturnValue:
+    """Toggle completamento di una fase. Crea il record se non esiste.
+    
+    Body JSON: { date, project_key, function_key, phase_name, phase_order, completed (bool) }
+    """
+    db = get_db()
+    ensure_project_phase_progress_table(db)
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dati mancanti"}), 400
+
+    date_str = data.get("date")
+    project_key = data.get("project_key")
+    function_key = data.get("function_key")
+    phase_name = data.get("phase_name")
+    phase_order = data.get("phase_order", 0)
+    completed = 1 if data.get("completed") else 0
+
+    if not all([date_str, project_key, function_key, phase_name]):
+        return jsonify({"error": "Campi obbligatori: date, project_key, function_key, phase_name"}), 400
+
+    now_ts = int(time.time() * 1000)
+    username = session.get("user") or session.get("username") or "unknown"
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    # Prova UPSERT
+    if DB_VENDOR == "mysql":
+        db.execute(f"""
+            INSERT INTO project_phase_progress 
+                (project_date, project_key, function_key, phase_name, phase_order, completed, completed_at, completed_by, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            ON DUPLICATE KEY UPDATE
+                completed = VALUES(completed),
+                completed_at = VALUES(completed_at),
+                completed_by = VALUES(completed_by),
+                updated_ts = VALUES(updated_ts)
+        """, (date_str, project_key, function_key, phase_name, phase_order,
+              completed, now_ts if completed else None, username if completed else None, now_ts, now_ts))
+    else:
+        db.execute(f"""
+            INSERT INTO project_phase_progress 
+                (project_date, project_key, function_key, phase_name, phase_order, completed, completed_at, completed_by, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            ON CONFLICT(project_date, project_key, function_key, phase_name) DO UPDATE SET
+                completed = excluded.completed,
+                completed_at = excluded.completed_at,
+                completed_by = excluded.completed_by,
+                updated_ts = excluded.updated_ts
+        """, (date_str, project_key, function_key, phase_name, phase_order,
+              completed, now_ts if completed else None, username if completed else None, now_ts, now_ts))
+
+    db.commit()
+
+    return jsonify({"ok": True, "completed": bool(completed), "completed_by": username if completed else None})
 
 
 def _send_turni_notifications(db: DatabaseLike, users_to_notify: Dict[int, List[Dict[str, Any]]]) -> int:
@@ -16481,9 +18385,12 @@ def api_timbratura_validate_gps():
     # Coordinate della sede inviate dal frontend (calcolate dal backend /api/user/turno-oggi)
     shift_location_lat = data.get("shift_location_lat")
     shift_location_lon = data.get("shift_location_lon")
+    # valid_locations: lista di locations valide calcolate dal backend (sede gruppo + location turno)
+    valid_locations_from_frontend = data.get("valid_locations")
     
     app.logger.info(f"VALIDATE-GPS: shift_location_name={shift_location_name}, lat={latitude}, lon={longitude}, accuracy={accuracy}")
     app.logger.info(f"VALIDATE-GPS: shift_location_lat={shift_location_lat}, shift_location_lon={shift_location_lon}")
+    app.logger.info(f"VALIDATE-GPS: valid_locations_from_frontend={valid_locations_from_frontend}")
     
     if latitude is None or longitude is None:
         return jsonify({"valid": False, "error": "Coordinate GPS mancanti"}), 400
@@ -16513,7 +18420,7 @@ def api_timbratura_validate_gps():
         }), 400
     
     locations = timb_config.get("gps_locations", [])
-    if not locations:
+    if not locations and not valid_locations_from_frontend:
         return jsonify({"valid": False, "error": "Nessuna sede configurata per timbratura GPS"}), 400
     
     # Debug logging
@@ -16522,57 +18429,74 @@ def api_timbratura_validate_gps():
     for loc in locations:
         app.logger.info(f"GPS Validate - Location '{loc.get('name')}': lat={loc.get('latitude')} ({type(loc.get('latitude'))}), lon={loc.get('longitude')} ({type(loc.get('longitude'))})")
     
-    # Verifica se il turno dell'utente ha una sede specifica
-    shift_location_name = data.get('shift_location_name')  # Sede specifica passata dal frontend
-    app.logger.info(f"VALIDATE-GPS: Ricevuto shift_location_name dal frontend: '{shift_location_name}'")
-    
-    if not shift_location_name and username:
-        # Prova a recuperare dal turno odierno
-        db = get_db()
-        ensure_employee_shifts_table(db)
-        day_of_week = datetime.now().weekday()
-        placeholder = "%s" if DB_VENDOR == "mysql" else "?"
-        shift_row = db.execute(f"""
-            SELECT location_name FROM employee_shifts
-            WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1
-        """, (username, day_of_week)).fetchone()
-        if shift_row:
-            shift_location_name = shift_row['location_name'] if isinstance(shift_row, dict) else shift_row[0]
-    
-    # Se il turno ha una sede specifica, filtra le locations per usare solo quella
-    if shift_location_name:
-        filtered_locations = [loc for loc in locations if loc.get('name') == shift_location_name]
-        if filtered_locations:
-            locations = filtered_locations
-            app.logger.info(f"VALIDATE-GPS: Sede specifica '{shift_location_name}' trovata! Filtrando locations. Rimaste: {len(locations)}")
-        else:
-            app.logger.warning(f"VALIDATE-GPS: Sede '{shift_location_name}' NON trovata nelle locations disponibili: {[l.get('name') for l in locations]}")
-            # Se la sede non è trovata in configurazione ma abbiamo le coordinate dal backend, usale
-            if shift_location_lat is not None and shift_location_lon is not None:
-                app.logger.info(f"VALIDATE-GPS: Usando coordinate ricevute dal frontend: lat={shift_location_lat}, lon={shift_location_lon}")
-                # Crea una location virtuale con le coordinate ricevute (convertendo in float)
-                try:
-                    virtual_lat = float(shift_location_lat)
-                    virtual_lon = float(shift_location_lon)
-                except (ValueError, TypeError):
-                    app.logger.error(f"VALIDATE-GPS: Errore conversione coordinate: lat={shift_location_lat}, lon={shift_location_lon}")
-                    return jsonify({"valid": False, "error": "Coordinate sede non valide"}), 400
-                
-                # Recupera il raggio dalla cache se disponibile
-                virtual_radius = 300
-                db = get_db()
-                cached = get_location_cache(db, shift_location_name)
-                if cached:
-                    virtual_radius = cached[2]  # Il terzo elemento è il raggio
-                    app.logger.info(f"VALIDATE-GPS: Usando raggio dalla cache: {virtual_radius}m")
-                
-                virtual_location = {
-                    "name": shift_location_name or "Sede",
-                    "latitude": virtual_lat,
-                    "longitude": virtual_lon,
-                    "radius_meters": virtual_radius
-                }
-                locations = [virtual_location]
+    # Se il frontend ha inviato valid_locations (sede gruppo + location turno), usa quelle direttamente
+    if valid_locations_from_frontend and isinstance(valid_locations_from_frontend, list) and len(valid_locations_from_frontend) > 0:
+        # Le valid_locations sono già state calcolate dal backend in /api/user/turno-oggi
+        # Contengono: sede default del gruppo + location del turno se presente e diversa
+        locations = []
+        for vl in valid_locations_from_frontend:
+            if vl.get('latitude') and vl.get('longitude'):
+                locations.append({
+                    "name": vl.get("name", "Sede"),
+                    "latitude": float(vl["latitude"]),
+                    "longitude": float(vl["longitude"]),
+                    "radius_meters": int(vl.get("radius_meters", 300))
+                })
+        app.logger.info(f"VALIDATE-GPS: Usando {len(locations)} valid_locations dal frontend: {[l['name'] for l in locations]}")
+    else:
+        # FALLBACK legacy: Prova a recuperare la location dal turno odierno
+        app.logger.info(f"VALIDATE-GPS: Nessuna valid_locations dal frontend, usando logica legacy")
+        
+        shift_location_name = data.get('shift_location_name')
+        app.logger.info(f"VALIDATE-GPS: Ricevuto shift_location_name dal frontend: '{shift_location_name}'")
+        
+        if not shift_location_name and username:
+            # Prova a recuperare dal turno odierno
+            db = get_db()
+            ensure_employee_shifts_table(db)
+            day_of_week = datetime.now().weekday()
+            placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+            shift_row = db.execute(f"""
+                SELECT location_name FROM employee_shifts
+                WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1
+            """, (username, day_of_week)).fetchone()
+            if shift_row:
+                shift_location_name = shift_row['location_name'] if isinstance(shift_row, dict) else shift_row[0]
+        
+        # Se il turno ha una sede specifica, filtra le locations per usare solo quella
+        if shift_location_name:
+            filtered_locations = [loc for loc in locations if loc.get('name') == shift_location_name]
+            if filtered_locations:
+                locations = filtered_locations
+                app.logger.info(f"VALIDATE-GPS: Sede specifica '{shift_location_name}' trovata! Filtrando locations. Rimaste: {len(locations)}")
+            else:
+                app.logger.warning(f"VALIDATE-GPS: Sede '{shift_location_name}' NON trovata nelle locations disponibili: {[l.get('name') for l in locations]}")
+                # Se la sede non è trovata in configurazione ma abbiamo le coordinate dal backend, usale
+                if shift_location_lat is not None and shift_location_lon is not None:
+                    app.logger.info(f"VALIDATE-GPS: Usando coordinate ricevute dal frontend: lat={shift_location_lat}, lon={shift_location_lon}")
+                    # Crea una location virtuale con le coordinate ricevute (convertendo in float)
+                    try:
+                        virtual_lat = float(shift_location_lat)
+                        virtual_lon = float(shift_location_lon)
+                    except (ValueError, TypeError):
+                        app.logger.error(f"VALIDATE-GPS: Errore conversione coordinate: lat={shift_location_lat}, lon={shift_location_lon}")
+                        return jsonify({"valid": False, "error": "Coordinate sede non valide"}), 400
+                    
+                    # Recupera il raggio dalla cache se disponibile
+                    virtual_radius = 300
+                    db = get_db()
+                    cached = get_location_cache(db, shift_location_name)
+                    if cached:
+                        virtual_radius = cached[2]  # Il terzo elemento è il raggio
+                        app.logger.info(f"VALIDATE-GPS: Usando raggio dalla cache: {virtual_radius}m")
+                    
+                    virtual_location = {
+                        "name": shift_location_name or "Sede",
+                        "latitude": virtual_lat,
+                        "longitude": virtual_lon,
+                        "radius_meters": virtual_radius
+                    }
+                    locations = [virtual_location]
     
     # Verifica se l'utente è entro il raggio di una delle sedi
     matched_location = None
@@ -16849,7 +18773,7 @@ def api_admin_group_planning(group_id: int) -> ResponseReturnValue:
             hours = 0
             extra_data = None
             
-            if request_type_id == 3 and extra_data_str:  # Permesso
+            if type_name == 'Permesso' and extra_data_str:
                 try:
                     import json
                     # Parse extra_data se è stringa
@@ -17142,7 +19066,7 @@ def api_admin_groups_delete(group_id: int) -> ResponseReturnValue:
 #  GESTIONE UTENTI - ADMIN UI
 # ═══════════════════════════════════════════════════════════════════════════════
 
-VALID_USER_ROLES = {"user", "supervisor", "admin", "magazzino"}
+VALID_USER_ROLES = {"user", "supervisor", "admin"}
 
 
 @app.get("/admin/users")
@@ -17632,11 +19556,13 @@ def ensure_location_cache_table(db: DatabaseLike) -> None:
                 latitude DECIMAL(10,7) NOT NULL COMMENT 'Latitudine GPS',
                 longitude DECIMAL(10,7) NOT NULL COMMENT 'Longitudine GPS',
                 radius_meters INT DEFAULT 300 COMMENT 'Raggio tolleranza GPS in metri',
+                is_custom TINYINT(1) DEFAULT 0 COMMENT '1 = location creata manualmente, 0 = da Rentman',
+                address VARCHAR(500) COMMENT 'Indirizzo per le location custom',
                 created_ts BIGINT DEFAULT 0,
                 updated_ts BIGINT DEFAULT 0,
                 INDEX idx_location_name (location_name),
                 INDEX idx_rentman_location_id (rentman_location_id)
-            ) COMMENT='Cache delle coordinate GPS per le location Rentman'
+            ) COMMENT='Cache delle coordinate GPS per le location Rentman e custom'
         """)
         
         # Aggiungi la colonna rentman_location_id se manca
@@ -17659,6 +19585,26 @@ def ensure_location_cache_table(db: DatabaseLike) -> None:
                 app.logger.info("ℹ️ Colonna radius_meters esiste già")
             else:
                 app.logger.warning(f"⚠️ Errore aggiunta colonna radius_meters: {e}")
+        
+        # Aggiungi la colonna is_custom se manca
+        try:
+            db.execute("ALTER TABLE location_cache ADD COLUMN is_custom TINYINT(1) DEFAULT 0 COMMENT '1 = location creata manualmente, 0 = da Rentman' AFTER radius_meters")
+            app.logger.info("✅ Colonna is_custom aggiunta a location_cache")
+        except Exception as e:
+            if "Duplicate column" in str(e) or "already exists" in str(e):
+                pass
+            else:
+                app.logger.warning(f"⚠️ Errore aggiunta colonna is_custom: {e}")
+        
+        # Aggiungi la colonna address se manca
+        try:
+            db.execute("ALTER TABLE location_cache ADD COLUMN address VARCHAR(500) COMMENT 'Indirizzo per le location custom' AFTER is_custom")
+            app.logger.info("✅ Colonna address aggiunta a location_cache")
+        except Exception as e:
+            if "Duplicate column" in str(e) or "already exists" in str(e):
+                pass
+            else:
+                app.logger.warning(f"⚠️ Errore aggiunta colonna address: {e}")
     else:
         db.execute("""
             CREATE TABLE IF NOT EXISTS location_cache (
@@ -17668,10 +19614,21 @@ def ensure_location_cache_table(db: DatabaseLike) -> None:
                 latitude REAL NOT NULL,
                 longitude REAL NOT NULL,
                 radius_meters INTEGER DEFAULT 300,
+                is_custom INTEGER DEFAULT 0,
+                address TEXT,
                 created_ts INTEGER DEFAULT 0,
                 updated_ts INTEGER DEFAULT 0
             )
         """)
+        # Migrazione colonne per SQLite (aggiungi se mancano)
+        try:
+            db.execute("ALTER TABLE location_cache ADD COLUMN is_custom INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE location_cache ADD COLUMN address TEXT")
+        except Exception:
+            pass
     
     db.commit()
 
@@ -17712,7 +19669,7 @@ def get_location_cache(db: DatabaseLike, location_name: str, rentman_location_id
     
     return None
 
-def save_location_cache(db: DatabaseLike, location_name: str, latitude: float, longitude: float, rentman_location_id: Optional[int] = None, radius_meters: int = 300) -> None:
+def save_location_cache(db: DatabaseLike, location_name: str, latitude: float, longitude: float, rentman_location_id: Optional[int] = None, radius_meters: int = 300, is_custom: int = 0, address: Optional[str] = None) -> None:
     """Salva le coordinate GPS e il raggio nella cache per una location."""
     if not location_name or latitude is None or longitude is None:
         return
@@ -17726,22 +19683,22 @@ def save_location_cache(db: DatabaseLike, location_name: str, latitude: float, l
         # Prova l'INSERT o l'UPDATE se già esiste
         if DB_VENDOR == "mysql":
             db.execute("""
-                INSERT INTO location_cache (rentman_location_id, location_name, latitude, longitude, radius_meters, created_ts, updated_ts)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE rentman_location_id = %s, latitude = %s, longitude = %s, radius_meters = %s, updated_ts = %s
-            """, (rentman_location_id, location_name, latitude, longitude, radius_meters, now, now, rentman_location_id, latitude, longitude, radius_meters, now))
+                INSERT INTO location_cache (rentman_location_id, location_name, latitude, longitude, radius_meters, is_custom, address, created_ts, updated_ts)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE rentman_location_id = %s, latitude = %s, longitude = %s, radius_meters = %s, is_custom = %s, address = %s, updated_ts = %s
+            """, (rentman_location_id, location_name, latitude, longitude, radius_meters, is_custom, address, now, now, rentman_location_id, latitude, longitude, radius_meters, is_custom, address, now))
         else:
             # SQLite: prova INSERT, altrimenti UPDATE
             db.execute(
-                "INSERT OR IGNORE INTO location_cache (rentman_location_id, location_name, latitude, longitude, radius_meters, created_ts, updated_ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (rentman_location_id, location_name, latitude, longitude, radius_meters, now, now)
+                "INSERT OR IGNORE INTO location_cache (rentman_location_id, location_name, latitude, longitude, radius_meters, is_custom, address, created_ts, updated_ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (rentman_location_id, location_name, latitude, longitude, radius_meters, is_custom, address, now, now)
             )
             db.execute(
-                "UPDATE location_cache SET rentman_location_id = ?, latitude = ?, longitude = ?, radius_meters = ?, updated_ts = ? WHERE location_name = ?",
-                (rentman_location_id, latitude, longitude, radius_meters, now, location_name)
+                "UPDATE location_cache SET rentman_location_id = ?, latitude = ?, longitude = ?, radius_meters = ?, is_custom = ?, address = ?, updated_ts = ? WHERE location_name = ?",
+                (rentman_location_id, latitude, longitude, radius_meters, is_custom, address, now, location_name)
             )
         db.commit()
-        app.logger.info(f"Location cache salvata: location_id={rentman_location_id}, name={location_name} ({latitude}, {longitude}), raggio={radius_meters}m")
+        app.logger.info(f"Location cache salvata: location_id={rentman_location_id}, name={location_name} ({latitude}, {longitude}), raggio={radius_meters}m, custom={is_custom}")
     except Exception as e:
         app.logger.error(f"Errore salvataggio location cache: {e}")
 
@@ -17968,13 +19925,26 @@ def get_user_timbratura_rules(db, username: str) -> dict:
     global_rules = get_timbratura_rules(db)
     
     if group_rules:
+        # Controlla se il gruppo è di produzione
+        _is_prod_group = False
+        try:
+            _pg = db.execute(
+                f"SELECT is_production FROM user_groups WHERE id = {placeholder}",
+                (group_id,)
+            ).fetchone()
+            _is_prod_group = bool((_pg['is_production'] if isinstance(_pg, dict) else _pg[0]) if _pg else False)
+        except Exception:
+            pass
+        
         # Merge: regole gruppo + regole pausa da globali (se usa_regole_pausa_standard)
         result = {
             'source': 'group',
             'group_id': group_id,
+            'is_production': _is_prod_group,
             'rounding_mode': group_rules.get('rounding_mode', 'single'),
-            'flessibilita_ingresso_minuti': group_rules.get('flessibilita_ingresso_minuti', 30),
-            'flessibilita_uscita_minuti': group_rules.get('flessibilita_uscita_minuti', 30),
+            # Per gruppi di produzione: flessibilità FORZATA a 0
+            'flessibilita_ingresso_minuti': 0 if _is_prod_group else group_rules.get('flessibilita_ingresso_minuti', 30),
+            'flessibilita_uscita_minuti': 0 if _is_prod_group else group_rules.get('flessibilita_uscita_minuti', 30),
             'arrotondamento_giornaliero_minuti': group_rules.get('arrotondamento_giornaliero_minuti', 15),
             'arrotondamento_giornaliero_tipo': group_rules.get('arrotondamento_giornaliero_tipo', 'floor'),
             'oltre_flessibilita_action': group_rules.get('oltre_flessibilita_action', 'allow'),
@@ -18048,6 +20018,11 @@ def get_user_timbratura_rules(db, username: str) -> dict:
                 result['pausa_blocco_minimo_minuti'] = global_rules.get('pausa_blocco_minimo_minuti', 30)
                 result['pausa_incremento_minuti'] = global_rules.get('pausa_incremento_minuti', 15)
                 result['pausa_tolleranza_minuti'] = global_rules.get('pausa_tolleranza_minuti', 5)
+        
+        if _is_prod_group:
+            app.logger.info(
+                "get_user_timbratura_rules: gruppo PRODUZIONE per %s → flessibilità forzata a 0", username
+            )
         
         return result
     else:
@@ -18417,6 +20392,9 @@ def _detect_extra_turno(
     rules: dict = None
 ) -> Optional[dict]:
     """
+    [NOTA: Funzione NON più utilizzata - il calcolo Extra Turno è inline nel blocco fine_giornata.
+     Mantenuta per eventuale refactoring futuro.]
+    
     Rileva se una timbratura genera Extra Turno.
     
     LOGICA:
@@ -18563,6 +20541,23 @@ def _create_auto_extra_turno_request(
         ensure_user_requests_table(db)
         overtime_type_id = get_overtime_request_type_id(db)
         
+        # Controllo anti-duplicato: se esiste già una richiesta pending dello stesso tipo per oggi, skip
+        placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+        existing = db.execute(
+            f"""SELECT id FROM user_requests 
+               WHERE username = {placeholder} AND request_type_id = {placeholder} 
+               AND date_from = {placeholder} AND status = 'pending'
+               LIMIT 1""",
+            (username, overtime_type_id, date_str)
+        ).fetchone()
+        if existing:
+            existing_id = existing['id'] if isinstance(existing, dict) else existing[0]
+            app.logger.info(
+                "Extra Turno request SKIP duplicato: esiste già richiesta id=%s per user=%s, date=%s",
+                existing_id, username, date_str
+            )
+            return existing_id
+        
         now_ts = int(time.time() * 1000)
         
         # Prepara extra_data con tutti i dettagli
@@ -18600,8 +20595,6 @@ def _create_auto_extra_turno_request(
         
         total_minutes = extra_data.get("extra_minutes", 0)
         
-        placeholder = "%s" if DB_VENDOR == "mysql" else "?"
-        
         db.execute(f"""
             INSERT INTO user_requests 
             (user_id, username, request_type_id, date_from, date_to, value_amount, 
@@ -18634,6 +20627,35 @@ def _create_auto_extra_turno_request(
     except Exception as e:
         app.logger.error(f"Errore creazione richiesta Extra Turno automatica: {e}")
         return None
+
+
+def _ensure_fuori_flessibilita_request_type(db: DatabaseLike) -> int:
+    """
+    Assicura che esista il tipo richiesta 'Fuori Flessibilità' e ritorna il suo ID.
+    Lookup per nome (stabile tra ambienti diversi).
+    """
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    row = db.execute(
+        f"SELECT id FROM request_types WHERE name = {placeholder}",
+        ("Fuori Flessibilità",)
+    ).fetchone()
+
+    if row:
+        return row["id"] if isinstance(row, Mapping) else row[0]
+
+    # Crea il tipo se non esiste
+    db.execute(f"""
+        INSERT INTO request_types (name, value_type, description, active, sort_order)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, 1, 7)
+    """, ("Fuori Flessibilità", "minutes", "Timbrata oltre i limiti di flessibilità consentiti"))
+    db.commit()
+
+    row = db.execute(
+        f"SELECT id FROM request_types WHERE name = {placeholder}",
+        ("Fuori Flessibilità",)
+    ).fetchone()
+    return row["id"] if isinstance(row, Mapping) else row[0]
 
 
 def _create_flex_request(
@@ -18672,13 +20694,32 @@ def _create_flex_request(
         ID della richiesta creata, o None se errore
     """
     try:
-        FLEX_TYPE_ID = 17  # ID del tipo "Fuori Flessibilità"
+        FLEX_TYPE_ID = _ensure_fuori_flessibilita_request_type(db)
+        
+        # Controllo anti-duplicato: se esiste già una richiesta pending dello stesso tipo per oggi, skip
+        existing = db.execute(
+            f"""SELECT id FROM user_requests 
+               WHERE username = {placeholder} AND request_type_id = {placeholder} 
+               AND date_from = {placeholder} AND status = 'pending'
+               LIMIT 1""",
+            (username, FLEX_TYPE_ID, date_str)
+        ).fetchone()
+        if existing:
+            existing_id = existing['id'] if isinstance(existing, dict) else existing[0]
+            app.logger.info(
+                "Flex request SKIP duplicato: esiste già richiesta id=%s per user=%s, date=%s",
+                existing_id, username, date_str
+            )
+            return existing_id
         
         now_ts = now_ms()
         
         # Note descrittive
         tipo_label = "Ingresso" if tipo == "inizio_giornata" else "Uscita"
-        notes = f"{tipo_label} fuori flessibilità: {message}"
+        if tipo == "inizio_giornata":
+            notes = f"Richiesta anticipo ingresso: {message}"
+        else:
+            notes = f"{tipo_label} fuori flessibilità: {message}"
         
         # Extra data con dettagli
         extra_data = {
@@ -18714,7 +20755,7 @@ def _create_flex_request(
         db.commit()
         
         app.logger.info(
-            "Auto-created Fuori Flessibilità request: id=%s, user=%s, date=%s, tipo=%s, diff=%smin",
+            "Auto-created richiesta anticipo/flex: id=%s, user=%s, date=%s, tipo=%s, diff=%smin",
             request_id, username, date_str, tipo, diff_minutes
         )
         
@@ -18736,7 +20777,10 @@ def _send_flex_notification_to_admins(db, username: str, date_str: str, tipo: st
         tipo_label = "Ingresso" if tipo == "inizio_giornata" else "Uscita"
         direction = "ritardo" if diff_minutes > 0 else "anticipo"
         
-        title = f"⏰ Timbratura fuori flessibilità"
+        if tipo == "inizio_giornata":
+            title = "⏰ Richiesta anticipo ingresso"
+        else:
+            title = "⏰ Uscita oltre flessibilità"
         body = f"{username}: {tipo_label} {abs(diff_minutes)} min di {direction} il {date_str}"
         
         # Recupera admin attivi
@@ -18855,6 +20899,22 @@ def _create_late_arrival_request(
     try:
         # Ottieni l'ID del tipo "Giustificazione Ritardo"
         late_type_id = _ensure_late_arrival_request_type(db)
+        
+        # Controllo anti-duplicato: se esiste già una richiesta pending dello stesso tipo per oggi, skip
+        existing = db.execute(
+            f"""SELECT id FROM user_requests 
+               WHERE username = {placeholder} AND request_type_id = {placeholder} 
+               AND date_from = {placeholder} AND status = 'pending'
+               LIMIT 1""",
+            (username, late_type_id, date_str)
+        ).fetchone()
+        if existing:
+            existing_id = existing['id'] if isinstance(existing, dict) else existing[0]
+            app.logger.info(
+                "Late Arrival request SKIP duplicato: esiste già richiesta id=%s per user=%s, date=%s",
+                existing_id, username, date_str
+            )
+            return existing_id
         
         now_ts = now_ms()
         
@@ -18980,7 +21040,468 @@ def _send_late_arrival_notification_to_user(
         app.logger.warning(f"Errore invio notifica ritardo all'utente {username}: {e}")
 
 
-def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start: str, turno_end: str, rules: dict, placeholder: str, break_info: dict = None) -> str:
+def _safe_time_to_minutes(value) -> Optional[int]:
+    """Converte un orario (TIME/datetime/stringa) in minuti dal mezzanotte."""
+    if value is None:
+        return None
+    try:
+        if hasattr(value, 'total_seconds'):
+            return int(value.total_seconds()) // 60
+        if hasattr(value, 'hour'):
+            return int(value.hour) * 60 + int(value.minute)
+
+        raw = str(value)
+        if len(raw) > 11 and ':' in raw:
+            raw = raw[11:16]
+        else:
+            raw = raw[:5]
+        parts = raw.split(':')
+        if len(parts) < 2:
+            return None
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return None
+
+
+def _get_effective_break_minutes_from_timbrature(db, username: str, date_str: str, placeholder: str) -> int:
+    """Somma la pausa effettivamente timbrata (coppie inizio_pausa/fine_pausa)."""
+    total = 0
+    try:
+        pause_rows = db.execute(
+            f"""SELECT tipo, ora FROM timbrature
+               WHERE username = {placeholder} AND data = {placeholder}
+                 AND tipo IN ('inizio_pausa', 'fine_pausa')
+               ORDER BY created_ts ASC""",
+            (username, date_str)
+        ).fetchall()
+
+        pause_start = None
+        for row in pause_rows:
+            p_type = row['tipo'] if isinstance(row, dict) else row[0]
+            p_ora = row['ora'] if isinstance(row, dict) else row[1]
+            p_min = _safe_time_to_minutes(p_ora)
+            if p_min is None:
+                continue
+
+            if p_type == 'inizio_pausa':
+                pause_start = p_min
+            elif p_type == 'fine_pausa' and pause_start is not None and p_min >= pause_start:
+                total += (p_min - pause_start)
+                pause_start = None
+    except Exception as e:
+        app.logger.warning(f"Errore calcolo pausa effettiva timbrata: {e}")
+
+    return max(0, int(total))
+
+
+def _get_planned_break_minutes_for_day(
+    db,
+    username: str,
+    date_str: str,
+    day_of_week: int,
+    placeholder: str,
+) -> dict:
+    """Recupera pausa pianificata del giorno (employee_shifts o Rentman)."""
+    try:
+        ensure_employee_shifts_table(db)
+        row = db.execute(
+            f"""SELECT break_start, break_end FROM employee_shifts
+               WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1
+               ORDER BY start_time ASC LIMIT 1""",
+            (username, day_of_week)
+        ).fetchone()
+        if row:
+            break_start = row['break_start'] if isinstance(row, dict) else row[0]
+            break_end = row['break_end'] if isinstance(row, dict) else row[1]
+            bs_min = _safe_time_to_minutes(break_start)
+            be_min = _safe_time_to_minutes(break_end)
+            if bs_min is not None and be_min is not None and be_min > bs_min:
+                return {
+                    "minutes": be_min - bs_min,
+                    "source": "employee_shifts",
+                    "break_start": f"{bs_min // 60:02d}:{bs_min % 60:02d}",
+                    "break_end": f"{be_min // 60:02d}:{be_min % 60:02d}",
+                }
+    except Exception as e:
+        app.logger.warning(f"Errore lettura pausa da employee_shifts: {e}")
+
+    try:
+        user_row = db.execute(
+            f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+            (username,)
+        ).fetchone()
+        crew_id = None
+        if user_row:
+            crew_id = user_row['rentman_crew_id'] if isinstance(user_row, dict) else user_row[0]
+
+        if crew_id:
+            rows = db.execute(
+                f"""SELECT break_start, break_end, break_minutes
+                   FROM rentman_plannings
+                   WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+                     AND (is_obsolete IS NULL OR is_obsolete = 0)
+                   ORDER BY plan_start ASC""",
+                (crew_id, date_str)
+            ).fetchall()
+
+            for row in rows:
+                break_start = row['break_start'] if isinstance(row, dict) else row[0]
+                break_end = row['break_end'] if isinstance(row, dict) else row[1]
+                break_minutes = row['break_minutes'] if isinstance(row, dict) else row[2]
+
+                bs_min = _safe_time_to_minutes(break_start)
+                be_min = _safe_time_to_minutes(break_end)
+                if bs_min is not None and be_min is not None and be_min > bs_min:
+                    return {
+                        "minutes": be_min - bs_min,
+                        "source": "rentman_break_times",
+                        "break_start": f"{bs_min // 60:02d}:{bs_min % 60:02d}",
+                        "break_end": f"{be_min // 60:02d}:{be_min % 60:02d}",
+                    }
+
+                try:
+                    if break_minutes is not None and int(float(break_minutes)) > 0:
+                        return {
+                            "minutes": int(float(break_minutes)),
+                            "source": "rentman_break_minutes",
+                            "break_start": None,
+                            "break_end": None,
+                        }
+                except Exception:
+                    continue
+    except Exception as e:
+        app.logger.warning(f"Errore lettura pausa da rentman_plannings: {e}")
+
+    return {
+        "minutes": 0,
+        "source": "none",
+        "break_start": None,
+        "break_end": None,
+    }
+
+
+def _ensure_break_reduction_request_type(db: DatabaseLike) -> int:
+    """Assicura che esista il tipo richiesta 'Deroga Pausa Ridotta' e ritorna il suo ID."""
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+
+    row = db.execute(
+        f"SELECT id FROM request_types WHERE name = {placeholder}",
+        ("Deroga Pausa Ridotta",)
+    ).fetchone()
+    if row:
+        return row["id"] if isinstance(row, Mapping) else row[0]
+
+    db.execute(f"""
+        INSERT INTO request_types (name, value_type, description, active, sort_order)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, 1, 6)
+    """, (
+        "Deroga Pausa Ridotta",
+        "minutes",
+        "Richiesta autorizzazione pausa inferiore rispetto al pianificato"
+    ))
+    db.commit()
+
+    row = db.execute(
+        f"SELECT id FROM request_types WHERE name = {placeholder}",
+        ("Deroga Pausa Ridotta",)
+    ).fetchone()
+    return row["id"] if isinstance(row, Mapping) else row[0]
+
+
+def _create_break_reduction_request(
+    db,
+    username: str,
+    date_str: str,
+    break_data: dict,
+    reason: str,
+    placeholder: str,
+) -> Optional[int]:
+    """Crea (o riusa) richiesta pending per pausa ridotta oltre soglia."""
+    try:
+        request_type_id = _ensure_break_reduction_request_type(db)
+
+        existing = db.execute(
+            f"""SELECT id FROM user_requests
+               WHERE username = {placeholder} AND request_type_id = {placeholder}
+                 AND date_from = {placeholder} AND status = 'pending'
+               LIMIT 1""",
+            (username, request_type_id, date_str)
+        ).fetchone()
+        if existing:
+            return existing['id'] if isinstance(existing, dict) else existing[0]
+
+        now_ts = now_ms()
+        planned = int(break_data.get('planned_break_minutes', 0) or 0)
+        effective = int(break_data.get('effective_break_minutes', 0) or 0)
+        reduction = int(break_data.get('break_reduction_minutes', 0) or 0)
+
+        notes = (
+            f"Pausa ridotta: effettuati {effective} min su {planned} min pianificati "
+            f"(differenza {reduction} min). Motivazione utente: {reason}"
+        )
+
+        extra_data = {
+            "created_reason": "break_reduction_short_pause",
+            "planned_break_minutes": planned,
+            "effective_break_minutes": effective,
+            "rounded_break_minutes": int(break_data.get('rounded_break_minutes') or 0) or None,
+            "break_reduction_minutes": reduction,
+            "break_source": break_data.get('break_source'),
+            "break_start": break_data.get('break_start'),
+            "break_end": break_data.get('break_end'),
+            "reason": reason,
+            "tipo_timbratura": "fine_giornata",
+            "turno_start": break_data.get('turno_start'),
+            "turno_end": break_data.get('turno_end'),
+            "ora_timbrata": break_data.get('ora_timbrata'),
+            "ora_mod": break_data.get('ora_mod'),
+            "auto_created": True,
+        }
+
+        db.execute(f"""
+            INSERT INTO user_requests
+            (user_id, username, request_type_id, date_from, date_to, value_amount,
+             notes, cdc, attachment_path, tratte, extra_data, status, created_ts, updated_ts)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
+                    {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 'pending', {placeholder}, {placeholder})
+        """, (
+            0,
+            username,
+            request_type_id,
+            date_str,
+            date_str,
+            reduction,
+            notes,
+            None,
+            None,
+            None,
+            json.dumps(extra_data),
+            now_ts,
+            now_ts,
+        ))
+
+        if DB_VENDOR == "mysql":
+            row = db.execute("SELECT LAST_INSERT_ID() as id").fetchone()
+        else:
+            row = db.execute("SELECT last_insert_rowid() as id").fetchone()
+
+        request_id = row['id'] if isinstance(row, dict) else row[0]
+        app.logger.info(
+            "Creata richiesta Deroga Pausa Ridotta id=%s per %s (%s)",
+            request_id,
+            username,
+            date_str,
+        )
+        return request_id
+    except Exception as e:
+        app.logger.error(f"Errore creazione richiesta Deroga Pausa Ridotta: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return None
+
+
+def _process_break_reduction_review(
+    db,
+    username: str,
+    date_from,
+    status: str,
+    extra_data_str: str,
+) -> dict:
+    """
+    In review admin, applica la pausa valida:
+    - approved  -> usa pausa effettiva timbrata
+    - rejected  -> usa pausa pianificata
+    e ricalcola ora_mod in daily mode.
+    """
+    result = {"processed": False, "skipped": False}
+    try:
+        extra = json.loads(extra_data_str) if isinstance(extra_data_str, str) else (extra_data_str or {})
+        if not isinstance(extra, dict):
+            result["skipped"] = True
+            result["reason"] = "extra_data non valido"
+            return result
+
+        date_str = date_from.strftime("%Y-%m-%d") if hasattr(date_from, 'strftime') else str(date_from)[:10]
+        planned_break = int(extra.get("planned_break_minutes", 0) or 0)
+        effective_break = int(extra.get("effective_break_minutes", 0) or 0)
+        rounded_break = int(extra.get("rounded_break_minutes", 0) or 0)
+        # Approvato: usa pausa arrotondata ai 15 min (es. 29→30 min reali) per calcolo ora_mod fine_giornata
+        # Se rounded_break non disponibile (record vecchi), fallback su effective_break
+        forced_break = (rounded_break or effective_break) if status == "approved" else planned_break
+
+        rules = get_user_timbratura_rules(db, username)
+        rounding_mode = rules.get('rounding_mode', 'single')
+
+        placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+        fg_row = db.execute(
+            f"""SELECT ora FROM timbrature
+               WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'fine_giornata'
+               ORDER BY created_ts DESC LIMIT 1""",
+            (username, date_str)
+        ).fetchone()
+        if not fg_row:
+            result["skipped"] = True
+            result["reason"] = "fine_giornata non trovata"
+            return result
+
+        ora_timbrata = fg_row['ora'] if isinstance(fg_row, dict) else fg_row[0]
+        if hasattr(ora_timbrata, 'strftime'):
+            ora_timbrata = ora_timbrata.strftime("%H:%M:%S")
+        elif hasattr(ora_timbrata, 'total_seconds'):
+            total_sec = int(ora_timbrata.total_seconds())
+            ora_timbrata = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}:00"
+        else:
+            ora_timbrata = str(ora_timbrata)
+
+        if rounding_mode == 'daily':
+            turno_start = extra.get("turno_start")
+            turno_end = extra.get("turno_end")
+            new_ora_mod = _calcola_ora_fine_daily(
+                db=db,
+                username=username,
+                today=date_str,
+                ora=ora_timbrata,
+                turno_start=turno_start,
+                turno_end=turno_end,
+                rules=rules,
+                placeholder=placeholder,
+                break_info=None,
+                forced_break_minutes=forced_break,
+            )
+
+            db.execute(
+                f"""UPDATE timbrature
+                   SET ora_mod = {placeholder}
+                   WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'fine_giornata'""",
+                (new_ora_mod, username, date_str)
+            )
+
+            db.execute(
+                f"""UPDATE cedolino_timbrature
+                   SET ora_modificata = {placeholder}, synced_ts = NULL
+                   WHERE username = {placeholder}
+                     AND data_riferimento = {placeholder}
+                     AND timeframe_id = 8""",
+                (new_ora_mod, username, date_str)
+            )
+
+            db.commit()
+            result.update({
+                "processed": True,
+                "forced_break_minutes": forced_break,
+                "new_ora_mod": new_ora_mod,
+                "rounding_mode": rounding_mode,
+            })
+        else:
+            # In modalità non-daily la pausa impatta su fine_pausa.ora_mod:
+            # - approved: arrotonda ora reale ai 15 min più vicini
+            #   (TODO FUTURO: rendere configurabile l'intervallo di arrotondamento)
+            # - rejected: applica pausa pianificata (calcola_pausa_mod)
+            fine_pausa_row = db.execute(
+                f"""SELECT id, ora, ora_mod FROM timbrature
+                   WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'fine_pausa'
+                   ORDER BY created_ts DESC LIMIT 1""",
+                (username, date_str)
+            ).fetchone()
+
+            inizio_pausa_row = db.execute(
+                f"""SELECT ora, ora_mod FROM timbrature
+                   WHERE username = {placeholder} AND data = {placeholder} AND tipo = 'inizio_pausa'
+                   ORDER BY created_ts DESC LIMIT 1""",
+                (username, date_str)
+            ).fetchone()
+
+            if fine_pausa_row and inizio_pausa_row:
+                fp_id = fine_pausa_row['id'] if isinstance(fine_pausa_row, dict) else fine_pausa_row[0]
+                fp_ora = fine_pausa_row['ora'] if isinstance(fine_pausa_row, dict) else fine_pausa_row[1]
+
+                if hasattr(fp_ora, 'strftime'):
+                    fp_ora_str = fp_ora.strftime("%H:%M:%S")
+                elif hasattr(fp_ora, 'total_seconds'):
+                    total_sec = int(fp_ora.total_seconds())
+                    fp_ora_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}:00"
+                else:
+                    fp_ora_str = str(fp_ora)
+
+                # Recupera inizio pausa ora_mod
+                ip_ora_mod = inizio_pausa_row['ora_mod'] if isinstance(inizio_pausa_row, dict) else inizio_pausa_row[1]
+                if not ip_ora_mod:
+                    ip_ora_mod = inizio_pausa_row['ora'] if isinstance(inizio_pausa_row, dict) else inizio_pausa_row[0]
+                if hasattr(ip_ora_mod, 'strftime'):
+                    ip_str = ip_ora_mod.strftime("%H:%M")
+                elif hasattr(ip_ora_mod, 'total_seconds'):
+                    total_sec = int(ip_ora_mod.total_seconds())
+                    ip_str = f"{total_sec // 3600:02d}:{(total_sec % 3600) // 60:02d}"
+                else:
+                    ip_str = str(ip_ora_mod)[:5]
+
+                ip_parts = ip_str.split(':')
+                ip_min = int(ip_parts[0]) * 60 + int(ip_parts[1])
+
+                if status == "approved":
+                    # Approvato: arrotonda la pausa reale ai 15 min più vicini (per eccesso)
+                    # TODO FUTURO: rendere configurabile questo intervallo (ora fisso a 15 min)
+                    fp_parts = fp_ora_str[:5].split(':')
+                    fp_min = int(fp_parts[0]) * 60 + int(fp_parts[1])
+                    durata_reale = fp_min - ip_min
+                    arrotondamento = 15  # TODO: rendere configurabile
+                    if durata_reale <= 0:
+                        durata_arrotondata = arrotondamento
+                    else:
+                        # Arrotonda ai 15 min più vicini
+                        durata_arrotondata = ((durata_reale + arrotondamento // 2) // arrotondamento) * arrotondamento
+                    new_fp_min = ip_min + durata_arrotondata
+                    h = new_fp_min // 60
+                    m = new_fp_min % 60
+                    new_fp_ora_mod = f"{h:02d}:{m:02d}:00"
+                    app.logger.info(
+                        f"Break reduction APPROVED: durata reale={durata_reale}min, "
+                        f"arrotondata={durata_arrotondata}min (ai {arrotondamento}min), "
+                        f"ora_mod={new_fp_ora_mod}"
+                    )
+                else:
+                    # Rifiutato: applica pausa pianificata (calcola_pausa_mod con regole)
+                    durata_mod = calcola_pausa_mod(ip_str, fp_ora_str[:5], rules)
+                    new_fp_min = ip_min + durata_mod
+                    h = new_fp_min // 60
+                    m = new_fp_min % 60
+                    new_fp_ora_mod = f"{h:02d}:{m:02d}:00"
+                    app.logger.info(
+                        f"Break reduction REJECTED: applico pausa pianificata, "
+                        f"durata_mod={durata_mod}min, ora_mod={new_fp_ora_mod}"
+                    )
+
+                db.execute(
+                    f"UPDATE timbrature SET ora_mod = {placeholder} WHERE id = {placeholder}",
+                    (new_fp_ora_mod, fp_id)
+                )
+
+                db.execute(
+                    f"""UPDATE cedolino_timbrature
+                       SET ora_modificata = {placeholder}, synced_ts = NULL
+                       WHERE username = {placeholder}
+                         AND data_riferimento = {placeholder}
+                         AND timeframe_id = 5""",
+                    (new_fp_ora_mod, username, date_str)
+                )
+
+            db.commit()
+            result.update({
+                "processed": True,
+                "forced_break_minutes": forced_break,
+                "rounding_mode": rounding_mode,
+                "note": "non-daily: aggiornata fine_pausa su approvazione",
+            })
+        return result
+    except Exception as e:
+        app.logger.error(f"Errore _process_break_reduction_review: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        result["error"] = str(e)
+        return result
+
+
+def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start: str, turno_end: str, rules: dict, placeholder: str, break_info: dict = None, forced_break_minutes: Optional[int] = None) -> str:
     """
     Calcola l'ora di fine giornata per il mode 'daily'.
     
@@ -19094,21 +21615,28 @@ def _calcola_ora_fine_daily(db, username: str, today: str, ora: str, turno_start
         except Exception as e:
             app.logger.warning(f"Errore lettura pausa effettiva: {e}")
         
-        # Per il calcolo giornaliero, usa SEMPRE la pausa pianificata del turno.
-        # La pausa effettiva timbrata può avere piccole differenze (es. 54 min vs 60 previsti)
-        # ma ai fini del calcolo ore/straordinario conta quella del turno.
-        pausa_da_usare = pausa_turno_minuti
-        
-        if pausa_effettiva > 0:
+        # Per il calcolo giornaliero, la logica della pausa dipende dallo stato:
+        # 1. Se la pausa è stata effettivamente timbrata → usa pausa turno (obbligatoria)
+        # 2. Se l'utente ha confermato la pausa (popup) → usa pausa turno
+        # 3. Se l'utente ha saltato la pausa (popup skip) → pausa = 0
+        # 4. Se non c'è info (nessun popup mostrato, nessuna timbrata) → pausa = 0
+        #    (non sottrarre pausa mai chiesta/confermata)
+        if forced_break_minutes is not None:
+            pausa_da_usare = max(0, int(forced_break_minutes))
+            app.logger.info(f"Daily mode: pausa forzata da review admin = {pausa_da_usare} min")
+        elif pausa_effettiva > 0:
+            pausa_da_usare = pausa_turno_minuti
             app.logger.info(f"Daily mode: pausa effettiva timbrata = {pausa_effettiva} min, uso pausa turno = {pausa_turno_minuti} min")
         elif break_info and break_info.get('break_confirmed'):
+            pausa_da_usare = pausa_turno_minuti
             app.logger.info(f"Daily mode: pausa confermata dall'utente (non timbrata), uso pausa turno = {pausa_turno_minuti} min")
         elif break_info and break_info.get('break_skipped'):
             reason = break_info.get('break_skip_reason', 'Nessuna motivazione')
             pausa_da_usare = 0
             app.logger.info(f"Daily mode: pausa saltata dall'utente, motivo: {reason}, pausa = 0 min")
         else:
-            app.logger.info(f"Daily mode: nessuna pausa timbrata, uso pausa turno = {pausa_turno_minuti} min")
+            pausa_da_usare = 0
+            app.logger.info(f"Daily mode: nessuna pausa timbrata né confermata, pausa = 0 min (pausa pianificata era {pausa_turno_minuti} min)")
         
         # 3. Calcola ore EFFETTIVE lavorate (ore lorde - pausa pianificata)
         ore_lorde_effettive = fine_min - inizio_min
@@ -20898,12 +23426,28 @@ def admin_user_requests_page() -> ResponseReturnValue:
     
     username = session.get("username", "Admin")
     initials = "".join([p[0].upper() for p in username.split()[:2]]) if username else "?"
+
+    # Carica i gruppi direttamente dal DB per renderizzarli server-side
+    groups = []
+    try:
+        db = get_db()
+        cur = db.execute("SELECT id, name FROM user_groups ORDER BY name")
+        rows = cur.fetchall()
+        for row in rows:
+            if hasattr(row, 'keys'):
+                groups.append({"id": row["id"], "name": row["name"]})
+            else:
+                groups.append({"id": row[0], "name": row[1]})
+        app.logger.info(f"[admin_user_requests_page] Gruppi caricati: {groups}")
+    except Exception as e:
+        app.logger.error(f"[admin_user_requests_page] Errore caricamento gruppi: {e}")
     
     return render_template(
         "admin_user_requests.html",
         is_admin=True,
         user_name=username,
-        user_initials=initials
+        user_initials=initials,
+        groups=groups
     )
 
 
@@ -20935,24 +23479,30 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
     
     if DB_VENDOR == "mysql":
         rows = db.execute("""
-            SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
-                   ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
-                   ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts,
-                   ur.cdc, ur.attachment_path, ur.tratte, ur.extra_data
-            FROM user_requests ur
-            JOIN request_types rt ON ur.request_type_id = rt.id
+                 SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
+                     ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
+                     ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts,
+                     ur.cdc, ur.attachment_path, ur.tratte, ur.extra_data,
+                     u.group_id AS group_id, ug.name AS group_name
+                 FROM user_requests ur
+                 JOIN request_types rt ON ur.request_type_id = rt.id
+                 LEFT JOIN app_users u ON ur.username = u.username
+                 LEFT JOIN user_groups ug ON u.group_id = ug.id
             ORDER BY 
                 CASE ur.status WHEN 'pending' THEN 0 ELSE 1 END,
                 ur.created_ts DESC
         """).fetchall()
     else:
         rows = db.execute("""
-            SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
-                   ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
-                   ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts,
-                   ur.cdc, ur.attachment_path, ur.tratte, ur.extra_data
-            FROM user_requests ur
-            JOIN request_types rt ON ur.request_type_id = rt.id
+                 SELECT ur.id, ur.username, ur.request_type_id, rt.name as type_name, rt.value_type,
+                     ur.date_from, ur.date_to, ur.value_amount, ur.notes, ur.status,
+                     ur.reviewed_by, ur.reviewed_ts, ur.review_notes, ur.created_ts, ur.updated_ts,
+                     ur.cdc, ur.attachment_path, ur.tratte, ur.extra_data,
+                     u.group_id AS group_id, ug.name AS group_name
+                 FROM user_requests ur
+                 JOIN request_types rt ON ur.request_type_id = rt.id
+                 LEFT JOIN app_users u ON ur.username = u.username
+                 LEFT JOIN user_groups ug ON u.group_id = ug.id
             ORDER BY 
                 CASE ur.status WHEN 'pending' THEN 0 ELSE 1 END,
                 ur.created_ts DESC
@@ -21013,6 +23563,8 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
                 "attachment_path": row["attachment_path"],
                 "tratte": tratte_data,
                 "extra_data": extra_data,
+                "group_id": row.get("group_id"),
+                "group_name": row.get("group_name"),
             }
         else:
             req_item = {
@@ -21035,6 +23587,8 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
                 "attachment_path": row[16] if len(row) > 16 else None,
                 "tratte": tratte_data,
                 "extra_data": extra_data,
+                "group_id": row[19] if len(row) > 19 else None,
+                "group_name": row[20] if len(row) > 20 else None,
             }
         
         requests.append(req_item)
@@ -21085,7 +23639,10 @@ def api_admin_user_requests_list() -> ResponseReturnValue:
                 except Exception as e:
                     app.logger.warning(f"Errore recupero turno per {req_username}: {e}")
 
-    return jsonify({"requests": requests})
+    resp = jsonify({"requests": requests})
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 def _process_approved_mancata_timbratura(
@@ -21159,18 +23716,85 @@ def _process_approved_mancata_timbratura(
     now_ts = now_ms()
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
     
-    # 1. Inserisci nella tabella 'timbrature'
-    try:
-        db.execute(f"""
-            INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method, gps_lat, gps_lon, location_name)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
-        """, (username, tipo_interno, date_str, ora_full, ora_full, now_ts, "manual_request", None, None, "Mancata Timbratura"))
+    # ── Calcola ora_mod con le regole di arrotondamento ──
+    _appr_rules = get_user_timbratura_rules(db, username)
+    _appr_turno_start = None
+    if tipo_interno in ('inizio_giornata', 'fine_giornata'):
+        try:
+            ensure_employee_shifts_table(db)
+            _appr_shift = db.execute(
+                f"""SELECT start_time, end_time FROM employee_shifts
+                   WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1
+                   ORDER BY start_time ASC LIMIT 1""",
+                (username, datetime.strptime(date_str, '%Y-%m-%d').weekday())
+            ).fetchone()
+            if _appr_shift:
+                _appr_st = _appr_shift['start_time'] if isinstance(_appr_shift, dict) else _appr_shift[0]
+                if _appr_st:
+                    if hasattr(_appr_st, 'total_seconds'):
+                        _ats = int(_appr_st.total_seconds())
+                        _appr_turno_start = f"{_ats // 3600:02d}:{(_ats % 3600) // 60:02d}"
+                    else:
+                        _appr_turno_start = str(_appr_st)[:5]
+        except Exception:
+            pass
+        if not _appr_turno_start:
+            _appr_urow = db.execute(
+                f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+                (username,)
+            ).fetchone()
+            if _appr_urow:
+                _appr_cid = (_appr_urow['rentman_crew_id'] if isinstance(_appr_urow, dict) else _appr_urow[0])
+                if _appr_cid:
+                    _appr_trow = db.execute(
+                        f"""SELECT plan_start FROM rentman_plannings
+                            WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+                            ORDER BY plan_start ASC LIMIT 1""",
+                        (_appr_cid, date_str)
+                    ).fetchone()
+                    if _appr_trow:
+                        _appr_ps = _appr_trow['plan_start'] if isinstance(_appr_trow, dict) else _appr_trow[0]
+                        if _appr_ps:
+                            if hasattr(_appr_ps, 'strftime'):
+                                _appr_turno_start = _appr_ps.strftime("%H:%M")
+                            else:
+                                _appr_ps_str = str(_appr_ps)
+                                _appr_turno_start = _appr_ps_str[11:16] if len(_appr_ps_str) > 11 else _appr_ps_str[:5]
+    
+    ora_mod_calc = calcola_ora_mod(ora_full, tipo_interno, _appr_turno_start, _appr_rules)
+    app.logger.info(f"Mancata Timbratura approvata rounding: ora={ora_full}, tipo={tipo_interno}, turno_start={_appr_turno_start}, ora_mod={ora_mod_calc}")
+    
+    # 1. Inserisci nella tabella 'timbrature' (se non già pre-inserita per gruppo produzione)
+    _already_exists = db.execute(
+        f"""SELECT id FROM timbrature
+            WHERE username = {placeholder} AND data = {placeholder}
+              AND tipo = {placeholder} AND method = 'manual_request'
+              AND location_name = 'Mancata Timbratura'""",
+        (username, date_str, tipo_interno)
+    ).fetchone()
+    
+    if _already_exists:
+        # Timbratura già pre-inserita (gruppo produzione) → aggiorna con ora_mod calcolata
+        _existing_id = _already_exists['id'] if isinstance(_already_exists, dict) else _already_exists[0]
+        db.execute(
+            f"UPDATE timbrature SET ora = {placeholder}, ora_mod = {placeholder} WHERE id = {placeholder}",
+            (ora_full, ora_mod_calc, _existing_id)
+        )
         result["inserted_timbratura"] = True
-        app.logger.info(f"Mancata Timbratura: inserita timbratura {tipo_interno} per {username} alle {ora_full} del {date_str}")
-    except Exception as e:
-        app.logger.error(f"Mancata Timbratura: errore inserimento timbrature - {e}")
-        result["error"] = f"Errore inserimento timbratura: {e}"
-        return result
+        result["was_preinserted"] = True
+        app.logger.info(f"Mancata Timbratura: timbratura {tipo_interno} già pre-inserita per {username}, aggiornata ora={ora_full} ora_mod={ora_mod_calc}")
+    else:
+        try:
+            db.execute(f"""
+                INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method, gps_lat, gps_lon, location_name)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (username, tipo_interno, date_str, ora_full, ora_mod_calc, now_ts, "manual_request", None, None, "Mancata Timbratura"))
+            result["inserted_timbratura"] = True
+            app.logger.info(f"Mancata Timbratura: inserita timbratura {tipo_interno} per {username} alle {ora_full} (mod: {ora_mod_calc}) del {date_str}")
+        except Exception as e:
+            app.logger.error(f"Mancata Timbratura: errore inserimento timbrature - {e}")
+            result["error"] = f"Errore inserimento timbratura: {e}"
+            return result
     
     # 2. Se CedolinoWeb è attivo, invia la timbrata
     settings = get_cedolino_settings()
@@ -21185,7 +23809,7 @@ def _process_approved_mancata_timbratura(
             if user_row:
                 display_name = (user_row['display_name'] if isinstance(user_row, dict) else user_row[0]) or username
             
-            # Usa la funzione esistente per inviare a CedolinoWeb
+            # Usa la funzione esistente per inviare a CedolinoWeb (con ora_mod arrotondata)
             success, external_id, error, request_url = send_timbrata_utente(
                 db=db,
                 username=username,
@@ -21193,7 +23817,7 @@ def _process_approved_mancata_timbratura(
                 timeframe_id=timeframe_id,
                 data_riferimento=date_str,
                 ora_originale=ora_full,
-                ora_modificata=ora_full,
+                ora_modificata=ora_mod_calc,
                 overtime_request_id=None  # Non bloccare, è già approvata
             )
             
@@ -21480,9 +24104,9 @@ def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
                 f"confermato={rounded_start}-{rounded_end}"
             )
     
-    # Se è Fuori Flessibilità, gestisci l'aggiornamento della timbratura
-    # Identifica Fuori Flessibilità dal type_name (non serve passare flex_type dal frontend)
-    is_fuori_flessibilita = (type_name == "Fuori Flessibilità")
+    # Se è richiesta Anticipo/Fuori Flessibilità, gestisci l'aggiornamento della timbratura
+    # Compatibile con nome legacy e nuovo nome
+    is_fuori_flessibilita = (type_name in ("Fuori Flessibilità", "Richiesta anticipo ingresso"))
     flex_result = None
     if is_fuori_flessibilita:
         try:
@@ -21524,6 +24148,65 @@ def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
             import traceback
             app.logger.error(f"Errore processing Mancata Timbratura: {e}\n{traceback.format_exc()}")
             timbratura_result = {"error": str(e)}
+
+    # Se è una Mancata Timbratura RESPINTA, rimuovi la timbratura pre-inserita (gruppo produzione)
+    if value_type == "timbratura" and status == "rejected":
+        try:
+            placeholder_rej = "%s" if DB_VENDOR == "mysql" else "?"
+            # Verifica se l'utente appartiene a un gruppo di produzione
+            _prod_check = db.execute(
+                f"""SELECT g.is_production FROM app_users u
+                    JOIN user_groups g ON u.group_id = g.id
+                    WHERE u.username = {placeholder_rej}""",
+                (target_username,)
+            ).fetchone()
+            _is_prod = bool(
+                (_prod_check['is_production'] if isinstance(_prod_check, dict) else _prod_check[0]) if _prod_check else False
+            )
+            if _is_prod and extra_data_str:
+                _rej_ed = json.loads(extra_data_str) if isinstance(extra_data_str, str) else extra_data_str
+                _rej_tipo = _rej_ed.get("tipo_timbratura")
+                _TIPO_MAP_REJ = {
+                    "ingresso": "inizio_giornata",
+                    "uscita": "fine_giornata",
+                    "pausa_in": "inizio_pausa",
+                    "pausa_out": "fine_pausa"
+                }
+                _rej_tipo_interno = _TIPO_MAP_REJ.get(_rej_tipo, _rej_tipo)
+                _rej_date = str(date_from)[:10] if hasattr(date_from, 'strftime') else str(date_from)[:10]
+
+                deleted = db.execute(
+                    f"""DELETE FROM timbrature
+                        WHERE username = {placeholder_rej} AND data = {placeholder_rej}
+                          AND tipo = {placeholder_rej} AND method = 'manual_request'
+                          AND location_name = 'Mancata Timbratura'""",
+                    (target_username, _rej_date, _rej_tipo_interno)
+                )
+                db.commit()
+                app.logger.info(
+                    f"Mancata Timbratura RESPINTA: rimossa timbratura pre-inserita {_rej_tipo_interno} "
+                    f"per {target_username} del {_rej_date} (gruppo produzione)"
+                )
+                timbratura_result = {"removed_preinserted": True, "tipo": _rej_tipo_interno}
+        except Exception as _rej_e:
+            app.logger.error(f"Errore rimozione timbratura pre-inserita: {_rej_e}")
+            import traceback
+            app.logger.error(f"Traceback: {traceback.format_exc()}")
+
+    # Se è richiesta Deroga Pausa Ridotta, ricalcola ora_mod daily in base all'esito admin
+    break_reduction_result = None
+    try:
+        extra_data_obj = json.loads(extra_data_str) if isinstance(extra_data_str, str) else (extra_data_str or {})
+        if isinstance(extra_data_obj, dict) and extra_data_obj.get("created_reason") == "break_reduction_short_pause":
+            break_reduction_result = _process_break_reduction_review(
+                db=db,
+                username=target_username,
+                date_from=date_from,
+                status=status,
+                extra_data_str=extra_data_str,
+            )
+    except Exception as e:
+        app.logger.warning(f"Errore post-review Deroga Pausa Ridotta: {e}")
     
     # Invia notifica push all'utente
     _send_request_review_notification(
@@ -21552,6 +24235,8 @@ def api_admin_user_request_review(request_id: int) -> ResponseReturnValue:
         response["timbratura_result"] = timbratura_result
     if flex_result:
         response["flex_result"] = flex_result
+    if break_reduction_result:
+        response["break_reduction_result"] = break_reduction_result
     return jsonify(response)
 
 
@@ -21604,14 +24289,12 @@ def api_admin_user_request_delete(request_id: int) -> ResponseReturnValue:
 def user_requests_page() -> ResponseReturnValue:
     """Pagina utente per inviare richieste (ferie, permessi, rimborsi, ecc.)."""
     db = get_db()
-    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_requests.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
-        magazzino_enabled=magazzino_enabled,
     )
 
 
@@ -21620,14 +24303,12 @@ def user_requests_page() -> ResponseReturnValue:
 def user_turni_page() -> ResponseReturnValue:
     """Pagina utente per visualizzare i propri turni."""
     db = get_db()
-    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_turni.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
-        magazzino_enabled=magazzino_enabled,
     )
 
 
@@ -21636,14 +24317,12 @@ def user_turni_page() -> ResponseReturnValue:
 def user_notifications_page() -> ResponseReturnValue:
     """Pagina utente per visualizzare lo storico delle notifiche push."""
     db = get_db()
-    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_notifications.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
-        magazzino_enabled=magazzino_enabled,
     )
 
 
@@ -21652,14 +24331,12 @@ def user_notifications_page() -> ResponseReturnValue:
 def user_storico_timbrature_page() -> ResponseReturnValue:
     """Pagina utente per visualizzare lo storico delle timbrature per mese."""
     db = get_db()
-    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_storico_timbrature.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
-        magazzino_enabled=magazzino_enabled,
     )
 
 
@@ -21749,17 +24426,17 @@ def api_user_storico_timbrature() -> ResponseReturnValue:
     # Recupera le richieste dell'utente per il mese (solo giustificativi approvati)
     requests_by_date = {}
     
-    # Recupera anche le richieste "Fuori Flessibilità" (qualunque stato) per mostrare i motivi delle normalizzazioni
+    # Recupera anche le richieste "Anticipo ingresso" (qualunque stato) per mostrare i motivi delle normalizzazioni
     fuori_flex_by_date = {}
     try:
-        # Query per richieste Fuori Flessibilità (tutte, non solo approvate)
+                # Query per richieste Anticipo ingresso/Fuori Flessibilità (tutte, non solo approvate)
         fuori_flex_rows = db.execute(f"""
             SELECT ur.id, ur.date_from, ur.status, ur.notes, ur.review_notes, ur.extra_data,
                    ur.reviewed_by, ur.reviewed_ts
             FROM user_requests ur
             LEFT JOIN request_types rt ON ur.request_type_id = rt.id
             WHERE ur.username = {placeholder}
-              AND rt.name = 'Fuori Flessibilità'
+                            AND (rt.name = 'Fuori Flessibilità' OR rt.name = 'Richiesta anticipo ingresso')
               AND ur.date_from >= {placeholder}
               AND ur.date_from < {placeholder}
             ORDER BY ur.date_from ASC
@@ -21895,36 +24572,93 @@ def api_user_storico_timbrature() -> ResponseReturnValue:
     rounding_mode = user_rules.get('rounding_mode', 'single')
     
     # Recupera il turno dell'utente da employee_shifts (per mostrare nel riepilogo)
+    # Fetch TUTTI i turni della settimana per usare quello corretto per ogni giorno
     user_shift = None
+    shifts_by_dow = {}  # day_of_week → shift dict
     try:
         ensure_employee_shifts_table(db)
-        # Prendo il turno del lunedì come riferimento (day_of_week=0)
-        shift_row = db.execute(f"""
-            SELECT start_time, end_time, break_start, break_end
+        all_shift_rows = db.execute(f"""
+            SELECT day_of_week, start_time, end_time, break_start, break_end
             FROM employee_shifts
             WHERE username = {placeholder} AND is_active = 1
             ORDER BY day_of_week ASC
-            LIMIT 1
-        """, (username,)).fetchone()
+        """, (username,)).fetchall()
         
-        if shift_row:
-            if isinstance(shift_row, Mapping):
-                user_shift = {
-                    "start": str(shift_row['start_time'])[:5] if shift_row['start_time'] else None,
-                    "end": str(shift_row['end_time'])[:5] if shift_row['end_time'] else None,
-                    "break_start": str(shift_row['break_start'])[:5] if shift_row['break_start'] else None,
-                    "break_end": str(shift_row['break_end'])[:5] if shift_row['break_end'] else None,
+        for sr in all_shift_rows:
+            if isinstance(sr, Mapping):
+                dow = sr['day_of_week']
+                s = {
+                    "start": str(sr['start_time'])[:5] if sr['start_time'] else None,
+                    "end": str(sr['end_time'])[:5] if sr['end_time'] else None,
+                    "break_start": str(sr['break_start'])[:5] if sr['break_start'] else None,
+                    "break_end": str(sr['break_end'])[:5] if sr['break_end'] else None,
                 }
             else:
-                user_shift = {
-                    "start": str(shift_row[0])[:5] if shift_row[0] else None,
-                    "end": str(shift_row[1])[:5] if shift_row[1] else None,
-                    "break_start": str(shift_row[2])[:5] if shift_row[2] else None,
-                    "break_end": str(shift_row[3])[:5] if shift_row[3] else None,
+                dow = sr[0]
+                s = {
+                    "start": str(sr[1])[:5] if sr[1] else None,
+                    "end": str(sr[2])[:5] if sr[2] else None,
+                    "break_start": str(sr[3])[:5] if sr[3] else None,
+                    "break_end": str(sr[4])[:5] if sr[4] else None,
                 }
+            shifts_by_dow[dow] = s
+            if user_shift is None:
+                user_shift = s  # default: primo turno trovato
     except Exception as e:
         print(f"[storico-timbrature] Errore recupero turno utente: {e}")
     
+    # Recupera le richieste Deroga Pausa Ridotta per il mese
+    break_reduction_by_date = {}
+    try:
+        br_rows = db.execute(f"""
+            SELECT ur.id, ur.date_from, ur.status, ur.notes, ur.extra_data
+            FROM user_requests ur
+            JOIN request_types rt ON ur.request_type_id = rt.id
+            WHERE ur.username = {placeholder}
+              AND rt.name = 'Deroga Pausa Ridotta'
+              AND ur.date_from >= {placeholder} AND ur.date_from < {placeholder}
+            ORDER BY ur.created_ts DESC
+        """, (username, first_day, last_day)).fetchall()
+        for br_row in br_rows:
+            if isinstance(br_row, Mapping):
+                d = str(br_row["date_from"])[:10]
+                br_extra = {}
+                if br_row.get("extra_data"):
+                    try:
+                        br_extra = json.loads(br_row["extra_data"]) if isinstance(br_row["extra_data"], str) else br_row["extra_data"]
+                    except:
+                        pass
+                if d not in break_reduction_by_date:
+                    break_reduction_by_date[d] = {
+                        "id": br_row["id"],
+                        "status": br_row["status"],
+                        "notes": br_row.get("notes"),
+                        "planned_break_minutes": br_extra.get("planned_break_minutes"),
+                        "effective_break_minutes": br_extra.get("effective_break_minutes"),
+                        "rounded_break_minutes": br_extra.get("rounded_break_minutes"),
+                        "break_reduction_minutes": br_extra.get("break_reduction_minutes"),
+                    }
+            else:
+                d = str(br_row[1])[:10]
+                br_extra = {}
+                if br_row[4]:
+                    try:
+                        br_extra = json.loads(br_row[4]) if isinstance(br_row[4], str) else br_row[4]
+                    except:
+                        pass
+                if d not in break_reduction_by_date:
+                    break_reduction_by_date[d] = {
+                        "id": br_row[0],
+                        "status": br_row[2],
+                        "notes": br_row[3],
+                        "planned_break_minutes": br_extra.get("planned_break_minutes"),
+                        "effective_break_minutes": br_extra.get("effective_break_minutes"),
+                        "rounded_break_minutes": br_extra.get("rounded_break_minutes"),
+                        "break_reduction_minutes": br_extra.get("break_reduction_minutes"),
+                    }
+    except Exception as e:
+        print(f"[storico-timbrature] Errore recupero Deroga Pausa Ridotta: {e}")
+
     # Calcola ore lavorate per ogni giorno
     timbrature_by_day = {}
     debug_calcs = []  # Per debug
@@ -21967,18 +24701,32 @@ def api_user_storico_timbrature() -> ResponseReturnValue:
                 
                 # Se rounding_mode è 'daily', applica arrotondamento giornaliero
                 if rounding_mode == 'daily' and total_minutes > 0:
+                    # Usa il turno specifico del giorno della settimana (non sempre il lunedì)
+                    try:
+                        day_of_week = datetime.strptime(data, '%Y-%m-%d').weekday()  # Monday=0
+                        day_shift = shifts_by_dow.get(day_of_week) or user_shift
+                    except Exception:
+                        day_shift = user_shift
+
                     # Calcola pausa prevista dal turno (da break_start e break_end)
                     pausa_turno_minuti = 60  # Default 1 ora
-                    if user_shift and user_shift.get('break_start') and user_shift.get('break_end'):
+                    if day_shift and day_shift.get('break_start') and day_shift.get('break_end'):
                         try:
-                            bs_h, bs_m = map(int, user_shift['break_start'].split(':')[:2])
-                            be_h, be_m = map(int, user_shift['break_end'].split(':')[:2])
+                            bs_h, bs_m = map(int, day_shift['break_start'].split(':')[:2])
+                            be_h, be_m = map(int, day_shift['break_end'].split(':')[:2])
                             pausa_turno_minuti = (be_h * 60 + be_m) - (bs_h * 60 + bs_m)
                         except:
                             pass
                     
-                    # Usa SEMPRE la pausa pianificata per il calcolo (coerente con _calcola_ora_fine_daily)
-                    pausa_per_calcolo = pausa_turno_minuti if pausa_minuti > 0 else 0
+                    # Se deroga pausa ridotta APPROVATA per questo giorno, usa la pausa effettiva
+                    # timbrata (ora_mod già contiene il valore arrotondato salvato al momento della timbrata)
+                    br_day = break_reduction_by_date.get(data)
+                    if br_day and br_day.get('status') == 'approved' and pausa_minuti > 0:
+                        # Deroga approvata: usa la pausa timbrata (ora_mod = già arrotondata)
+                        pausa_per_calcolo = pausa_minuti
+                    else:
+                        # Comportamento standard: usa pausa pianificata se pausa è stata timbrata
+                        pausa_per_calcolo = pausa_turno_minuti if pausa_minuti > 0 else 0
                     
                     result = calcola_ore_giornaliere_arrotondate(
                         ora_inizio, ora_fine, pausa_per_calcolo, user_rules
@@ -21997,8 +24745,8 @@ def api_user_storico_timbrature() -> ResponseReturnValue:
                         "blocchi_straordinario": result['blocchi_straordinario'],
                         "tipo_arrotondamento": result['tipo_arrotondamento'],
                         # Aggiungi dati turno per il riepilogo
-                        "turno_inizio": user_shift.get('start') if user_shift else None,
-                        "turno_fine": user_shift.get('end') if user_shift else None,
+                        "turno_inizio": day_shift.get('start') if day_shift else None,
+                        "turno_fine": day_shift.get('end') if day_shift else None,
                         "pausa_turno_minuti": pausa_turno_minuti,  # Pausa prevista dal turno
                     }
                     debug_calcs.append(f"{data}: {ora_inizio}->{ora_fine} pausa={pausa_minuti} netto={total_minutes}m => arrotondato={ore_lavorate}")
@@ -22012,6 +24760,7 @@ def api_user_storico_timbrature() -> ResponseReturnValue:
             "timbrature": timbrature_list,
             "requests": requests_by_date.get(data, []),
             "fuori_flessibilita": fuori_flex_by_date.get(data, []),  # Richieste fuori flessibilità per mostrare motivi
+            "break_reduction": break_reduction_by_date.get(data),  # Deroga Pausa Ridotta per il giorno
             "ora_inizio": ora_inizio,
             "ora_fine": ora_fine,
             "pausa_minuti": pausa_minuti,
@@ -22036,14 +24785,15 @@ def api_user_storico_timbrature() -> ResponseReturnValue:
             req_copy["data"] = date_str
             all_requests.append(req_copy)
     
-    # Recupera le richieste Extra Turno (type 9) per il mese, qualsiasi stato
+    # Recupera le richieste Extra Turno (type 4) per il mese, qualsiasi stato
     extra_turno_by_date = {}
     try:
         et_rows = db.execute(f"""
             SELECT ur.id, ur.date_from, ur.status, ur.value_amount, ur.reviewed_by
             FROM user_requests ur
+            JOIN request_types rt ON ur.request_type_id = rt.id
             WHERE ur.username = {placeholder}
-              AND ur.request_type_id = 9
+              AND rt.name = 'Extra Turno'
               AND ur.date_from >= {placeholder} AND ur.date_from < {placeholder}
             ORDER BY ur.id DESC
         """, (username, first_day, last_day)).fetchall()
@@ -22118,14 +24868,12 @@ def api_user_storico_timbrature() -> ResponseReturnValue:
 def user_documents_page() -> ResponseReturnValue:
     """Pagina utente per visualizzare i documenti (circolari, comunicazioni, buste paga)."""
     db = get_db()
-    magazzino_enabled = is_module_enabled(db, "magazzino")
     return render_template(
         "user_documents.html",
         username=session.get("user"),
         user_display=session.get("user_display", session.get("user")),
         user_initials=session.get("user_initials", "U"),
         user_role=session.get("user_role", "Utente"),
-        magazzino_enabled=magazzino_enabled,
     )
 
 
@@ -22366,6 +25114,10 @@ def api_user_requests_list() -> ResponseReturnValue:
                 # Per timbratura manuale
                 req_item["ora_timbratura"] = extra_data.get("ora_timbratura")
                 req_item["motivazione"] = extra_data.get("motivazione")
+                # Per giustificazione ritardo
+                req_item["late_minutes"] = extra_data.get("late_minutes")
+                req_item["ora_mod"] = extra_data.get("ora_mod")
+                req_item["flessibilita_ingresso_minuti"] = extra_data.get("flessibilita_ingresso_minuti")
             
             requests.append(req_item)
         else:
@@ -22431,6 +25183,10 @@ def api_user_requests_list() -> ResponseReturnValue:
                 # Per timbratura manuale
                 req_item["ora_timbratura"] = extra_data.get("ora_timbratura")
                 req_item["motivazione"] = extra_data.get("motivazione")
+                # Per giustificazione ritardo
+                req_item["late_minutes"] = extra_data.get("late_minutes")
+                req_item["ora_mod"] = extra_data.get("ora_mod")
+                req_item["flessibilita_ingresso_minuti"] = extra_data.get("flessibilita_ingresso_minuti")
             
             requests.append(req_item)
 
@@ -22497,6 +25253,7 @@ def api_user_requests_create() -> ResponseReturnValue:
         notes = (request.form.get("notes") or "").strip()
         cdc = (request.form.get("cdc") or "").strip() or None
         tratte = None  # Non supportato via form per ora
+        extra_data_json = request.form.get("extra_data")  # Supporto extra_data via form
         # Supporta sia 'attachment' singolo che 'attachments' multipli
         attachment_files = request.files.getlist("attachments") or []
         single_attachment = request.files.get("attachment")
@@ -22591,7 +25348,28 @@ def api_user_requests_create() -> ResponseReturnValue:
     
     # extra_data_json può essere valorizzato dal frontend (es. per permessi con orari)
     # Se non viene passato, rimane None
-    
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONTROLLO DUPLICATI: blocca richieste dello stesso tipo con date sovrapposte
+    # Considera solo richieste non rifiutate (pending o approved).
+    # ═══════════════════════════════════════════════════════════════════════════
+    _dup_end = date_end or date_start  # se date_end è None, la richiesta è per un solo giorno
+    placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+    existing_dup = db.execute(
+        f"""SELECT id, date_from, date_to, status FROM user_requests
+            WHERE username = {placeholder}
+              AND request_type_id = {placeholder}
+              AND status != 'rejected'
+              AND date_from <= {placeholder}
+              AND COALESCE(date_to, date_from) >= {placeholder}
+        """,
+        (username, request_type_id, _dup_end, date_start)
+    ).fetchone()
+    if existing_dup:
+        _dup_status = existing_dup['status'] if isinstance(existing_dup, dict) else existing_dup[3]
+        _status_label = "in attesa di approvazione" if _dup_status == "pending" else "già approvata"
+        return jsonify({"error": f"Esiste già una richiesta dello stesso tipo per le date selezionate ({_status_label}). Controlla lo storico."}), 409
+
     if DB_VENDOR == "mysql":
         db.execute("""
             INSERT INTO user_requests (user_id, username, request_type_id, date_from, date_to, value_amount, notes, cdc, attachment_path, tratte, extra_data, status, created_ts, updated_ts)
@@ -22605,7 +25383,266 @@ def api_user_requests_create() -> ResponseReturnValue:
     
     db.commit()
 
-    return jsonify({"ok": True, "message": "Richiesta inviata con successo"})
+    # ═══════════════════════════════════════════════════════════════════════════
+    # MANCATA TIMBRATURA + GRUPPO PRODUZIONE: sblocco immediato del timeframe
+    # Per operatori del gruppo produzione, quando si invia una richiesta di
+    # mancata timbratura, si inserisce subito la timbratura (senza attendere
+    # l'approvazione admin) in modo da sbloccare il timeframe e gestire
+    # l'attività come se l'utente avesse effettivamente timbrato.
+    # La sync a CedolinoWeb avverrà solo all'approvazione admin.
+    # Se l'admin rifiuta, la timbratura verrà rimossa.
+    # ═══════════════════════════════════════════════════════════════════════════
+    production_preinserted = False
+    production_activity_data = None
+    _tipo_interno = None
+    if value_type == "timbratura":
+        try:
+            placeholder = "%s" if DB_VENDOR == "mysql" else "?"
+            # Verifica se l'utente appartiene a un gruppo di produzione
+            _prod_row = db.execute(
+                f"""SELECT g.is_production FROM app_users u
+                    JOIN user_groups g ON u.group_id = g.id
+                    WHERE u.username = {placeholder}""",
+                (username,)
+            ).fetchone()
+            _is_production = bool(
+                (_prod_row['is_production'] if isinstance(_prod_row, dict) else _prod_row[0]) if _prod_row else False
+            )
+
+            if _is_production and extra_data_json:
+                # Parse extra_data per estrarre tipo e ora
+                _ed = json.loads(extra_data_json) if isinstance(extra_data_json, str) else extra_data_json
+                _tipo_timb = _ed.get("tipo_timbratura")   # ingresso/uscita/pausa_in/pausa_out
+                _ora_timb = _ed.get("ora_timbratura")      # HH:MM
+
+                if _tipo_timb and _ora_timb:
+                    _TIPO_MAP = {
+                        "ingresso": "inizio_giornata",
+                        "uscita": "fine_giornata",
+                        "pausa_in": "inizio_pausa",
+                        "pausa_out": "fine_pausa"
+                    }
+                    _tipo_interno = _TIPO_MAP.get(_tipo_timb, _tipo_timb)
+                    _ora_full = f"{_ora_timb}:00" if len(_ora_timb) == 5 else _ora_timb
+                    _date_str = str(date_start)[:10]
+
+                    # ── Calcola ora_mod con le stesse regole della timbratura normale ──
+                    _mt_rules = get_user_timbratura_rules(db, username)
+                    _mt_turno_start = None
+                    _mt_turno_end = None
+                    if _tipo_interno in ('inizio_giornata', 'fine_giornata'):
+                        # Cerca turno in employee_shifts
+                        try:
+                            ensure_employee_shifts_table(db)
+                            _mt_shift = db.execute(
+                                f"""SELECT start_time, end_time FROM employee_shifts
+                                   WHERE username = {placeholder} AND day_of_week = {placeholder} AND is_active = 1
+                                   ORDER BY start_time ASC LIMIT 1""",
+                                (username, datetime.strptime(_date_str, '%Y-%m-%d').weekday())
+                            ).fetchone()
+                            if _mt_shift:
+                                _st = _mt_shift['start_time'] if isinstance(_mt_shift, dict) else _mt_shift[0]
+                                _et = _mt_shift['end_time'] if isinstance(_mt_shift, dict) else _mt_shift[1]
+                                if _st:
+                                    if hasattr(_st, 'total_seconds'):
+                                        _ts = int(_st.total_seconds())
+                                        _mt_turno_start = f"{_ts // 3600:02d}:{(_ts % 3600) // 60:02d}"
+                                    else:
+                                        _mt_turno_start = str(_st)[:5]
+                                if _et:
+                                    if hasattr(_et, 'total_seconds'):
+                                        _ts2 = int(_et.total_seconds())
+                                        _mt_turno_end = f"{_ts2 // 3600:02d}:{(_ts2 % 3600) // 60:02d}"
+                                    else:
+                                        _mt_turno_end = str(_et)[:5]
+                        except Exception:
+                            pass
+                        # Se non trovato, cerca in rentman_plannings
+                        if not _mt_turno_start:
+                            _mt_urow = db.execute(
+                                f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+                                (username,)
+                            ).fetchone()
+                            if _mt_urow:
+                                _mt_cid = (_mt_urow['rentman_crew_id'] if isinstance(_mt_urow, dict) else _mt_urow[0])
+                                if _mt_cid:
+                                    _mt_trow = db.execute(
+                                        f"""SELECT
+                                               (SELECT plan_start FROM rentman_plannings
+                                                WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+                                                ORDER BY plan_start ASC LIMIT 1) as first_start,
+                                               (SELECT plan_end FROM rentman_plannings
+                                                WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+                                                ORDER BY plan_end DESC LIMIT 1) as last_end
+                                        """, (_mt_cid, _date_str, _mt_cid, _date_str)
+                                    ).fetchone()
+                                    if _mt_trow:
+                                        _ps = _mt_trow['first_start'] if isinstance(_mt_trow, dict) else _mt_trow[0]
+                                        _pe = _mt_trow['last_end'] if isinstance(_mt_trow, dict) else _mt_trow[1]
+                                        if _ps and not _mt_turno_start:
+                                            if hasattr(_ps, 'strftime'):
+                                                _mt_turno_start = _ps.strftime("%H:%M")
+                                            else:
+                                                _ps_str = str(_ps)
+                                                _mt_turno_start = _ps_str[11:16] if len(_ps_str) > 11 else _ps_str[:5]
+                                        if _pe and not _mt_turno_end:
+                                            if hasattr(_pe, 'strftime'):
+                                                _mt_turno_end = _pe.strftime("%H:%M")
+                                            else:
+                                                _pe_str = str(_pe)
+                                                _mt_turno_end = _pe_str[11:16] if len(_pe_str) > 11 else _pe_str[:5]
+
+                    _ora_mod_calc = calcola_ora_mod(_ora_full, _tipo_interno, _mt_turno_start, _mt_rules)
+                    app.logger.info(
+                        f"Mancata Timbratura PRODUZIONE rounding: ora={_ora_full}, tipo={_tipo_interno}, "
+                        f"turno_start={_mt_turno_start}, ora_mod={_ora_mod_calc}")
+
+                    # Verifica che non esista già la stessa timbratura
+                    _existing = db.execute(
+                        f"""SELECT id FROM timbrature
+                            WHERE username = {placeholder} AND data = {placeholder}
+                              AND tipo = {placeholder}""",
+                        (username, _date_str, _tipo_interno)
+                    ).fetchone()
+
+                    if not _existing:
+                        db.execute(f"""
+                            INSERT INTO timbrature (username, tipo, data, ora, ora_mod, created_ts, method, gps_lat, gps_lon, location_name)
+                            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+                        """, (username, _tipo_interno, _date_str, _ora_full, _ora_mod_calc, now, "manual_request", None, None, "Mancata Timbratura"))
+                        db.commit()
+                        production_preinserted = True
+                        app.logger.info(
+                            f"Mancata Timbratura PRODUZIONE: pre-inserita timbratura {_tipo_interno} per {username} "
+                            f"alle {_ora_full} (mod: {_ora_mod_calc}) del {_date_str} (in attesa di approvazione admin)"
+                        )
+                    else:
+                        # La timbratura esiste già → consideriamo comunque come pre-inserita
+                        production_preinserted = True
+                        app.logger.info(
+                            f"Mancata Timbratura PRODUZIONE: timbratura {_tipo_interno} già presente per {username} del {_date_str}, skip insert"
+                        )
+
+                    # ── Calcola timestamp basato su ora_mod per l'attività produzione ──
+                    try:
+                        _om_parts = _ora_mod_calc.split(':')
+                        _om_dt = datetime.strptime(_date_str, '%Y-%m-%d').replace(
+                            hour=int(_om_parts[0]), minute=int(_om_parts[1]), second=0)
+                        _timbratura_ts_mod = int(_om_dt.timestamp() * 1000)
+                    except Exception:
+                        _timbratura_ts_mod = now
+
+                    # ── Genera dati production_activity per il frontend (stessa logica di api_timbratura_registra) ──
+                    if production_preinserted and _tipo_interno == 'inizio_giornata':
+                        try:
+                            _user_info = db.execute(
+                                f"SELECT group_id, rentman_crew_id FROM app_users WHERE username = {placeholder}",
+                                (username,)
+                            ).fetchone()
+                            _user_crew_id = (_user_info['rentman_crew_id'] if isinstance(_user_info, dict) else _user_info[1]) if _user_info else None
+
+                            _prod_activity = None
+                            if _user_crew_id:
+                                _turni = db.execute(
+                                    f"""SELECT project_code, project_name, function_name, is_leader, gestione_squadra
+                                        FROM rentman_plannings
+                                        WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+                                          AND sent_to_webservice = 1 AND (is_obsolete = 0 OR is_obsolete IS NULL)
+                                        ORDER BY plan_start ASC""",
+                                    (_user_crew_id, _date_str)
+                                ).fetchall()
+
+                                _turno_popup = None
+                                for _t in _turni:
+                                    _t_leader = bool(_t['is_leader'] if isinstance(_t, dict) else _t[3])
+                                    _t_gest = bool(_t['gestione_squadra'] if isinstance(_t, dict) else _t[4])
+                                    if _t_leader or _t_gest:
+                                        continue
+                                    _turno_popup = _t
+                                    break
+
+                                if _turno_popup:
+                                    _p_code = _turno_popup['project_code'] if isinstance(_turno_popup, dict) else _turno_popup[0]
+                                    _p_name = _turno_popup['project_name'] if isinstance(_turno_popup, dict) else _turno_popup[1]
+                                    _p_func = _turno_popup['function_name'] if isinstance(_turno_popup, dict) else _turno_popup[2]
+                                    if _p_func:
+                                        _prod_activity = {
+                                            "detected": True,
+                                            "project_code": _p_code,
+                                            "project_name": _p_name,
+                                            "activity_label": _p_func,
+                                            "action": "start",
+                                            "timbratura_ts": _timbratura_ts_mod
+                                        }
+                                    else:
+                                        _prod_activity = {
+                                            "detected": True, "project_code": "", "project_name": "",
+                                            "activity_label": "", "action": "start",
+                                            "manual_selection": True, "requires_project_selection": True,
+                                            "requires_activity_selection": True, "timbratura_ts": _timbratura_ts_mod
+                                        }
+                                else:
+                                    _prod_activity = {
+                                        "detected": True, "project_code": "", "project_name": "",
+                                        "activity_label": "", "action": "start",
+                                        "manual_selection": True, "requires_project_selection": True,
+                                        "requires_activity_selection": True, "timbratura_ts": _timbratura_ts_mod
+                                    }
+                            else:
+                                _prod_activity = {
+                                    "detected": True, "project_code": "", "project_name": "",
+                                    "activity_label": "", "action": "start",
+                                    "manual_selection": True, "requires_project_selection": True,
+                                    "requires_activity_selection": True, "timbratura_ts": _timbratura_ts_mod
+                                }
+
+                            if _prod_activity:
+                                production_activity_data = _prod_activity
+                        except Exception as _pa_e:
+                            app.logger.warning(f"Errore generazione production_activity per mancata timbratura: {_pa_e}")
+
+                    # ── Per pausa/resume/stop: gestisci timer produzione ──
+                    if production_preinserted and _tipo_interno in ('inizio_pausa', 'fine_pausa', 'fine_giornata'):
+                        try:
+                            _user_info2 = db.execute(
+                                f"SELECT rentman_crew_id FROM app_users WHERE username = {placeholder}",
+                                (username,)
+                            ).fetchone()
+                            _crew2 = (_user_info2['rentman_crew_id'] if isinstance(_user_info2, dict) else _user_info2[0]) if _user_info2 else None
+                            _proj_code = None
+                            if _crew2:
+                                _t2 = db.execute(
+                                    f"""SELECT project_code FROM rentman_plannings
+                                        WHERE crew_id = {placeholder} AND planning_date = {placeholder}
+                                          AND sent_to_webservice = 1 AND (is_obsolete = 0 OR is_obsolete IS NULL)
+                                        ORDER BY plan_start ASC LIMIT 1""",
+                                    (_crew2, _date_str)
+                                ).fetchone()
+                                if _t2:
+                                    _proj_code = _t2['project_code'] if isinstance(_t2, dict) else _t2[0]
+
+                            if _tipo_interno == 'inizio_pausa':
+                                _pause_production_timer(db, username, _proj_code)
+                            elif _tipo_interno == 'fine_pausa':
+                                _resume_production_timer(db, username, _proj_code)
+                            elif _tipo_interno == 'fine_giornata':
+                                _stop_production_timer(db, username, _proj_code)
+                        except Exception as _timer_e:
+                            app.logger.warning(f"Errore gestione timer produzione per mancata timbratura: {_timer_e}")
+
+        except Exception as _prod_e:
+            app.logger.error(f"Errore pre-inserimento mancata timbratura produzione: {_prod_e}")
+            import traceback
+            app.logger.error(f"Traceback: {traceback.format_exc()}")
+
+    resp = {"ok": True, "message": "Richiesta inviata con successo"}
+    if production_preinserted:
+        resp["production_preinserted"] = True
+        resp["production_tipo"] = _tipo_interno
+        resp["message"] = "Richiesta inviata. Timbratura registrata immediatamente (in attesa di conferma admin)."
+        if production_activity_data:
+            resp["production_activity"] = production_activity_data
+    return jsonify(resp)
 
 
 # Route per servire gli allegati delle richieste
@@ -24004,6 +27041,561 @@ def _send_overtime_review_notification(db, username: str, date: str, minutes: in
         app.logger.info(f"Notifica revisione Extra Turno inviata a {username}")
     except Exception as e:
         app.logger.error(f"Errore invio notifica revisione Extra Turno: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HR / Payroll Dashboard  (admin-only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/admin/payroll")
+@login_required
+def admin_payroll_page() -> ResponseReturnValue:
+    """Pagina Dashboard HR / Payroll — solo admin."""
+    if not is_admin_only():
+        abort(403)
+    return render_template("admin_payroll.html")
+
+
+@app.get("/api/admin/payroll-dashboard", endpoint="api_admin_payroll_dashboard")
+@login_required
+def api_admin_payroll_dashboard() -> ResponseReturnValue:
+    """API aggregata per la dashboard HR/Payroll — v2 professionale.
+
+    Query params:
+        month (int) – mese 1-12
+        year  (int) – anno
+        group (str) – id gruppo (opzionale)
+    """
+    if not is_admin_only():
+        return jsonify({"error": "forbidden"}), 403
+
+    from collections import defaultdict
+
+    month = _coerce_int(request.args.get("month")) or datetime.now().month
+    year = _coerce_int(request.args.get("year")) or datetime.now().year
+    group_filter = request.args.get("group") or None
+
+    db = get_db()
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+
+    # ── Date ranges (current + previous month for comparison) ──
+    first_day = datetime(year, month, 1).date()
+    if month == 12:
+        last_day = datetime(year + 1, 1, 1).date() - timedelta(days=1)
+    else:
+        last_day = datetime(year, month + 1, 1).date() - timedelta(days=1)
+
+    # Previous month
+    if month == 1:
+        prev_month, prev_year = 12, year - 1
+    else:
+        prev_month, prev_year = month - 1, year
+    prev_first = datetime(prev_year, prev_month, 1).date()
+    if prev_month == 12:
+        prev_last = datetime(prev_year + 1, 1, 1).date() - timedelta(days=1)
+    else:
+        prev_last = datetime(prev_year, prev_month + 1, 1).date() - timedelta(days=1)
+
+    first_day_str = first_day.isoformat()
+    last_day_str = last_day.isoformat()
+    prev_first_str = prev_first.isoformat()
+    prev_last_str = prev_last.isoformat()
+
+    # Count business days in current month
+    _bd = first_day
+    business_days_in_month = 0
+    while _bd <= last_day:
+        if _bd.weekday() < 5:
+            business_days_in_month += 1
+        _bd += timedelta(days=1)
+
+    # ── Employees ──
+    if group_filter:
+        users_rows = db.execute(
+            f"SELECT username, display_name, full_name, group_id FROM app_users WHERE role != 'admin' AND is_active = 1 AND group_id = {ph}",
+            (group_filter,)
+        ).fetchall()
+    else:
+        users_rows = db.execute(
+            "SELECT username, display_name, full_name, group_id FROM app_users WHERE role != 'admin' AND is_active = 1 ORDER BY display_name"
+        ).fetchall()
+
+    total_employees = len(users_rows)
+    username_set = {u["username"] for u in users_rows}
+    username_display = {u["username"]: (u["display_name"] or u["full_name"] or u["username"]) for u in users_rows}
+
+    # Headcount by group
+    headcount_by_group: Dict[str, int] = defaultdict(int)
+    try:
+        all_groups_rows = db.execute("SELECT id, name FROM user_groups ORDER BY name").fetchall()
+        group_names = {str(g["id"]): g["name"] for g in all_groups_rows}
+    except Exception:
+        group_names = {}
+
+    for u in users_rows:
+        gid = str(u["group_id"]) if u["group_id"] else "no_group"
+        gname = group_names.get(gid, "Senza gruppo")
+        headcount_by_group[gname] += 1
+
+    # ── 1. Richieste (user_requests + request_types) — current + previous month ──
+    def _fetch_requests(d_start: str, d_end: str):
+        try:
+            sql = f"""
+                SELECT ur.id, ur.username, ur.request_type_id, ur.date_from, ur.date_to,
+                       ur.value_amount, ur.notes, ur.status, ur.created_ts,
+                       rt.name AS type_name, rt.value_type, rt.abbreviation
+                FROM user_requests ur
+                JOIN request_types rt ON ur.request_type_id = rt.id
+                WHERE ur.date_from <= {ph} AND (ur.date_to >= {ph} OR ur.date_to IS NULL AND ur.date_from >= {ph})
+                ORDER BY ur.created_ts DESC
+            """
+            rows = db.execute(sql, (d_end, d_start, d_start)).fetchall()
+            if group_filter:
+                rows = [r for r in rows if r["username"] in username_set]
+            return rows
+        except Exception as e:
+            app.logger.error(f"Payroll dashboard - errore query richieste: {e}")
+            return []
+
+    req_rows = _fetch_requests(first_day_str, last_day_str)
+    prev_req_rows = _fetch_requests(prev_first_str, prev_last_str)
+
+    # Helper: parse date from row
+    def _parse_date(val, fallback):
+        if isinstance(val, str):
+            try: return datetime.strptime(val, "%Y-%m-%d").date()
+            except: return fallback
+        if hasattr(val, 'date'):
+            return val.date()
+        return val if hasattr(val, 'isoformat') else fallback
+
+    # Helper: compute request aggregates
+    def _aggregate_requests(rows, fd, ld):
+        _type_stats: Dict[str, Dict[str, int]] = {}
+        _status_summary = {"approved": 0, "pending": 0, "rejected": 0}
+        _absence_map: Dict[str, int] = {}
+        _overtime_mins = 0
+        _ot_by_week: Dict[int, int] = {}
+        _sick_days = 0
+        _absent_users: Dict[str, int] = defaultdict(int)  # username -> absence days
+
+        for r in rows:
+            tname = r["type_name"] or "Altro"
+            st = r["status"] or "pending"
+            if tname not in _type_stats:
+                _type_stats[tname] = {"approved": 0, "pending": 0, "rejected": 0}
+            if st in _type_stats[tname]:
+                _type_stats[tname][st] += 1
+            if st in _status_summary:
+                _status_summary[st] += 1
+
+            if st == "approved":
+                tname_lower = tname.lower()
+                is_absence = any(kw in tname_lower for kw in [
+                    "feri", "permess", "malatt", "rol", "congedo",
+                    "aspettativa", "infortunio", "lutto"
+                ])
+                if is_absence:
+                    d_from = _parse_date(r["date_from"], fd)
+                    d_to = _parse_date(r["date_to"] or r["date_from"], fd)
+                    eff_from = max(d_from, fd)
+                    eff_to = min(d_to, ld)
+                    n_days = max(0, (eff_to - eff_from).days + 1)
+                    _absence_map[tname] = _absence_map.get(tname, 0) + n_days
+                    _absent_users[r["username"]] += n_days
+                    if "malatt" in tname_lower or "infortunio" in tname_lower:
+                        _sick_days += n_days
+
+                if "extra" in tname_lower or "straordinari" in tname_lower:
+                    minutes = int(float(r["value_amount"] or 0))
+                    _overtime_mins += minutes
+                    d_from = _parse_date(r["date_from"], fd)
+                    if hasattr(d_from, 'isocalendar'):
+                        wk = d_from.isocalendar()[1]
+                        _ot_by_week[wk] = _ot_by_week.get(wk, 0) + minutes
+
+        return {
+            "type_stats": _type_stats,
+            "status_summary": _status_summary,
+            "absence_map": _absence_map,
+            "overtime_minutes": _overtime_mins,
+            "ot_by_week": _ot_by_week,
+            "sick_days": _sick_days,
+            "absent_users": dict(_absent_users),
+        }
+
+    curr_agg = _aggregate_requests(req_rows, first_day, last_day)
+    prev_agg = _aggregate_requests(prev_req_rows, prev_first, prev_last)
+
+    requests_by_type = [
+        {"type_name": k, "approved": v["approved"], "pending": v["pending"], "rejected": v["rejected"]}
+        for k, v in sorted(curr_agg["type_stats"].items(), key=lambda x: -(x[1]["approved"] + x[1]["pending"] + x[1]["rejected"]))
+    ]
+
+    total_absence_days = sum(curr_agg["absence_map"].values())
+    prev_absence_days = sum(prev_agg["absence_map"].values())
+    total_overtime_minutes = curr_agg["overtime_minutes"]
+    prev_overtime_minutes = prev_agg["overtime_minutes"]
+    total_sick_days = curr_agg["sick_days"]
+
+    absence_breakdown = [
+        {"type": k, "days": v}
+        for k, v in sorted(curr_agg["absence_map"].items(), key=lambda x: -x[1])
+    ]
+
+    overtime_weeks = [
+        {"label": f"Sett. {wk}", "minutes": curr_agg["ot_by_week"][wk]}
+        for wk in sorted(curr_agg["ot_by_week"].keys())
+    ]
+
+    # ── 2. Ritardi + turni ──
+    total_late_count = 0
+    prev_late_count = 0
+    shifts_map: Dict[str, Dict[int, str]] = {}
+    late_tolerance = 5
+    late_employees: Dict[str, int] = defaultdict(int)  # username -> count
+
+    try:
+        shifts_rows = db.execute(
+            "SELECT username, day_of_week, start_time FROM employee_shifts WHERE is_active = 1"
+        ).fetchall()
+        for sr in shifts_rows:
+            u = sr["username"]
+            if u not in shifts_map:
+                shifts_map[u] = {}
+            shifts_map[u][sr["day_of_week"]] = str(sr["start_time"])[:5] if sr["start_time"] else None
+
+        try:
+            rules_row = db.execute("SELECT tolleranza_ritardo_minuti FROM timbratura_rules LIMIT 1").fetchone()
+            late_tolerance = int(rules_row["tolleranza_ritardo_minuti"]) if rules_row else 5
+        except Exception:
+            late_tolerance = 5
+
+        def _count_lates(d_start, d_end):
+            _rows = db.execute(
+                f"SELECT username, data, ora FROM timbrature WHERE tipo = 'inizio_giornata' AND data >= {ph} AND data <= {ph}",
+                (d_start, d_end)
+            ).fetchall()
+            _count = 0
+            _late_map: Dict[str, int] = defaultdict(int)
+            for t in _rows:
+                uname = t["username"]
+                if group_filter and uname not in username_set:
+                    continue
+                t_data = _parse_date(t["data"], first_day)
+                t_ora = str(t["ora"])[:5] if t["ora"] else None
+                if not t_ora or not hasattr(t_data, 'weekday'):
+                    continue
+                dow = t_data.weekday()
+                shift_start = shifts_map.get(uname, {}).get(dow)
+                if not shift_start:
+                    continue
+                try:
+                    sh_h, sh_m = map(int, shift_start.split(":"))
+                    tb_h, tb_m = map(int, t_ora.split(":"))
+                    if (tb_h * 60 + tb_m) - (sh_h * 60 + sh_m) > late_tolerance:
+                        _count += 1
+                        _late_map[uname] += 1
+                except Exception:
+                    continue
+            return _count, dict(_late_map)
+
+        total_late_count, late_employees = _count_lates(first_day_str, last_day_str)
+        prev_late_count, _ = _count_lates(prev_first_str, prev_last_str)
+    except Exception as e:
+        app.logger.error(f"Payroll dashboard - errore ritardi: {e}")
+
+    # ── 3. Ore lavorate per dipendente ──
+    employee_hours: Dict[str, Dict[str, int]] = {}  # username -> {worked_minutes, overtime_minutes, days_worked}
+
+    def _calc_worked_hours(d_start, d_end):
+        _eh: Dict[str, Dict[str, int]] = {}
+        try:
+            timb_work_rows = db.execute(
+                f"""
+                SELECT username, data, tipo, ora FROM timbrature
+                WHERE data >= {ph} AND data <= {ph}
+                  AND tipo IN ('inizio_giornata', 'fine_giornata')
+                ORDER BY username, data, ora
+                """,
+                (d_start, d_end)
+            ).fetchall()
+
+            _timb_grouped: Dict[tuple, Dict[str, list]] = defaultdict(lambda: {"inizio_giornata": [], "fine_giornata": []})
+            for tw in timb_work_rows:
+                u = tw["username"]
+                if group_filter and u not in username_set:
+                    continue
+                d = str(tw["data"])
+                tipo = tw["tipo"]
+                ora = str(tw["ora"])[:8] if tw["ora"] else None
+                if ora:
+                    _timb_grouped[(u, d)][tipo].append(ora)
+
+            for (u, d), times in _timb_grouped.items():
+                starts = times["inizio_giornata"]
+                ends = times["fine_giornata"]
+                if starts and ends:
+                    try:
+                        first_start = min(starts)
+                        last_end = max(ends)
+                        sh, sm, ss = map(int, first_start.split(":"))
+                        eh, em, es = map(int, last_end.split(":"))
+                        mins = (eh * 60 + em) - (sh * 60 + sm)
+                        if mins > 0:
+                            if u not in _eh:
+                                _eh[u] = {"worked_minutes": 0, "overtime_minutes": 0, "days_worked": 0}
+                            _eh[u]["worked_minutes"] += mins
+                            _eh[u]["days_worked"] += 1
+                    except Exception:
+                        pass
+        except Exception as e:
+            app.logger.error(f"Payroll dashboard - errore ore: {e}")
+        return _eh
+
+    employee_hours = _calc_worked_hours(first_day_str, last_day_str)
+    prev_employee_hours = _calc_worked_hours(prev_first_str, prev_last_str)
+    missed_clocks_map: Dict[str, int] = {}
+
+    # Conta le richieste "Mancata Timbratura" da user_requests
+    # (ogni richiesta = un evento di mancata timbratura, indipendentemente dallo stato)
+    for r in req_rows:
+        tname = (r["type_name"] or "").strip()
+        if "mancata" in tname.lower() and "timbratura" in tname.lower():
+            u = r["username"]
+            if group_filter and u not in username_set:
+                continue
+            missed_clocks_map[u] = missed_clocks_map.get(u, 0) + 1
+
+    # Add overtime per employee
+    for r in req_rows:
+        if r["status"] == "approved":
+            tname_lower = (r["type_name"] or "").lower()
+            if "extra" in tname_lower or "straordinari" in tname_lower:
+                u = r["username"]
+                mins = int(float(r["value_amount"] or 0))
+                if u not in employee_hours:
+                    employee_hours[u] = {"worked_minutes": 0, "overtime_minutes": 0, "days_worked": 0}
+                employee_hours[u]["overtime_minutes"] += mins
+
+    # Build employee hours list with additional metrics
+    emp_hours_list = []
+    for u, data_ in employee_hours.items():
+        avg_daily = round(data_["worked_minutes"] / data_["days_worked"]) if data_["days_worked"] > 0 else 0
+        emp_hours_list.append({
+            "username": u,
+            "name": username_display.get(u, u),
+            "worked_minutes": data_["worked_minutes"],
+            "overtime_minutes": data_["overtime_minutes"],
+            "days_worked": data_["days_worked"],
+            "avg_daily_minutes": avg_daily,
+            "late_count": late_employees.get(u, 0),
+            "absence_days": curr_agg["absent_users"].get(u, 0),
+            "missed_clocks": missed_clocks_map.get(u, 0),
+        })
+    emp_hours_list.sort(key=lambda x: -(x["worked_minutes"] + x["overtime_minutes"]))
+
+    total_worked_minutes = sum(e["worked_minutes"] for e in emp_hours_list)
+    prev_worked_minutes = sum(v["worked_minutes"] for v in prev_employee_hours.values())
+
+    # Avg hours per employee per day
+    total_days_worked_all = sum(e["days_worked"] for e in emp_hours_list)
+    avg_hours_per_day = round(total_worked_minutes / total_days_worked_all / 60, 1) if total_days_worked_all > 0 else 0
+
+    # ── 4. Presenze giornaliere ──
+    daily_presences = []
+    total_work_days = 0
+    users_worked_set: set = set()
+
+    try:
+        timb_daily = db.execute(
+            f"""
+            SELECT data, username, MIN(ora) AS first_clock
+            FROM timbrature
+            WHERE tipo = 'inizio_giornata' AND data >= {ph} AND data <= {ph}
+            GROUP BY data, username
+            ORDER BY data
+            """,
+            (first_day_str, last_day_str)
+        ).fetchall()
+
+        day_data: Dict[str, Dict[str, Any]] = {}
+        for row in timb_daily:
+            d_str = str(row["data"])
+            u = row["username"]
+            if group_filter and u not in username_set:
+                continue
+            if d_str not in day_data:
+                day_data[d_str] = {"present": set(), "late": set()}
+            day_data[d_str]["present"].add(u)
+            users_worked_set.add(u)
+
+            first_clock = str(row["first_clock"])[:5] if row["first_clock"] else None
+            if first_clock and u in shifts_map:
+                t_data_parsed = _parse_date(d_str, first_day)
+                if hasattr(t_data_parsed, 'weekday'):
+                    dow = t_data_parsed.weekday()
+                    shift_start = shifts_map.get(u, {}).get(dow)
+                    if shift_start:
+                        try:
+                            sh_h, sh_m = map(int, shift_start.split(":"))
+                            tb_h, tb_m = map(int, first_clock.split(":"))
+                            if (tb_h * 60 + tb_m) - (sh_h * 60 + sh_m) > late_tolerance:
+                                day_data[d_str]["late"].add(u)
+                        except:
+                            pass
+
+        total_work_days = sum(1 for d in day_data.values() if d["present"])
+
+        cur_d = first_day
+        while cur_d <= last_day:
+            d_str = cur_d.isoformat()
+            weekday = cur_d.weekday()
+            if weekday < 5 or d_str in day_data:
+                dd = day_data.get(d_str, {"present": set(), "late": set()})
+                n_present = len(dd["present"])
+                n_late = len(dd["late"])
+                n_absent = max(0, total_employees - n_present) if weekday < 5 else 0
+                daily_presences.append({
+                    "date": d_str,
+                    "label": cur_d.strftime("%d/%m"),
+                    "present": n_present,
+                    "absent": n_absent,
+                    "late": n_late,
+                    "weekday": weekday,
+                })
+            cur_d += timedelta(days=1)
+    except Exception as e:
+        app.logger.error(f"Payroll dashboard - errore presenze giornaliere: {e}")
+
+    # ── 5. KPI calcolati (rates) ──
+    # Absenteeism rate = (absence days / (employees * business days)) * 100
+    potential_days = total_employees * business_days_in_month
+    absenteeism_rate = round((total_absence_days / potential_days) * 100, 1) if potential_days > 0 else 0
+    prev_potential = total_employees * max(1, sum(1 for i in range((prev_last - prev_first).days + 1) if (prev_first + timedelta(days=i)).weekday() < 5))
+    prev_absenteeism = round((prev_absence_days / prev_potential) * 100, 1) if prev_potential > 0 else 0
+
+    # Punctuality rate
+    total_clock_ins = sum(len(dd.get("present", set())) for dd in day_data.values()) if 'day_data' in dir() else 0
+    punctuality_rate = round(((total_clock_ins - total_late_count) / total_clock_ins) * 100, 1) if total_clock_ins > 0 else 100
+
+    # Sick days per employee
+    avg_sick_days = round(total_sick_days / total_employees, 1) if total_employees > 0 else 0
+
+    # ── 6. Monthly trend (last 6 months) ──
+    monthly_trend = []
+    try:
+        for i in range(5, -1, -1):
+            _m = month - i
+            _y = year
+            while _m < 1:
+                _m += 12
+                _y -= 1
+            _fd = datetime(_y, _m, 1).date()
+            if _m == 12:
+                _ld = datetime(_y + 1, 1, 1).date() - timedelta(days=1)
+            else:
+                _ld = datetime(_y, _m + 1, 1).date() - timedelta(days=1)
+
+            _cnt = db.execute(
+                f"SELECT COUNT(DISTINCT username) AS c FROM timbrature WHERE tipo='inizio_giornata' AND data >= {ph} AND data <= {ph}",
+                (_fd.isoformat(), _ld.isoformat())
+            ).fetchone()
+            _pres = int(_cnt["c"]) if _cnt else 0
+
+            _late = db.execute(
+                f"SELECT COUNT(*) AS c FROM timbrature WHERE tipo='inizio_giornata' AND data >= {ph} AND data <= {ph}",
+                (_fd.isoformat(), _ld.isoformat())
+            ).fetchone()
+            _total_clocks = int(_late["c"]) if _late else 0
+
+            _month_names_it = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+            monthly_trend.append({
+                "label": f"{_month_names_it[_m - 1]} {_y}",
+                "active_employees": _pres,
+                "clock_ins": _total_clocks,
+            })
+    except Exception as e:
+        app.logger.error(f"Payroll dashboard - errore trend mensile: {e}")
+
+    # ── 7. Top richieste recenti ──
+    recent_requests = []
+    for r in req_rows[:30]:
+        vt = r["value_type"] or "hours"
+        val = float(r["value_amount"] or 0)
+        if vt == "hours":
+            val_display = f"{val:.1f}h"
+        elif vt == "days":
+            val_display = f"{int(val)}g"
+        elif vt == "minutes":
+            val_display = f"{int(val)}min"
+        elif vt == "km":
+            val_display = f"{val:.1f}km"
+        elif vt == "amount":
+            val_display = f"€{val:.2f}"
+        else:
+            val_display = str(val)
+
+        d_from = r["date_from"]
+        if hasattr(d_from, 'strftime'):
+            d_from = d_from.strftime("%d/%m/%Y")
+
+        recent_requests.append({
+            "employee": username_display.get(r["username"], r["username"]),
+            "type_name": r["type_name"] or "—",
+            "date_from": d_from or "—",
+            "value_display": val_display,
+            "status": r["status"] or "pending",
+            "notes": r["notes"] or "",
+        })
+
+    # ── 8. Top ritardatari ──
+    top_late = sorted(
+        [{"name": username_display.get(u, u), "count": c} for u, c in late_employees.items()],
+        key=lambda x: -x["count"]
+    )[:10]
+
+    # ── Response ──
+    return jsonify({
+        "ok": True,
+        "month": month,
+        "year": year,
+        # Core KPIs
+        "total_employees": total_employees,
+        "total_work_days": total_work_days,
+        "total_worked_minutes": total_worked_minutes,
+        "total_overtime_minutes": total_overtime_minutes,
+        "total_absence_days": total_absence_days,
+        "total_late_count": total_late_count,
+        "total_sick_days": total_sick_days,
+        # Rates
+        "absenteeism_rate": absenteeism_rate,
+        "punctuality_rate": punctuality_rate,
+        "avg_sick_days_per_employee": avg_sick_days,
+        "avg_hours_per_day": avg_hours_per_day,
+        "business_days_in_month": business_days_in_month,
+        # Deltas (previous month comparison)
+        "prev_month": {"month": prev_month, "year": prev_year},
+        "delta": {
+            "worked_minutes": total_worked_minutes - prev_worked_minutes,
+            "overtime_minutes": total_overtime_minutes - prev_overtime_minutes,
+            "absence_days": total_absence_days - prev_absence_days,
+            "late_count": total_late_count - prev_late_count,
+            "absenteeism_rate": round(absenteeism_rate - prev_absenteeism, 1),
+        },
+        # Breakdowns
+        "requests_by_type": requests_by_type,
+        "request_status_summary": curr_agg["status_summary"],
+        "overtime_by_week": overtime_weeks,
+        "absence_breakdown": absence_breakdown,
+        "headcount_by_group": [{"group": k, "count": v} for k, v in sorted(headcount_by_group.items(), key=lambda x: -x[1])],
+        # Details
+        "employee_hours": emp_hours_list[:25],
+        "daily_presences": daily_presences,
+        "recent_requests": recent_requests,
+        "top_late_employees": top_late,
+        "monthly_trend": monthly_trend,
+    })
 
 
 if __name__ == "__main__":

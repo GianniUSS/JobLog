@@ -190,7 +190,7 @@ function processData(teamSessions, magSessions) {
             raw: s
         })),
         ...state.magSessions.map(s => ({
-            source: 'Magazzino',
+            source: 'Produzione',
             date: s.created_ts,
             dateLabel: formatDate(s.created_ts),
             project: s.project_code || '—',
@@ -447,7 +447,7 @@ function renderTrendChart() {
                     tension: 0.3
                 },
                 {
-                    label: 'Magazzino',
+                    label: 'Produzione',
                     data: sortedDays.map(d => dayHours[d].mag.toFixed(2)),
                     borderColor: colors.warning,
                     backgroundColor: colors.warning + '33',

@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard HR / Payroll · JobLog</title>
+    <link rel="manifest" href="{{ static_version('manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+    <!-- Chart.js + datalabels -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <script>
+        (function applyStoredTheme() {
+            const stored = localStorage.getItem('joblog-theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.dataset.theme = stored || (prefersDark ? 'dark' : 'light');
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&display=swap');
+        :root {
+            color-scheme: light dark;
+            --bg: #0b1224;
+            --bg-panel: #0f172a;
+            --bg-soft: #111a30;
+            --bg-elevated: #151d30;
+            --card: #10182f;
+            --text: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --muted: #94a3b8;
+            --brand: #38bdf8;
+            --brand-strong: #0ea5e9;
+            --brand-muted: rgba(56,189,248,0.12);
+            --border: rgba(148, 163, 184, 0.18);
+            --border-strong: rgba(148, 163, 184, 0.25);
+            --shadow: 0 20px 60px rgba(3, 7, 18, 0.4);
+            --shadow-lg: 0 20px 60px rgba(0,0,0,0.5);
+            --success: #22c55e;
+            --success-bg: rgba(34,197,94,0.1);
+            --warning: #f59e0b;
+            --warning-bg: rgba(245,158,11,0.1);
+            --danger: #ef4444;
+            --danger-bg: rgba(239,68,68,0.1);
+            --info: #3b82f6;
+            --info-bg: rgba(59,130,246,0.1);
+            --purple: #8b5cf6;
+            --purple-bg: rgba(139,92,246,0.1);
+            --cyan: #06b6d4;
+            --cyan-bg: rgba(6,182,212,0.1);
+            --radius: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+
+            --bg-card: var(--bg-panel);
+            --text-primary: var(--text);
+            --overlay: rgba(0,0,0,0.6);
+        }
+        [data-theme="light"] {
+            --bg: #f6f8fc;
+            --bg-panel: #ffffff;
+            --bg-soft: #eef2ff;
+            --bg-elevated: #ffffff;
+            --card: #ffffff;
+            --text: #0f172a;
+            --text-secondary: #475569;
+            --muted: #475569;
+            --brand: #2563eb;
+            --brand-strong: #1d4ed8;
+            --brand-muted: rgba(37,99,235,0.08);
+            --border: rgba(15, 23, 42, 0.1);
+            --border-strong: rgba(15, 23, 42, 0.15);
+            --shadow: 0 14px 38px rgba(15, 23, 42, 0.15);
+            --shadow-lg: rgba(15, 23, 42, 0.2);
+            --success: #16a34a;
+            --success-bg: rgba(22,163,74,0.08);
+            --warning-bg: rgba(245,158,11,0.08);
+            --danger: #dc2626;
+            --danger-bg: rgba(220,38,38,0.08);
+            --info-bg: rgba(59,130,246,0.08);
+            --purple-bg: rgba(139,92,246,0.08);
+            --cyan-bg: rgba(6,182,212,0.08);
+
+            --bg-card: var(--bg-panel);
+            --text-primary: var(--text);
+            --overlay: rgba(32,33,36,0.32);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+            background: radial-gradient(circle at 10% 20%, rgba(56,189,248,0.08), transparent 40%),
+                        radial-gradient(circle at 80% 0%, rgba(14,165,233,0.18), transparent 35%),
+                        var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        body.menu-open { overflow: hidden; }
+
+        /* ─── Header (coerente con admin dashboard) ─── */
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+            color: #f8fafc;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 220;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        }
+        .header-left { display:flex; align-items:center; gap:16px; }
+        .header-title { color:white; }
+        .header-title h1 { font-size:20px; font-weight:700; margin:0; }
+        .header-title p { font-size:13px; opacity:0.85; margin:0; }
+        .header-actions { display:flex; align-items:center; gap:8px; }
+        .header-icon-btn { width:40px; height:40px; border:none; border-radius:10px; background:rgba(255,255,255,0.15); color:white; font-size:18px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.2s ease; }
+        .header-icon-btn:hover { background:rgba(255,255,255,0.25); }
+        .header-user { display:flex; align-items:center; gap:8px; padding:6px 12px; background:rgba(255,255,255,0.15); border:none; border-radius:999px; color:white; }
+        .header-user:hover { background:rgba(255,255,255,0.25); }
+        .header-user-avatar { width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,0.3); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; text-transform:uppercase; }
+        .header-user-name { font-weight:600; font-size:14px; }
+
+        /* ─── Menu Overlay ─── */
+        .menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 210;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.24s ease;
+        }
+        .menu-overlay.open { opacity:1; visibility:visible; }
+
+        /* ─── Side Menu (coerente con admin dashboard) ─── */
+        .side-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            height: 100dvh;
+            width: 320px;
+            max-width: 92vw;
+            background: var(--bg-card, #0f172a);
+            z-index: 220;
+            box-shadow: 2px 0 24px rgba(0,0,0,0.5);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transform: translateX(-105%);
+            transition: transform 0.24s ease;
+            overflow: hidden;
+        }
+        .side-menu.open { transform:translateX(0); }
+        .side-menu-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .side-menu-brand { display:flex; align-items:center; gap:12px; }
+        .side-menu-avatar {
+            width: 72px; height: 72px; min-width: 72px; min-height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%);
+            color: #ffffff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; font-weight: 700; text-transform: uppercase;
+            overflow: hidden;
+        }
+        .side-menu-avatar:has(img) { background:transparent; border-radius:8px; }
+        .side-menu-avatar img { width:72px; height:72px; max-width:72px; max-height:72px; object-fit:contain; }
+        .side-menu-brand-text { display:flex; flex-direction:column; gap:1px; }
+        .side-menu-title { font-size:16px; font-weight:700; color:var(--text, #e2e8f0); }
+        .side-menu-subtitle { font-size:12px; color:var(--muted, #94a3b8); font-weight:600; }
+        .side-menu-close {
+            border: none; border-radius: 50%;
+            background: transparent; color: var(--muted, #94a3b8);
+            width: 36px; height: 36px; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: background 0.2s ease;
+        }
+        .side-menu-close:hover { background:rgba(102, 126, 234, 0.12); color:var(--brand, #667eea); }
+        .menu-items {
+            display: flex; flex-direction: column; flex: 1;
+            overflow-y: auto; padding: 12px 0;
+        }
+        .menu-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 14px; border-radius: 12px;
+            color: var(--text, #e2e8f0); text-decoration: none;
+            font-weight: 600; font-size: 14px;
+            transition: background 0.2s ease;
+        }
+        .menu-item:hover { background:rgba(102, 126, 234, 0.1); }
+        .menu-item.active { background:linear-gradient(135deg, #667eea 0%, #4f46e5 100%); color:#fff; }
+        .menu-item.danger { color:#ef4444; }
+        .menu-item.danger:hover { background:rgba(239, 68, 68, 0.1); }
+        .menu-badge {
+            background: #ef4444; color: white;
+            font-size: 11px; font-weight: 700;
+            padding: 2px 7px; border-radius: 10px;
+            margin-left: auto; min-width: 18px; text-align: center;
+        }
+        .menu-divider { height:1px; background:rgba(148, 163, 184, 0.4); margin:8px 16px; }
+        .side-menu-version-chip {
+            margin-top: 8px;
+            padding: 4px 8px;
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--brand, #38bdf8);
+            font-family: 'Courier New', monospace;
+            letter-spacing: 0.4px;
+            width: fit-content;
+        }
+
+        /* ─── Page Layout ─── */
+        .page-wrapper { max-width:1440px; margin:0 auto; padding:20px 24px 60px; }
+
+        /* ─── Period Selector Bar ─── */
+        .period-bar {
+            display:flex; align-items:center; gap:12px; margin-bottom:20px;
+            background:var(--card); border:1px solid var(--border);
+            border-radius:var(--radius); padding:10px 16px;
+        }
+        .period-bar .nav-btn {
+            width:32px; height:32px; border:1px solid var(--border-strong);
+            border-radius:8px; background:transparent; color:var(--text);
+            font-size:14px; cursor:pointer; display:flex; align-items:center;
+            justify-content:center; transition:all 0.15s;
+        }
+        .period-bar .nav-btn:hover { background:var(--brand-muted); border-color:var(--brand); }
+        .period-bar .period-label {
+            font-size:16px; font-weight:700; letter-spacing:-0.3px;
+            min-width:140px; text-align:center;
+        }
+        .period-bar .filter-select {
+            height:32px; padding:0 10px; border:1px solid var(--border-strong);
+            border-radius:8px; background:var(--bg-panel); color:var(--text);
+            font-size:12px; font-weight:500; cursor:pointer; min-width:130px;
+        }
+        .period-bar .filter-select:focus { outline:none; border-color:var(--brand); }
+        .period-bar .spacer { flex:1; }
+        .period-bar .refresh-btn {
+            height:32px; padding:0 14px; border:none; border-radius:8px;
+            background:var(--brand); color:#fff; font-size:12px; font-weight:600;
+            cursor:pointer; display:flex; align-items:center; gap:5px;
+            transition:opacity 0.15s;
+        }
+        .period-bar .refresh-btn:hover { opacity:0.9; }
+        .period-bar .month-select, .period-bar .year-input {
+            height:32px; padding:0 8px; border:1px solid var(--border-strong);
+            border-radius:8px; background:var(--bg-panel); color:var(--text);
+            font-size:12px; font-weight:500;
+        }
+        .period-bar .year-input { width:72px; }
+
+        /* ─── Summary Strip (Primary KPIs) ─── */
+        .summary-strip {
+            display:grid; grid-template-columns:repeat(4, 1fr);
+            gap:12px; margin-bottom:20px;
+        }
+        .summary-card {
+            background:var(--card); border:1px solid var(--border);
+            border-radius:var(--radius); padding:16px 18px;
+            display:flex; flex-direction:column; gap:6px;
+            position:relative; overflow:hidden;
+        }
+        .summary-card::before {
+            content:''; position:absolute; top:0; left:0;
+            width:3px; height:100%; border-radius:0 3px 3px 0;
+        }
+        .summary-card.brand::before  { background:var(--brand); }
+        .summary-card.success::before { background:var(--success); }
+        .summary-card.warning::before { background:var(--warning); }
+        .summary-card.danger::before  { background:var(--danger); }
+        .summary-card.purple::before  { background:var(--purple); }
+        .summary-card.info::before    { background:var(--info); }
+        .summary-card.cyan::before    { background:var(--cyan); }
+
+        .summary-card .sc-header { display:flex; align-items:center; justify-content:space-between; }
+        .summary-card .sc-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); }
+        .summary-card .sc-icon { font-size:18px; opacity:0.7; }
+        .summary-card .sc-value { font-size:28px; font-weight:800; letter-spacing:-0.5px; line-height:1.1; }
+        .summary-card .sc-footer { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; }
+        .summary-card .delta { display:inline-flex; align-items:center; gap:2px; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700; }
+        .summary-card .delta.up { background:var(--success-bg); color:var(--success); }
+        .summary-card .delta.down { background:var(--danger-bg); color:var(--danger); }
+        .summary-card .delta.neutral { background:var(--brand-muted); color:var(--muted); }
+        .summary-card .sc-footer .desc { color:var(--muted); }
+
+        /* ─── Rate Cards (circular gauge style) ─── */
+        .rates-row {
+            display:grid; grid-template-columns:repeat(4, 1fr);
+            gap:12px; margin-bottom:20px;
+        }
+        .rate-card {
+            background:var(--card); border:1px solid var(--border);
+            border-radius:var(--radius); padding:16px;
+            display:flex; align-items:center; gap:14px;
+        }
+        .rate-ring {
+            width:52px; height:52px; position:relative; flex-shrink:0;
+        }
+        .rate-ring svg { width:52px; height:52px; transform:rotate(-90deg); }
+        .rate-ring .ring-bg { fill:none; stroke:var(--border-strong); stroke-width:4; }
+        .rate-ring .ring-fill { fill:none; stroke-width:4; stroke-linecap:round; transition:stroke-dashoffset 0.8s ease; }
+        .rate-ring .ring-text {
+            position:absolute; inset:0; display:flex; align-items:center;
+            justify-content:center; font-size:12px; font-weight:800;
+        }
+        .rate-info { display:flex; flex-direction:column; gap:2px; }
+        .rate-info .rate-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--muted); }
+        .rate-info .rate-desc { font-size:12px; color:var(--text-secondary); }
+
+        /* ─── Section Grid ─── */
+        .section-grid {
+            display:grid; grid-template-columns:repeat(12, 1fr);
+            gap:16px; margin-bottom:20px;
+        }
+        .col-4  { grid-column: span 4;  }
+        .col-5  { grid-column: span 5;  }
+        .col-6  { grid-column: span 6;  }
+        .col-7  { grid-column: span 7;  }
+        .col-8  { grid-column: span 8;  }
+        .col-12 { grid-column: span 12; }
+
+        .panel {
+            background:var(--card); border:1px solid var(--border);
+            border-radius:var(--radius); overflow:hidden;
+        }
+        .panel-header {
+            padding:14px 18px; border-bottom:1px solid var(--border);
+            display:flex; align-items:center; justify-content:space-between;
+        }
+        .panel-header h3 { font-size:13px; font-weight:700; letter-spacing:-0.2px; }
+        .panel-header .subtitle { font-size:11px; color:var(--muted); font-weight:500; }
+        .panel-body { padding:16px 18px; }
+        .panel-body.flush { padding:0; }
+
+        .chart-wrap { position:relative; height:280px; }
+        .chart-wrap.tall { height:360px; }
+        .chart-wrap.short { height:220px; }
+        .empty-state {
+            position:absolute; inset:0; display:flex; flex-direction:column;
+            align-items:center; justify-content:center; gap:6px;
+            color:var(--muted); font-size:13px; font-weight:500;
+        }
+        .empty-state.hidden { display:none; }
+        .empty-state .empty-icon { font-size:28px; opacity:0.4; }
+
+        /* ─── Data Table ─── */
+        .data-table { width:100%; border-collapse:collapse; }
+        .data-table thead th {
+            padding:10px 14px; text-align:left; font-size:11px; font-weight:600;
+            text-transform:uppercase; letter-spacing:0.5px; color:var(--muted);
+            background:var(--bg-soft); border-bottom:1px solid var(--border);
+        }
+        .data-table tbody td {
+            padding:10px 14px; font-size:13px; border-bottom:1px solid var(--border);
+            color:var(--text-secondary);
+        }
+        .data-table tbody tr:hover { background:var(--bg-soft); }
+        .data-table tbody tr:last-child td { border-bottom:none; }
+
+        /* Name cell with avatar */
+        .name-cell { display:flex; align-items:center; gap:8px; }
+        .name-cell .mini-avatar {
+            width:26px; height:26px; border-radius:6px; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center;
+            font-size:10px; font-weight:700; color:#fff; text-transform:uppercase;
+        }
+        .name-cell .emp-name { font-weight:600; color:var(--text); font-size:13px; }
+
+        /* ─── Badges ─── */
+        .badge { padding:3px 8px; border-radius:6px; font-weight:600; font-size:11px; display:inline-flex; align-items:center; gap:3px; }
+        .badge-success { background:var(--success-bg); color:var(--success); }
+        .badge-warning { background:var(--warning-bg); color:var(--warning); }
+        .badge-danger  { background:var(--danger-bg);  color:var(--danger);  }
+        .badge-info    { background:var(--info-bg);    color:var(--info);    }
+        .badge-muted   { background:var(--brand-muted); color:var(--muted); }
+
+        /* Mini bar for inline comparison */
+        .mini-bar { display:flex; align-items:center; gap:6px; }
+        .mini-bar .bar-track {
+            flex:1; height:6px; background:var(--border-strong);
+            border-radius:3px; overflow:hidden; min-width:40px;
+        }
+        .mini-bar .bar-fill { height:100%; border-radius:3px; transition:width 0.5s ease; }
+        .mini-bar .bar-val { font-size:11px; font-weight:700; min-width:32px; text-align:right; }
+
+        /* ─── Headcount Pills ─── */
+        .headcount-list { display:flex; flex-direction:column; gap:8px; }
+        .hc-item { display:flex; align-items:center; gap:10px; }
+        .hc-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+        .hc-name { font-size:13px; font-weight:500; flex:1; }
+        .hc-count { font-size:14px; font-weight:700; }
+
+        /* ─── Late Leaderboard ─── */
+        .late-list { display:flex; flex-direction:column; gap:6px; }
+        .late-item { display:flex; align-items:center; justify-content:space-between; padding:6px 0; }
+        .late-item .late-name { font-size:13px; font-weight:500; }
+        .late-item .late-count { font-size:13px; font-weight:700; color:var(--warning); }
+
+        /* ─── Loading ─── */
+        .loading-overlay {
+            position:fixed; inset:0; background:rgba(0,0,0,0.5);
+            z-index:300; display:none; align-items:center; justify-content:center;
+        }
+        .loading-dot-group { display:flex; gap:6px; }
+        .loading-dot-group span {
+            width:10px; height:10px; border-radius:50%; background:var(--brand);
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+        .loading-dot-group span:nth-child(2) { animation-delay: 0.2s; }
+        .loading-dot-group span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes pulse {
+            0%, 80%, 100% { transform:scale(0.6); opacity:0.4; }
+            40% { transform:scale(1); opacity:1; }
+        }
+
+        /* ─── Print ─── */
+        @media print {
+            header, .side-menu, .menu-overlay, .period-bar .refresh-btn,
+            .period-bar .nav-btn, .header-actions { display:none !important; }
+            body { background:#fff; color:#000; }
+            .page-wrapper { padding:0; max-width:100%; }
+            .panel, .summary-card, .rate-card { break-inside:avoid; border-color:#ddd; }
+        }
+
+        /* ─── Responsive ─── */
+        @media (max-width: 1200px) {
+            .summary-strip { grid-template-columns:repeat(2, 1fr); }
+            .rates-row { grid-template-columns:repeat(2, 1fr); }
+            .section-grid { display:flex; flex-direction:column; }
+            .col-4, .col-5, .col-6, .col-7, .col-8, .col-12 { grid-column:auto; }
+        }
+        @media (max-width: 768px) {
+            .page-wrapper { padding:12px 12px 40px; }
+            .summary-strip { grid-template-columns:1fr; }
+            .rates-row { grid-template-columns:1fr; }
+            .period-bar { flex-wrap:wrap; }
+            .summary-card .sc-value { font-size:22px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ═══ HEADER (coerente con admin dashboard) ═══ -->
+<header>
+    <div class="header-left">
+        <button class="header-icon-btn" id="menuToggle" title="Menu">☰</button>
+        <div class="header-title">
+            <h1>💰 HR / Payroll</h1>
+            <p>Workforce Analytics</p>
+        </div>
+    </div>
+    <div class="header-actions">
+        <button class="header-icon-btn" onclick="window.print()" title="Stampa">🖨️</button>
+        <button class="header-icon-btn" id="themeToggle" title="Tema">🌓</button>
+        <div class="header-user">
+            <div class="header-user-avatar">{{ session.get('user', 'U')[0]|upper }}</div>
+            <span class="header-user-name">{{ session.get('user', 'Utente') }}</span>
+        </div>
+    </div>
+</header>
+
+<!-- ═══ SIDE MENU (coerente con admin dashboard) ═══ -->
+<div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+<nav class="side-menu" id="sideMenu">
+    <div class="side-menu-header">
+        <div class="side-menu-brand">
+            <span class="side-menu-avatar">
+                {% if company_logo %}
+                    <img src="{{ company_logo }}" alt="Logo">
+                {% else %}
+                    {{ session.get('user', 'U')[0]|upper }}
+                {% endif %}
+            </span>
+            <div class="side-menu-brand-text">
+                <span class="side-menu-title">JobLog Admin</span>
+                <span class="side-menu-subtitle">Pannello Amministrazione</span>
+                <span class="side-menu-version-chip" id="adminVersionBadge">v2026.01.07c</span>
+            </div>
+        </div>
+        <button class="side-menu-close" onclick="closeMenu()">✕</button>
+    </div>
+    <div class="menu-items">
+        <a href="/admin" class="menu-item">📊 Dashboard</a>
+        <a href="/admin/payroll" class="menu-item active">💰 HR / Payroll</a>
+        <a href="/admin/activity-analysis" class="menu-item">📈 Analisi Attività</a>
+        <a href="/admin/presenze" class="menu-item">📋 Foglio Presenze</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/group-planning" class="menu-item">📆 Planning Gruppo</a>
+        <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
+        <a href="/admin/rentman-planning" class="menu-item">📋 Pianificazioni</a>
+        <div class="menu-divider"></div>
+        <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
+        <a href="/admin/documents" class="menu-item">📄 Documenti</a>
+        <a href="/admin/user-requests" class="menu-item">
+            📥 Richieste
+            <span class="menu-badge" id="pendingRequestsBadge" style="display: none;"></span>
+        </a>
+        <div class="menu-divider"></div>
+        <a href="/admin/operators" class="menu-item">👷 Operatori Rentman</a>
+        <a href="/admin/request-types" class="menu-item">📝 Tipologie Richieste</a>
+        <a href="/admin/users" class="menu-item">👥 Utenti</a>
+        <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
+        <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+        <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
+        <div class="menu-divider"></div>
+        <a href="/logout" class="menu-item danger">🚪 Logout</a>
+    </div>
+</nav>
+
+<!-- ═══ PAGE ═══ -->
+<div class="page-wrapper">
+
+    <!-- ── Period Selector ── -->
+    <div class="period-bar">
+        <button class="nav-btn" id="prevMonth" title="Mese precedente">◀</button>
+        <div class="period-label" id="periodLabel">—</div>
+        <button class="nav-btn" id="nextMonth" title="Mese successivo">▶</button>
+
+        <select class="month-select" id="monthInput">
+            <option value="1">Gennaio</option><option value="2">Febbraio</option>
+            <option value="3">Marzo</option><option value="4">Aprile</option>
+            <option value="5">Maggio</option><option value="6">Giugno</option>
+            <option value="7">Luglio</option><option value="8">Agosto</option>
+            <option value="9">Settembre</option><option value="10">Ottobre</option>
+            <option value="11">Novembre</option><option value="12">Dicembre</option>
+        </select>
+        <input type="number" class="year-input" id="yearInput" min="2020" max="2099" />
+
+        <div class="spacer"></div>
+
+        <select class="filter-select" id="groupFilter">
+            <option value="">Tutti i gruppi</option>
+        </select>
+        <button class="refresh-btn" id="applyFilters">↻ Aggiorna</button>
+    </div>
+
+    <!-- ── Summary KPI Cards ── -->
+    <div class="summary-strip" id="summaryStrip">
+        <div class="summary-card brand">
+            <div class="sc-header">
+                <span class="sc-label">Dipendenti attivi</span>
+                <span class="sc-icon">👥</span>
+            </div>
+            <div class="sc-value" id="kpiEmployees">–</div>
+            <div class="sc-footer">
+                <span class="desc" id="kpiEmployeesSub">nel periodo selezionato</span>
+            </div>
+        </div>
+        <div class="summary-card success">
+            <div class="sc-header">
+                <span class="sc-label">Ore lavorate</span>
+                <span class="sc-icon">⏱️</span>
+            </div>
+            <div class="sc-value" id="kpiTotalHours">–</div>
+            <div class="sc-footer">
+                <span class="delta neutral" id="kpiHoursDelta">—</span>
+                <span class="desc">vs mese prec.</span>
+            </div>
+        </div>
+        <div class="summary-card warning">
+            <div class="sc-header">
+                <span class="sc-label">Straordinari</span>
+                <span class="sc-icon">⏰</span>
+            </div>
+            <div class="sc-value" id="kpiOvertime">–</div>
+            <div class="sc-footer">
+                <span class="delta neutral" id="kpiOvertimeDelta">—</span>
+                <span class="desc">vs mese prec.</span>
+            </div>
+        </div>
+        <div class="summary-card danger">
+            <div class="sc-header">
+                <span class="sc-label">Giorni assenza</span>
+                <span class="sc-icon">📅</span>
+            </div>
+            <div class="sc-value" id="kpiAbsences">–</div>
+            <div class="sc-footer">
+                <span class="delta neutral" id="kpiAbsenceDelta">—</span>
+                <span class="desc">vs mese prec.</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Rate Cards ── -->
+    <div class="rates-row" id="ratesRow">
+        <div class="rate-card">
+            <div class="rate-ring" id="ringPunctuality">
+                <svg viewBox="0 0 52 52">
+                    <circle class="ring-bg" cx="26" cy="26" r="22"/>
+                    <circle class="ring-fill" cx="26" cy="26" r="22" stroke="var(--success)"
+                            stroke-dasharray="138.23" stroke-dashoffset="138.23"/>
+                </svg>
+                <div class="ring-text" style="color:var(--success)">–</div>
+            </div>
+            <div class="rate-info">
+                <div class="rate-label">Puntualità</div>
+                <div class="rate-desc">Tasso di ingressi puntuali</div>
+            </div>
+        </div>
+        <div class="rate-card">
+            <div class="rate-ring" id="ringAbsenteeism">
+                <svg viewBox="0 0 52 52">
+                    <circle class="ring-bg" cx="26" cy="26" r="22"/>
+                    <circle class="ring-fill" cx="26" cy="26" r="22" stroke="var(--danger)"
+                            stroke-dasharray="138.23" stroke-dashoffset="138.23"/>
+                </svg>
+                <div class="ring-text" style="color:var(--danger)">–</div>
+            </div>
+            <div class="rate-info">
+                <div class="rate-label">Assenteismo</div>
+                <div class="rate-desc">Tasso assenze sul totale</div>
+            </div>
+        </div>
+        <div class="rate-card">
+            <div class="rate-ring" id="ringAvgHours">
+                <svg viewBox="0 0 52 52">
+                    <circle class="ring-bg" cx="26" cy="26" r="22"/>
+                    <circle class="ring-fill" cx="26" cy="26" r="22" stroke="var(--info)"
+                            stroke-dasharray="138.23" stroke-dashoffset="138.23"/>
+                </svg>
+                <div class="ring-text" style="color:var(--info)">–</div>
+            </div>
+            <div class="rate-info">
+                <div class="rate-label">Media h/giorno</div>
+                <div class="rate-desc">Ore medie per dipendente</div>
+            </div>
+        </div>
+        <div class="rate-card">
+            <div class="rate-ring" id="ringLate">
+                <svg viewBox="0 0 52 52">
+                    <circle class="ring-bg" cx="26" cy="26" r="22"/>
+                    <circle class="ring-fill" cx="26" cy="26" r="22" stroke="var(--warning)"
+                            stroke-dasharray="138.23" stroke-dashoffset="138.23"/>
+                </svg>
+                <div class="ring-text" style="color:var(--warning)">–</div>
+            </div>
+            <div class="rate-info">
+                <div class="rate-label">Ritardi</div>
+                <div class="rate-desc">Totale ingressi in ritardo</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ ROW 1: Presenze + Headcount ═══ -->
+    <div class="section-grid">
+        <div class="panel col-8">
+            <div class="panel-header">
+                <div>
+                    <h3>Presenze giornaliere</h3>
+                    <div class="subtitle">Andamento presenti / assenti / in ritardo</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-wrap tall">
+                    <canvas id="chartDailyPresences"></canvas>
+                    <div class="empty-state hidden"><div class="empty-icon">📊</div>Nessun dato</div>
+                </div>
+            </div>
+        </div>
+        <div class="panel col-4">
+            <div class="panel-header">
+                <div>
+                    <h3>Organico per gruppo</h3>
+                    <div class="subtitle">Distribuzione dipendenti</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-wrap short">
+                    <canvas id="chartHeadcount"></canvas>
+                    <div class="empty-state hidden"><div class="empty-icon">👥</div>Nessun dato</div>
+                </div>
+                <div class="headcount-list" id="headcountList" style="margin-top:12px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ ROW 2: Richieste per tipo + Stato richieste ═══ -->
+    <div class="section-grid">
+        <div class="panel col-7">
+            <div class="panel-header">
+                <div>
+                    <h3>Richieste per tipologia</h3>
+                    <div class="subtitle">Approvate, in attesa, rifiutate</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-wrap">
+                    <canvas id="chartRequestsByType"></canvas>
+                    <div class="empty-state hidden"><div class="empty-icon">📋</div>Nessun dato</div>
+                </div>
+            </div>
+        </div>
+        <div class="panel col-5">
+            <div class="panel-header">
+                <div>
+                    <h3>Stato richieste</h3>
+                    <div class="subtitle">Riepilogo generale</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-wrap">
+                    <canvas id="chartRequestStatus"></canvas>
+                    <div class="empty-state hidden"><div class="empty-icon">🎯</div>Nessun dato</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ ROW 3: Trend straordinari + Distribuzione assenze ═══ -->
+    <div class="section-grid">
+        <div class="panel col-7">
+            <div class="panel-header">
+                <div>
+                    <h3>Trend straordinari</h3>
+                    <div class="subtitle">Minuti per settimana</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-wrap">
+                    <canvas id="chartOvertimeTrend"></canvas>
+                    <div class="empty-state hidden"><div class="empty-icon">📈</div>Nessun dato</div>
+                </div>
+            </div>
+        </div>
+        <div class="panel col-5">
+            <div class="panel-header">
+                <div>
+                    <h3>Distribuzione assenze</h3>
+                    <div class="subtitle">Per tipologia</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-wrap">
+                    <canvas id="chartAbsenceTypes"></canvas>
+                    <div class="empty-state hidden"><div class="empty-icon">🏥</div>Nessun dato</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ ROW 4: Trend mensile + Top ritardatari ═══ -->
+    <div class="section-grid">
+        <div class="panel col-8">
+            <div class="panel-header">
+                <div>
+                    <h3>Trend semestrale</h3>
+                    <div class="subtitle">Dipendenti attivi e timbrature ultimi 6 mesi</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-wrap">
+                    <canvas id="chartMonthlyTrend"></canvas>
+                    <div class="empty-state hidden"><div class="empty-icon">📅</div>Nessun dato</div>
+                </div>
+            </div>
+        </div>
+        <div class="panel col-4">
+            <div class="panel-header">
+                <div>
+                    <h3>Top ritardatari</h3>
+                    <div class="subtitle">Dipendenti con più ritardi</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="late-list" id="lateList">
+                    <div class="empty-state"><div class="empty-icon">✅</div>Nessun ritardo</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ ROW 5: Ore per dipendente ═══ -->
+    <div class="section-grid">
+        <div class="panel col-12">
+            <div class="panel-header">
+                <div>
+                    <h3>Ore per dipendente</h3>
+                    <div class="subtitle">Top 25 — ore lavorate e straordinari</div>
+                </div>
+            </div>
+            <div class="panel-body flush">
+                <div class="table-responsive" style="overflow-x:auto;">
+                    <table class="data-table" id="employeeHoursTable">
+                        <thead>
+                            <tr>
+                                <th>Dipendente</th>
+                                <th>Giorni lavorati</th>
+                                <th>Ore lavorate</th>
+                                <th>Straordinario</th>
+                                <th>Media/giorno</th>
+                                <th>Ritardi</th>
+                                <th>Assenze (gg)</th>
+                                <th>Mancate timb.</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ ROW 6: Ultime richieste ═══ -->
+    <div class="section-grid">
+        <div class="panel col-12">
+            <div class="panel-header">
+                <div>
+                    <h3>Ultime richieste</h3>
+                    <div class="subtitle">Le più recenti nel periodo</div>
+                </div>
+            </div>
+            <div class="panel-body flush">
+                <div class="table-responsive" style="overflow-x:auto;">
+                    <table class="data-table" id="topRequestsTable">
+                        <thead>
+                            <tr>
+                                <th>Dipendente</th>
+                                <th>Tipologia</th>
+                                <th>Data</th>
+                                <th>Valore</th>
+                                <th>Stato</th>
+                                <th>Note</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div><!-- /page-wrapper -->
+
+<!-- Loading -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-dot-group"><span></span><span></span><span></span></div>
+</div>
+
+<script>
+    window.__PAYROLL_DASHBOARD__ = { apiUrl: "{{ url_for('api_admin_payroll_dashboard') }}" };
+
+    function toggleMenu() {
+        document.getElementById('sideMenu').classList.toggle('open');
+        document.getElementById('menuOverlay').classList.toggle('open');
+    }
+    function closeMenu() {
+        document.getElementById('sideMenu').classList.remove('open');
+        document.getElementById('menuOverlay').classList.remove('open');
+    }
+    document.getElementById('menuToggle')?.addEventListener('click', toggleMenu);
+    document.getElementById('themeToggle')?.addEventListener('click', () => {
+        const html = document.documentElement;
+        const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+        html.dataset.theme = next;
+        localStorage.setItem('joblog-theme', next);
+    });
+
+    // Carica contatore richieste pendenti
+    fetch('/api/admin/user-requests/pending-count')
+        .then(r => r.json())
+        .then(data => {
+            const badge = document.getElementById('pendingRequestsBadge');
+            if (badge && data.count > 0) {
+                badge.textContent = data.count;
+                badge.style.display = 'inline-block';
+            }
+        })
+        .catch(() => {});
+</script>
+<script src="{{ static_version('js/admin_payroll_dashboard.js') }}"></script>
+</body>
+</html>

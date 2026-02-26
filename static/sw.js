@@ -1,8 +1,8 @@
-// Service Worker Version: v2026.02.13b - Updated: 2026-02-13T16:20:00Z
-const CACHE_NAME = 'joblog-v2026.02.13b';
-const STATIC_CACHE = 'joblog-static-v44';
-const DYNAMIC_CACHE = 'joblog-dynamic-v44';
-const API_CACHE = 'joblog-api-v39';
+// Service Worker Version: v2026.02.24a - Updated: 2026-02-24T12:00:00Z
+const CACHE_NAME = 'joblog-v2026.02.24a';
+const STATIC_CACHE = 'joblog-static-v61';
+const DYNAMIC_CACHE = 'joblog-dynamic-v61';
+const API_CACHE = 'joblog-api-v45';
 const BG_SYNC_TAG = 'joblog-sync-queue';
 const QUEUE_DB = 'joblog-sync-db';
 const QUEUE_STORE = 'requests';
@@ -83,8 +83,10 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // /api/ping deve SEMPRE andare alla rete senza cache (per check online status)
-    if (url.pathname === '/api/ping') {
+    // /api/ping e tutte le API admin/user devono SEMPRE andare alla rete senza cache
+    if (url.pathname === '/api/ping' ||
+        url.pathname.startsWith('/api/admin/') ||
+        url.pathname.startsWith('/api/user/')) {
         event.respondWith(fetch(request));
         return;
     }

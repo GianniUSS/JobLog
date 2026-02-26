@@ -628,6 +628,34 @@ class RentmanClient:
             )
         return records
 
+    def get_project_function_groups(self, project_id: int) -> List[Dict[str, Any]]:
+        """Recupera i gruppi di funzioni (fasi) del progetto via /projects/{id}/projectfunctiongroups."""
+        logger.info("Rentman: recupero function groups (fasi) per progetto %s", project_id)
+        try:
+            items = self._get_all(f"/projects/{project_id}/projectfunctiongroups")
+            logger.info("Rentman: /projects/%s/projectfunctiongroups -> %s gruppi", project_id, len(items))
+            return items
+        except RentmanNotFound:
+            logger.info("Rentman: nessun function group per progetto %s", project_id)
+            return []
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo /projects/%s/projectfunctiongroups", exc, project_id)
+            return []
+
+    def get_project_crew(self, project_id: int) -> List[Dict[str, Any]]:
+        """Recupera TUTTA la crew pianificata del progetto via /projects/{id}/projectcrew."""
+        logger.info("Rentman: recupero crew pianificata per progetto %s", project_id)
+        try:
+            items = self._get_all(f"/projects/{project_id}/projectcrew")
+            logger.info("Rentman: /projects/%s/projectcrew -> %s record", project_id, len(items))
+            return items
+        except RentmanNotFound:
+            logger.info("Rentman: nessuna crew pianificata per progetto %s", project_id)
+            return []
+        except RentmanAPIError as exc:
+            logger.warning("Rentman: errore %s leggendo /projects/%s/projectcrew", exc, project_id)
+            return []
+
     def get_crew_members_by_ids(self, crew_ids: Iterable[int]) -> List[Dict[str, Any]]:
         ids = [str(cid) for cid in crew_ids if cid is not None]
         if not ids:

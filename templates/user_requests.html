@@ -710,6 +710,74 @@
             font-weight: 600;
         }
 
+        /* Duplicate Alert Modal */
+        .duplicate-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.55);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .duplicate-modal {
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px 24px 20px;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+            animation: slideUp 0.25s ease;
+        }
+        [data-theme="dark"] .duplicate-modal {
+            background: #1e1e2e;
+            color: #e0e0e0;
+        }
+        .duplicate-modal-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+        .duplicate-modal h3 {
+            margin: 0 0 12px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #d32f2f;
+        }
+        [data-theme="dark"] .duplicate-modal h3 {
+            color: #ff6b6b;
+        }
+        .duplicate-modal p {
+            margin: 0 0 20px;
+            font-size: 0.95rem;
+            color: #555;
+            line-height: 1.5;
+        }
+        [data-theme="dark"] .duplicate-modal p {
+            color: #bbb;
+        }
+        .duplicate-modal-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            border: none;
+            padding: 12px 40px;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .duplicate-modal-btn:hover {
+            transform: scale(1.03);
+            box-shadow: 0 4px 15px rgba(102,126,234,0.4);
+        }
+
         /* Camera Modal */
         .camera-modal {
             position: fixed;
@@ -1014,6 +1082,149 @@
             font-size: 13px;
             color: var(--text-secondary);
             margin-top: 8px;
+        }
+
+        .request-id {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 500;
+            margin-top: 2px;
+        }
+
+        .late-detail-box {
+            margin-top: 10px;
+            padding: 12px 14px;
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: 10px;
+        }
+        [data-theme="dark"] .late-detail-box {
+            background: rgba(251,191,36,0.08);
+            border-color: rgba(251,191,36,0.3);
+        }
+        .late-detail-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #92400e;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        [data-theme="dark"] .late-detail-title { color: #fbbf24; }
+        .late-detail-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .late-detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+        .late-lbl {
+            color: var(--text-secondary);
+        }
+        .late-val {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .late-val.highlight-red {
+            color: #dc2626;
+        }
+        [data-theme="dark"] .late-val.highlight-red { color: #f87171; }
+
+        .request-value-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: var(--brand-light, #ede9fe);
+            color: var(--brand, #6d28d9);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 8px;
+        }
+        [data-theme="dark"] .request-value-badge {
+            background: rgba(109,40,217,0.2);
+            color: #a78bfa;
+        }
+
+        .request-timb-detail {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .request-timb-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .request-attachment {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            padding: 4px 10px;
+            background: var(--bg);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .request-attachment a {
+            color: var(--brand);
+            text-decoration: none;
+        }
+        .request-attachment a:hover {
+            text-decoration: underline;
+        }
+
+        .request-rejection-box {
+            margin-top: 12px;
+            padding: 10px 14px;
+            background: #fff5f5;
+            border: 1px solid #fecaca;
+            border-radius: 10px;
+            font-size: 13px;
+            color: #b91c1c;
+        }
+        [data-theme="dark"] .request-rejection-box {
+            background: rgba(185,28,28,0.12);
+            border-color: rgba(239,68,68,0.3);
+            color: #fca5a5;
+        }
+        .request-rejection-box .rej-label {
+            font-weight: 700;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .request-approval-note {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 10px;
+            font-size: 13px;
+            color: #166534;
+        }
+        [data-theme="dark"] .request-approval-note {
+            background: rgba(22,163,74,0.12);
+            border-color: rgba(34,197,94,0.3);
+            color: #86efac;
         }
         
         .request-tratte {
@@ -1530,12 +1741,7 @@
                     <span class="icon">🕐</span>
                     <span>Storico Timbrature</span>
                 </a>
-                {% if magazzino_enabled %}
-                <a href="{{ url_for('magazzino_home') }}" class="menu-item">
-                    <span class="icon">📦</span>
-                    <span>Magazzino</span>
-                </a>
-                {% endif %}
+
             </div>
             
             <div class="menu-section">
@@ -1694,6 +1900,16 @@
                         </div>
                     </div>
 
+                    <!-- Modal Richiesta Duplicata -->
+                    <div id="duplicate-modal-overlay" class="duplicate-modal-overlay" style="display: none;">
+                        <div class="duplicate-modal">
+                            <div class="duplicate-modal-icon">⚠️</div>
+                            <h3>Richiesta già esistente</h3>
+                            <p id="duplicate-modal-msg"></p>
+                            <button type="button" class="duplicate-modal-btn" onclick="closeDuplicateModal()">Ho capito</button>
+                        </div>
+                    </div>
+
                     <!-- Modal Fotocamera -->
                     <div id="camera-modal" class="camera-modal" style="display: none;">
                         <div class="camera-container">
@@ -1836,6 +2052,14 @@
         });
 
         // Show Toast
+        function showDuplicateModal(message) {
+            document.getElementById('duplicate-modal-msg').textContent = message;
+            document.getElementById('duplicate-modal-overlay').style.display = 'flex';
+        }
+        function closeDuplicateModal() {
+            document.getElementById('duplicate-modal-overlay').style.display = 'none';
+        }
+
         function showToast(message, type = '') {
             toast.textContent = message;
             toast.className = 'toast ' + type;
@@ -2294,7 +2518,7 @@
                 let statusText;
                 
                 // Per Fuori Flessibilità (type_id=17), usa etichette specifiche
-                if (req.request_type_id === 17) {
+                if (req.type_name === 'Fuori Flessibilità') {
                     statusText = {
                         'pending': 'In attesa di revisione',
                         'approved': 'Ritardo confermato',
@@ -2338,7 +2562,7 @@
                 
                 // Render dettagli fuori flessibilità se presenti
                 let flexHtml = '';
-                if (req.request_type_id === 17 && req.ora_timbrata) {
+                if (req.type_name === 'Fuori Flessibilità' && req.ora_timbrata) {
                     const tipoLabel = req.tipo_timbratura === 'inizio_giornata' ? 'Ingresso' : 'Uscita';
                     const diffMinutes = Math.abs(req.diff_minutes || req.value || 0);
                     const direction = (req.diff_minutes || 0) > 0 ? 'ritardo' : 'anticipo';
@@ -2400,6 +2624,86 @@
                     `;
                 }
 
+                // Render dettagli giustificazione ritardo
+                let lateHtml = '';
+                if (typeName === 'Giustificazione Ritardo' && (req.ora_timbrata || req.turno_start || req.value)) {
+                    const lateMin = req.late_minutes || req.value || 0;
+                    const flex = req.flessibilita_ingresso_minuti || 0;
+                    lateHtml = `
+                        <div class="late-detail-box">
+                            <div class="late-detail-title">⏰ Dettagli ritardo</div>
+                            <div class="late-detail-grid">
+                                ${req.turno_start ? `<div class="late-detail-row"><span class="late-lbl">Turno previsto</span><span class="late-val">${req.turno_start}</span></div>` : ''}
+                                ${req.ora_timbrata ? `<div class="late-detail-row"><span class="late-lbl">Timbrata alle</span><span class="late-val highlight-red">${req.ora_timbrata}</span></div>` : ''}
+                                ${req.ora_mod ? `<div class="late-detail-row"><span class="late-lbl">Ora mod.</span><span class="late-val">${req.ora_mod}</span></div>` : ''}
+                                <div class="late-detail-row"><span class="late-lbl">Ritardo</span><span class="late-val highlight-red"><strong>${lateMin} min</strong></span></div>
+                                ${flex > 0 ? `<div class="late-detail-row"><span class="late-lbl">Flessibilità</span><span class="late-val">${flex} min</span></div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Render dettagli mancata timbratura
+                let timbraturaDetailHtml = '';
+                if (req.value_type === 'timbratura' && (req.ora_timbratura || req.tipo_timbratura)) {
+                    const tipoMap = {
+                        'ingresso': '🟢 Ingresso',
+                        'uscita': '🔴 Uscita',
+                        'pausa_in': '⏸ Inizio pausa',
+                        'pausa_out': '▶️ Fine pausa'
+                    };
+                    const tipoLabel = tipoMap[req.tipo_timbratura] || req.tipo_timbratura || '';
+                    timbraturaDetailHtml = `
+                        <div class="request-timb-detail">
+                            ${tipoLabel ? `<span class="request-timb-chip">📋 ${tipoLabel}</span>` : ''}
+                            ${req.ora_timbratura ? `<span class="request-timb-chip">🕐 Ora: <strong>${req.ora_timbratura}</strong></span>` : ''}
+                        </div>
+                    `;
+                }
+
+                // Render valore in evidenza (badge)
+                let valueBadgeHtml = '';
+                if (req.value && req.value_type !== 'minutes' && req.value_type !== 'timbratura') {
+                    const unitLabel = req.value_unit || 'ore';
+                    let icon = '⏱';
+                    if (unitLabel === '€') icon = '💶';
+                    else if (unitLabel === 'km') icon = '🚗';
+                    else if (unitLabel === 'giorni') icon = '📅';
+                    const displayValue = unitLabel === '€' ? `${icon} ${req.value.toFixed(2)} €` :
+                                        unitLabel === 'km' ? `${icon} ${req.value} km` :
+                                        unitLabel === 'giorni' ? `${icon} ${req.value} ${req.value === 1 ? 'giorno' : 'giorni'}` :
+                                        `${icon} ${req.value} ore`;
+                    valueBadgeHtml = `<div class="request-value-badge">${displayValue}</div>`;
+                }
+
+                // Render allegato
+                let attachmentHtml = '';
+                if (req.attachment_path) {
+                    let paths = [];
+                    try { paths = JSON.parse(req.attachment_path); } catch(e) { paths = [req.attachment_path]; }
+                    if (!Array.isArray(paths)) paths = [paths];
+                    attachmentHtml = paths.map(p => {
+                        const fname = p.split('/').pop();
+                        const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(fname);
+                        return `<div class="request-attachment">📎 <a href="${p}" target="_blank">${isImg ? '🖼 Immagine allegata' : '📄 ' + fname}</a></div>`;
+                    }).join('');
+                }
+
+                // Render motivazione rifiuto o note approvazione prominente
+                let adminNoteHtml = '';
+                if (req.admin_notes) {
+                    if (req.status === 'rejected') {
+                        adminNoteHtml = `
+                            <div class="request-rejection-box">
+                                <div class="rej-label">❌ Motivo rifiuto:</div>
+                                <div>${req.admin_notes}</div>
+                            </div>
+                        `;
+                    } else {
+                        adminNoteHtml = `<div class="request-approval-note">💬 ${req.admin_notes}</div>`;
+                    }
+                }
+
                 // Render info revisione (chi ha gestito la richiesta)
                 let reviewerHtml = '';
                 if (req.status !== 'pending' && req.reviewed_by) {
@@ -2432,20 +2736,26 @@
                 return `
                     <div class="request-card ${statusClass}">
                         <div class="request-header">
-                            <span class="request-type">${typeName}</span>
+                            <div>
+                                <span class="request-type">${typeName}</span>
+                                <div class="request-id">#${req.id}</div>
+                            </div>
                             <span class="request-status ${statusClass}">${statusText}</span>
                         </div>
                         <div class="request-dates">
-                            ${formatDate(req.date_start)}${req.date_end && req.date_end !== req.date_start ? ' → ' + formatDate(req.date_end) : ''}
+                            📅 ${formatDate(req.date_start)}${req.date_end && req.date_end !== req.date_start ? ' → ' + formatDate(req.date_end) : ''}
                         </div>
                         ${timeRangeHtml}
+                        ${lateHtml}
+                        ${timbraturaDetailHtml}
+                        ${valueBadgeHtml}
                         ${req.cdc ? `<div class="request-cdc">🏢 CDC: ${req.cdc}</div>` : ''}
                         ${tratteHtml}
                         ${flexHtml}
                         ${overtimeHtml}
-                        ${req.value && req.value_type !== 'minutes' ? `<div class="request-value">${req.value} ${req.value_unit || 'ore'}</div>` : ''}
-                        ${req.notes ? `<div class="request-notes">${req.notes}</div>` : ''}
-                        ${req.admin_notes ? `<div class="request-admin-notes">📝 ${req.admin_notes}</div>` : ''}
+                        ${attachmentHtml}
+                        ${req.notes ? `<div class="request-notes">💬 ${req.notes}</div>` : ''}
+                        ${adminNoteHtml}
                         ${reviewerHtml}
                         ${metaHtml}
                     </div>
@@ -2639,7 +2949,24 @@
                 }
 
                 if (res.ok) {
-                    showToast('Richiesta inviata con successo!', 'success');
+                    const result = await res.json();
+                    
+                    // Se è una mancata timbratura per gruppo produzione con pre-inserimento,
+                    // redirige alla home per mostrare il popup attività e sbloccare il timeframe
+                    if (result.production_preinserted) {
+                        showToast(result.message || 'Timbratura registrata!', 'success');
+                        // Salva i dati production_activity in sessionStorage per il popup sulla home
+                        if (result.production_activity) {
+                            sessionStorage.setItem('pending_production_activity', JSON.stringify(result.production_activity));
+                        }
+                        // Redirige alla home dopo un breve delay per mostrare il toast
+                        setTimeout(() => {
+                            window.location.href = '/?from_mancata_timbratura=1';
+                        }, 800);
+                        return;
+                    }
+                    
+                    showToast(result.message || 'Richiesta inviata con successo!', 'success');
                     form.reset();
                     setDefaultDates();
                     removeAllFiles();
@@ -2650,6 +2977,9 @@
                     updateFormFields();
                     loadResiduals();
                     loadMyRequests();
+                } else if (res.status === 409) {
+                    const err = await res.json();
+                    showDuplicateModal(err.error || 'Esiste già una richiesta per queste date.');
                 } else {
                     const err = await res.json();
                     showToast(err.error || 'Errore nell\'invio', 'error');
