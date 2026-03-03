@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Skills - JobLog Admin</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/svg+xml" href="/static/icons/icon-192x192.svg" />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script>
+(function(){
+    var s=localStorage.getItem('joblog-theme');
+    var d=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
+    document.documentElement.dataset.theme=s||(d?'dark':'light');
+})();
+</script>
+<style>
+:root{--bg:#0b1224;--bg-panel:#0f172a;--bg-soft:#111a30;--bg-card:#0f172a;--text:#e2e8f0;--text-muted:#94a3b8;--brand:#38bdf8;--brand-strong:#0ea5e9;--border:rgba(148,163,184,0.18);--success:#22c55e;--danger:#ef4444;--warning:#f59e0b}
+[data-theme="light"]{--bg:#f6f8fc;--bg-panel:#ffffff;--bg-soft:#eef2ff;--bg-card:#ffffff;--text:#0f172a;--text-muted:#475569;--brand:#2563eb;--brand-strong:#1d4ed8;--border:rgba(15,23,42,0.1);--success:#16a34a;--danger:#dc2626;--warning:#d97706}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Manrope','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:linear-gradient(135deg,#667eea 0%,#4f46e5 100%);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+.header-left{display:flex;align-items:center;gap:16px}
+.menu-btn{background:rgba(255,255,255,0.2);border:none;width:40px;height:40px;border-radius:10px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.menu-btn:hover{background:rgba(255,255,255,0.3)}
+.header h1{font-size:20px;font-weight:700}
+.header-actions{display:flex;align-items:center;gap:10px}
+.header-icon-btn{width:40px;height:40px;border:none;border-radius:10px;background:rgba(255,255,255,0.15);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s}
+.header-icon-btn:hover{background:rgba(255,255,255,0.25)}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+.tabs{display:flex;gap:4px;margin-bottom:24px;background:var(--bg-card);border-radius:12px;padding:4px;border:1px solid var(--border)}
+.tab-btn{flex:1;padding:12px 16px;border:none;background:transparent;color:var(--text-muted);font-weight:600;font-size:14px;border-radius:10px;cursor:pointer;transition:all .2s;font-family:inherit}
+.tab-btn:hover{color:var(--text);background:var(--bg-soft)}
+.tab-btn.active{background:var(--brand);color:#fff}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:16px}
+.search-box{display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;max-width:400px}
+.search-box input{border:none;background:transparent;outline:none;font-size:14px;color:var(--text);width:100%;font-family:inherit}
+.filter-select{padding:10px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:14px;font-family:inherit;outline:none;cursor:pointer}
+.filter-select:focus{border-color:var(--brand)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer;border:none;transition:all .2s;font-family:inherit}
+.btn-primary{background:var(--brand);color:#fff}
+.btn-primary:hover{background:var(--brand-strong)}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+.table-container{background:var(--bg-card);border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1)}
+table{width:100%;border-collapse:collapse}
+th,td{padding:14px 16px;text-align:left;border-bottom:1px solid var(--border)}
+th{background:var(--bg);font-weight:600;font-size:13px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+td{font-size:14px}
+tr:hover{background:var(--bg)}
+.badge{display:inline-block;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.badge-success{background:rgba(16,185,129,0.1);color:var(--success)}
+.badge-warning{background:rgba(245,158,11,0.1);color:var(--warning)}
+.badge-info{background:rgba(59,130,246,0.1);color:var(--brand)}
+.action-btns{display:flex;gap:8px}
+.icon-btn{width:32px;height:32px;border-radius:8px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .2s}
+.icon-btn.edit{background:rgba(59,130,246,0.1);color:var(--brand)}
+.icon-btn.edit:hover{background:var(--brand);color:#fff}
+.icon-btn.delete{background:rgba(239,68,68,0.1);color:var(--danger)}
+.icon-btn.delete:hover{background:var(--danger);color:#fff}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all .3s ease}
+.modal-overlay.open{opacity:1;visibility:visible}
+.modal{background:var(--bg-card);border-radius:16px;width:90%;max-width:500px;max-height:90vh;overflow-y:auto;transform:scale(0.9);transition:transform .3s ease}
+.modal-overlay.open .modal{transform:scale(1)}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.modal-header h2{font-size:18px;font-weight:700}
+.modal-close{background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-muted)}
+.modal-body{padding:24px}
+.form-group{margin-bottom:20px}
+.form-group label{display:block;font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:var(--bg);color:var(--text);outline:none;transition:border-color .2s;font-family:inherit}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:var(--brand)}
+.form-group textarea{min-height:80px;resize:vertical}
+.form-check{display:flex;align-items:center;gap:10px}
+.form-check input[type="checkbox"]{width:18px;height:18px;accent-color:var(--brand)}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:12px}
+/* Matrix */
+.matrix-container{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.matrix-container table{min-width:600px}
+.matrix-container th.category-header{background:var(--bg-soft);color:var(--brand);font-size:12px;text-align:center;border-left:2px solid var(--brand)}
+.matrix-container td.matrix-cell{text-align:center;padding:8px 6px;vertical-align:middle}
+.matrix-container th.skill-header{text-align:center;font-size:11px;padding:8px 6px;min-width:80px;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;height:120px}
+.matrix-container td.operator-name{font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--bg-card);z-index:2}
+.matrix-check{width:18px;height:18px;accent-color:var(--brand);cursor:pointer}
+.level-select{font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;width:100%;max-width:90px;font-family:inherit}
+.empty-state{text-align:center;padding:60px 20px}
+.empty-state-icon{font-size:48px;margin-bottom:16px}
+.empty-state h3{font-size:18px;margin-bottom:8px}
+.empty-state p{color:var(--text-muted);font-size:14px}
+.toast{position:fixed;bottom:24px;right:24px;padding:14px 20px;border-radius:10px;color:#fff;font-weight:500;z-index:400;transform:translateY(100px);opacity:0;transition:all .3s ease}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.success{background:var(--success)}
+.toast.error{background:var(--danger)}
+@media(max-width:768px){
+    .toolbar{flex-direction:column;align-items:stretch}
+    .search-box{max-width:none}
+    th,td{padding:10px 12px;font-size:13px}
+    .action-btns{flex-direction:column}
+    .tabs{flex-direction:column}
+    .matrix-container th.skill-header{height:80px;font-size:10px}
+}
+</style>
+</head>
+<body>
+
+{% include 'partials/admin_menu.html' %}
+
+<!-- Header -->
+<header class="header">
+    <div class="header-left">
+        <button class="menu-btn" onclick="toggleMenu()">&#9776;</button>
+        <h1>&#127919; Skills</h1>
+    </div>
+    <div class="header-actions">
+        <button class="header-icon-btn" id="themeToggle" title="Tema">&#127763;</button>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="container">
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="categories" onclick="switchTab('categories')">&#128193; Categorie</button>
+        <button class="tab-btn" data-tab="skills" onclick="switchTab('skills')">&#127919; Skills</button>
+        <button class="tab-btn" data-tab="matrix" onclick="switchTab('matrix')">&#128202; Matrice</button>
+    </div>
+
+    <!-- Tab: Categorie -->
+    <div class="tab-panel active" id="tab-categories">
+        <div class="toolbar">
+            <div class="search-box">
+                <span>&#128269;</span>
+                <input type="text" id="searchCategories" placeholder="Cerca categoria..." oninput="filterCategories()">
+            </div>
+            <button class="btn btn-primary" onclick="openCategoryModal()">&#10133; Nuova Categoria</button>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Icona</th>
+                        <th>Nome</th>
+                        <th>Ordine</th>
+                        <th>Azioni</th>
+                    </tr>
+                </thead>
+                <tbody id="categoriesTableBody">
+                    <tr><td colspan="4"><div class="empty-state"><div class="empty-state-icon">&#9203;</div><h3>Caricamento...</h3></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab: Skills -->
+    <div class="tab-panel" id="tab-skills">
+        <div class="toolbar">
+            <div class="search-box">
+                <span>&#128269;</span>
+                <input type="text" id="searchSkills" placeholder="Cerca skill..." oninput="filterSkills()">
+            </div>
+            <select class="filter-select" id="filterCategory" onchange="filterSkills()">
+                <option value="">Tutte le categorie</option>
+            </select>
+            <button class="btn btn-primary" onclick="openSkillModal()">&#10133; Nuova Skill</button>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Categoria</th>
+                        <th>Descrizione</th>
+                        <th>Certificazione</th>
+                        <th>Azioni</th>
+                    </tr>
+                </thead>
+                <tbody id="skillsTableBody">
+                    <tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">&#9203;</div><h3>Caricamento...</h3></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab: Matrice -->
+    <div class="tab-panel" id="tab-matrix">
+        <div class="toolbar">
+            <div class="search-box">
+                <span>&#128269;</span>
+                <input type="text" id="searchMatrix" placeholder="Cerca operatore..." oninput="filterMatrix()">
+            </div>
+            <button class="btn btn-secondary" onclick="loadMatrix()">&#8635; Aggiorna</button>
+        </div>
+        <div class="table-container matrix-container" id="matrixContainer">
+            <div class="empty-state"><div class="empty-state-icon">&#9203;</div><h3>Caricamento matrice...</h3></div>
+        </div>
+    </div>
+</main>
+
+<!-- Modal Categoria -->
+<div class="modal-overlay" id="categoryModalOverlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="categoryModalTitle">Nuova Categoria</h2>
+            <button class="modal-close" onclick="closeCategoryModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="categoryForm" onsubmit="saveCategory(event)">
+                <input type="hidden" id="categoryId">
+                <div class="form-group">
+                    <label>Nome Categoria *</label>
+                    <input type="text" id="categoryName" required placeholder="Es: Audio, Luci, Rigging...">
+                </div>
+                <div class="form-group">
+                    <label>Icona (emoji)</label>
+                    <input type="text" id="categoryIcon" placeholder="Es: &#127911; &#128161; &#128295;">
+                </div>
+                <div class="form-group">
+                    <label>Ordine</label>
+                    <input type="number" id="categorySortOrder" value="0" min="0" placeholder="0">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeCategoryModal()">Annulla</button>
+            <button type="submit" form="categoryForm" class="btn btn-primary">&#128190; Salva</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Skill -->
+<div class="modal-overlay" id="skillModalOverlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="skillModalTitle">Nuova Skill</h2>
+            <button class="modal-close" onclick="closeSkillModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="skillForm" onsubmit="saveSkill(event)">
+                <input type="hidden" id="skillId">
+                <div class="form-group">
+                    <label>Nome Skill *</label>
+                    <input type="text" id="skillName" required placeholder="Es: Mixing FOH, Truss Rigging...">
+                </div>
+                <div class="form-group">
+                    <label>Categoria *</label>
+                    <select id="skillCategory" required>
+                        <option value="">-- Seleziona categoria --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Descrizione</label>
+                    <textarea id="skillDescription" placeholder="Descrizione opzionale della skill"></textarea>
+                </div>
+                <div class="form-group">
+                    <div class="form-check">
+                        <input type="checkbox" id="skillRequiresCertification">
+                        <label for="skillRequiresCertification">&#128220; Richiede certificazione</label>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeSkillModal()">Annulla</button>
+            <button type="submit" form="skillForm" class="btn btn-primary">&#128190; Salva</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+document.getElementById('themeToggle')?.addEventListener('click',function(){
+    var h=document.documentElement,c=h.dataset.theme||'light',n=c==='dark'?'light':'dark';
+    h.dataset.theme=n;localStorage.setItem('joblog-theme',n);
+});
+</script>
+<script src="/static/js/admin_skills.js"></script>
+</body>
+</html>

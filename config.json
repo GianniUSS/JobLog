@@ -19,6 +19,10 @@
     "retry_interval_minutes": 5,
     "max_retry_attempts": 10
   },
+  "anthropic": {
+    "api_key": "",
+    "model": "claude-sonnet-4-20250514"
+  },
   "timbratura": {
     "qr_enabled": true,
     "gps_enabled": true,

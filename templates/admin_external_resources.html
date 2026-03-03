@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Risorse Esterne - JobLog Admin</title>
+<link rel="manifest" href="{{ static_version('manifest.json') }}">
+<link rel="icon" type="image/svg+xml" href="{{ static_version('icons/icon-192x192.svg') }}" />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script>
+    (function applyStoredTheme() {
+        const stored = localStorage.getItem('joblog-theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = stored || (prefersDark ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+    })();
+</script>
+<style>
+:root {
+    --bg: #0b1224; --bg-panel: #0f172a; --bg-soft: #111a30; --bg-card: #0f172a;
+    --text: #e2e8f0; --text-muted: #94a3b8; --brand: #38bdf8; --brand-strong: #0ea5e9;
+    --border: rgba(148, 163, 184, 0.18); --success: #22c55e; --danger: #ef4444; --warning: #f59e0b;
+}
+[data-theme="light"] {
+    --bg: #f6f8fc; --bg-panel: #ffffff; --bg-soft: #eef2ff; --bg-card: #ffffff;
+    --text: #0f172a; --text-muted: #475569; --brand: #2563eb; --brand-strong: #1d4ed8;
+    --border: rgba(15, 23, 42, 0.1); --success: #16a34a; --danger: #dc2626; --warning: #d97706;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+}
+.hidden { display: none !important; }
+
+/* Header */
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #4f46e5 100%);
+    color: white; padding: 14px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+.header-left { display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 20px; font-weight: 700; }
+.menu-btn {
+    background: rgba(255,255,255,0.2); border: none;
+    width: 40px; height: 40px; border-radius: 10px;
+    color: white; font-size: 20px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.menu-btn:hover { background: rgba(255,255,255,0.3); }
+
+/* Main content */
+main { padding: 20px; max-width: 1400px; margin: 0 auto; width: 100%; }
+
+/* Filter bar */
+.filter-bar {
+    display: flex; gap: 12px; margin-bottom: 20px;
+    flex-wrap: wrap; align-items: center;
+}
+.search-input {
+    flex: 1; min-width: 200px; padding: 12px 16px;
+    border-radius: 12px; border: 1px solid var(--border);
+    background: var(--bg-soft); color: var(--text);
+    font-size: 14px; font-weight: 600;
+    font-family: inherit;
+}
+.search-input:focus { outline: none; border-color: var(--brand); }
+.search-input::placeholder { color: var(--text-muted); }
+.filter-select {
+    padding: 12px 16px; border-radius: 12px;
+    border: 1px solid var(--border); background: var(--bg-soft);
+    color: var(--text); font-size: 14px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+}
+.filter-select:focus { outline: none; border-color: var(--brand); }
+.btn {
+    border: 1px solid var(--border); background: var(--bg-soft);
+    color: var(--text); border-radius: 12px; padding: 12px 20px;
+    font-weight: 700; font-size: 14px; cursor: pointer;
+    transition: all 0.15s ease; display: inline-flex;
+    align-items: center; gap: 8px; font-family: inherit;
+}
+.btn:hover { background: var(--bg-panel); }
+.btn:active { transform: scale(0.97); }
+.btn.primary { background: var(--brand); color: white; border-color: transparent; }
+.btn.primary:hover { background: var(--brand-strong); }
+.btn.danger { background: var(--danger); color: white; border-color: transparent; }
+.btn.danger:hover { opacity: 0.9; }
+.btn.success { background: var(--success); color: white; border-color: transparent; }
+
+/* Resource cards grid */
+.resources-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.resource-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 20px; display: flex; flex-direction: column; gap: 12px; transition: border-color 0.2s ease;
+}
+.resource-card:hover { border-color: var(--brand); }
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.card-name { font-size: 16px; font-weight: 700; }
+.card-company { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.badge { display: inline-flex; padding: 3px 10px; border-radius: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.badge-category { background: rgba(56,189,248,0.15); color: var(--brand); }
+.badge-type { background: rgba(168,85,247,0.15); color: #a855f7; }
+.card-city { font-size: 13px; color: var(--text-muted); }
+.card-city::before { content: "\1F4CD "; }
+.card-rating { display: flex; gap: 2px; }
+.card-rating .star { color: var(--text-muted); font-size: 14px; }
+.card-rating .star.filled { color: var(--warning); }
+.card-phone { font-size: 13px; color: var(--text-muted); }
+.card-actions { display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap; }
+.action-btn {
+    width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 10px;
+    background: transparent; color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; transition: all 0.15s ease; text-decoration: none;
+}
+.action-btn:hover { background: var(--bg-soft); }
+.action-btn.edit:hover { border-color: var(--brand); color: var(--brand); }
+.action-btn.detail:hover { border-color: var(--success); color: var(--success); }
+.action-btn.phone-btn:hover { border-color: var(--success); color: var(--success); }
+.action-btn.wa-btn:hover { border-color: #25d366; color: #25d366; }
+.action-btn.email-btn:hover { border-color: var(--warning); color: var(--warning); }
+
+/* Empty / Loading states */
+.empty-state { padding: 60px 20px; text-align: center; color: var(--text-muted); }
+.empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+.empty-state-text { font-size: 16px; font-weight: 600; }
+
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(11,18,36,0.85); backdrop-filter: blur(4px); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; visibility: hidden; transition: all 0.2s ease; }
+.modal-overlay.open { opacity: 1; visibility: visible; }
+.modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; transform: translateY(20px); transition: transform 0.2s ease; }
+.modal-overlay.open .modal { transform: translateY(0); }
+.modal.wide { max-width: 900px; }
+.modal-header {
+    padding: 20px 24px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; background: var(--bg-card);
+    border-radius: 20px 20px 0 0; z-index: 1;
+}
+.modal-title { font-size: 18px; font-weight: 800; margin: 0; }
+.modal-close {
+    width: 36px; height: 36px; border: none;
+    background: var(--bg-soft); border-radius: 10px;
+    color: var(--text); font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { background: var(--border); }
+.modal-body { padding: 24px; }
+.modal-footer {
+    padding: 16px 24px; border-top: 1px solid var(--border);
+    display: flex; gap: 12px; justify-content: flex-end;
+    position: sticky; bottom: 0; background: var(--bg-card);
+    border-radius: 0 0 20px 20px;
+}
+
+/* Form */
+.form-row { display: flex; gap: 16px; }
+.form-row > .form-group { flex: 1; }
+.form-group { margin-bottom: 16px; }
+.form-label {
+    display: block; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 8px;
+}
+.form-input, .form-select, .form-textarea {
+    width: 100%; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg-soft);
+    color: var(--text); font-size: 14px; font-weight: 600;
+    font-family: inherit;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+    outline: none; border-color: var(--brand);
+}
+.form-textarea { resize: vertical; min-height: 80px; }
+.form-radio-group { display: flex; gap: 16px; }
+.form-radio {
+    display: flex; align-items: center; gap: 8px;
+    cursor: pointer; font-weight: 600; font-size: 14px;
+}
+.form-radio input[type="radio"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--brand); }
+
+/* Star rating selector */
+.star-rating { display: flex; flex-direction: row-reverse; gap: 4px; justify-content: flex-end; }
+.star-rating input { display: none; }
+.star-rating label {
+    font-size: 24px; color: var(--text-muted); cursor: pointer;
+    transition: color 0.15s ease;
+}
+.star-rating label::before { content: "\2605"; }
+.star-rating input:checked ~ label { color: var(--warning); }
+.star-rating label:hover, .star-rating label:hover ~ label { color: var(--warning); }
+
+/* Detail view */
+.detail-tabs {
+    display: flex; gap: 0; border-bottom: 2px solid var(--border);
+    margin-bottom: 20px;
+}
+.detail-tab {
+    padding: 12px 24px; font-weight: 700; font-size: 14px;
+    cursor: pointer; border: none; background: transparent;
+    color: var(--text-muted); border-bottom: 2px solid transparent;
+    margin-bottom: -2px; transition: all 0.2s ease; font-family: inherit;
+}
+.detail-tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+.detail-tab:hover { color: var(--text); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Info grid */
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.info-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 4px; }
+.info-value { font-size: 14px; font-weight: 600; }
+.info-value a { color: var(--brand); text-decoration: none; }
+.info-value a:hover { text-decoration: underline; }
+
+/* Skills list */
+.skill-list { display: flex; flex-direction: column; gap: 10px; }
+.skill-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: var(--bg-soft); border-radius: 10px; border: 1px solid var(--border);
+}
+.skill-name { font-weight: 700; font-size: 14px; }
+.skill-level { font-size: 12px; color: var(--text-muted); }
+.skill-remove { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--danger); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.skill-remove:hover { background: rgba(239,68,68,0.1); }
+.add-skill-row { display: flex; gap: 10px; margin-top: 12px; }
+.add-skill-row select { flex: 1; }
+
+/* Availability calendar */
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.cal-nav-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-soft); color: var(--text); cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+.cal-nav-btn:hover { background: var(--bg-panel); }
+.cal-month { font-size: 16px; font-weight: 700; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-head { text-align: center; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; padding: 8px 0; }
+.cal-day {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--bg-soft); color: var(--text); transition: all 0.15s ease;
+}
+.cal-day:hover { border-color: var(--brand); }
+.cal-day.empty { visibility: hidden; cursor: default; }
+.cal-day.available { background: rgba(34,197,94,0.2); border-color: var(--success); color: var(--success); }
+.cal-day.unavailable { background: rgba(239,68,68,0.2); border-color: var(--danger); color: var(--danger); }
+.cal-day.tentative { background: rgba(245,158,11,0.2); border-color: var(--warning); color: var(--warning); }
+.cal-legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.cal-legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 6px; vertical-align: middle; }
+.cal-legend .leg-available::before { background: rgba(34,197,94,0.4); }
+.cal-legend .leg-unavailable::before { background: rgba(239,68,68,0.4); }
+.cal-legend .leg-tentative::before { background: rgba(245,158,11,0.4); }
+
+/* Toast */
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 400; font-weight: 600; transition: transform 0.3s ease; }
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.success { border-color: var(--success); color: var(--success); }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+
+/* Responsive */
+@media (max-width: 768px) {
+    .resources-grid { grid-template-columns: 1fr; }
+    .info-grid { grid-template-columns: 1fr; }
+    .form-row { flex-direction: column; gap: 0; }
+    .filter-bar { flex-direction: column; }
+    .filter-select, .search-input { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+{% include 'partials/admin_menu.html' %}
+
+<div class="header">
+    <div class="header-left">
+        <button class="menu-btn" onclick="toggleMenu()">&#9776;</button>
+        <h1>&#128101; Risorse Esterne</h1>
+    </div>
+</div>
+
+<main>
+    <!-- Filter bar -->
+    <div class="filter-bar">
+        <input type="text" class="search-input" id="searchInput" placeholder="Cerca nome o azienda..." />
+        <select class="filter-select" id="filterType">
+            <option value="">Tutti i tipi</option>
+            <option value="persona">Persona</option>
+            <option value="azienda">Azienda</option>
+        </select>
+        <select class="filter-select" id="filterCategory">
+            <option value="">Tutte le categorie</option>
+            <option value="facchinaggio">Facchinaggio</option>
+            <option value="artigiano">Artigiano</option>
+            <option value="tecnico">Tecnico</option>
+            <option value="autista">Autista</option>
+            <option value="altro">Altro</option>
+        </select>
+        <select class="filter-select" id="filterRating">
+            <option value="">Rating min</option>
+            <option value="1">&#9733; 1+</option>
+            <option value="2">&#9733; 2+</option>
+            <option value="3">&#9733; 3+</option>
+            <option value="4">&#9733; 4+</option>
+            <option value="5">&#9733; 5</option>
+        </select>
+        <button class="btn primary" onclick="openCreateModal()">+ Nuova Risorsa</button>
+    </div>
+
+    <!-- Resource cards grid -->
+    <div class="resources-grid" id="resourcesGrid">
+        <div class="empty-state" id="loadingState">
+            <div class="empty-state-icon">&#8987;</div>
+            <div class="empty-state-text">Caricamento risorse...</div>
+        </div>
+    </div>
+</main>
+
+<!-- Create / Edit Modal -->
+<div class="modal-overlay" id="formModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 class="modal-title" id="formModalTitle">Nuova Risorsa</h2>
+            <button class="modal-close" onclick="closeFormModal()">&#10005;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="formResourceId" />
+
+            <div class="form-group">
+                <label class="form-label">Tipo risorsa</label>
+                <div class="form-radio-group">
+                    <label class="form-radio">
+                        <input type="radio" name="resource_type" value="persona" checked /> Persona
+                    </label>
+                    <label class="form-radio">
+                        <input type="radio" name="resource_type" value="azienda" /> Azienda
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Nome contatto</label>
+                    <input type="text" class="form-input" id="formContactName" placeholder="Mario Rossi" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Azienda</label>
+                    <input type="text" class="form-input" id="formCompanyName" placeholder="Trasporti SRL" />
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Telefono</label>
+                    <input type="tel" class="form-input" id="formPhone" placeholder="+39 333 1234567" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">WhatsApp</label>
+                    <input type="tel" class="form-input" id="formWhatsapp" placeholder="+39 333 1234567" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" id="formEmail" placeholder="email@esempio.it" />
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Citta</label>
+                    <input type="text" class="form-input" id="formCity" placeholder="Roma" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Indirizzo</label>
+                    <input type="text" class="form-input" id="formAddress" placeholder="Via Roma 1" />
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Categoria</label>
+                    <select class="form-select" id="formCategory">
+                        <option value="facchinaggio">Facchinaggio</option>
+                        <option value="artigiano">Artigiano</option>
+                        <option value="tecnico">Tecnico</option>
+                        <option value="autista">Autista</option>
+                        <option value="altro">Altro</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">P. IVA</label>
+                    <input type="text" class="form-input" id="formVatNumber" placeholder="IT01234567890" />
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Tariffa oraria (&euro;)</label>
+                    <input type="number" class="form-input" id="formHourlyRate" placeholder="0.00" step="0.01" min="0" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Tariffa giornaliera (&euro;)</label>
+                    <input type="number" class="form-input" id="formDailyRate" placeholder="0.00" step="0.01" min="0" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Rating</label>
+                <div class="star-rating" id="formRating">
+                    <input type="radio" id="star5" name="rating" value="5" /><label for="star5" title="5"></label>
+                    <input type="radio" id="star4" name="rating" value="4" /><label for="star4" title="4"></label>
+                    <input type="radio" id="star3" name="rating" value="3" checked /><label for="star3" title="3"></label>
+                    <input type="radio" id="star2" name="rating" value="2" /><label for="star2" title="2"></label>
+                    <input type="radio" id="star1" name="rating" value="1" /><label for="star1" title="1"></label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Note</label>
+                <textarea class="form-textarea" id="formNotes" placeholder="Note aggiuntive..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeFormModal()">Annulla</button>
+            <button class="btn primary" onclick="saveResource()">Salva</button>
+        </div>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detailModal">
+    <div class="modal wide">
+        <div class="modal-header">
+            <h2 class="modal-title" id="detailTitle">Dettaglio Risorsa</h2>
+            <button class="modal-close" onclick="closeDetailModal()">&#10005;</button>
+        </div>
+        <div class="modal-body">
+            <div class="detail-tabs">
+                <button class="detail-tab active" data-tab="info" onclick="switchTab('info', this)">Info</button>
+                <button class="detail-tab" data-tab="skills" onclick="switchTab('skills', this)">Skills</button>
+                <button class="detail-tab" data-tab="disponibilita" onclick="switchTab('disponibilita', this)">Disponibilita</button>
+            </div>
+
+            <!-- Tab: Info -->
+            <div class="tab-content active" id="tabInfo">
+                <div class="info-grid" id="infoGrid"></div>
+            </div>
+
+            <!-- Tab: Skills -->
+            <div class="tab-content" id="tabSkills">
+                <div class="skill-list" id="skillList"></div>
+                <div class="add-skill-row">
+                    <select class="form-select" id="addSkillSelect">
+                        <option value="">Seleziona skill...</option>
+                    </select>
+                    <select class="form-select" id="addSkillLevel" style="max-width:120px;">
+                        <option value="base">Base</option>
+                        <option value="intermedio">Intermedio</option>
+                        <option value="avanzato">Avanzato</option>
+                        <option value="esperto">Esperto</option>
+                    </select>
+                    <button class="btn primary" onclick="addSkill()">+ Aggiungi</button>
+                </div>
+            </div>
+
+            <!-- Tab: Disponibilita -->
+            <div class="tab-content" id="tabDisponibilita">
+                <div class="cal-nav">
+                    <button class="cal-nav-btn" onclick="changeMonth(-1)">&#8249;</button>
+                    <span class="cal-month" id="calMonth"></span>
+                    <button class="cal-nav-btn" onclick="changeMonth(1)">&#8250;</button>
+                </div>
+                <div class="cal-grid" id="calGrid"></div>
+                <div class="cal-legend">
+                    <span class="leg-available">Disponibile</span>
+                    <span class="leg-unavailable">Non disponibile</span>
+                    <span class="leg-tentative">Da confermare</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="/static/js/admin_external_resources.js"></script>
+</body>
+</html>

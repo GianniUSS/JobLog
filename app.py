@@ -27672,6 +27672,13 @@ def api_admin_payroll_dashboard() -> ResponseReturnValue:
     })
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# BLUEPRINT — Moduli esterni (primo passo verso la modularizzazione)
+# ═══════════════════════════════════════════════════════════════════════════
+from routes.ai_planner import ai_planner
+app.register_blueprint(ai_planner)
+
+
 if __name__ == "__main__":
     init_db()
     
