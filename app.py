@@ -25396,11 +25396,14 @@ def api_user_requests_create() -> ResponseReturnValue:
     # ═══════════════════════════════════════════════════════════════════════════
     # CONTROLLO DUPLICATI: blocca richieste dello stesso tipo con date sovrapposte
     # Considera solo richieste non rifiutate (pending o approved).
+    # Per "Mancata Timbratura" (value_type=timbratura) il tipo_timbratura
+    # (ingresso/uscita/pausa_in/pausa_out) differenzia le richieste: si può
+    # fare Inizio Giornata + Inizio Pausa nello stesso giorno.
     # ═══════════════════════════════════════════════════════════════════════════
     _dup_end = date_end or date_start  # se date_end è None, la richiesta è per un solo giorno
     placeholder = "%s" if DB_VENDOR == "mysql" else "?"
-    existing_dup = db.execute(
-        f"""SELECT id, date_from, date_to, status FROM user_requests
+    existing_dups = db.execute(
+        f"""SELECT id, date_from, date_to, status, extra_data FROM user_requests
             WHERE username = {placeholder}
               AND request_type_id = {placeholder}
               AND status != 'rejected'
@@ -25408,11 +25411,38 @@ def api_user_requests_create() -> ResponseReturnValue:
               AND COALESCE(date_to, date_from) >= {placeholder}
         """,
         (username, request_type_id, _dup_end, date_start)
-    ).fetchone()
-    if existing_dup:
-        _dup_status = existing_dup['status'] if isinstance(existing_dup, dict) else existing_dup[3]
-        _status_label = "in attesa di approvazione" if _dup_status == "pending" else "già approvata"
-        return jsonify({"error": f"Esiste già una richiesta dello stesso tipo per le date selezionate ({_status_label}). Controlla lo storico."}), 409
+    ).fetchall()
+
+    if existing_dups:
+        app.logger.info(f"[DUP-CHECK] user={username}, type_id={request_type_id}, value_type={value_type}, extra_data={extra_data_json}, found {len(existing_dups)} existing")
+        # Per mancata timbratura, confronta anche tipo_timbratura da extra_data
+        if value_type == "timbratura" and extra_data_json:
+            try:
+                new_extra = json.loads(extra_data_json) if isinstance(extra_data_json, str) else extra_data_json
+                new_tipo = new_extra.get("tipo_timbratura", "")
+            except (json.JSONDecodeError, AttributeError):
+                new_tipo = ""
+            app.logger.info(f"[DUP-CHECK] timbratura: new_tipo={new_tipo}")
+            for dup_row in existing_dups:
+                dup_extra_raw = dup_row['extra_data'] if isinstance(dup_row, dict) else dup_row[4]
+                dup_tipo = ""
+                if dup_extra_raw:
+                    try:
+                        dup_extra = json.loads(dup_extra_raw) if isinstance(dup_extra_raw, str) else dup_extra_raw
+                        dup_tipo = dup_extra.get("tipo_timbratura", "")
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+                if dup_tipo == new_tipo:
+                    app.logger.info(f"[DUP-CHECK] MATCH! dup_tipo={dup_tipo} == new_tipo={new_tipo} → blocking")
+                    _dup_status = dup_row['status'] if isinstance(dup_row, dict) else dup_row[3]
+                    _status_label = "in attesa di approvazione" if _dup_status == "pending" else "già approvata"
+                    return jsonify({"error": f"Esiste già una richiesta dello stesso tipo per le date selezionate ({_status_label}). Controlla lo storico."}), 409
+        else:
+            # Per tutti gli altri tipi: qualsiasi match è duplicato
+            existing_dup = existing_dups[0]
+            _dup_status = existing_dup['status'] if isinstance(existing_dup, dict) else existing_dup[3]
+            _status_label = "in attesa di approvazione" if _dup_status == "pending" else "già approvata"
+            return jsonify({"error": f"Esiste già una richiesta dello stesso tipo per le date selezionate ({_status_label}). Controlla lo storico."}), 409
 
     if DB_VENDOR == "mysql":
         db.execute("""
