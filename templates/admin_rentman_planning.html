@@ -1882,6 +1882,7 @@
             flex-direction: column;
             gap: 6px;
             margin-bottom: 8px;
+            overflow: visible;
         }
         .fn-phase-item {
             display: flex;
@@ -1891,6 +1892,8 @@
             background: var(--bg-card);
             border-radius: 8px;
             border: 1px solid var(--border);
+            position: relative;
+            overflow: visible;
         }
         .fn-phase-item .phase-order {
             width: 28px;
@@ -2439,7 +2442,9 @@
         // FASI FUNZIONE - Modal Configurazione
         // ═══════════════════════════════════════════════════════════════════
         let fpEditData = {}; // Copia locale per editing nel modal
+        let fpOriginalKeys = []; // Chiavi originali prima dell'editing (per tracciare rinominazioni)
         let fpKnownFunctions = []; // Funzioni Rentman distinte (autocomplete)
+        let fpKnownProjects = []; // Progetti Rentman distinti (autocomplete)
 
         async function loadFpDistinctFunctions() {
             try {
@@ -2452,7 +2457,23 @@
         }
         loadFpDistinctFunctions();
 
-        function openFunctionPhasesModal(functionName) {
+        async function loadFpDistinctProjects() {
+            try {
+                const res = await fetch('/api/admin/function-phases/distinct-projects');
+                const data = await res.json();
+                if (data.ok) {
+                    fpKnownProjects = data.projects || [];
+                    console.log('[FP] Progetti distinti caricati:', fpKnownProjects.length, fpKnownProjects);
+                } else {
+                    console.warn('[FP] Errore risposta progetti:', data);
+                }
+            } catch (e) {
+                console.warn('[FP] Errore caricamento progetti distinti:', e);
+            }
+        }
+        loadFpDistinctProjects();
+
+        function openFunctionPhasesModal(functionName, projectCode) {
             if (functionName && functionName.trim()) {
                 // Aperto da click su funzione specifica: mostra SOLO quella
                 const fn = functionName.trim();
@@ -2460,12 +2481,14 @@
                 if (allConfig[fn]) {
                     fpEditData = { [fn]: allConfig[fn] };
                 } else {
-                    fpEditData = { [fn]: { match_mode: 'exact', phases: [{ name: 'Fase 1', order: 1 }] } };
+                    fpEditData = { [fn]: { match_mode: 'exact', phases: [{ name: 'Fase 1', order: 1, project_number: projectCode || '' }] } };
                 }
             } else {
                 // Aperto senza contesto: mostra tutte le funzioni
                 fpEditData = JSON.parse(JSON.stringify(functionPhasesConfig));
             }
+            // Salva le chiavi originali per tracciare rinominazioni/cancellazioni
+            fpOriginalKeys = Object.keys(fpEditData);
             fpRender();
             document.getElementById('fpModalOverlay').classList.add('open');
         }
@@ -2492,10 +2515,12 @@
             keys.forEach((fnKey, fnIdx) => {
                 const tmpl = fpEditData[fnKey];
                 const phases = tmpl.phases || [];
-                html += `<div class="fn-template" data-fn-idx="${fnIdx}">
+                const displayName = tmpl.display_name || fnKey;
+                html += `<div class="fn-template" data-fn-idx="${fnIdx}" data-fn-key="${fpEscapeHtml(fnKey)}">
                     <div class="fn-template-header">
                         <div style="position: relative; flex: 1;">
-                            <input type="text" value="${fpEscapeHtml(fnKey)}"
+                            <input type="text" value="${fpEscapeHtml(displayName)}"
+                                   class="fp-fn-name-input"
                                    placeholder="Nome funzione (es. Montaggio)"
                                    oninput="fpOnNameInput(this, ${fnIdx})"
                                    onfocus="fpShowSuggestions(this, ${fnIdx})"
@@ -2507,11 +2532,31 @@
                     <div class="fn-phase-list">`;
                 const pLen = phases.length;
                 phases.forEach((phase, phIdx) => {
+                    const phUid = `${fnIdx}_${phIdx}`;
+                    const curProjNum = phase.project_number || '';
+                    // Trova il nome progetto corrispondente per mostrarlo nel placeholder
+                    const curProj = fpKnownProjects.find(p => p.code === curProjNum);
+                    const displayVal = curProjNum ? (curProj ? `${curProjNum} - ${curProj.name}` : curProjNum) : '';
+                    let dlOptions = '';
+                    fpKnownProjects.forEach(p => {
+                        dlOptions += `<option value="${fpEscapeHtml(p.code)} - ${fpEscapeHtml(p.name)}"></option>`;
+                    });
                     html += `<div class="fn-phase-item">
                         <span class="phase-order">${phIdx + 1}</span>
                         <input type="text" value="${fpEscapeHtml(phase.name || '')}"
                                placeholder="Nome fase..."
-                               onchange="fpUpdatePhaseName(${fnIdx}, ${phIdx}, this.value)">
+                               onchange="fpUpdatePhaseName(${fnIdx}, ${phIdx}, this.value)"
+                               style="flex: 1;">
+                        <input type="text" list="fpProjList_${phUid}"
+                               value="${fpEscapeHtml(displayVal)}"
+                               placeholder="Cerca progetto..."
+                               onchange="fpOnProjectInput(${fnIdx}, ${phIdx}, this.value)"
+                               onblur="fpOnProjectInput(${fnIdx}, ${phIdx}, this.value)"
+                               title="Digita per cercare un progetto"
+                               style="width: 180px; flex: none; font-size: 12px; color: var(--brand); font-weight: 600; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card);">
+                        <datalist id="fpProjList_${phUid}">
+                            ${dlOptions}
+                        </datalist>
                         <div class="fn-phase-actions">
                             <button class="btn-move-phase" onclick="fpMovePhase(${fnIdx}, ${phIdx}, -1)" title="Sposta su" ${phIdx === 0 ? 'disabled' : ''}>▲</button>
                             <button class="btn-move-phase" onclick="fpMovePhase(${fnIdx}, ${phIdx}, 1)" title="Sposta giù" ${phIdx === pLen - 1 ? 'disabled' : ''}>▼</button>
@@ -2528,7 +2573,7 @@
 
         function fpAddFunction() {
             const newKey = 'Nuova Funzione ' + (Object.keys(fpEditData).length + 1);
-            fpEditData[newKey] = { match_mode: 'contains', phases: [{ name: 'Fase 1', order: 1 }] };
+            fpEditData[newKey] = { match_mode: 'contains', phases: [{ name: 'Fase 1', order: 1, project_number: '' }] };
             fpRender();
         }
 
@@ -2548,13 +2593,9 @@
         function fpOnNameInput(input, fnIdx) {
             const keys = Object.keys(fpEditData);
             if (fnIdx >= keys.length) return;
-            const oldKey = keys[fnIdx];
-            const newKey = input.value.trim();
-            if (newKey && newKey !== oldKey) {
-                const tmpl = fpEditData[oldKey];
-                delete fpEditData[oldKey];
-                fpEditData[newKey] = tmpl;
-            }
+            const key = keys[fnIdx];
+            // Aggiorna solo il display_name, non la chiave
+            fpEditData[key].display_name = input.value.trim();
             fpShowSuggestions(input, fnIdx);
         }
 
@@ -2581,10 +2622,9 @@
         function fpSelectSuggestion(fnIdx, fnName) {
             const keys = Object.keys(fpEditData);
             if (fnIdx >= keys.length) return;
-            const oldKey = keys[fnIdx];
-            const tmpl = fpEditData[oldKey];
-            delete fpEditData[oldKey];
-            fpEditData[fnName] = tmpl;
+            const key = keys[fnIdx];
+            // Aggiorna il display_name con la suggestion selezionata
+            fpEditData[key].display_name = fnName;
             fpRender();
         }
 
@@ -2593,7 +2633,7 @@
             if (fnIdx >= keys.length) return;
             const tmpl = fpEditData[keys[fnIdx]];
             tmpl.phases = tmpl.phases || [];
-            tmpl.phases.push({ name: '', order: tmpl.phases.length + 1 });
+            tmpl.phases.push({ name: '', order: tmpl.phases.length + 1, project_number: '' });
             fpRender();
         }
 
@@ -2621,6 +2661,37 @@
             }
         }
 
+        function fpUpdatePhaseProjectNumber(fnIdx, phIdx, value) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const tmpl = fpEditData[keys[fnIdx]];
+            if (tmpl.phases && phIdx < tmpl.phases.length) {
+                tmpl.phases[phIdx].project_number = value.trim();
+            }
+        }
+
+        function fpOnProjectInput(fnIdx, phIdx, rawValue) {
+            // Estrae il codice progetto dal formato "CODE - Nome"
+            const val = rawValue.trim();
+            let code = '';
+            if (val) {
+                const dashIdx = val.indexOf(' - ');
+                const candidate = dashIdx > 0 ? val.substring(0, dashIdx).trim() : val.trim();
+                // Verifica che sia un progetto esistente
+                const found = fpKnownProjects.find(p => p.code === candidate);
+                if (found) {
+                    code = found.code;
+                } else {
+                    // Prova match per codice parziale
+                    const foundPartial = fpKnownProjects.find(p => 
+                        p.code === val || (p.code + ' - ' + p.name) === val
+                    );
+                    if (foundPartial) code = foundPartial.code;
+                }
+            }
+            fpUpdatePhaseProjectNumber(fnIdx, phIdx, code);
+        }
+
         function fpUpdatePhaseName(fnIdx, phIdx, newName) {
             const keys = Object.keys(fpEditData);
             if (fnIdx >= keys.length) return;
@@ -2632,32 +2703,82 @@
 
         function fpCollectClean() {
             const cleaned = {};
-            Object.entries(fpEditData).forEach(([key, tmpl]) => {
-                const k = key.trim();
+            const keys = Object.keys(fpEditData);
+            // Leggi i display_name dal DOM
+            const nameInputs = document.querySelectorAll('.fp-fn-name-input');
+            keys.forEach((key, idx) => {
+                const tmpl = fpEditData[key];
+                // Leggi il display_name dal DOM
+                const domName = nameInputs[idx] ? nameInputs[idx].value.trim() : '';
+                const displayName = domName || tmpl.display_name || key;
+                const k = key.trim(); // La chiave originale resta invariata
                 if (!k) return;
                 const phases = (tmpl.phases || [])
                     .filter(p => p.name && p.name.trim())
-                    .map((p, i) => ({ name: p.name.trim(), order: i + 1 }));
+                    .map((p, i) => ({ name: p.name.trim(), order: i + 1, project_number: p.project_number || '' }));
                 if (phases.length > 0) {
-                    cleaned[k] = { match_mode: tmpl.match_mode || 'contains', phases };
+                    cleaned[k] = {
+                        match_mode: tmpl.match_mode || 'contains',
+                        phases,
+                        display_name: displayName !== k ? displayName : undefined
+                    };
                 }
             });
+            console.log('[FP] fpCollectClean result:', JSON.stringify(cleaned));
             return cleaned;
+        }
+
+        function fpValidate(edited) {
+            // Verifica che ogni fase abbia un numero progetto valido
+            const validCodes = new Set(fpKnownProjects.map(p => p.code));
+            const errors = [];
+            for (const [fnName, tmpl] of Object.entries(edited)) {
+                (tmpl.phases || []).forEach((phase, i) => {
+                    if (!phase.project_number) {
+                        errors.push(`"${fnName}" → Fase ${i + 1} (${phase.name}): N° Progetto mancante`);
+                    } else if (!validCodes.has(phase.project_number)) {
+                        errors.push(`"${fnName}" → Fase ${i + 1} (${phase.name}): N° Progetto "${phase.project_number}" non valido`);
+                    }
+                });
+            }
+            return errors;
         }
 
         async function fpSave() {
             const edited = fpCollectClean();
+            console.log('[FP] fpSave - edited:', JSON.stringify(edited));
+
+            // Validazione: progetto obbligatorio e valido
+            const validationErrors = fpValidate(edited);
+            if (validationErrors.length > 0) {
+                // Evidenzia i campi con errore
+                document.querySelectorAll('.fn-phase-item input[list]').forEach(inp => {
+                    const val = inp.value.trim();
+                    const code = val.includes(' - ') ? val.substring(0, val.indexOf(' - ')).trim() : val.trim();
+                    const validCodes = new Set(fpKnownProjects.map(p => p.code));
+                    if (!code || !validCodes.has(code)) {
+                        inp.style.border = '2px solid #ef4444';
+                        inp.style.background = '#fef2f2';
+                    } else {
+                        inp.style.border = '1px solid var(--border)';
+                        inp.style.background = 'var(--bg-card)';
+                    }
+                });
+                showMessage('⚠️ ' + validationErrors[0], 'error');
+                return;
+            }
             // Merge: sovrapponi le funzioni editate alla config completa
             const merged = JSON.parse(JSON.stringify(functionPhasesConfig));
-            // Rimuovi le chiavi che erano in fpEditData originale ma ora sono state cancellate
-            // (l'utente potrebbe aver rimosso una funzione dal modal)
-            const originalKeys = Object.keys(fpEditData);
-            // Applica le modifiche
+            // Rimuovi le chiavi originali che l'utente ha cancellato dal modal
+            fpOriginalKeys.forEach(origKey => {
+                if (!edited[origKey]) {
+                    delete merged[origKey];
+                }
+            });
+            // Applica le modifiche (le chiavi restano quelle Rentman, il display_name è nei valori)
             for (const [key, val] of Object.entries(edited)) {
                 merged[key] = val;
             }
-            // Se una chiave originale non è più in edited (è stata rimossa), rimuovila dal merge
-            // Ma solo se il modal era in modalità singola funzione: non rimuovere le altre
             const payload = merged;
             try {
                 const res = await fetch('/api/admin/function-phases', {
@@ -2771,13 +2892,28 @@
             return [];
         }
 
+        function getFunctionDisplayName(functionName) {
+            if (!functionName) return functionName;
+            const fnLower = functionName.toLowerCase().trim();
+            for (const [key, tmpl] of Object.entries(functionPhasesConfig)) {
+                if (key.toLowerCase().trim() === fnLower && tmpl.display_name) {
+                    return tmpl.display_name;
+                }
+            }
+            return functionName;
+        }
+
         function getPhasesForFunction(functionName) {
             if (!functionName) return null;
             const fnLower = functionName.toLowerCase().trim();
             for (const [key, tmpl] of Object.entries(functionPhasesConfig)) {
                 const keyLower = key.toLowerCase().trim();
                 if (fnLower === keyLower) {
-                    return { function_key: key, phases: (tmpl.phases || []).sort((a, b) => a.order - b.order) };
+                    return {
+                        function_key: key,
+                        display_name: tmpl.display_name || key,
+                        phases: (tmpl.phases || []).sort((a, b) => a.order - b.order)
+                    };
                 }
             }
             return null;
@@ -2889,7 +3025,7 @@
         }
 
         function escapeAttr(str) {
-            return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
         }
 
         function updateLoadButtonText() {
@@ -3234,7 +3370,7 @@
                                     data-project-key="${escapeHtml(key)}" 
                                     data-function-key="${escapeHtml(phConfig.function_key)}">
                                     <div class="phases-header">
-                                        <div class="phases-label">🔧 Fasi: ${escapeHtml(fnName)}</div>
+                                        <div class="phases-label">🔧 Fasi: ${escapeHtml(phConfig.display_name || fnName)}</div>
                                     </div>
                                     ${buildPhasesHTML(key, phConfig.function_key, phConfig.phases, statesArr, completed, total)}
                                 </div>`;
@@ -3324,7 +3460,7 @@
                             </div>
                         </td>
                         <td class="col-function">
-                            <span class="function-cell" onclick="openFunctionPhasesModal('${escapeAttr(p.function_name || '')}')" title="Clicca per configurare le fasi">${escapeHtml(p.function_name || '—')}</span>
+                            <span class="function-cell" onclick="openFunctionPhasesModal('${escapeAttr(p.function_name || '')}', '${escapeAttr(p.project_code || '')}')" title="Clicca per configurare le fasi">${escapeHtml(getFunctionDisplayName(p.function_name) || '—')}</span>
                             ${p.function_group_name ? `<div class="function-group-label">${escapeHtml(p.function_group_name)}</div>` : ''}
                         </td>
                         <td class="col-location">
@@ -4906,6 +5042,8 @@
         window.fpMovePhase = fpMovePhase;
         window.fpRemovePhase = fpRemovePhase;
         window.fpUpdatePhaseName = fpUpdatePhaseName;
+        window.fpUpdatePhaseProjectNumber = fpUpdatePhaseProjectNumber;
+        window.fpOnProjectInput = fpOnProjectInput;
         window.fpSave = fpSave;
         window.togglePhase = togglePhase;
 

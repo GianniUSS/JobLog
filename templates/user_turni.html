@@ -1743,7 +1743,7 @@ async function subscribeToPush() {
   try {
     let registration = await navigator.serviceWorker.getRegistration();
     if (!registration) {
-      registration = await navigator.serviceWorker.register('/sw.js?v=2026.01.08c');
+      registration = await navigator.serviceWorker.register('/sw.js?v=2026.03.03c');
       await navigator.serviceWorker.ready;
     }
     
@@ -2121,7 +2121,7 @@ function showToastGlobal(message) {
               ${turno.function ? `
                 <div class="turno-detail">
                   <span class="icon"><i class="fas fa-user"></i></span>
-                  <span class="value">${turno.function}</span>
+                  <span class="value">${getFnDisplayName(turno.function)}</span>
                 </div>
               ` : ''}
               ${turno.transport && turno.transport !== 'no_transport' ? `
@@ -2192,7 +2192,7 @@ function showToastGlobal(message) {
               <div class="crew-member-name">
                 ${m.is_leader ? '<span style="font-size:16px;margin-right:4px;">⭐</span>' : ''}${escapeHtml(m.crew_name)}${m.is_me ? ' (Tu)' : ''}
               </div>
-              <div class="crew-member-role">${escapeHtml(m.function || '—')}${m.location ? ' • ' + escapeHtml(m.location) : ''}</div>
+              <div class="crew-member-role">${escapeHtml(getFnDisplayName(m.function) || '—')}${m.location ? ' • ' + escapeHtml(m.location) : ''}</div>
             </div>
             ${timeStr ? `<div class="crew-member-time">${timeStr}</div>` : ''}
           </div>`;
@@ -2238,16 +2238,42 @@ function showToastGlobal(message) {
     return div.innerHTML;
   }
 
+  // ═══ Display Name per funzioni ═══
+  let turnoFnPhasesConfig = null;
+
+  function getFnDisplayName(functionName) {
+    if (!functionName || !turnoFnPhasesConfig) return functionName;
+    const fnLower = functionName.toLowerCase().trim();
+    for (const [key, tmpl] of Object.entries(turnoFnPhasesConfig)) {
+      if (key.toLowerCase().trim() === fnLower && tmpl.display_name) {
+        return tmpl.display_name;
+      }
+    }
+    return functionName;
+  }
+
+  async function loadFnPhasesConfig() {
+    if (turnoFnPhasesConfig) return;
+    try {
+      const res = await fetch('/api/admin/function-phases');
+      const data = await res.json();
+      turnoFnPhasesConfig = data.ok ? (data.function_phases || {}) : {};
+    } catch (e) {
+      console.warn('Errore caricamento config fasi:', e);
+      turnoFnPhasesConfig = {};
+    }
+  }
+
   window.openCrewInfoModal = openCrewInfoModal;
   window.closeCrewInfoModal = closeCrewInfoModal;
   
   // Init
-  loadTurni();
+  loadFnPhasesConfig().then(() => loadTurni());
   loadPushState();
   
   // Registra service worker per ricevere notifiche
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js?v=2026.01.08e')
+    navigator.serviceWorker.register('/sw.js?v=2026.03.03c')
       .then(reg => console.log('Service Worker registrato'))
       .catch(err => console.warn('Service Worker fallito:', err));
     

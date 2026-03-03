@@ -2,11 +2,11 @@
   "rentman_api_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NzA2NDQ0MzMsIm1lZGV3ZXJrZXIiOjE4NjAsImFjY291bnQiOiJpdGluZXJhcHJvIiwiY2xpZW50X3R5cGUiOiJvcGVuYXBpIiwiY2xpZW50Lm5hbWUiOiJvcGVuYXBpIiwiZXhwIjoyMDg2MTc3MjMzLCJpc3MiOiJ7XCJuYW1lXCI6XCJiYWNrZW5kXCIsXCJ2ZXJzaW9uXCI6XCI0LjgxOC4wLjdcIn0ifQ.RgpE0OfNB5I8vh9LRcvtGLahs0ZRrigoyesSva8GJ54",
   "database": {
     "vendor": "mysql",
-    "host": "94.177.163.194",
+    "host": "localhost",
     "port": 3306,
     "user": "tim_root",
     "password": "gianni225524",
-    "name": "joblog2"
+    "name": "joblog"
   },
   "webpush": {
     "vapid_public": "BIrn69C16abPXMHCQ0sCjGWnl_uwBBLNOfcgTD_SJR7JrdvbeL-ZmYL3SgSk6IHTka-Xs7ug6fiVKmxEhrmzz5A",

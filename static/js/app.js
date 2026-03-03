@@ -1,4 +1,4 @@
-﻿const fmt2 = (value) => String(value).padStart(2, "0");
+const fmt2 = (value) => String(value).padStart(2, "0");
 
 const timers = {};
 let refreshTimer = null;
@@ -28,7 +28,7 @@ const activityTotalValues = new Map();
 const clientElapsedState = new Map();
 const seenActivityIds = new Set();
 const ACTIVITY_DELAY_GRACE_MS = 0;
-// ── Fasi operative (function_phases) ──
+// -- Fasi operative (function_phases) --
 let supervisorFunctionPhasesConfig = {};
 let supervisorPhaseProgress = [];
 let supervisorProjectCode = "";
@@ -65,9 +65,9 @@ let lastKnownState = null;
 let teamCollapsed = true;
 let teamCardCollapsed = true;
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 //  PWA INSTALL PROMPT
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 let deferredInstallPrompt = null;
 let pwaInstallDismissed = false;
 
@@ -80,7 +80,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
     // Mostra il pulsante nel menu
     updatePwaInstallButton();
     
-    // Mostra il banner solo se non è stato già dismesso in questa sessione
+    // Mostra il banner solo se non � stato gi� dismesso in questa sessione
     if (!pwaInstallDismissed && !localStorage.getItem('pwa-install-dismissed')) {
         showPwaInstallBanner();
     }
@@ -94,11 +94,11 @@ window.addEventListener('appinstalled', () => {
     updatePwaInstallButton();
 });
 
-// Aggiorna visibilità del pulsante installa nel menu
+// Aggiorna visibilit� del pulsante installa nel menu
 function updatePwaInstallButton() {
     const menuItem = document.getElementById('pwa-install-menu-item');
     if (menuItem) {
-        // Mostra se c'è il prompt, o su iOS, o su Android (e non già installata)
+        // Mostra se c'� il prompt, o su iOS, o su Android (e non gi� installata)
         const shouldShow = deferredInstallPrompt || ((isIOS() || isAndroid()) && !isStandalone());
         menuItem.style.display = shouldShow ? 'block' : 'none';
     }
@@ -111,11 +111,11 @@ function isAndroid() {
 
 // Inizializza pulsante PWA al caricamento
 document.addEventListener('DOMContentLoaded', () => {
-    // Se non è già installata come standalone
+    // Se non � gi� installata come standalone
     if (!isStandalone()) {
         updatePwaInstallButton();
         
-        // Se non ha già chiuso il prompt
+        // Se non ha gi� chiuso il prompt
         if (!localStorage.getItem('pwa-install-dismissed')) {
             setTimeout(() => {
                 if (isIOS()) {
@@ -125,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Android senza prompt nativo: mostra guida Android
                     showAndroidInstallInstructions();
                 }
-                // Se c'è deferredInstallPrompt, il banner viene già mostrato dall'evento beforeinstallprompt
+                // Se c'� deferredInstallPrompt, il banner viene gi� mostrato dall'evento beforeinstallprompt
             }, 1500);
         }
     }
@@ -154,7 +154,7 @@ function showAndroidInstallInstructions() {
                 <!-- Header -->
                 <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); 
                             padding: 24px 20px; text-align: center; color: white;">
-                    <div style="font-size: 48px; margin-bottom: 12px;">📲</div>
+                    <div style="font-size: 48px; margin-bottom: 12px;">??</div>
                     <div style="font-size: 20px; font-weight: 700;">Installa JobLog</div>
                     <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">su Android</div>
                 </div>
@@ -169,7 +169,7 @@ function showAndroidInstallInstructions() {
                             <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
                                 Tocca il menu di Chrome
                             </div>
-                            <div style="font-size: 36px; color: #333;">⋮</div>
+                            <div style="font-size: 36px; color: #333;">?</div>
                             <div style="font-size: 13px; color: #64748b;">
                                 I tre puntini in alto a destra
                             </div>
@@ -187,7 +187,7 @@ function showAndroidInstallInstructions() {
                             <div style="display: inline-flex; align-items: center; gap: 8px; 
                                         background: #f1f5f9; padding: 8px 14px; border-radius: 10px;
                                         font-size: 15px; color: #1e293b;">
-                                <span style="font-size: 20px;">📥</span>
+                                <span style="font-size: 20px;">??</span>
                                 <span style="font-weight: 600;">Aggiungi a schermata Home</span>
                             </div>
                         </div>
@@ -196,13 +196,13 @@ function showAndroidInstallInstructions() {
                     <div style="display: flex; align-items: flex-start; gap: 16px;">
                         <div style="width: 32px; height: 32px; background: #16a34a; color: white; 
                                     border-radius: 50%; display: flex; align-items: center; 
-                                    justify-content: center; font-weight: 700; flex-shrink: 0;">✓</div>
+                                    justify-content: center; font-weight: 700; flex-shrink: 0;">?</div>
                         <div>
                             <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
                                 Conferma l'installazione
                             </div>
                             <div style="font-size: 13px; color: #64748b;">
-                                L'icona apparirà nella Home
+                                L'icona apparir� nella Home
                             </div>
                         </div>
                     </div>
@@ -236,7 +236,7 @@ function showPwaInstallBanner() {
                     box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000;
                     display: flex; align-items: center; gap: 12px; max-width: 90vw;
                     font-family: system-ui, -apple-system, sans-serif;">
-            <div style="font-size: 28px;">📱</div>
+            <div style="font-size: 28px;">??</div>
             <div style="flex: 1;">
                 <div style="font-weight: 600; margin-bottom: 2px;">Installa JobLog</div>
                 <div style="font-size: 13px; opacity: 0.9;">Aggiungi alla schermata Home per un accesso rapido</div>
@@ -248,7 +248,7 @@ function showPwaInstallBanner() {
             </button>
             <button id="pwa-dismiss-btn" style="background: transparent; border: none; 
                     color: white; opacity: 0.7; cursor: pointer; padding: 4px; font-size: 18px;">
-                ✕
+                ?
             </button>
         </div>
     `;
@@ -271,7 +271,7 @@ function isIOS() {
            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
-// Rileva se è già installata come PWA
+// Rileva se � gi� installata come PWA
 function isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches || 
            window.navigator.standalone === true;
@@ -288,7 +288,7 @@ function showIOSInstallInstructions() {
                 <!-- Header -->
                 <div style="background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%); 
                             padding: 24px 20px; text-align: center; color: white;">
-                    <div style="font-size: 48px; margin-bottom: 12px;">📲</div>
+                    <div style="font-size: 48px; margin-bottom: 12px;">??</div>
                     <div style="font-size: 20px; font-weight: 700;">Installa JobLog</div>
                     <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">su iPhone/iPad</div>
                 </div>
@@ -327,7 +327,7 @@ function showIOSInstallInstructions() {
                             <div style="display: inline-flex; align-items: center; gap: 8px; 
                                         background: #f1f5f9; padding: 8px 14px; border-radius: 10px;
                                         font-size: 15px; color: #1e293b;">
-                                <span style="font-size: 20px;">➕</span>
+                                <span style="font-size: 20px;">?</span>
                                 <span style="font-weight: 600;">Aggiungi a Home</span>
                             </div>
                         </div>
@@ -336,13 +336,13 @@ function showIOSInstallInstructions() {
                     <div style="display: flex; align-items: flex-start; gap: 16px;">
                         <div style="width: 32px; height: 32px; background: #22c55e; color: white; 
                                     border-radius: 50%; display: flex; align-items: center; 
-                                    justify-content: center; font-weight: 700; flex-shrink: 0;">✓</div>
+                                    justify-content: center; font-weight: 700; flex-shrink: 0;">?</div>
                         <div>
                             <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
                                 Conferma con "Aggiungi"
                             </div>
                             <div style="font-size: 13px; color: #64748b;">
-                                L'icona apparirà nella Home
+                                L'icona apparir� nella Home
                             </div>
                         </div>
                     </div>
@@ -364,9 +364,9 @@ function showIOSInstallInstructions() {
 }
 
 async function installPwa() {
-    // Se siamo già in standalone mode, l'app è già installata
+    // Se siamo gi� in standalone mode, l'app � gi� installata
     if (isStandalone()) {
-        alert('✅ JobLog è già installata!');
+        alert('? JobLog � gi� installata!');
         return;
     }
     
@@ -394,7 +394,7 @@ async function installPwa() {
     }
     
     // Fallback per desktop
-    alert('Per installare l\'app:\n\n💻 Desktop Chrome: Icona + nella barra indirizzi');
+    alert('Per installare l\'app:\n\n?? Desktop Chrome: Icona + nella barra indirizzi');
 }
 
 function dismissPwaInstall() {
@@ -540,7 +540,7 @@ let offlineNotified = false;
 const SERVICE_WORKER_READY_TIMEOUT = 2000;
 const POPUP_DISPLAY_MS = 6000;
 const NOTIFICATION_KIND_LABELS = {
-    overdue_activity: "Attività oltre termine",
+    overdue_activity: "Attivit� oltre termine",
     test_message: "Notifica di test",
     long_running_member: "Operatore prolungato",
 };
@@ -550,11 +550,11 @@ const QUEUE_ACTION_LABELS = {
     '/api/member/resume': 'Ripresa operatore',
     '/api/member/finish': 'Chiusura operatore',
     '/api/start_member': 'Avvio operatore',
-    '/api/start_activity': 'Avvio attività',
+    '/api/start_activity': 'Avvio attivit�',
     '/api/pause_all': 'Pausa di gruppo',
     '/api/resume_all': 'Ripresa di gruppo',
     '/api/finish_all': 'Chiusura di gruppo',
-    '/api/activities': 'Nuova attività',
+    '/api/activities': 'Nuova attivit�',
 };
 const PUSH_NOTIFICATIONS_LIMIT = 'all';
 
@@ -1013,7 +1013,7 @@ function formatAttachmentTimestamp(value) {
     }
     const dateLabel = date.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
     const timeLabel = date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
-    return `${dateLabel} · ${timeLabel}`;
+    return `${dateLabel} � ${timeLabel}`;
 }
 
 function formatMaterialDate(value) {
@@ -1042,7 +1042,7 @@ function formatMaterialPeriod(material) {
         return "Impegno non disponibile";
     }
     if (start !== "-" && end !== "-") {
-        return `${start} → ${end}`;
+        return `${start} ? ${end}`;
     }
     return start !== "-" ? `Da ${start}` : `Fino a ${end}`;
 }
@@ -1228,7 +1228,7 @@ function createMaterialRow(item) {
     row.className = "material-row material-row-compact";
     row.setAttribute("role", "listitem");
 
-    // Header compatto: nome + quantità sulla stessa riga
+    // Header compatto: nome + quantit� sulla stessa riga
     const header = document.createElement("div");
     header.className = "material-header-compact";
     
@@ -1239,7 +1239,7 @@ function createMaterialRow(item) {
 
     const qtyBadge = document.createElement("span");
     qtyBadge.className = "material-qty-badge";
-    qtyBadge.textContent = `Qtà: ${item.quantity_label || String(item.quantity || "0")}`;
+    qtyBadge.textContent = `Qt�: ${item.quantity_label || String(item.quantity || "0")}`;
     header.appendChild(qtyBadge);
     
     row.appendChild(header);
@@ -1263,14 +1263,14 @@ function createMaterialRow(item) {
     // Periodo
     const periodSpan = document.createElement("span");
     periodSpan.className = "material-info-item";
-    periodSpan.innerHTML = `📅 ${period}`;
+    periodSpan.innerHTML = `?? ${period}`;
     infoRow.appendChild(periodSpan);
     
     // Peso (solo se disponibile)
     if (weight && weight !== "---") {
         const weightSpan = document.createElement("span");
         weightSpan.className = "material-info-item";
-        weightSpan.innerHTML = `⚖️ ${weight}`;
+        weightSpan.innerHTML = `?? ${weight}`;
         infoRow.appendChild(weightSpan);
     }
     
@@ -1278,7 +1278,7 @@ function createMaterialRow(item) {
     if (dimensions && dimensions !== "---") {
         const dimSpan = document.createElement("span");
         dimSpan.className = "material-info-item";
-        dimSpan.innerHTML = `📐 ${dimensions}`;
+        dimSpan.innerHTML = `?? ${dimensions}`;
         infoRow.appendChild(dimSpan);
     }
     
@@ -1298,7 +1298,7 @@ function createMaterialRow(item) {
     photoBtn.type = "button";
     photoBtn.className = "materials-photo-btn compact";
     if (materialHasPhoto(item)) {
-        photoBtn.textContent = "👁️ Foto";
+        photoBtn.textContent = "??? Foto";
         photoBtn.addEventListener("click", () =>
             openMaterialPhotoPreview({
                 name: item.name,
@@ -1368,8 +1368,8 @@ function createEquipmentRow(item, options) {
         } catch (error) {
             console.warn("persistEquipmentCheckStateOnServer", error);
             const message = desiredChecked
-                ? "⚠️ Impossibile salvare la verifica. Riprova."
-                : "⚠️ Impossibile annullare la verifica. Riprova.";
+                ? "?? Impossibile salvare la verifica. Riprova."
+                : "?? Impossibile annullare la verifica. Riprova.";
             showPopup(message);
             checkbox.checked = previousChecked;
             const fallbackTs = previousTimestamp;
@@ -1431,14 +1431,14 @@ function renderMaterialsTree(target, nodes, depth, options) {
         toggleBtn.className = "materials-group-toggle";
         const nodeKey = nodeKeyPrefix ? `${nodeKeyPrefix}:${node.path}` : node.path;
         const expanded = isMaterialsNodeExpanded(nodeKey);
-        toggleBtn.textContent = expanded ? "▼" : "▶";
+        toggleBtn.textContent = expanded ? "?" : "?";
         toggleBtn.title = expanded ? "Comprimi cartella" : "Espandi cartella";
         toggleBtn.addEventListener("click", () => toggleMaterialsNode(nodeKey));
         header.appendChild(toggleBtn);
 
         const title = document.createElement("div");
         title.className = "materials-group-title";
-        title.textContent = `📂 ${node.label}`;
+        title.textContent = `?? ${node.label}`;
         header.appendChild(title);
 
         const count = document.createElement("span");
@@ -1532,30 +1532,30 @@ function formatMemberStartLabel(member) {
 function getAttachmentIcon(type) {
     const slug = String(type || "").toUpperCase();
     if (!slug) {
-        return "📎";
+        return "??";
     }
     if (slug.includes("PDF")) {
-        return "📄";
+        return "??";
     }
     if (["JPG", "JPEG", "PNG", "GIF", "SVG", "WEBP", "BMP"].includes(slug)) {
-        return "🖼️";
+        return "???";
     }
     if (["XLS", "XLSX", "CSV", "ODS"].includes(slug)) {
-        return "📊";
+        return "??";
     }
     if (["DOC", "DOCX", "TXT", "RTF"].includes(slug)) {
-        return "📝";
+        return "??";
     }
     if (["MP4", "MOV", "AVI", "MKV"].includes(slug)) {
-        return "🎬";
+        return "??";
     }
     if (["MP3", "WAV", "AAC", "M4A", "OGG"].includes(slug)) {
-        return "🎧";
+        return "??";
     }
     if (["ZIP", "RAR", "7Z", "TAR"].includes(slug)) {
-        return "🗜️";
+        return "???";
     }
-    return "📎";
+    return "??";
 }
 
 function openAttachment(item) {
@@ -1564,7 +1564,7 @@ function openAttachment(item) {
     }
     const target = item.preview_url || item.url;
     if (!target) {
-        showPopup("⚠️ Link non disponibile");
+        showPopup("?? Link non disponibile");
         return;
     }
     window.open(target, "_blank", "noopener");
@@ -1576,7 +1576,7 @@ function downloadAttachment(item) {
     }
     const target = item.url || item.preview_url;
     if (!target) {
-        showPopup("⚠️ Download non disponibile");
+        showPopup("?? Download non disponibile");
         return;
     }
     const anchor = document.createElement("a");
@@ -1606,7 +1606,7 @@ function renderAttachments() {
     if (projectLabel) {
         if (activeProject && (activeProject.code || activeProject.name)) {
             const { code, name } = activeProject;
-            projectLabel.textContent = code && name ? `${code} · ${name}` : name || code;
+            projectLabel.textContent = code && name ? `${code} � ${name}` : name || code;
         } else {
             projectLabel.textContent = "Nessun progetto attivo";
         }
@@ -1675,7 +1675,7 @@ function renderAttachments() {
         if (dateLabel) {
             parts.push(dateLabel);
         }
-        meta.textContent = parts.join(" · ");
+        meta.textContent = parts.join(" � ");
         details.appendChild(meta);
 
         cardNode.appendChild(details);
@@ -1759,7 +1759,7 @@ async function fetchProjectAttachments(options) {
         attachmentsState.lastUpdated = null;
         renderAttachments();
         if (!silent) {
-            showPopup("⚠️ Nessun progetto attivo");
+            showPopup("?? Nessun progetto attivo");
         }
         return;
     }
@@ -1779,12 +1779,12 @@ async function fetchProjectAttachments(options) {
         saveAttachmentsToCache(); // Salva in localStorage
         renderAttachments();
         if (!silent) {
-            showPopup("📎 Allegati aggiornati");
+            showPopup("?? Allegati aggiornati");
         }
     } catch (error) {
         console.warn("fetchProjectAttachments", error);
         if (!silent) {
-            showPopup("⚠️ Impossibile aggiornare gli allegati");
+            showPopup("?? Impossibile aggiornare gli allegati");
         }
     } finally {
         attachmentsState.loading = false;
@@ -1819,7 +1819,7 @@ function syncAttachmentsProject(project) {
             attachmentsState.items = cached.items;
             attachmentsState.lastUpdated = cached.savedAt || Date.now();
             renderAttachments();
-            // Aggiorna in background se la cache è vecchia (più di 5 minuti)
+            // Aggiorna in background se la cache � vecchia (pi� di 5 minuti)
             const cacheAge = Date.now() - (cached.savedAt || 0);
             if (cacheAge > 5 * 60 * 1000) {
                 fetchProjectAttachments({ silent: true });
@@ -1950,7 +1950,7 @@ function renderMaterials() {
     if (subtitle) {
         if (materialsState.project) {
             const { code, name } = materialsState.project;
-            subtitle.textContent = code && name ? `${code} · ${name}` : name || code || "Progetto attivo";
+            subtitle.textContent = code && name ? `${code} � ${name}` : name || code || "Progetto attivo";
         } else {
             subtitle.textContent = "Nessun progetto attivo";
         }
@@ -2114,7 +2114,7 @@ function renderMaterials() {
                     if (typeof folder.file_count === "number") {
                         metaParts.push(folder.file_count === 1 ? "1 file" : `${folder.file_count} file`);
                     }
-                    meta.textContent = metaParts.length ? metaParts.join(" · ") : "Cartella";
+                    meta.textContent = metaParts.length ? metaParts.join(" � ") : "Cartella";
                     row.appendChild(meta);
 
                     const actions = document.createElement("div");
@@ -2125,7 +2125,7 @@ function renderMaterials() {
                     const photo = folder.photo || {};
                     const previewUrl = photo.preview_url || photo.url;
                     if (previewUrl) {
-                        photoBtn.textContent = "👁️ Mostra foto";
+                        photoBtn.textContent = "??? Mostra foto";
                         photoBtn.addEventListener("click", () => openMaterialPhotoPreview(folder));
                     } else {
                         photoBtn.textContent = "Nessuna foto";
@@ -2166,7 +2166,7 @@ function renderEquipment() {
     if (subtitle) {
         if (materialsState.project) {
             const { code, name } = materialsState.project;
-            subtitle.textContent = code && name ? `${code} · ${name}` : name || code || "Progetto attivo";
+            subtitle.textContent = code && name ? `${code} � ${name}` : name || code || "Progetto attivo";
         } else {
             subtitle.textContent = "Nessun progetto attivo";
         }
@@ -2254,13 +2254,13 @@ function renderEquipment() {
 
 function openMaterialPhotoPreview(source) {
     if (!source || !source.photo) {
-        showPopup("⚠️ Nessuna foto disponibile per questo elemento");
+        showPopup("?? Nessuna foto disponibile per questo elemento");
         return;
     }
     const photo = source.photo;
     const previewUrl = photo.preview_url || photo.url;
     if (!previewUrl) {
-        showPopup("⚠️ Foto non disponibile");
+        showPopup("?? Foto non disponibile");
         return;
     }
     const modal = document.getElementById("materialPhotoModal");
@@ -2282,7 +2282,7 @@ function openMaterialPhotoPreview(source) {
         if (source.path) {
             parts.push(source.path);
         }
-        caption.textContent = parts.length ? parts.join(" · ") : "Anteprima foto materiale";
+        caption.textContent = parts.length ? parts.join(" � ") : "Anteprima foto materiale";
     }
     const link = document.getElementById("materialPhotoLink");
     if (link) {
@@ -2334,7 +2334,7 @@ async function fetchProjectMaterials(options) {
         materialsTreeExpansion.clear();
         renderMaterials();
         if (!silent) {
-            showPopup("⚠️ Nessun progetto attivo");
+            showPopup("?? Nessun progetto attivo");
         }
         return;
     }
@@ -2362,13 +2362,13 @@ async function fetchProjectMaterials(options) {
         materialsState.lastUpdated = Number.isFinite(updatedTs) ? updatedTs : Date.now();
         renderMaterials();
         if (!silent) {
-            const message = refresh ? "🧰 Materiali aggiornati" : "🧰 Elenco attrezzature caricato";
+            const message = refresh ? "?? Materiali aggiornati" : "?? Elenco attrezzature caricato";
             showPopup(message);
         }
     } catch (error) {
         console.warn("fetchProjectMaterials", error);
         if (!silent) {
-            showPopup("⚠️ Impossibile aggiornare i materiali");
+            showPopup("?? Impossibile aggiornare i materiali");
         }
     } finally {
         materialsState.loading = false;
@@ -2394,7 +2394,7 @@ async function fetchLocalEquipment(options) {
         console.warn("fetchLocalEquipment", error);
         localEquipmentItems = [];
         if (!silent) {
-            showPopup("⚠️ Impossibile caricare le attrezzature locali");
+            showPopup("?? Impossibile caricare le attrezzature locali");
         }
     }
     renderMaterials();
@@ -2428,9 +2428,9 @@ function syncMaterialsProject(project) {
     renderMaterials();
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+// ------------------------------------------------------------------------------
 // Foto Progetto
-// ──────────────────────────────────────────────────────────────────────────────
+// ------------------------------------------------------------------------------
 
 function renderPhotos() {
     const grid = document.getElementById("photosGrid");
@@ -2540,13 +2540,13 @@ async function fetchPhotos(options) {
             photosState.items = [];
         }
         if (!silent && data.items.length > 0) {
-            showPopup(`📷 ${data.items.length} foto caricate`);
+            showPopup(`?? ${data.items.length} foto caricate`);
         }
     } catch (error) {
         console.warn("fetchPhotos", error);
         photosState.items = [];
         if (!silent) {
-            showPopup("⚠️ Impossibile caricare le foto");
+            showPopup("?? Impossibile caricare le foto");
         }
     } finally {
         photosState.loading = false;
@@ -2556,7 +2556,7 @@ async function fetchPhotos(options) {
 
 async function uploadPhoto(file) {
     if (!materialsState.project) {
-        showPopup("⚠️ Carica prima un progetto");
+        showPopup("?? Carica prima un progetto");
         return;
     }
 
@@ -2564,7 +2564,7 @@ async function uploadPhoto(file) {
     formData.append("photo", file);
 
     try {
-        showPopup("📤 Caricamento in corso...");
+        showPopup("?? Caricamento in corso...");
         const response = await fetch("/api/project/photos", {
             method: "POST",
             body: formData,
@@ -2576,14 +2576,14 @@ async function uploadPhoto(file) {
                 : data.error === "invalid_file_type"
                 ? "Tipo file non supportato"
                 : data.error || "Errore durante il caricamento";
-            showPopup("⚠️ " + errorMsg);
+            showPopup("?? " + errorMsg);
             return;
         }
-        showPopup("✅ Foto caricata con successo");
+        showPopup("? Foto caricata con successo");
         fetchPhotos({ silent: true });
     } catch (error) {
         console.error("uploadPhoto", error);
-        showPopup("⚠️ Errore di rete");
+        showPopup("?? Errore di rete");
     }
 }
 
@@ -2625,27 +2625,27 @@ async function deleteCurrentPhoto() {
         });
         const data = await response.json();
         if (!response.ok || !data.ok) {
-            showPopup("⚠️ Impossibile eliminare la foto");
+            showPopup("?? Impossibile eliminare la foto");
             return;
         }
-        showPopup("🗑️ Foto eliminata");
+        showPopup("??? Foto eliminata");
         closePhotoPreview();
         fetchPhotos({ silent: true });
     } catch (error) {
         console.error("deleteCurrentPhoto", error);
-        showPopup("⚠️ Errore di rete");
+        showPopup("?? Errore di rete");
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+// ------------------------------------------------------------------------------
 // Fotocamera nativa
-// ──────────────────────────────────────────────────────────────────────────────
+// ------------------------------------------------------------------------------
 
 let cameraStream = null;
 
 async function openCameraModal() {
     if (!materialsState.project) {
-        showPopup("⚠️ Carica prima un progetto");
+        showPopup("?? Carica prima un progetto");
         return;
     }
 
@@ -2676,14 +2676,14 @@ async function openCameraModal() {
     } catch (error) {
         console.error("openCameraModal", error);
         if (error.name === "NotAllowedError") {
-            showPopup("⚠️ Permesso fotocamera negato");
+            showPopup("?? Permesso fotocamera negato");
         } else if (error.name === "NotFoundError") {
-            showPopup("⚠️ Nessuna fotocamera trovata");
+            showPopup("?? Nessuna fotocamera trovata");
             // Fallback: apri input file
             const input = document.getElementById("photosCameraInput");
             if (input) input.click();
         } else {
-            showPopup("⚠️ Impossibile aprire la fotocamera");
+            showPopup("?? Impossibile aprire la fotocamera");
             // Fallback: apri input file
             const input = document.getElementById("photosCameraInput");
             if (input) input.click();
@@ -2726,7 +2726,7 @@ async function capturePhoto() {
     // Converti in blob
     canvas.toBlob(async (blob) => {
         if (!blob) {
-            showPopup("⚠️ Errore durante la cattura");
+            showPopup("?? Errore durante la cattura");
             return;
         }
 
@@ -2763,10 +2763,10 @@ function syncPhotosProject(project) {
 
 function handleAttachmentUpload() {
     if (!attachmentsState.project) {
-        showPopup("⚠️ Carica prima un progetto");
+        showPopup("?? Carica prima un progetto");
         return;
     }
-    showPopup("🚧 Upload allegati in arrivo");
+    showPopup("?? Upload allegati in arrivo");
 }
 
 function saveCachedPayload(key, value) {
@@ -2948,7 +2948,7 @@ function setOfflineMode(value, options) {
         offlineNotified = false;
         offlineHydrated = false;
     } else if (!offlineNotified && !silent) {
-        showPopup('⚠️ Modalità offline attiva. Mostro i dati salvati');
+        showPopup('?? Modalit� offline attiva. Mostro i dati salvati');
         offlineNotified = true;
     }
     if (!previous && offlineMode) {
@@ -2965,7 +2965,7 @@ function handleOfflineEvent() {
 
 function handleOnlineEvent() {
     setOfflineMode(false, { silent: true });
-    showPopup('🔌 Connessione ripristinata');
+    showPopup('?? Connessione ripristinata');
     requestQueueFlush();
     refreshState();
     fetchPushNotifications({ silent: true });
@@ -3558,7 +3558,7 @@ function renderPushNotifications() {
         if (item.activity_id) {
             parts.push(`#${item.activity_id}`);
         }
-        meta.textContent = parts.join(" · ") || "";
+        meta.textContent = parts.join(" � ") || "";
         node.appendChild(meta);
 
         fragment.appendChild(node);
@@ -3589,7 +3589,7 @@ async function fetchPushNotifications(options) {
         saveCachedPayload(LAST_PUSH_KEY, pushNotificationsCache);
         renderPushNotifications();
         if (!silent) {
-            showPopup("📥 Storico notifiche aggiornato");
+            showPopup("?? Storico notifiche aggiornato");
         }
     } catch (error) {
         console.warn("fetchPushNotifications", error);
@@ -3599,9 +3599,9 @@ async function fetchPushNotifications(options) {
         }
         if (!silent) {
             if (handledOffline) {
-                showPopup('⚠️ Offline: mostro lo storico salvato');
+                showPopup('?? Offline: mostro lo storico salvato');
             } else {
-                showPopup("⚠️ Impossibile caricare lo storico notifiche");
+                showPopup("?? Impossibile caricare lo storico notifiche");
             }
         }
     } finally {
@@ -3729,9 +3729,9 @@ function closePushNotificationsModal() {
     releaseBodyModalState();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 //  QR TIMBRATURA MODAL
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 let qrTimbraturaModalOpen = false;
 let qrRefreshInterval = null;
 let qrProgressInterval = null;
@@ -3877,7 +3877,7 @@ async function loadQrTimbratura() {
         } catch (err) {
             console.error("Local QR generation failed:", err);
             if (loading) {
-                loading.innerHTML = `<span style="color:#ef4444;">❌ Errore generazione QR</span>`;
+                loading.innerHTML = `<span style="color:#ef4444;">? Errore generazione QR</span>`;
             }
             return;
         }
@@ -3996,7 +3996,7 @@ function updateThemeUI() {
     const themeStatus = document.getElementById('themeStatus');
     
     if (themeIcon) {
-        themeIcon.textContent = darkMode ? '☀️' : '🌙';
+        themeIcon.textContent = darkMode ? '??' : '??';
     }
     
     if (themeStatus) {
@@ -4094,24 +4094,24 @@ async function refreshPushState() {
 
 async function subscribeToPush() {
     if (!pushState.supported) {
-        showPopup('⚠️ Notifiche non supportate');
+        showPopup('?? Notifiche non supportate');
                 return false;
     }
 
     if (!pushState.publicKey) {
-        showPopup('⚠️ Server non configurato per le notifiche');
+        showPopup('?? Server non configurato per le notifiche');
         return false;
     }
 
     if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
-        showPopup('⚠️ Permesso notifiche negato dal browser');
+        showPopup('?? Permesso notifiche negato dal browser');
         return false;
     }
 
     if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            showPopup('⚠️ Permesso notifiche non concesso');
+            showPopup('?? Permesso notifiche non concesso');
             return false;
         }
     }
@@ -4129,11 +4129,11 @@ async function subscribeToPush() {
         payload.contentEncoding = 'aes128gcm';
         await postJson('/api/push/subscribe', payload);
         pushState.subscribed = true;
-        showPopup('🔔 Notifiche attivate');
+        showPopup('?? Notifiche attivate');
         return true;
     } catch (error) {
         console.error('subscribeToPush', error);
-        showPopup('⚠️ Attivazione notifiche fallita');
+        showPopup('?? Attivazione notifiche fallita');
         return false;
     }
 }
@@ -4160,10 +4160,10 @@ async function unsubscribeFromPush() {
 
         await subscription.unsubscribe();
         pushState.subscribed = false;
-        showPopup('🔕 Notifiche disattivate');
+        showPopup('?? Notifiche disattivate');
     } catch (error) {
         console.error('unsubscribeFromPush', error);
-        showPopup('⚠️ Disattivazione notifiche fallita');
+        showPopup('?? Disattivazione notifiche fallita');
     }
 }
 
@@ -4217,17 +4217,17 @@ function registerServiceWorkerMessaging() {
 function handleServiceWorkerPushMessage(message) {
     const meta = message.meta || {};
     if (meta && meta.permission && meta.permission !== 'granted') {
-        showPopup('⚠️ Notifiche bloccate dal browser');
+        showPopup('?? Notifiche bloccate dal browser');
         return;
     }
     if (meta && meta.error) {
-        showPopup(`⚠️ Errore notifica: ${meta.error}`);
+        showPopup(`?? Errore notifica: ${meta.error}`);
         return;
     }
     const payload = message.payload || {};
     const title = payload.title || 'Notifica push';
     const body = payload.body ? `: ${payload.body}` : '';
-    showPopup(`🔔 ${title}${body}`);
+    showPopup(`?? ${title}${body}`);
     fetchPushNotifications({ silent: true });
 }
 
@@ -4257,16 +4257,16 @@ function handleOfflineQueueMessage(message) {
     }
     const label = describeQueuedAction(message.pathname || message.url || '');
     if (message.action === 'queued') {
-        showPopup(`💾 ${label} salvata offline`);
+        showPopup(`?? ${label} salvata offline`);
         return;
     }
     if (message.action === 'delivered') {
-        showPopup(`📡 ${label} sincronizzata`);
+        showPopup(`?? ${label} sincronizzata`);
         return;
     }
     if (message.action === 'error') {
         const errorLabel = message.error ? `: ${message.error}` : '';
-        showPopup(`⚠️ Sync ${label} fallito${errorLabel}`);
+        showPopup(`?? Sync ${label} fallito${errorLabel}`);
     }
 }
 
@@ -4346,7 +4346,7 @@ async function performExport(format) {
         const url = `/api/export?${params.toString()}`;
         
         // Mostra feedback loading
-        showPopup('⏳ Generazione report in corso...');
+        showPopup('? Generazione report in corso...');
         
         const response = await fetch(url);
         
@@ -4378,11 +4378,11 @@ async function performExport(format) {
         window.URL.revokeObjectURL(downloadUrl);
         document.body.removeChild(a);
         
-        showPopup(`✅ Report ${format === 'excel' ? 'Excel' : 'CSV'} scaricato!`);
+        showPopup(`? Report ${format === 'excel' ? 'Excel' : 'CSV'} scaricato!`);
         closeExportModal();
     } catch (error) {
         console.error('Export error:', error);
-        showPopup('⚠️ Errore durante l\'export');
+        showPopup('?? Errore durante l\'export');
     }
 }
 
@@ -4585,7 +4585,7 @@ function updateCollapsedSummaryTime(card, activityId) {
 
 async function performSelectionAction(memberKeys, endpoint, successMessage, errorMessage) {
     if (!memberKeys || memberKeys.length === 0) {
-        showPopup("⚠️ Nessuna risorsa selezionata");
+        showPopup("?? Nessuna risorsa selezionata");
         return false;
     }
     const toolbarButtons = [
@@ -4606,7 +4606,7 @@ async function performSelectionAction(memberKeys, endpoint, successMessage, erro
         }
         suppressSelectionRestore = true;
         if (queued) {
-            showPopup('💾 Operazione salvata offline');
+            showPopup('?? Operazione salvata offline');
             applyOptimisticSelectionState(endpoint, memberKeys);
         } else if (successMessage) {
             showPopup(successMessage);
@@ -4617,7 +4617,7 @@ async function performSelectionAction(memberKeys, endpoint, successMessage, erro
         return true;
     } catch (err) {
         console.error("performSelectionAction", endpoint, err);
-        showPopup(errorMessage || "⚠️ Operazione non riuscita");
+        showPopup(errorMessage || "?? Operazione non riuscita");
         return false;
     } finally {
         updateSelectionToolbar();
@@ -4628,7 +4628,7 @@ async function toggleSelectionPause() {
     const nodes = getSelectedMemberNodes();
     const keys = getSelectedKeys();
     if (keys.length === 0) {
-        showPopup("⚠️ Nessuna risorsa selezionata");
+        showPopup("?? Nessuna risorsa selezionata");
         return;
     }
     const intent = determineSelectionPauseIntent(nodes);
@@ -4636,8 +4636,8 @@ async function toggleSelectionPause() {
     if (eligibleKeys.length === 0) {
         showPopup(
             intent === "pause"
-                ? "⚠️ Nessun operatore in attività nella selezione"
-                : "⚠️ Nessun operatore in pausa nella selezione"
+                ? "?? Nessun operatore in attivit� nella selezione"
+                : "?? Nessun operatore in pausa nella selezione"
         );
         return;
     }
@@ -4645,15 +4645,15 @@ async function toggleSelectionPause() {
         await performSelectionAction(
             eligibleKeys,
             "/api/member/pause",
-            "⏸️ Operatori in pausa",
-            "⚠️ Impossibile mettere in pausa la selezione"
+            "?? Operatori in pausa",
+            "?? Impossibile mettere in pausa la selezione"
         );
     } else {
         await performSelectionAction(
             eligibleKeys,
             "/api/member/resume",
-            "▶️ Operatori ripresi",
-            "⚠️ Impossibile riprendere la selezione"
+            "?? Operatori ripresi",
+            "?? Impossibile riprendere la selezione"
         );
     }
 }
@@ -4661,14 +4661,14 @@ async function toggleSelectionPause() {
 async function finishSelection() {
     const keys = getSelectedKeys();
     if (keys.length === 0) {
-        showPopup("⚠️ Nessuna risorsa selezionata");
+        showPopup("?? Nessuna risorsa selezionata");
         return;
     }
     await performSelectionAction(
         keys,
         "/api/member/finish",
-        "✅ Attività concluse",
-        "⚠️ Impossibile chiudere le attività selezionate"
+        "? Attivit� concluse",
+        "?? Impossibile chiudere le attivit� selezionate"
     );
 }
 
@@ -4724,7 +4724,7 @@ function updateSelectionToolbar() {
     if (pauseBtn) {
         const intent = determineSelectionPauseIntent(selectedNodes);
         pauseBtn.textContent =
-            intent === "pause" ? "⏸️ Pausa selezione" : "▶️ Riprendi selezione";
+            intent === "pause" ? "?? Pausa selezione" : "?? Riprendi selezione";
     }
 
     // Mostra/nascondi il pulsante Avvia in base allo stato degli operatori selezionati
@@ -4812,19 +4812,19 @@ function createMemberNode(member, baseClass) {
     node.dataset.elapsedMs = String(Number(member.elapsed) || 0);
     const timerId = `timer-${domId(member.member_key)}`;
     const statusLabel = member.running
-        ? "In attività"
+        ? "In attivit�"
         : member.paused
         ? "In pausa"
         : "In attesa";
     const startLabel = formatMemberStartLabel(member);
 
-    // Trova la fase corrente o il nome attività (solo se in corso o in pausa)
+    // Trova la fase corrente o il nome attivit� (solo se in corso o in pausa)
     let activityLabel = "";
     if (member.activity_id && (member.running || member.paused) && Array.isArray(cachedActivities)) {
         const act = cachedActivities.find(a => String(a.activity_id) === String(member.activity_id));
         if (act) {
             if (member.current_phase) {
-                activityLabel = `📍 ${member.current_phase}`;
+                activityLabel = `?? ${member.current_phase}`;
             } else {
                 const funcName = extractFunctionName(act.label);
                 activityLabel = funcName;
@@ -4888,7 +4888,7 @@ function updateTeamSelectButton() {
 function toggleTeamSelection() {
     const nodes = Array.from(document.querySelectorAll(".team-member"));
     if (nodes.length === 0) {
-        showPopup("⚠️ Nessun operatore disponibile");
+        showPopup("?? Nessun operatore disponibile");
         return;
     }
     const shouldSelect = !nodes.every((node) => node.classList.contains("selected"));
@@ -4906,12 +4906,12 @@ function handleTeamAddActivityClick(event) {
         }
     }
     if (!projectVisible) {
-        showPopup("⚠️ Carica un progetto per aggiungere attività");
+        showPopup("?? Carica un progetto per aggiungere attivit�");
         return;
     }
     const opened = openNewActivityModal();
     if (!opened) {
-        showPopup("⚠️ Impossibile aprire il modulo. Aggiorna la pagina.");
+        showPopup("?? Impossibile aprire il modulo. Aggiorna la pagina.");
     }
 }
 
@@ -4975,11 +4975,11 @@ function setProjectBarCollapsed(collapsed) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  FASI OPERATIVE – logica supervisor
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
+//  FASI OPERATIVE � logica supervisor
+// -------------------------------------------------------------------
 
-/** Estrae il nome funzione puro dal label attività, es. "Montaggio [ID 123]" → "Montaggio" */
+/** Estrae il nome funzione puro dal label attivit�, es. "Montaggio [ID 123]" ? "Montaggio" */
 function extractFunctionName(label) {
     if (!label) return "";
     return label.replace(/\s*\[ID\s+\d+\]$/i, "").trim();
@@ -5028,8 +5028,8 @@ function buildActivityPhasesBox(activity) {
     // Header
     const header = document.createElement("div");
     header.className = "activity-phases-header";
-    header.innerHTML = `<span class="activity-phases-icon">🔧</span>
-        <span class="activity-phases-title">Fasi Attività</span>
+    header.innerHTML = `<span class="activity-phases-icon">??</span>
+        <span class="activity-phases-title">Fasi Attivit�</span>
         <span class="activity-phases-counter">${completedCount}/${phases.length}</span>`;
     box.appendChild(header);
 
@@ -5056,7 +5056,7 @@ function buildActivityPhasesBox(activity) {
 
         const numSpan = document.createElement("span");
         numSpan.className = "ap-num";
-        numSpan.textContent = isDone ? "✓" : String(i + 1);
+        numSpan.textContent = isDone ? "?" : String(i + 1);
         item.appendChild(numSpan);
 
         const isCurrentPhase = !isDone && phases.slice(0, i).every((prev) => {
@@ -5085,7 +5085,7 @@ function buildActivityPhasesBox(activity) {
 
         const checkSpan = document.createElement("span");
         checkSpan.className = "ap-check";
-        checkSpan.textContent = isDone ? "✅" : "⬜";
+        checkSpan.textContent = isDone ? "?" : "?";
         item.appendChild(checkSpan);
 
         item.addEventListener("click", (e) => {
@@ -5143,7 +5143,7 @@ async function toggleSupervisorPhase(projectKey, functionKey, phaseName, phaseOr
                     completed_at: newCompleted ? Date.now() : null,
                 });
             }
-            // Re-render attività per aggiornare la UI fasi
+            // Re-render attivit� per aggiornare la UI fasi
             if (cachedActivities && cachedActivities.length > 0) {
                 renderActivities(cachedActivities);
             }
@@ -5166,7 +5166,7 @@ function renderActivities(activities) {
     activityRuntimeOffsets.clear();
     activityTotalValues.clear();
 
-    // Raggruppa attività per fase (phase_id)
+    // Raggruppa attivit� per fase (phase_id)
     const phaseGroups = [];
     const phaseMap = new Map();
     activities.forEach((activity) => {
@@ -5347,7 +5347,7 @@ function renderActivities(activities) {
         const completeBtn = document.createElement("button");
         completeBtn.type = "button";
         completeBtn.className = "activity-complete-btn";
-        completeBtn.textContent = "Attività completata";
+        completeBtn.textContent = "Attivit� completata";
         completeBtn.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -5370,7 +5370,7 @@ function renderActivities(activities) {
         // Indicatore espansione
         const expandIndicator = document.createElement("span");
         expandIndicator.className = "card-expand-indicator";
-        expandIndicator.textContent = "▼";
+        expandIndicator.textContent = "?";
         meta.appendChild(expandIndicator);
 
         header.appendChild(info);
@@ -5378,7 +5378,7 @@ function renderActivities(activities) {
         
         // Click su header per toggle card - ma NON se clicco su un button
         header.addEventListener("click", (e) => {
-            // Se il click è su un button o dentro un button, non fare toggle
+            // Se il click � su un button o dentro un button, non fare toggle
             if (e.target.closest('button')) {
                 return;
             }
@@ -5425,7 +5425,7 @@ function updateToggleButton() {
     if (!toggle) {
         return;
     }
-    toggle.textContent = allPaused ? "▶️ Riprendi Tutti" : "⏸️ Pausa Tutti";
+    toggle.textContent = allPaused ? "?? Riprendi Tutti" : "?? Pausa Tutti";
 }
 
 function setProjectLabel(project) {
@@ -5445,7 +5445,7 @@ function refreshPlannedDurationDisplay() {
     if (!node) {
         return;
     }
-    // Somma planned_duration_ms di tutte le attività
+    // Somma planned_duration_ms di tutte le attivit�
     let totalPlannedMs = 0;
     if (Array.isArray(cachedActivities)) {
         for (const activity of cachedActivities) {
@@ -5559,7 +5559,7 @@ function applyState(state) {
     renderTeam(state.team);
     renderActivities(state.activities);
     // Mostra il conteggio totale operatori nella card "Squadra",
-    // includendo sia i membri non assegnati (team) sia quelli assegnati alle attività.
+    // includendo sia i membri non assegnati (team) sia quelli assegnati alle attivit�.
     try {
         const teamCountTotal = (Array.isArray(state.team) ? state.team.length : 0) +
             (Array.isArray(state.activities) ? state.activities.reduce((acc, a) => acc + (Array.isArray(a.members) ? a.members.length : 0), 0) : 0);
@@ -5619,7 +5619,7 @@ function handleUnauthenticated() {
     stopRefreshTimer();
     if (!unauthorizedNotified) {
         unauthorizedNotified = true;
-        showPopup("⚠️ Sessione scaduta. Effettua di nuovo l'accesso.");
+        showPopup("?? Sessione scaduta. Effettua di nuovo l'accesso.");
         setTimeout(() => {
             window.location.href = "/login";
         }, 1500);
@@ -5660,9 +5660,9 @@ async function refreshState() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  WIZARD FASI – intercetta spostamento e mostra selezione fase
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
+//  WIZARD FASI � intercetta spostamento e mostra selezione fase
+// -------------------------------------------------------------------
 
 let phaseWizardContext = null; // { activityId, activityLabel, functionKey, phases, resolve }
 
@@ -5718,7 +5718,7 @@ function openPhaseWizard(activityId, phaseInfo) {
 
                 const num = document.createElement("div");
                 num.className = "pw-num";
-                num.textContent = isDone ? "✓" : String(i + 1);
+                num.textContent = isDone ? "?" : String(i + 1);
                 div.appendChild(num);
 
                 const info = document.createElement("div");
@@ -5735,7 +5735,7 @@ function openPhaseWizard(activityId, phaseInfo) {
 
                 const arrow = document.createElement("div");
                 arrow.className = "pw-arrow";
-                arrow.textContent = isDone ? "✅" : "▶";
+                arrow.textContent = isDone ? "?" : "?";
                 div.appendChild(arrow);
 
                 div.addEventListener("click", () => {
@@ -5759,7 +5759,7 @@ async function selectPhaseInWizard(phase) {
     const progressForFn = supervisorPhaseProgress.filter((p) => p.function_key === functionKey);
 
     // Marca la fase selezionata come "in corso" (non completata ancora)
-    // Completa le fasi precedenti se non lo sono già
+    // Completa le fasi precedenti se non lo sono gi�
     for (const ph of phaseWizardContext.phases) {
         if (ph.order < phase.order) {
             const st = progressForFn.find((s) => s.phase_name === ph.name);
@@ -5856,61 +5856,61 @@ async function executeMoveTo(activityId, selectedNodes, phaseName) {
         });
         updateSelectionToolbar();
         if (queued) {
-            showPopup("💾 Spostamento salvato offline");
+            showPopup("?? Spostamento salvato offline");
             applyOptimisticMoveState(payloads);
         } else {
-            showPopup("✅ Risorse aggiornate");
+            showPopup("? Risorse aggiornate");
             await refreshState();
         }
     } catch (err) {
         console.error("moveTo", err);
-        showPopup("⚠️ Impossibile spostare le risorse");
+        showPopup("?? Impossibile spostare le risorse");
     }
 }
 
 async function pauseAll() {
     await fetch("/api/pause_all", { method: "POST" });
-    showPopup("⏸️ Tutti in pausa");
+    showPopup("?? Tutti in pausa");
     await refreshState();
 }
 
 async function startActivity(activityId) {
     if (!activityId) {
-        showPopup("⚠️ Attività non valida");
+        showPopup("?? Attivit� non valida");
         return;
     }
     try {
         const data = await postJson("/api/start_activity", { activity_id: activityId });
         if (data && data.__queued) {
-            showPopup('💾 Avvio attività salvato offline');
+            showPopup('?? Avvio attivit� salvato offline');
             optimisticStartActivity(activityId);
         } else {
-            showPopup(`▶️ Timer avviati per ${data?.affected || 0} operatori`);
+            showPopup(`?? Timer avviati per ${data?.affected || 0} operatori`);
             await refreshState();
         }
     } catch (err) {
         console.error("startActivity", err);
-        showPopup("⚠️ Impossibile avviare l'attività");
+        showPopup("?? Impossibile avviare l'attivit�");
     }
 }
 
 async function startMember(memberKey) {
     if (!memberKey) {
-        showPopup("⚠️ Operatore non valido");
+        showPopup("?? Operatore non valido");
         return;
     }
     try {
         const data = await postJson("/api/start_member", { member_key: memberKey });
         if (data && data.__queued) {
-            showPopup('💾 Timer salvato offline');
+            showPopup('?? Timer salvato offline');
             optimisticStartMembers([memberKey]);
         } else {
-            showPopup("▶️ Timer avviato");
+            showPopup("?? Timer avviato");
             await refreshState();
         }
     } catch (err) {
         console.error("startMember", err);
-        showPopup("⚠️ Impossibile avviare l'operatore");
+        showPopup("?? Impossibile avviare l'operatore");
     }
 }
 
@@ -5928,11 +5928,11 @@ async function startSelection() {
     const keys = startableNodes.map(node => node.dataset.key).filter(Boolean);
     
     if (keys.length === 0) {
-        showPopup("⚠️ Nessun operatore da avviare");
+        showPopup("?? Nessun operatore da avviare");
         return;
     }
 
-    // ── Controlla se l'attività ha fasi configurate ──
+    // -- Controlla se l'attivit� ha fasi configurate --
     // Prende l'activityId dal primo operatore selezionato
     const activityId = startableNodes[0]?.dataset?.activityId;
     if (activityId) {
@@ -5940,7 +5940,7 @@ async function startSelection() {
         if (phaseInfo) {
             const result = await openPhaseWizard(activityId, phaseInfo);
             if (!result) return; // Annullato
-            // Fase selezionata → procedi con avvio
+            // Fase selezionata ? procedi con avvio
         }
     }
     
@@ -5964,23 +5964,23 @@ async function startSelection() {
         if (queuedKeys.length > 0) {
             optimisticStartMembers(queuedKeys);
             const label = queuedKeys.length === keys.length
-                ? '💾 Timer salvati offline'
-                : '💾 Alcuni timer salvati offline';
+                ? '?? Timer salvati offline'
+                : '?? Alcuni timer salvati offline';
             showPopup(label);
         }
         if (started > 0) {
-            showPopup(`▶️ ${started} timer avviati`);
+            showPopup(`?? ${started} timer avviati`);
         }
         if (errors.length > 0) {
             const errorMsg = errors[0].error;
             if (errorMsg.includes('missing_external_id') || errorMsg.includes('ID esterno')) {
-                showPopup("⚠️ Operatore senza ID esterno CedolinoWeb");
+                showPopup("?? Operatore senza ID esterno CedolinoWeb");
             } else if (errorMsg.includes('no_activity_assigned')) {
-                showPopup("⚠️ Nessuna attività assegnata");
+                showPopup("?? Nessuna attivit� assegnata");
             } else if (errorMsg.includes('already_running')) {
-                showPopup("⚠️ Timer già in esecuzione");
+                showPopup("?? Timer gi� in esecuzione");
             } else {
-                showPopup(`⚠️ Errore: ${errorMsg}`);
+                showPopup(`?? Errore: ${errorMsg}`);
             }
         }
         
@@ -5996,7 +5996,7 @@ async function startSelection() {
         }
     } catch (err) {
         console.error("startSelection", err);
-        showPopup("⚠️ Impossibile avviare gli operatori");
+        showPopup("?? Impossibile avviare gli operatori");
     }
 }
 
@@ -6122,12 +6122,12 @@ async function submitNewActivity(event) {
     }
     const payload = collectNewActivityPayload();
     if (!payload.label) {
-        showPopup("⚠️ Inserisci il nome dell'attività");
+        showPopup("?? Inserisci il nome dell'attivit�");
         return;
     }
     const saveBtn = document.getElementById("newActivitySaveBtn");
     if (saveBtn && !saveBtn.dataset.label) {
-        saveBtn.dataset.label = saveBtn.textContent || "Crea attività";
+        saveBtn.dataset.label = saveBtn.textContent || "Crea attivit�";
     }
     newActivitySaving = true;
     updateTeamAddActivityButtonState();
@@ -6140,7 +6140,7 @@ async function submitNewActivity(event) {
         const result = await postJson("/api/activities", payload);
         const created = result && result.activity ? result.activity : null;
         const createdLabel = created && created.label ? created.label : payload.label;
-        showPopup(`🆕 Attività "${createdLabel}" creata`);
+        showPopup(`?? Attivit� "${createdLabel}" creata`);
         closeNewActivityModal();
         let refreshFailed = false;
         try {
@@ -6148,7 +6148,7 @@ async function submitNewActivity(event) {
         } catch (refreshErr) {
             refreshFailed = true;
             console.error("refreshState after create", refreshErr);
-            showPopup("⚠️ Attività creata, ricarica se non la vedi");
+            showPopup("?? Attivit� creata, ricarica se non la vedi");
         }
         if (!refreshFailed && hadSelection) {
             activitySearchTerm = createdLabel || "";
@@ -6158,17 +6158,17 @@ async function submitNewActivity(event) {
         console.error("submitNewActivity", err);
         const status = err && err.status;
         if (status === 409) {
-            showPopup("⚠️ Codice attività già in uso o progetto non disponibile");
+            showPopup("?? Codice attivit� gi� in uso o progetto non disponibile");
         } else if (status === 400) {
-            showPopup("⚠️ Dati attività non validi");
+            showPopup("?? Dati attivit� non validi");
         } else {
-            showPopup("⚠️ Impossibile creare l'attività");
+            showPopup("?? Impossibile creare l'attivit�");
         }
     } finally {
         newActivitySaving = false;
         updateTeamAddActivityButtonState();
         if (saveBtn) {
-            saveBtn.textContent = saveBtn.dataset.label || "Crea attività";
+            saveBtn.textContent = saveBtn.dataset.label || "Crea attivit�";
             syncNewActivitySubmitState();
         }
     }
@@ -6176,7 +6176,7 @@ async function submitNewActivity(event) {
 
 async function resumeAll() {
     await fetch("/api/resume_all", { method: "POST" });
-    showPopup("▶️ Attività riprese");
+    showPopup("?? Attivit� riprese");
     await refreshState();
 }
 
@@ -6190,11 +6190,11 @@ async function finishAll() {
                 node.classList.remove("selected");
             });
         updateSelectionToolbar();
-        showPopup("✅ Attività chiuse");
+        showPopup("? Attivit� chiuse");
         await refreshState();
     } catch (err) {
         console.error("finishAll", err);
-        showPopup("⚠️ Impossibile chiudere le attività");
+        showPopup("?? Impossibile chiudere le attivit�");
     }
 }
 
@@ -6324,7 +6324,7 @@ function openFeedbackModalForActivity(activity) {
     };
     const labelNode = document.getElementById("feedbackActivityName");
     if (labelNode) {
-        labelNode.textContent = feedbackContext.label || "Attività";
+        labelNode.textContent = feedbackContext.label || "Attivit�";
     }
     const submitBtn = document.getElementById("feedbackSubmitBtn");
     if (submitBtn) {
@@ -6395,15 +6395,15 @@ async function submitFeedback() {
                 memberKeys,
                 "/api/member/finish",
                 "",
-                "⚠️ Impossibile chiudere l'attività"
+                "?? Impossibile chiudere l'attivit�"
             );
         }
         if (success) {
-            console.log("Feedback attività", {
+            console.log("Feedback attivit�", {
                 activity: label,
                 rating,
             });
-            showPopup(`⭐ Grazie! Valutazione ${rating}/5 registrata`);
+            showPopup(`? Grazie! Valutazione ${rating}/5 registrata`);
         }
     } finally {
         closeFeedbackModal();
@@ -6447,7 +6447,7 @@ function renderActivityChoices() {
     if (filtered.length === 0) {
         const empty = document.createElement("div");
         empty.className = "activity-empty";
-        empty.textContent = "Nessuna attività corrispondente";
+        empty.textContent = "Nessuna attivit� corrispondente";
         choices.appendChild(empty);
         return;
     }
@@ -6476,14 +6476,14 @@ function renderActivityChoices() {
         if (memberCount > 0) {
             const meta = document.createElement("div");
             meta.className = "dest-activity-meta";
-            meta.textContent = `👷 ${memberCount} operator${memberCount === 1 ? 'e' : 'i'}`;
+            meta.textContent = `?? ${memberCount} operator${memberCount === 1 ? 'e' : 'i'}`;
             info.appendChild(meta);
         }
         header.appendChild(info);
 
         const arrow = document.createElement("div");
         arrow.className = "dest-activity-arrow";
-        arrow.textContent = "▶";
+        arrow.textContent = "?";
         header.appendChild(arrow);
 
         card.appendChild(header);
@@ -6509,7 +6509,7 @@ function renderActivityChoices() {
                 phHeader.className = "dest-phases-header";
                 const phTitle = document.createElement("span");
                 phTitle.className = "dest-phases-title";
-                phTitle.textContent = "Fasi attività";
+                phTitle.textContent = "Fasi attivit�";
                 phHeader.appendChild(phTitle);
                 const phCounter = document.createElement("span");
                 phCounter.className = "dest-phases-counter";
@@ -6526,7 +6526,7 @@ function renderActivityChoices() {
                 bar.appendChild(barFill);
                 phasesWrap.appendChild(bar);
 
-                // Phase items — cliccabili per spostare + impostare fase
+                // Phase items � cliccabili per spostare + impostare fase
                 const phList = document.createElement("div");
                 phList.className = "dest-phase-list";
                 let foundCurrent = false;
@@ -6545,7 +6545,7 @@ function renderActivityChoices() {
 
                     const phNum = document.createElement("div");
                     phNum.className = "dest-phase-num";
-                    phNum.textContent = isDone ? "✓" : String(i + 1);
+                    phNum.textContent = isDone ? "?" : String(i + 1);
                     item.appendChild(phNum);
 
                     const phLabel = document.createElement("span");
@@ -6561,7 +6561,7 @@ function renderActivityChoices() {
 
                     const phCheck = document.createElement("span");
                     phCheck.className = "dest-phase-check";
-                    phCheck.textContent = isDone ? "✅" : "▶";
+                    phCheck.textContent = isDone ? "?" : "?";
                     item.appendChild(phCheck);
 
                     // Click sulla fase: sposta operatori + imposta questa fase come corrente
@@ -6582,17 +6582,17 @@ function renderActivityChoices() {
             }
         }
 
-        // Click sulla card solo se NON ci sono fasi (attività semplice senza fasi)
+        // Click sulla card solo se NON ci sono fasi (attivit� semplice senza fasi)
         if (!match || !(match.template.phases || []).length) {
             card.addEventListener("click", () => moveTo(activity.activity_id));
         }
-        // Se ci sono fasi, nessun click sulla card/header — solo sulle singole fasi
+        // Se ci sono fasi, nessun click sulla card/header � solo sulle singole fasi
         choices.appendChild(card);
     });
 }
 
 /**
- * Sposta operatori all'attività e imposta la fase selezionata come corrente (per operatore).
+ * Sposta operatori all'attivit� e imposta la fase selezionata come corrente (per operatore).
  * Marca automaticamente le fasi precedenti come completate.
  */
 async function moveToWithPhase(activityId, functionKey, allPhases, selectedPhase, selectedIndex) {
@@ -6642,18 +6642,18 @@ async function moveToWithPhase(activityId, functionKey, allPhases, selectedPhase
         }
     }
 
-    // Sposta gli operatori all'attività, passando il nome della fase selezionata
+    // Sposta gli operatori all'attivit�, passando il nome della fase selezionata
     await executeMoveTo(activityId, selectedNodes, selectedPhase.name);
 }
 
 function requestMoveSelection() {
     const selectedCount = getSelectedKeys().length;
     if (selectedCount === 0) {
-        showPopup("⚠️ Nessuna risorsa selezionata");
+        showPopup("?? Nessuna risorsa selezionata");
         return;
     }
     if (cachedActivities.length === 0) {
-        showPopup("⚠️ Nessuna attività disponibile");
+        showPopup("?? Nessuna attivit� disponibile");
         return;
     }
     openActivityModal();
@@ -6664,7 +6664,7 @@ async function loadProject(projectCode) {
     setProjectCodeBuffer(code);
     setKeypadVisibility(false);
     if (!code) {
-        showPopup("⚠️ Inserisci un codice progetto numerico");
+        showPopup("?? Inserisci un codice progetto numerico");
         return;
     }
     const dateInput = document.getElementById("projectDateInput");
@@ -6675,7 +6675,7 @@ async function loadProject(projectCode) {
         projectDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     }
     if (!projectDate) {
-        showPopup("⚠️ Seleziona una data di riferimento");
+        showPopup("?? Seleziona una data di riferimento");
         return;
     }
     if (isLoadingProject) {
@@ -6686,7 +6686,7 @@ async function loadProject(projectCode) {
     const original = btn ? btn.dataset.label || btn.textContent : "";
     if (btn) {
         btn.disabled = true;
-        btn.textContent = "⏳ Carico...";
+        btn.textContent = "? Carico...";
     }
     try {
         const res = await fetch("/api/load_project", {
@@ -6696,12 +6696,12 @@ async function loadProject(projectCode) {
         });
         if (res.ok) {
             const data = await res.json();
-            showPopup(`📦 Progetto ${data.project.code} pronto`);
+            showPopup(`?? Progetto ${data.project.code} pronto`);
             setProjectBarCollapsed(true);
             await refreshState();
         } else if (res.status === 404) {
             resetProjectStateUI();
-            showPopup("⚠️ Progetto non trovato");
+            showPopup("?? Progetto non trovato");
             await refreshState();
         } else if (res.status === 409) {
             let payload = null;
@@ -6712,7 +6712,7 @@ async function loadProject(projectCode) {
             }
             const warning =
                 (payload && (payload.message || payload.error)) ||
-                "⚠️ Impossibile ricaricare: attività in corso";
+                "?? Impossibile ricaricare: attivit� in corso";
             showPopup(warning);
             await refreshState();
         } else {
@@ -6720,19 +6720,19 @@ async function loadProject(projectCode) {
         }
     } catch (err) {
         console.error("loadProject", err);
-        showPopup("⚠️ Impossibile caricare il progetto");
+        showPopup("?? Impossibile caricare il progetto");
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.textContent = original || "🚚 Carica Progetto";
+            btn.textContent = original || "?? Carica Progetto";
         }
         isLoadingProject = false;
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 //  Aggiungi Operatore Modal
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
 
 let addOperatorModalOpen = false;
 let availableOperators = [];
@@ -6817,7 +6817,7 @@ function renderAvailableOperators(filter = "") {
     if (filtered.length === 0) {
         container.innerHTML = filterLower
             ? '<div class="no-operators">Nessun operatore trovato</div>'
-            : '<div class="no-operators">Tutti gli operatori sono già nel progetto</div>';
+            : '<div class="no-operators">Tutti gli operatori sono gi� nel progetto</div>';
         return;
     }
     
@@ -6850,14 +6850,14 @@ async function addOperatorToProject(rentmanId) {
         if (!res.ok || !data.ok) {
             const errorMsg = data.error || data.message || "Errore";
             if (errorMsg === "already_in_project") {
-                showPopup("⚠️ Operatore già nel progetto");
+                showPopup("?? Operatore gi� nel progetto");
             } else {
-                showPopup("⚠️ " + errorMsg);
+                showPopup("?? " + errorMsg);
             }
             return;
         }
         
-        showPopup(`✅ ${data.member.name} aggiunto`);
+        showPopup(`? ${data.member.name} aggiunto`);
         
         // Rimuovi dalla lista disponibili
         availableOperators = availableOperators.filter(op => op.rentman_id !== rentmanId);
@@ -6868,13 +6868,13 @@ async function addOperatorToProject(rentmanId) {
         
     } catch (err) {
         console.error("addOperatorToProject", err);
-        showPopup("⚠️ Errore di rete");
+        showPopup("?? Errore di rete");
     }
 }
 
 async function addManualOperator(name) {
     if (!name.trim()) {
-        showPopup("⚠️ Inserisci un nome");
+        showPopup("?? Inserisci un nome");
         return;
     }
     
@@ -6888,11 +6888,11 @@ async function addManualOperator(name) {
         const data = await res.json();
         
         if (!res.ok || !data.ok) {
-            showPopup("⚠️ " + (data.error || data.message || "Errore"));
+            showPopup("?? " + (data.error || data.message || "Errore"));
             return;
         }
         
-        showPopup(`✅ ${data.member.name} aggiunto`);
+        showPopup(`? ${data.member.name} aggiunto`);
         closeAddOperatorModal();
         
         // Aggiorna lo stato
@@ -6900,7 +6900,7 @@ async function addManualOperator(name) {
         
     } catch (err) {
         console.error("addManualOperator", err);
-        showPopup("⚠️ Errore di rete");
+        showPopup("?? Errore di rete");
     }
 }
 
@@ -7039,7 +7039,7 @@ function bindUI() {
         });
     }
 
-    // Bottone "Nuova attività" nel modal destinazione
+    // Bottone "Nuova attivit�" nel modal destinazione
     const newActivityFromModalBtn = document.getElementById("newActivityFromModalBtn");
     if (newActivityFromModalBtn) {
         newActivityFromModalBtn.addEventListener("click", () => {
@@ -7254,7 +7254,7 @@ function bindUI() {
 
             const name = (nameInput && nameInput.value || "").trim();
             if (!name) {
-                showPopup("⚠️ Inserisci il nome dell'attrezzatura");
+                showPopup("?? Inserisci il nome dell'attrezzatura");
                 return;
             }
 
@@ -7270,15 +7270,15 @@ function bindUI() {
                 });
                 const data = await response.json();
                 if (!response.ok || !data.ok) {
-                    showPopup("⚠️ " + (data.error || "Errore durante l'aggiunta"));
+                    showPopup("?? " + (data.error || "Errore durante l'aggiunta"));
                     return;
                 }
-                showPopup(`✅ Attrezzatura "${name}" aggiunta`);
+                showPopup(`? Attrezzatura "${name}" aggiunta`);
                 closeNewEquipmentModal();
                 fetchProjectMaterials({ silent: true, refresh: true });
             } catch (err) {
                 console.error("Errore aggiunta attrezzatura locale:", err);
-                showPopup("⚠️ Errore di rete");
+                showPopup("?? Errore di rete");
             }
         });
     }
@@ -7603,7 +7603,7 @@ function bindUI() {
     if (projectBarHeader) {
         projectBarHeader.addEventListener("click", (e) => {
             if (e.target.closest("button") || e.target.closest("input")) return;
-            // In phone mode la barra è sempre compressa
+            // In phone mode la barra � sempre compressa
             if (window.__PHONE_MODE__) return;
             toggleProjectBarCollapse();
         });
@@ -7679,7 +7679,7 @@ function bindUI() {
         }
     });
 
-    // Non nascondere qui - verrà gestito da hydrateInitialContentFromCache/applyState
+    // Non nascondere qui - verr� gestito da hydrateInitialContentFromCache/applyState
     updateProjectInput();
 }
 
@@ -7702,7 +7702,7 @@ async function init() {
     teamCardCollapsed = true;
     const teamCardEl = document.getElementById("teamCard");
     if (teamCardEl) teamCardEl.classList.add("card-collapsed");
-    // Nascondi card inizialmente - verranno mostrate se c'è un progetto cached
+    // Nascondi card inizialmente - verranno mostrate se c'� un progetto cached
     setProjectVisibility(false);
     setProjectDefaultDate();
     // In phone mode: barra progetto sempre compressa, nascondi expand indicator
@@ -7728,20 +7728,20 @@ async function init() {
     await fetchPushNotifications({ silent: true });
     await refreshState();
     
-    // Auto-load progetto salvato del supervisor se non c'è già un progetto attivo
+    // Auto-load progetto salvato del supervisor se non c'� gi� un progetto attivo
     await autoLoadSavedSupervisorProject();
     
     fetchProjectMaterials({ silent: true, refresh: false });
 }
 
 async function autoLoadSavedSupervisorProject() {
-    // Controlla se c'è un progetto salvato per questo supervisor
+    // Controlla se c'� un progetto salvato per questo supervisor
     const savedProject = window.__SAVED_SUPERVISOR_PROJECT__;
     if (!savedProject || !savedProject.code) {
         return;
     }
 
-    // Se c'è già un progetto attivo CON dati reali (attività caricate), non ricaricare
+    // Se c'� gi� un progetto attivo CON dati reali (attivit� caricate), non ricaricare
     if (projectVisible && lastKnownState) {
         const hasActivities = (lastKnownState.activities || []).length > 0;
         const hasActivityMembers = (lastKnownState.activities || []).some(
@@ -7750,8 +7750,8 @@ async function autoLoadSavedSupervisorProject() {
         if (hasActivities && hasActivityMembers) {
             return;
         }
-        // Progetto visibile ma senza attività o senza operatori assegnati: prova a ricaricare
-        console.info("autoLoad: progetto senza attività o senza operatori assegnati, provo a ricaricare");
+        // Progetto visibile ma senza attivit� o senza operatori assegnati: prova a ricaricare
+        console.info("autoLoad: progetto senza attivit� o senza operatori assegnati, provo a ricaricare");
     }
     // Pre-popola il codice progetto e carica automaticamente
     const projectInput = document.getElementById("projectInput");
@@ -7799,9 +7799,9 @@ document.addEventListener("click", (e) => {
     }
 }, { capture: true });
 
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // TELEFONI AZIENDALI - Assegnazione da supervisor
-// ═══════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------
 
 let _selectedPhoneCode = null;
 
@@ -7822,7 +7822,7 @@ function openPhoneAssignModal(activityId) {
     if (!modal) return;
     _selectedPhoneCode = null;
 
-    // Popola select operatori dall'attività + team
+    // Popola select operatori dall'attivit� + team
     const userSelect = document.getElementById("phoneAssignUser");
     userSelect.innerHTML = "";
     const allMembers = [];
@@ -7873,13 +7873,13 @@ function openPhoneAssignModal(activityId) {
         let statusHtml;
         if (isCurrentProject) {
             const thisAssign = allAssigns.find(a => a.project_code === supervisorProjectCode);
-            statusHtml = `🔵 ${thisAssign.assigned_to}`;
+            statusHtml = `?? ${thisAssign.assigned_to}`;
         } else if (hasOtherAssigns) {
-            statusHtml = `🟡 In uso (${otherAssigns.length})`;
+            statusHtml = `?? In uso (${otherAssigns.length})`;
         } else {
             statusHtml = "Disponibile";
         }
-        btn.innerHTML = `📱 <strong>${phone.phone_code}</strong><br><span style="font-size:11px; font-weight:400; color:var(--text-secondary);">${statusHtml}</span>`;
+        btn.innerHTML = `?? <strong>${phone.phone_code}</strong><br><span style="font-size:11px; font-weight:400; color:var(--text-secondary);">${statusHtml}</span>`;
         btn.addEventListener("click", () => {
             grid.querySelectorAll("button").forEach(b => b.style.borderColor = "var(--border)");
             btn.style.borderColor = "var(--brand)";
@@ -7909,15 +7909,15 @@ function openPhoneAssignModal(activityId) {
             });
             const data = await res.json();
             if (data.ok) {
-                showPopup(`📱 Telefono ${_selectedPhoneCode} assegnato`);
+                showPopup(`?? Telefono ${_selectedPhoneCode} assegnato`);
                 modal.classList.remove("open");
                 await loadPhones();
                 if (cachedActivities) renderActivities(cachedActivities);
             } else {
-                showPopup("⚠️ " + (data.error || "Errore"));
+                showPopup("?? " + (data.error || "Errore"));
             }
         } catch (e) {
-            showPopup("⚠️ Errore connessione");
+            showPopup("?? Errore connessione");
         }
     };
 

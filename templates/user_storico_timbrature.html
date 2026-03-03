@@ -349,6 +349,12 @@
             color: var(--info);
             font-size: 11px;
         }
+
+        .day-hours.with-request {
+            background: transparent;
+            color: #2563eb;
+            font-size: 14px;
+        }
         
         /* Legend */
         .legend {
@@ -381,6 +387,7 @@
         .legend-color.partial { background: var(--warning-bg); border: 1px solid var(--warning); }
         .legend-color.missing { background: var(--danger-bg); border: 1px solid var(--danger); }
         .legend-color.request { background: var(--info-bg); border: 1px solid var(--info); }
+        .legend-color.with-request { background: #dbeafe; border: 1px solid #2563eb; }
         
         /* Modal */
         .modal-overlay {
@@ -1115,8 +1122,16 @@
                 if (isToday) classes.push('today');
                 
                 let hoursHtml = '';
-                // Se c'è una richiesta confermata, mostra l'abbreviazione invece delle ore
-                if (hasConfirmedRequest) {
+                // Se c'è una richiesta confermata E anche ore lavorate, mostra ore in blu
+                if (hasConfirmedRequest && hasData && dayData.ore_lavorate) {
+                    const [h, m] = dayData.ore_lavorate.split(':').map(Number);
+                    const mins = h * 60 + m;
+                    const displayH = Math.floor(mins / 60);
+                    const displayM = mins % 60;
+                    const displayStr = `${displayH}:${String(displayM).padStart(2, '0')}`;
+                    hoursHtml = `<div class="day-hours with-request" title="Giustificativo: ${confirmedRequests[0].abbreviation || confirmedRequests[0].type_name || 'REQ'}">${displayStr}</div>`;
+                } else if (hasConfirmedRequest) {
+                    // Solo giustificativo, nessuna ora lavorata
                     const req = confirmedRequests[0];
                     const displayText = req.abbreviation || req.type_name?.substring(0, 4) || 'REQ';
                     hoursHtml = `<div class="day-hours request">${displayText}</div>`;

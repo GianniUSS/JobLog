@@ -38,8 +38,10 @@
         updateBanner.setAttribute('aria-hidden', 'false');
         // Salva la versione in attesa per riferimento
         updateBanner.dataset.swVersion = swVersion || '';
-        // Mostra il numero di versione
-        if (newVersionDisplay && window.APP_VERSION) {
+        // Mostra il numero di versione nuova (dal SW, non da APP_VERSION corrente)
+        if (newVersionDisplay && swVersion) {
+            newVersionDisplay.textContent = `(v${swVersion})`;
+        } else if (newVersionDisplay && window.APP_VERSION) {
             newVersionDisplay.textContent = `(${window.APP_VERSION})`;
         }
     }
@@ -102,13 +104,21 @@
                 return;
             }
             const currentUrl = getCurrentScriptURL();
-            // Evita banner se lo script è lo stesso (false positive)
-            if (currentUrl && worker.scriptURL === currentUrl) {
+            // Evita banner se la versione è la stessa (false positive)
+            const currentVersion = getSwVersionFromUrl(currentUrl);
+            const waitingVersion = getSwVersionFromUrl(worker.scriptURL);
+            if (currentVersion && waitingVersion && currentVersion === waitingVersion) {
+                console.log('[Update] Stessa versione SW, nessun aggiornamento reale:', currentVersion);
+                return;
+            }
+            // Verifica anche che la versione del SW in waiting sia diversa da APP_VERSION
+            if (window.APP_VERSION && waitingVersion === window.APP_VERSION.replace(/^v/, '')) {
+                console.log('[Update] Versione SW waiting corrisponde ad APP_VERSION, skip banner');
                 return;
             }
             pendingServiceWorker = worker;
             // Passa l'identificatore della versione del SW in waiting
-            const swVersion = getSwVersionFromUrl(worker.scriptURL);
+            const swVersion = waitingVersion;
             showUpdateAvailable(swVersion);
         };
 
@@ -158,7 +168,7 @@
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js?v=2026.01.08e')
+            navigator.serviceWorker.register('/sw.js?v=2026.03.03c')
                 .then((registration) => {
                     console.log('✓ Service Worker registrato:', registration.scope);
                     if (registration.active && navigator.serviceWorker.controller === null) {

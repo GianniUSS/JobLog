@@ -17663,6 +17663,50 @@ def api_get_distinct_functions() -> ResponseReturnValue:
     return jsonify({"ok": True, "functions": functions})
 
 
+@app.get("/api/admin/function-phases/distinct-projects")
+@login_required
+def api_get_distinct_projects() -> ResponseReturnValue:
+    """Restituisce la lista di tutti i progetti Rentman (da API + DB locale)."""
+    projects = []
+    seen_codes: set = set()
+
+    # 1) Prova a caricare i progetti da Rentman API (con paginazione piccola per evitare errore 6MB)
+    try:
+        client = get_rentman_client()
+        if client:
+            # Usa limit=50 per pagina per evitare il limite di 6MB di Rentman
+            for p in client.iter_projects(limit_total=5000, params={"limit": 50}):
+                code = str(p.get("number") or p.get("project_number") or "").strip()
+                name = (p.get("name") or p.get("displayname") or "").strip()
+                if code and code not in seen_codes:
+                    seen_codes.add(code)
+                    projects.append({"code": code, "name": name})
+    except Exception as e:
+        app.logger.warning("Errore caricamento progetti Rentman API: %s", e)
+
+    # 2) Integra con i progetti dal DB locale (come fallback o complemento)
+    try:
+        db = get_db()
+        ensure_rentman_plannings_table(db)
+        rows = db.execute(
+            "SELECT DISTINCT project_code, project_name FROM rentman_plannings "
+            "WHERE project_code IS NOT NULL AND project_code != '' "
+            "ORDER BY project_code"
+        ).fetchall()
+        for r in rows:
+            code = str(r["project_code"] if isinstance(r, dict) else r[0]).strip()
+            name = (r["project_name"] if isinstance(r, dict) else r[1]) or ""
+            if code and code not in seen_codes:
+                seen_codes.add(code)
+                projects.append({"code": code, "name": name})
+    except Exception as e:
+        app.logger.warning("Errore caricamento progetti da DB: %s", e)
+
+    # Ordina per codice numerico
+    projects.sort(key=lambda p: (int(p["code"]) if p["code"].isdigit() else float('inf'), p["code"]))
+    return jsonify({"ok": True, "projects": projects})
+
+
 @app.get("/api/project-phases")
 @login_required
 def api_get_project_phases() -> ResponseReturnValue:

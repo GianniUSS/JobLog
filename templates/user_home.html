@@ -4328,6 +4328,7 @@ async function showProductionActivityPopup(activity) {
   const projectCode = turno.project_code || activity.project_code || '';
   const projectName = turno.project_name || activity.project_name || projectCode;
   const activityLabel = turno.function || activity.activity_label || 'Attività';
+  const activityDisplayLabel = getFnDisplayName(activityLabel) || activityLabel;
   const normalizedActivity = (activityLabel || '').toString().trim().toLowerCase();
   const requiresManualSelection =
     Boolean(activity.manual_selection || activity.requires_project_selection || activity.requires_activity_selection) ||
@@ -4378,7 +4379,8 @@ async function showProductionActivityPopup(activity) {
   // ═══ Se la funzione ha FASI configurate, mostra selezione fasi ═══
   if (currentTurnoPhasesData && currentTurnoPhasesData.matchedPhases.length > 0) {
     console.log('[FASI-POPUP] Mostra selezione fasi!', currentTurnoPhasesData.matchedPhases.length, 'fasi');
-    showPhaseSelectionPopup(projectCode, projectName, activityLabel, timbraturaTs, 'start');
+    const displayLabel = currentTurnoPhasesData.displayName || activityLabel;
+    showPhaseSelectionPopup(projectCode, projectName, displayLabel, timbraturaTs, 'start');
     return;
   }
   
@@ -4422,7 +4424,7 @@ async function showProductionActivityPopup(activity) {
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">PROGETTO</div>
             <div style="font-weight:600;font-size:15px;margin-bottom:12px;">${escapeHtml(projectName)}</div>
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">MANSIONE</div>
-            <div style="font-weight:600;font-size:15px;color:var(--brand);">${escapeHtml(activityLabel)}</div>
+            <div style="font-weight:600;font-size:15px;color:var(--brand);">${escapeHtml(activityDisplayLabel)}</div>
           </div>
           
           <p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;text-align:center;">
@@ -4524,7 +4526,7 @@ async function showPhaseSelectionPopup(projectCode, projectName, functionLabel, 
     } else if (isDone) {
       // Fase completata — cliccabile ma mostra come completata
       phasesHtml += `
-        <div onclick="selectPhaseForActivity('${escapeHtml(projectCode)}', '${escapeHtml(projectName)}', '${escapeHtml(ph.name)}', ${ph.order}, ${timbraturaTs || 0}, '${mode}')"
+        <div onclick="selectPhaseForActivity('${escapeHtml(projectCode)}', '${escapeHtml(projectName)}', '${escapeHtml(ph.name)}', ${ph.order}, ${timbraturaTs || 0}, '${mode}', '${escapeHtml(ph.project_number || projectCode)}')"
              style="display:flex;align-items:center;gap:12px;padding:14px 16px;
                     background:rgba(46,204,113,0.08);
                     border:2px solid rgba(46,204,113,0.3);
@@ -4543,7 +4545,7 @@ async function showPhaseSelectionPopup(projectCode, projectName, functionLabel, 
     } else {
       // Fase non ancora fatto — cliccabile
       phasesHtml += `
-        <div onclick="selectPhaseForActivity('${escapeHtml(projectCode)}', '${escapeHtml(projectName)}', '${escapeHtml(ph.name)}', ${ph.order}, ${timbraturaTs || 0}, '${mode}')"
+        <div onclick="selectPhaseForActivity('${escapeHtml(projectCode)}', '${escapeHtml(projectName)}', '${escapeHtml(ph.name)}', ${ph.order}, ${timbraturaTs || 0}, '${mode}', '${escapeHtml(ph.project_number || projectCode)}')"
              style="display:flex;align-items:center;gap:12px;padding:14px 16px;
                     background:var(--bg);
                     border:2px solid var(--border);
@@ -4584,6 +4586,23 @@ async function showPhaseSelectionPopup(projectCode, projectName, functionLabel, 
         
         <!-- Extra attività con descrizione libera -->
         <div id="extraActivitySection" style="margin-bottom:12px;">
+          ${activePhaseLabel && !phases.some(ph => ph.name.trim().toLowerCase() === activePhaseLabel.toLowerCase()) ? `
+          <!-- Extra attività IN CORSO -->
+          <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;
+                      background:rgba(255,152,0,0.12);
+                      border:2px solid #ff9800;
+                      border-radius:12px;cursor:default;position:relative;overflow:hidden;">
+            <span style="width:32px;height:32px;background:#ff9800;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;">⚡</span>
+            <div style="flex:1;">
+              <div style="font-weight:700;font-size:14px;color:#e65100;">${escapeHtml(activePhaseLabel)}</div>
+              <div style="font-size:11px;color:#ff9800;margin-top:2px;display:flex;align-items:center;gap:4px;">
+                <span style="display:inline-block;width:8px;height:8px;background:#ff9800;border-radius:50%;animation:pulseDot 1.2s ease-in-out infinite;"></span>
+                EXTRA IN CORSO
+              </div>
+            </div>
+            <span style="font-size:18px;color:#ff9800;font-weight:700;">⏱️</span>
+          </div>
+          ` : `
           <div onclick="toggleExtraActivityInput()" 
                style="display:flex;align-items:center;gap:12px;padding:14px 16px;
                       background:rgba(255,152,0,0.08);
@@ -4598,12 +4617,24 @@ async function showPhaseSelectionPopup(projectCode, projectName, functionLabel, 
             </div>
             <span style="font-size:20px;">📝</span>
           </div>
+          `}
           <div id="extraActivityInputBox" style="display:none;margin-top:8px;padding:12px;background:var(--bg, #f8f9fa);border-radius:10px;">
             <input type="text" id="extraActivityInput" placeholder="Descrivi l'attività..." maxlength="100"
                    style="width:100%;padding:10px 12px;border:2px solid var(--border, #ddd);border-radius:8px;font-size:14px;box-sizing:border-box;outline:none;transition:border-color 0.2s;"
                    onfocus="this.style.borderColor='#ff9800'" onblur="this.style.borderColor='var(--border, #ddd)'"
-                   onkeydown="if(event.key==='Enter')confirmExtraActivity('${escapeHtml(projectCode)}','${escapeHtml(projectName)}',${timbraturaTs || 0},'${mode}')">
-            <button onclick="confirmExtraActivity('${escapeHtml(projectCode)}','${escapeHtml(projectName)}',${timbraturaTs || 0},'${mode}')"
+                   onkeydown="if(event.key==='Enter')confirmExtraActivity('${escapeHtml(projectName)}',${timbraturaTs || 0},'${mode}')">
+            <div style="margin-top:8px;">
+              <label style="font-size:11px;color:var(--text-muted, #999);margin-bottom:4px;display:block;">PROGETTO</label>
+              <input type="hidden" id="extraActivityProjectInput" value="${escapeHtml(projectCode)}">
+              <div onclick="openProjectKeypad()" 
+                   style="width:100%;padding:10px 12px;border:2px solid var(--border, #ddd);border-radius:8px;font-size:16px;font-weight:700;
+                          box-sizing:border-box;min-height:44px;color:var(--brand, #4361ee);background:var(--bg-card, #fff);
+                          cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+                <span id="extraProjectDisplayLabel">#${escapeHtml(projectCode)}</span>
+                <span style="font-size:12px;color:var(--text-muted, #999);">✏️ Cambia</span>
+              </div>
+            </div>
+            <button onclick="confirmExtraActivity('${escapeHtml(projectName)}',${timbraturaTs || 0},'${mode}')"
                     style="width:100%;margin-top:8px;padding:10px;background:#ff9800;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;transition:background 0.2s;"
                     onmouseover="this.style.background='#f57c00'" onmouseout="this.style.background='#ff9800'">
               ▶ Avvia Extra
@@ -4637,13 +4668,138 @@ function toggleExtraActivityInput() {
   }
 }
 
-async function confirmExtraActivity(projectCode, projectName, timbraturaTs, mode) {
+// ═══ Tastierino Progetto Indipendente ═══
+let _keypadProjectsCache = null;
+let _keypadValue = '';
+
+async function _loadKeypadProjects() {
+  if (_keypadProjectsCache) return _keypadProjectsCache;
+  try {
+    const res = await fetch('/api/admin/function-phases/distinct-projects');
+    const data = await res.json();
+    _keypadProjectsCache = data.ok ? (data.projects || []) : [];
+  } catch(e) {
+    console.warn('Errore caricamento progetti:', e);
+    _keypadProjectsCache = [];
+  }
+  return _keypadProjectsCache;
+}
+
+function openProjectKeypad() {
+  const hidden = document.getElementById('extraActivityProjectInput');
+  _keypadValue = hidden ? hidden.value : '';
+  
+  const existing = document.getElementById('projectKeypadOverlay');
+  if (existing) existing.remove();
+
+  const html = `
+    <div id="projectKeypadOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+      <div style="background:var(--bg-card, #fff);border-radius:20px;padding:24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+        <div style="text-align:center;margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:600;color:var(--text-muted, #999);margin-bottom:8px;">INSERISCI N° PROGETTO</div>
+          <div id="kpDisplay" style="font-size:32px;font-weight:800;color:var(--brand, #4361ee);min-height:44px;letter-spacing:2px;">${_keypadValue || '—'}</div>
+          <div id="kpStatus" style="font-size:12px;min-height:20px;margin-top:4px;color:var(--text-muted, #999);"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+          ${[1,2,3,4,5,6,7,8,9].map(n => 
+            '<button type="button" onclick="kpPress(\''+n+'\')" style="padding:16px;font-size:22px;font-weight:700;border:1px solid var(--border, #ddd);border-radius:12px;background:var(--bg-card, #fff);color:var(--text-primary);cursor:pointer;-webkit-tap-highlight-color:transparent;active:scale(0.95);">'+n+'</button>'
+          ).join('')}
+          <button type="button" onclick="kpPress('clear')" style="padding:16px;font-size:16px;font-weight:700;border:1px solid #e74c3c;border-radius:12px;background:rgba(231,76,60,0.08);color:#e74c3c;cursor:pointer;">C</button>
+          <button type="button" onclick="kpPress('0')" style="padding:16px;font-size:22px;font-weight:700;border:1px solid var(--border, #ddd);border-radius:12px;background:var(--bg-card, #fff);color:var(--text-primary);cursor:pointer;">0</button>
+          <button type="button" onclick="kpPress('back')" style="padding:16px;font-size:20px;font-weight:700;border:1px solid var(--border, #ddd);border-radius:12px;background:var(--bg-card, #fff);color:var(--text-primary);cursor:pointer;">⌫</button>
+        </div>
+        <button type="button" id="kpConfirmBtn" onclick="kpConfirm()" 
+                style="width:100%;padding:14px;font-size:16px;font-weight:700;border:none;border-radius:12px;background:#2ecc71;color:#fff;cursor:pointer;margin-bottom:8px;opacity:0.4;pointer-events:none;">
+          ✓ Conferma Progetto
+        </button>
+        <button type="button" onclick="kpCancel()" 
+                style="width:100%;padding:12px;font-size:14px;font-weight:600;border:1px solid var(--border, #ddd);border-radius:12px;background:var(--bg, #f5f5f5);color:var(--text-secondary, #666);cursor:pointer;">
+          ✕ Annulla
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', html);
+  // Verifica progetto iniziale se già valorizzato
+  if (_keypadValue) kpValidate();
+}
+
+function kpPress(key) {
+  if (key === 'clear') {
+    _keypadValue = '';
+  } else if (key === 'back') {
+    _keypadValue = _keypadValue.slice(0, -1);
+  } else {
+    if (_keypadValue.length < 10) _keypadValue += key;
+  }
+  const disp = document.getElementById('kpDisplay');
+  if (disp) disp.textContent = _keypadValue || '—';
+  kpValidate();
+}
+
+async function kpValidate() {
+  const statusEl = document.getElementById('kpStatus');
+  const confirmBtn = document.getElementById('kpConfirmBtn');
+  if (!statusEl || !confirmBtn) return;
+  
+  if (!_keypadValue) {
+    statusEl.textContent = '';
+    statusEl.style.color = 'var(--text-muted, #999)';
+    confirmBtn.style.opacity = '0.4';
+    confirmBtn.style.pointerEvents = 'none';
+    return;
+  }
+  
+  statusEl.textContent = '⏳ Verifica in corso...';
+  statusEl.style.color = 'var(--text-muted, #999)';
+  confirmBtn.style.opacity = '0.4';
+  confirmBtn.style.pointerEvents = 'none';
+  
+  const projects = await _loadKeypadProjects();
+  const found = projects.find(p => p.code === _keypadValue);
+  
+  if (found) {
+    statusEl.innerHTML = '✅ <b>' + (found.name || 'Progetto') + '</b>';
+    statusEl.style.color = '#2ecc71';
+    confirmBtn.style.opacity = '1';
+    confirmBtn.style.pointerEvents = 'auto';
+  } else {
+    statusEl.textContent = '❌ Progetto non trovato';
+    statusEl.style.color = '#e74c3c';
+    confirmBtn.style.opacity = '0.4';
+    confirmBtn.style.pointerEvents = 'none';
+  }
+}
+
+function kpConfirm() {
+  const hidden = document.getElementById('extraActivityProjectInput');
+  const label = document.getElementById('extraProjectDisplayLabel');
+  if (hidden) hidden.value = _keypadValue;
+  if (label) label.textContent = '#' + _keypadValue;
+  kpCancel();
+}
+
+function kpCancel() {
+  const overlay = document.getElementById('projectKeypadOverlay');
+  if (overlay) overlay.remove();
+}
+
+async function confirmExtraActivity(projectName, timbraturaTs, mode) {
   const inp = document.getElementById('extraActivityInput');
   const desc = (inp ? inp.value : '').trim();
   if (!desc) {
     inp && inp.focus();
     inp && (inp.style.borderColor = '#e74c3c');
     setTimeout(() => inp && (inp.style.borderColor = 'var(--border, #ddd)'), 1500);
+    return;
+  }
+  // Leggi il codice progetto dall'input (l'utente può averlo cambiato)
+  const projInp = document.getElementById('extraActivityProjectInput');
+  const projectCode = (projInp ? projInp.value : '').trim();
+  if (!projectCode) {
+    projInp && projInp.focus();
+    projInp && (projInp.style.borderColor = '#e74c3c');
+    setTimeout(() => projInp && (projInp.style.borderColor = 'var(--border, #ddd)'), 1500);
     return;
   }
   dismissPhaseSelectionPopup();
@@ -4698,15 +4854,19 @@ async function confirmExtraActivity(projectCode, projectName, timbraturaTs, mode
   }
 }
 
-async function selectPhaseForActivity(projectCode, projectName, phaseName, phaseOrder, timbraturaTs, mode) {
+async function selectPhaseForActivity(projectCode, projectName, phaseName, phaseOrder, timbraturaTs, mode, phaseProjectCode) {
   dismissPhaseSelectionPopup();
   
   const pd = currentTurnoPhasesData;
   if (!pd) return;
   
+  // Usa il project_number della fase se configurato, altrimenti il progetto del turno
+  const effectiveProjectCode = phaseProjectCode || projectCode;
+  console.log('[FASI] selectPhaseForActivity - fase:', phaseName, 'progetto fase:', phaseProjectCode, 'progetto turno:', projectCode, 'effettivo:', effectiveProjectCode);
+  
   if (mode === 'start') {
     // AVVIO GIORNATA: avvia timer con il nome della fase come activity_label
-    await _doStartProductionActivity(projectCode, projectName, phaseName, timbraturaTs, null);
+    await _doStartProductionActivity(effectiveProjectCode, projectName, phaseName, timbraturaTs, null);
     // Ricarica UI per aggiornare lo stato
     await loadTimbrature();
   } else {
@@ -4753,7 +4913,7 @@ async function selectPhaseForActivity(projectCode, projectName, phaseName, phase
     }
     
     // 3. Switch timer alla nuova fase (questo chiama anche loadTimbrature)
-    await _doSwitchActivity(projectCode, projectName, phaseName, null);
+    await _doSwitchActivity(effectiveProjectCode, projectName, phaseName, null);
   }
   
   // Aggiorna turnoCurrentPhases per riflettere i cambiamenti
@@ -5711,7 +5871,7 @@ function displayTurno(index) {
   
   // Funzione/Ruolo
   if (turno.function) {
-    document.getElementById('turnoFunzioneText').textContent = turno.function;
+    document.getElementById('turnoFunzioneText').textContent = getFnDisplayName(turno.function);
   } else {
     document.getElementById('turnoFunzioneText').textContent = '-';
   }
@@ -5865,6 +6025,18 @@ function navigateTurno(direction) {
 // FASI TURNO
 // ═══════════════════════════════════════════════════════════════════
 let turnoFunctionPhasesConfig = null;
+
+// Helper: restituisce il display_name per una funzione, se configurato
+function getFnDisplayName(functionName) {
+  if (!functionName || !turnoFunctionPhasesConfig) return functionName;
+  const fnLower = functionName.toLowerCase().trim();
+  for (const [key, tmpl] of Object.entries(turnoFunctionPhasesConfig)) {
+    if (key.toLowerCase().trim() === fnLower && tmpl.display_name) {
+      return tmpl.display_name;
+    }
+  }
+  return functionName;
+}
 let turnoCurrentPhases = []; // Stato corrente delle fasi
 let currentTurnoPhasesData = null; // Dati fasi per popup attività
 let _loadTurnoPhasesPromise = null; // Promise per sincronizzare il caricamento fasi
@@ -5888,6 +6060,11 @@ async function loadTurnoPhases(turno) {
       const data = await res.json();
       turnoFunctionPhasesConfig = data.ok ? (data.function_phases || {}) : {};
       console.log('[FASI] Config caricata, chiavi:', Object.keys(turnoFunctionPhasesConfig));
+      // Aggiorna il display della funzione con il display_name (la config ora è disponibile)
+      const fnTextEl = document.getElementById('turnoFunzioneText');
+      if (fnTextEl && turno.function) {
+        fnTextEl.textContent = getFnDisplayName(turno.function);
+      }
     } catch (e) {
       turnoFunctionPhasesConfig = {};
       console.error('[FASI] Errore caricamento config:', e);
@@ -5898,12 +6075,14 @@ async function loadTurnoPhases(turno) {
   const fnLower = turno.function.toLowerCase().trim();
   let matchedKey = null;
   let matchedPhases = [];
+  let matchedDisplayName = '';
   
   for (const [key, tmpl] of Object.entries(turnoFunctionPhasesConfig)) {
     const keyLower = key.toLowerCase().trim();
     if (fnLower === keyLower) {
       matchedKey = key;
       matchedPhases = (tmpl.phases || []).sort((a, b) => a.order - b.order);
+      matchedDisplayName = tmpl.display_name || key;
       break;
     }
   }
@@ -5931,6 +6110,7 @@ async function loadTurnoPhases(turno) {
     projectKey: projectKey,
     matchedKey: matchedKey,
     matchedPhases: matchedPhases,
+    displayName: matchedDisplayName,
     dateStr: dateStr,
     states: turnoCurrentPhases
   };
@@ -6092,7 +6272,7 @@ async function openCrewInfoModal() {
             <div class="crew-member-name">
               ${m.is_leader ? '<span style="font-size:16px;margin-right:4px;">⭐</span>' : ''}${escapeHtmlCI(m.crew_name)}${m.is_me ? ' (Tu)' : ''}
             </div>
-            <div class="crew-member-role">${escapeHtmlCI(m.function || '—')}${m.location ? ' • ' + escapeHtmlCI(m.location) : ''}</div>
+            <div class="crew-member-role">${escapeHtmlCI(getFnDisplayName(m.function) || '—')}${m.location ? ' • ' + escapeHtmlCI(m.location) : ''}</div>
           </div>
           ${timeStr ? `<div class="crew-member-time">${timeStr}</div>` : ''}
         </div>`;
@@ -6165,7 +6345,7 @@ async function openSwitchActivityModal(options = {}) {
       showPhaseSelectionPopup(
         turno.project_code || '',
         turno.project_name || '',
-        turno.function || '',
+        currentTurnoPhasesData.displayName || turno.function || '',
         0,
         'switch'
       );
@@ -6189,6 +6369,7 @@ async function openSwitchActivityModal(options = {}) {
   const projectCode = turno.project_code || '';
   const projectName = turno.project_name || '';
   const plannedFunction = turno.function || '';
+  const plannedFunctionDisplay = getFnDisplayName(plannedFunction) || plannedFunction;
   const hasPlannedProject = !!projectCode;
   const hasPlannedFunction = !!plannedFunction && plannedFunction !== '-';
   
@@ -6292,7 +6473,7 @@ async function openSwitchActivityModal(options = {}) {
         ${projectCode ? `<div style="font-weight:700;font-size:13px;color:#1a56db;margin-bottom:1px;letter-spacing:0.3px;">P. ${escapeHtmlCI(projectCode)}</div>` : ''}
         <div style="font-weight:500;font-size:11px;color:#1a1a1a;margin-bottom:8px;">${escapeHtmlCI(projectName)}</div>
         <div style="font-size:10px;color:#888;margin-bottom:1px;">MANSIONE</div>
-        <div style="font-weight:700;font-size:13px;color:#f59e0b;margin-bottom:12px;">${escapeHtmlCI(plannedFunction)}</div>
+        <div style="font-weight:700;font-size:13px;color:#f59e0b;margin-bottom:12px;">${escapeHtmlCI(plannedFunctionDisplay)}</div>
         <div style="display:flex;gap:8px;">
           <button onclick="confirmSwitchActivity('${escapeHtmlCI(projectCode)}', '${escapeHtmlCI(projectName)}', '${escapeHtmlCI(plannedFunction)}')" style="flex:1.3;padding:10px;background:#4CAF50;color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:12px;box-shadow:0 3px 12px rgba(76,175,80,0.3);">
             ▶️ Avvia Mansione Pianificata
@@ -7053,7 +7234,7 @@ async function subscribeToPush() {
     // Registra service worker se non già fatto
     let registration = await navigator.serviceWorker.getRegistration();
     if (!registration) {
-      registration = await navigator.serviceWorker.register('/sw.js?v=2026.01.17b');
+      registration = await navigator.serviceWorker.register('/sw.js?v=2026.03.03c');
       await navigator.serviceWorker.ready;
     }
     
@@ -7192,7 +7373,7 @@ if (localStorage.getItem('theme') === 'dark') {
 
 // Registra service worker per PWA
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js?v=2026.01.17b')
+  navigator.serviceWorker.register('/sw.js?v=2026.03.03c')
     .then(reg => console.log('Service Worker registrato'))
     .catch(err => console.warn('Service Worker fallito:', err));
     

@@ -1,5 +1,5 @@
-// Service Worker Version: v2026.02.24a - Updated: 2026-02-24T12:00:00Z
-const CACHE_NAME = 'joblog-v2026.02.24a';
+// Service Worker Version: v2026.03.03c - Updated: 2026-03-03T09:00:00Z
+const CACHE_NAME = 'joblog-v2026.03.03c';
 const STATIC_CACHE = 'joblog-static-v61';
 const DYNAMIC_CACHE = 'joblog-dynamic-v61';
 const API_CACHE = 'joblog-api-v45';
@@ -40,11 +40,8 @@ self.addEventListener('install', (event) => {
                 return cache.addAll(STATIC_ASSETS);
             })
             .then(async () => {
-                //_F Allow immediate activation only on the very first install so updates can stay waiting.
-                const hasActiveWorker = Boolean(self.registration && self.registration.active);
-                if (!hasActiveWorker) {
-                    await self.skipWaiting();
-                }
+                // Force immediate activation on all installs
+                await self.skipWaiting();
             })
     );
 });
