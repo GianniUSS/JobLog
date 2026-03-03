@@ -441,11 +441,25 @@ def api_skills_matrix():
     db = _get_db()
     ph = _ph()
 
-    # Tutti gli utenti attivi
-    users = db.execute(
-        "SELECT username, display_name, full_name FROM app_users "
-        "WHERE is_active = 1 ORDER BY display_name, username"
-    ).fetchall()
+    # Filtro per gruppo (default: Produzione, group_id dalla tabella user_groups)
+    group_filter = request.args.get("group")  # "all" per tutti, altrimenti filtra produzione
+    if group_filter == "all":
+        users = db.execute(
+            "SELECT u.username, u.display_name, u.full_name, ug.name AS group_name "
+            "FROM app_users u "
+            "LEFT JOIN user_groups ug ON ug.id = u.group_id "
+            "WHERE u.is_active = 1 ORDER BY u.display_name, u.username"
+        ).fetchall()
+    else:
+        # Default: solo Produzione (group_name = 'Produzione')
+        users = db.execute(
+            f"SELECT u.username, u.display_name, u.full_name, ug.name AS group_name "
+            f"FROM app_users u "
+            f"JOIN user_groups ug ON ug.id = u.group_id "
+            f"WHERE u.is_active = 1 AND LOWER(ug.name) = {ph} "
+            f"ORDER BY u.display_name, u.username",
+            (group_filter.lower() if group_filter else "produzione",)
+        ).fetchall()
 
     # Tutte le categorie attive
     categories_rows = db.execute(
@@ -482,9 +496,11 @@ def api_skills_matrix():
         username = u["username"] if isinstance(u, dict) else u[0]
         display = u["display_name"] if isinstance(u, dict) else u[1]
         full = u["full_name"] if isinstance(u, dict) else u[2]
+        group_name = u["group_name"] if isinstance(u, dict) else (u[3] if len(u) > 3 else "")
         operators_list.append({
             "username": username,
             "display_name": display or full or username,
+            "group_name": group_name or "",
         })
 
     # Categories list
