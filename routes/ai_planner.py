@@ -344,14 +344,15 @@ def api_operator_skills_list(username: str):
 @ai_planner.post("/api/admin/operators/<username>/skills")
 @_admin_required
 def api_operator_skills_assign(username: str):
-    """Assegna una skill a un operatore."""
+    """Assegna una skill a un operatore (upsert: aggiorna livello se esiste gia)."""
     data = request.get_json(silent=True) or {}
     skill_id = data.get("skill_id")
     if not skill_id:
         return jsonify({"error": "skill_id obbligatorio"}), 400
 
     level = data.get("level", "base")
-    if level not in ("base", "intermedio", "esperto"):
+    valid_levels = ("base", "intermedio", "avanzato", "esperto")
+    if level not in valid_levels:
         level = "base"
 
     cert_number = (data.get("certification_number") or "").strip() or None
@@ -376,22 +377,43 @@ def api_operator_skills_assign(username: str):
     if not skill_row:
         return jsonify({"error": "Skill non trovata"}), 404
 
-    # Verifica duplicato (constraint UNIQUE lo blocca, ma messaggio piu chiaro)
-    dup = db.execute(
+    # Upsert: se esiste gia, aggiorna il livello; altrimenti inserisci
+    existing = db.execute(
         f"SELECT id FROM operator_skills WHERE username = {ph} AND skill_id = {ph}",
         (username, int(skill_id))
     ).fetchone()
-    if dup:
-        return jsonify({"error": "Skill gia assegnata a questo operatore"}), 409
 
-    db.execute(
-        f"INSERT INTO operator_skills (username, skill_id, level, certification_number, "
-        f"certification_expiry, notes, assigned_by) "
-        f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-        (username, int(skill_id), level, cert_number, cert_expiry, notes, assigned_by)
-    )
-    db.commit()
-    return jsonify({"ok": True, "message": "Skill assegnata"}), 201
+    if existing:
+        # Aggiorna livello (e opzionalmente certificazione/note)
+        eid = existing["id"] if isinstance(existing, dict) else existing[0]
+        updates = [f"level = {ph}"]
+        params: list = [level]
+        if cert_number is not None:
+            updates.append(f"certification_number = {ph}")
+            params.append(cert_number)
+        if cert_expiry is not None:
+            updates.append(f"certification_expiry = {ph}")
+            params.append(cert_expiry)
+        if notes is not None:
+            updates.append(f"notes = {ph}")
+            params.append(notes)
+        params.append(eid)
+        db.execute(
+            f"UPDATE operator_skills SET {', '.join(updates)} WHERE id = {ph}",
+            tuple(params)
+        )
+        db.commit()
+        return jsonify({"ok": True, "message": "Livello aggiornato"})
+    else:
+        # Inserisci nuova assegnazione
+        db.execute(
+            f"INSERT INTO operator_skills (username, skill_id, level, certification_number, "
+            f"certification_expiry, notes, assigned_by) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (username, int(skill_id), level, cert_number, cert_expiry, notes, assigned_by)
+        )
+        db.commit()
+        return jsonify({"ok": True, "message": "Skill assegnata"}), 201
 
 
 @ai_planner.delete("/api/admin/operators/<username>/skills/<int:assignment_id>")
@@ -425,43 +447,63 @@ def api_skills_matrix():
         "WHERE is_active = 1 ORDER BY display_name, username"
     ).fetchall()
 
-    # Tutte le skills attive
+    # Tutte le categorie attive
+    categories_rows = db.execute(
+        "SELECT id, name, icon, sort_order FROM skill_categories "
+        "WHERE active = 1 ORDER BY sort_order, name"
+    ).fetchall()
+
+    # Tutte le skills attive (con category_id per il JS)
     skills = db.execute(
-        "SELECT s.id, s.name, sc.name AS category_name, sc.icon "
+        "SELECT s.id, s.name, s.category_id, sc.name AS category_name, sc.icon "
         "FROM skills s JOIN skill_categories sc ON sc.id = s.category_id "
         "WHERE s.active = 1 AND sc.active = 1 "
         "ORDER BY sc.sort_order, s.name"
     ).fetchall()
 
-    # Tutte le assegnazioni
-    assignments = db.execute(
-        "SELECT username, skill_id, level FROM operator_skills"
+    # Tutte le assegnazioni (con id per poter cancellare)
+    assignment_rows = db.execute(
+        "SELECT id, username, skill_id, level FROM operator_skills"
     ).fetchall()
 
-    # Costruisci mappa rapida
-    assign_map: dict[str, dict[int, str]] = {}
-    for a in assignments:
-        u = a["username"] if isinstance(a, dict) else a[0]
-        sid = a["skill_id"] if isinstance(a, dict) else a[1]
-        lvl = a["level"] if isinstance(a, dict) else a[2]
-        assign_map.setdefault(u, {})[sid] = lvl
+    # Costruisci mappa assignments: "username:skill_id" -> {id, level}
+    assignments_map: dict[str, dict] = {}
+    for a in assignment_rows:
+        aid = a["id"] if isinstance(a, dict) else a[0]
+        u = a["username"] if isinstance(a, dict) else a[1]
+        sid = a["skill_id"] if isinstance(a, dict) else a[2]
+        lvl = a["level"] if isinstance(a, dict) else a[3]
+        key = f"{u}:{sid}"
+        assignments_map[key] = {"id": aid, "level": lvl or ""}
 
-    users_list = []
+    # Operators list
+    operators_list = []
     for u in users:
         username = u["username"] if isinstance(u, dict) else u[0]
         display = u["display_name"] if isinstance(u, dict) else u[1]
         full = u["full_name"] if isinstance(u, dict) else u[2]
-        users_list.append({
+        operators_list.append({
             "username": username,
             "display_name": display or full or username,
-            "skills": assign_map.get(username, {})
         })
 
+    # Categories list
+    categories_list = []
+    for c in categories_rows:
+        categories_list.append(_row_to_dict(c, ["id", "name", "icon", "sort_order"]))
+
+    # Skills list (include category_id)
     skills_list = []
     for s in skills:
-        skills_list.append(_row_to_dict(s, ["id", "name", "category_name", "icon"]))
+        skills_list.append(_row_to_dict(s, ["id", "name", "category_id", "category_name", "icon"]))
 
-    return jsonify({"ok": True, "users": users_list, "skills": skills_list})
+    return jsonify({
+        "ok": True,
+        "operators": operators_list,
+        "categories": categories_list,
+        "skills": skills_list,
+        "assignments": assignments_map,
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════════
