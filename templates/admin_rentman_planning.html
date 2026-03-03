@@ -5316,6 +5316,9 @@
         let _aiCurrentProject = null;
         let _aiSessionId = null;
         let _aiProposals = [];
+        let _aiChatHistory = [];
+        let _aiOriginalSummary = '';
+        let _aiTotalCostEur = 0;
 
         // --- CSS per il modal AI ---
         const aiStyle = document.createElement('style');
@@ -5327,19 +5330,20 @@
             .ai-modal-overlay.open { display: flex; }
             .ai-modal {
                 background: var(--bg-card, #fff); border-radius: 16px;
-                width: 95%; max-width: 700px; max-height: 85vh;
-                overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                padding: 0;
+                width: 95%; max-width: 700px; max-height: 90vh;
+                display: flex; flex-direction: column;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             }
             .ai-modal-header {
                 background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
                 color: white; padding: 16px 20px; border-radius: 16px 16px 0 0;
                 display: flex; align-items: center; justify-content: space-between;
+                flex-shrink: 0;
             }
             .ai-modal-header h3 { font-size: 16px; font-weight: 700; margin: 0; }
             .ai-modal-close { background: rgba(255,255,255,0.2); border: none; color: white;
                 width: 32px; height: 32px; border-radius: 50%; font-size: 18px; cursor: pointer; }
-            .ai-modal-body { padding: 16px 20px; }
+            .ai-modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0; }
             .ai-summary { background: var(--bg-soft, #f8f9fa); padding: 12px 16px;
                 border-radius: 10px; margin-bottom: 16px; font-size: 13px;
                 border-left: 4px solid #a855f7; }
@@ -5367,9 +5371,34 @@
             .ai-score-value { font-size: 11px; font-weight: 700; min-width: 30px; text-align: right; }
             .ai-proposal-reasoning { font-size: 12px; color: var(--text-muted, #6b7280);
                 font-style: italic; margin-top: 4px; }
+
+            /* Chat section */
+            .ai-chat-section { border-top: 1px solid var(--border, #e2e8f0); padding: 12px 20px; flex-shrink: 0; }
+            .ai-chat-messages { max-height: 120px; overflow-y: auto; margin-bottom: 8px; }
+            .ai-chat-msg { font-size: 12px; margin-bottom: 6px; padding: 6px 10px; border-radius: 8px; }
+            .ai-chat-msg.user { background: #dbeafe; color: #1d4ed8; margin-left: 20%; text-align: right; }
+            .ai-chat-msg.assistant { background: var(--bg-soft, #f3f4f6); color: var(--text, #1f2937); margin-right: 20%; }
+            .ai-chat-input-row { display: flex; gap: 8px; }
+            .ai-chat-input {
+                flex: 1; padding: 8px 12px; border-radius: 10px; font-size: 13px;
+                border: 1px solid var(--border, #d1d5db); background: var(--bg-card, #fff);
+                color: var(--text, #1f2937); outline: none;
+            }
+            .ai-chat-input:focus { border-color: #a855f7; box-shadow: 0 0 0 2px rgba(168,85,247,0.15); }
+            .ai-chat-input::placeholder { color: var(--text-muted, #9ca3af); }
+            .ai-chat-send {
+                background: linear-gradient(135deg, #7c3aed, #a855f7); color: white;
+                border: none; padding: 8px 16px; border-radius: 10px; font-weight: 600;
+                font-size: 12px; cursor: pointer; white-space: nowrap;
+            }
+            .ai-chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+            .ai-chat-hint { font-size: 11px; color: var(--text-muted, #9ca3af); margin-top: 4px; }
+
+            /* Footer */
             .ai-modal-footer {
                 padding: 12px 20px; border-top: 1px solid var(--border, #e2e8f0);
                 display: flex; align-items: center; justify-content: space-between; gap: 12px;
+                flex-shrink: 0;
             }
             .ai-stats { font-size: 11px; color: var(--text-muted, #6b7280); }
             .ai-confirm-btn {
@@ -5409,6 +5438,16 @@
                         <p style="font-size:12px; color:var(--text-muted)">Merce, skills, disponibilita crew...</p>
                     </div>
                 </div>
+                <div class="ai-chat-section" id="aiChatSection" style="display:none;">
+                    <div class="ai-chat-messages" id="aiChatMessages"></div>
+                    <div class="ai-chat-input-row">
+                        <input type="text" class="ai-chat-input" id="aiChatInput"
+                            placeholder="Modifica le proposte... (es: sostituisci Mario con Luigi, aggiungi un facchino)"
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendAIChat();}">
+                        <button class="ai-chat-send" id="aiChatSendBtn" onclick="sendAIChat()">Invia</button>
+                    </div>
+                    <div class="ai-chat-hint">Chiedi all'AI di modificare le proposte, aggiungere persone, cambiare ruoli...</div>
+                </div>
                 <div class="ai-modal-footer" id="aiModalFooter" style="display:none;">
                     <div class="ai-stats" id="aiStats"></div>
                     <button class="ai-confirm-btn" id="aiConfirmBtn" onclick="confirmAIProposals()" disabled>
@@ -5424,14 +5463,22 @@
             if (e.target === aiOverlay) closeAIPropose();
         });
 
+        // --- Helper: data corrente planning ---
+        function _getPlanDate() {
+            const dateInput = document.getElementById('dateInput');
+            return (dateInput && dateInput.value) ? dateInput.value : new Date().toISOString().slice(0, 10);
+        }
+
         // --- Apri modal e chiama AI ---
         function openAIPropose(projectCode, projectName) {
             _aiCurrentProject = { code: projectCode, name: projectName };
             _aiSessionId = null;
             _aiProposals = [];
+            _aiChatHistory = [];
+            _aiOriginalSummary = '';
+            _aiTotalCostEur = 0;
 
-            const dateInput = document.getElementById('dateInput');
-            const planDate = dateInput ? dateInput.value : new Date().toISOString().slice(0, 10);
+            const planDate = _getPlanDate();
 
             // Reset UI
             document.getElementById('aiModalBody').innerHTML = `
@@ -5442,6 +5489,8 @@
                 </div>
             `;
             document.getElementById('aiModalFooter').style.display = 'none';
+            document.getElementById('aiChatSection').style.display = 'none';
+            document.getElementById('aiChatMessages').innerHTML = '';
             aiOverlay.classList.add('open');
 
             // Chiama API
@@ -5464,6 +5513,8 @@
                 }
                 _aiSessionId = data.session_id;
                 _aiProposals = data.proposals || [];
+                _aiOriginalSummary = data.summary || '';
+                if (data.stats) _aiTotalCostEur = data.stats.cost_eur || 0;
                 renderAIProposals(data);
             })
             .catch(err => {
@@ -5494,7 +5545,7 @@
                 _aiProposals.forEach((p, idx) => {
                     const scoreColor = p.score >= 70 ? '#22c55e' : p.score >= 40 ? '#f59e0b' : '#ef4444';
                     html += `
-                        <div class="ai-proposal-card" id="aiProposal${idx}">
+                        <div class="ai-proposal-card selected" id="aiProposal${idx}">
                             <div class="ai-proposal-top">
                                 <input type="checkbox" class="ai-proposal-check" data-idx="${idx}"
                                     onchange="toggleAIProposal(${idx})" checked>
@@ -5522,13 +5573,15 @@
 
             body.innerHTML = html;
 
-            // Footer con stats
+            // Mostra chat e footer
+            document.getElementById('aiChatSection').style.display = 'block';
             const footer = document.getElementById('aiModalFooter');
             footer.style.display = 'flex';
             if (data.stats) {
                 const s = data.stats;
+                _aiTotalCostEur += (s.cost_eur || 0);
                 document.getElementById('aiStats').innerHTML =
-                    `${s.model || ''} · ${s.tokens_input + s.tokens_output} token · ${s.cost_eur}€ · ${(s.duration_ms / 1000).toFixed(1)}s`;
+                    `${s.model || ''} · ${s.tokens_input + s.tokens_output} tok · ${_aiTotalCostEur.toFixed(4)}€ · ${(s.duration_ms / 1000).toFixed(1)}s`;
             }
 
             // Tutte selezionate di default
@@ -5551,12 +5604,84 @@
             btn.disabled = count === 0;
         }
 
+        // --- Chat: invia messaggio ---
+        function sendAIChat() {
+            const input = document.getElementById('aiChatInput');
+            const msg = (input.value || '').trim();
+            if (!msg || !_aiSessionId) return;
+
+            const sendBtn = document.getElementById('aiChatSendBtn');
+            input.value = '';
+            input.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.textContent = '...';
+
+            // Mostra messaggio utente nella chat
+            const chatDiv = document.getElementById('aiChatMessages');
+            chatDiv.innerHTML += `<div class="ai-chat-msg user">${msg}</div>`;
+            chatDiv.innerHTML += `<div class="ai-chat-msg assistant" id="aiChatPending"><em>L'AI sta pensando...</em></div>`;
+            chatDiv.scrollTop = chatDiv.scrollHeight;
+
+            // Prepara proposte attuali (senza _selected)
+            const cleanProposals = _aiProposals.map(p => ({
+                resource_type: p.resource_type, identifier: p.identifier, name: p.name,
+                function: p.function, phase: p.phase, is_leader: p.is_leader,
+                score: p.score, reasoning: p.reasoning,
+            }));
+
+            fetch('/api/admin/ai/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: _aiSessionId,
+                    message: msg,
+                    chat_history: _aiChatHistory,
+                    current_proposals: cleanProposals,
+                    original_summary: _aiOriginalSummary,
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                // Rimuovi "sta pensando"
+                const pending = document.getElementById('aiChatPending');
+                if (pending) pending.remove();
+
+                if (!data.ok) {
+                    chatDiv.innerHTML += `<div class="ai-chat-msg assistant" style="color:#ef4444">Errore: ${data.error || 'sconosciuto'}</div>`;
+                } else {
+                    // Mostra risposta AI
+                    const reply = data.chat_response || 'Proposte aggiornate.';
+                    chatDiv.innerHTML += `<div class="ai-chat-msg assistant">🤖 ${reply}</div>`;
+
+                    // Aggiorna proposte
+                    _aiProposals = data.proposals || [];
+                    _aiChatHistory = data.chat_history || [];
+                    renderAIProposals(data);
+                }
+                chatDiv.scrollTop = chatDiv.scrollHeight;
+            })
+            .catch(err => {
+                const pending = document.getElementById('aiChatPending');
+                if (pending) pending.remove();
+                chatDiv.innerHTML += `<div class="ai-chat-msg assistant" style="color:#ef4444">Errore: ${err.message}</div>`;
+            })
+            .finally(() => {
+                input.disabled = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Invia';
+                input.focus();
+            });
+        }
+
         // --- Conferma proposte ---
         function confirmAIProposals() {
             if (!_aiSessionId) return;
 
-            const dateInput = document.getElementById('dateInput');
-            const planDate = dateInput ? dateInput.value : '';
+            const planDate = _getPlanDate();
+            if (!planDate) {
+                alert('Seleziona una data prima di confermare.');
+                return;
+            }
 
             const accepted = [];
             const rejected = [];
@@ -5578,6 +5703,11 @@
                 else rejected.push(item);
             });
 
+            if (accepted.length === 0) {
+                alert('Seleziona almeno una proposta da confermare.');
+                return;
+            }
+
             const btn = document.getElementById('aiConfirmBtn');
             btn.disabled = true;
             btn.textContent = 'Salvando...';
@@ -5591,17 +5721,24 @@
             .then(data => {
                 if (data.ok) {
                     closeAIPropose();
+                    const msg = data.errors && data.errors.length
+                        ? `⚠️ ${data.bookings_created} assegnazioni create, ${data.errors.length} errori`
+                        : `✅ ${data.bookings_created} assegnazioni AI create`;
                     if (typeof showMessage === 'function') {
-                        showMessage(`✅ ${data.bookings_created} assegnazioni AI create`, 'success');
+                        showMessage(msg, data.errors ? 'warning' : 'success');
+                    } else {
+                        alert(msg);
                     }
                 } else {
-                    btn.textContent = 'Errore!';
-                    setTimeout(() => updateAIConfirmBtn(), 2000);
+                    alert('Errore: ' + (data.error || 'Errore sconosciuto'));
+                    btn.disabled = false;
+                    updateAIConfirmBtn();
                 }
             })
-            .catch(() => {
-                btn.textContent = 'Errore connessione';
-                setTimeout(() => updateAIConfirmBtn(), 2000);
+            .catch(err => {
+                alert('Errore di connessione: ' + err.message);
+                btn.disabled = false;
+                updateAIConfirmBtn();
             });
         }
 
@@ -5615,6 +5752,7 @@
         window.closeAIPropose = closeAIPropose;
         window.toggleAIProposal = toggleAIProposal;
         window.confirmAIProposals = confirmAIProposals;
+        window.sendAIChat = sendAIChat;
 
     })();
     </script>

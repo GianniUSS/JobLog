@@ -290,31 +290,40 @@ def build_system_prompt() -> str:
     return """Sei un pianificatore esperto di eventi nel settore audiovisivo e noleggio attrezzature (AV rental).
 Il tuo compito e' proporre l'assegnazione ottimale di tecnici e operatori a un progetto evento.
 
-REGOLE DI ASSEGNAZIONE:
-1. PRIORITA INTERNI: Le risorse interne (dipendenti) hanno priorita sulle esterne (costo zero vs costo orario/giornaliero)
-2. SKILL MATCHING: Abbina le competenze degli operatori alla merce e alle funzioni del progetto. Se il progetto ha americane/truss → servono rigger. Se ha audio → servono fonici. Se ha luci → servono tecnici luci. Ecc.
-3. DISPONIBILITA: NON proporre chi e' in ferie ("in_ferie") o gia assegnato altrove ("assegnato_altrove"). Proponi solo chi ha status "disponibile"
-4. LEADER: Se il progetto richiede piu di 3 persone, proponi un CAPO SQUADRA tra gli interni piu esperti
-5. ESTERNI: Se gli interni non bastano, integra con esterni. Preferisci rating alto e costo basso
-6. REASONING: Per ogni proposta, spiega brevemente il motivo in italiano
-7. SCORE: Assegna un punteggio 0-100 basato su quanto la risorsa e' adatta (skill match + esperienza + costo)
+REGOLE DI ASSEGNAZIONE (in ordine di priorita):
+1. DISPONIBILITA: Proponi SOLO chi ha status "disponibile". MAI proporre chi e' "in_ferie" o "assegnato_altrove".
+2. PRIORITA INTERNI: Le risorse interne (dipendenti) hanno sempre priorita sulle esterne (costo zero vs costo orario/giornaliero).
+3. ANALISI MERCE → SKILLS: Dalla lista merce/attrezzature DEDUCI le competenze necessarie:
+   - Mixer, casse, microfoni, amplificatori, radiomicrofoni → tecnici AUDIO
+   - Teste mobili, LED, par, follow spot, dimmer, consolle luci → tecnici LUCI
+   - LED wall, processori video, telecamere, regia, proiettori → tecnici VIDEO
+   - Americane, truss, motori, chain hoist → RIGGER (se certificazione richiesta, segnalalo)
+   - Palco, pedane, strutture → CARPENTIERI
+   - Quadri elettrici, cavi di potenza → ELETTRICISTI
+   - Se la merce e' molta/pesante → aggiungi FACCHINI per montaggio/smontaggio
+4. SKILL MATCHING: Se gli operatori hanno skills registrate, abbina le competenze alla merce. Se NON hanno skills registrate, usa il "gruppo" dell'operatore come indicazione del reparto (es: gruppo "audio" → tecnico audio).
+5. STIMA PERSONE: Stima quante persone servono in base alla QUANTITA e COMPLESSITA della merce. Non proporre troppi o troppo pochi.
+6. LEADER: Se servono piu di 3 persone, proponi un CAPO SQUADRA tra gli interni piu esperti.
+7. ESTERNI: Solo se gli interni non bastano. Preferisci rating alto e costo basso.
+8. REASONING: Per ogni proposta, spiega brevemente il motivo in italiano, citando quale merce/attrezzatura ha richiesto quella competenza.
+9. SCORE: Punteggio 0-100 basato su: skill match (40%), disponibilita/gruppo (30%), esperienza (20%), costo (10%).
 
 FORMATO RISPOSTA — Rispondi SOLO con un JSON valido, senza testo prima o dopo:
 {
-  "summary": "Breve riepilogo della proposta in italiano",
+  "summary": "Breve riepilogo della proposta in italiano (es: Servono 4 tecnici: 2 audio, 1 luci, 1 facchino)",
   "proposals": [
     {
       "resource_type": "internal" oppure "external",
-      "identifier": "username per interni, oppure id numerico per esterni",
-      "name": "Nome visualizzato",
-      "function": "Ruolo proposto (es: Tecnico audio, Rigger, Facchino, Capo squadra)",
+      "identifier": "username (stringa) per interni, oppure id (numero come stringa) per esterni",
+      "name": "Nome e cognome della persona",
+      "function": "Ruolo proposto (es: Tecnico audio FOH, Tecnico luci, Rigger, Facchino, Capo squadra)",
       "phase": "montaggio oppure evento oppure smontaggio oppure completo",
       "is_leader": false,
       "score": 85,
-      "reasoning": "Motivazione in italiano"
+      "reasoning": "Motivazione in italiano che cita la merce/attrezzatura specifica"
     }
   ],
-  "notes": "Eventuali note o avvertimenti"
+  "notes": "Eventuali note, avvertimenti o skills mancanti nel team"
 }"""
 
 
@@ -375,17 +384,31 @@ def build_user_prompt(context: Dict[str, Any]) -> str:
     available_internals = [i for i in internals if i.get("status") == "disponibile"]
     unavailable_internals = [i for i in internals if i.get("status") != "disponibile"]
 
-    lines.append(f"=== RISORSE INTERNE DISPONIBILI ({len(available_internals)}) ===")
+    # Conta quanti hanno skills registrate
+    with_skills = sum(1 for i in available_internals if i.get("skills"))
+    total_avail = len(available_internals)
+
+    lines.append(f"=== RISORSE INTERNE DISPONIBILI ({total_avail}) ===")
+    if with_skills == 0 and total_avail > 0:
+        lines.append("NOTA: Nessun operatore ha skills formalmente registrate nel sistema.")
+        lines.append("USA IL CAMPO 'gruppo' COME INDICAZIONE DEL REPARTO DI COMPETENZA dell'operatore.")
+        lines.append("Esempio: gruppo='audio' → probabilmente tecnico audio, gruppo='luci' → tecnico luci, ecc.")
+        lines.append("")
+
     for i in available_internals:
         skills_str = ", ".join(
             f"{s['skill']} ({s['level']})" for s in i.get("skills", [])
-        ) or "nessuna skill registrata"
-        lines.append(f"- {i['name']} (username: {i['username']}, gruppo: {i.get('group', 'N/D')})")
-        lines.append(f"  Skills: {skills_str}")
+        )
+        gruppo = i.get('group', '')
+        if skills_str:
+            lines.append(f"- {i['name']} (username: {i['username']}, gruppo: {gruppo or 'N/D'})")
+            lines.append(f"  Skills: {skills_str}")
+        else:
+            lines.append(f"- {i['name']} (username: {i['username']}, gruppo: {gruppo or 'N/D'}) — skills non registrate, usa il gruppo come riferimento")
     lines.append("")
 
     if unavailable_internals:
-        lines.append(f"=== RISORSE INTERNE NON DISPONIBILI ({len(unavailable_internals)}) ===")
+        lines.append(f"=== RISORSE INTERNE NON DISPONIBILI ({len(unavailable_internals)}) — NON PROPORRE QUESTE ===")
         for i in unavailable_internals:
             lines.append(f"- {i['name']} → {i['status']}")
         lines.append("")
@@ -612,6 +635,177 @@ def propose_crew(
             "internal_available": len([i for i in context["internal_available"] if i["status"] == "disponibile"]),
             "external_available": len(context["external_available"]),
             "equipment_items": len(context["equipment"]),
+        },
+    }
+
+
+def chat_with_ai(
+    session_id: int,
+    user_message: str,
+    chat_history: List[Dict[str, str]],
+    current_proposals: List[Dict],
+    original_context_summary: str,
+    db,
+    app,
+) -> Dict[str, Any]:
+    """
+    Chat interattiva: l'admin puo' raffinare le proposte AI via messaggio.
+
+    Args:
+        session_id: ID sessione AI
+        user_message: Messaggio dell'admin
+        chat_history: Lista di {role, content} precedenti
+        current_proposals: Proposte attualmente visualizzate
+        original_context_summary: Riassunto del contesto originale (summary dalla prima proposta)
+        db: Connessione DB
+        app: Flask app
+
+    Returns:
+        {ok, proposals, summary, notes, assistant_message, chat_history, stats}
+    """
+    from app import load_config, DB_VENDOR
+    config = load_config()
+    anthropic_cfg = config.get("anthropic", {})
+    api_key = (anthropic_cfg.get("api_key") or "").strip()
+    if not api_key:
+        return {"ok": False, "error": "API key Anthropic non configurata"}
+
+    model = anthropic_cfg.get("model", DEFAULT_MODEL)
+
+    system_prompt = build_system_prompt()
+    system_prompt += """
+
+CONTESTO CHAT:
+Stai conversando con l'admin che vuole raffinare le proposte di assegnazione crew.
+L'admin puo' chiedere di:
+- Aggiungere o rimuovere persone
+- Cambiare ruoli/funzioni
+- Sostituire un operatore con un altro
+- Cambiare fasi (montaggio/evento/smontaggio)
+- Qualsiasi altra modifica
+
+Quando rispondi:
+1. Applica le modifiche richieste alle proposte
+2. Rispondi con il JSON aggiornato completo (TUTTE le proposte, non solo quelle modificate)
+3. Aggiungi un campo "chat_response" con un breve messaggio in italiano che spiega cosa hai modificato
+
+FORMATO RISPOSTA:
+{
+  "chat_response": "Breve risposta in italiano (es: Ho sostituito Mario con Luigi come tecnico audio)",
+  "summary": "Riepilogo aggiornato",
+  "proposals": [... lista completa aggiornata ...],
+  "notes": "Note aggiornate"
+}"""
+
+    # Costruisci la conversazione
+    messages = []
+
+    # Primo messaggio: contesto originale (sintetico per risparmiare token)
+    context_msg = f"Proposte attuali per il progetto:\n{json.dumps(current_proposals, ensure_ascii=False, indent=2)}"
+    if original_context_summary:
+        context_msg = f"Riepilogo: {original_context_summary}\n\n{context_msg}"
+    messages.append({"role": "user", "content": context_msg})
+    messages.append({"role": "assistant", "content": json.dumps({
+        "chat_response": "Ecco le proposte attuali. Come posso modificarle?",
+        "summary": original_context_summary,
+        "proposals": current_proposals,
+        "notes": ""
+    }, ensure_ascii=False)})
+
+    # Aggiungi la chat history precedente
+    for msg in chat_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+
+    # Aggiungi il nuovo messaggio dell'utente
+    messages.append({"role": "user", "content": user_message})
+
+    # Chiama API
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        start_ms = int(time.time() * 1000)
+
+        response = client.messages.create(
+            model=model,
+            max_tokens=DEFAULT_MAX_TOKENS,
+            system=system_prompt,
+            messages=messages,
+        )
+
+        duration_ms = int(time.time() * 1000) - start_ms
+        text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                text += block.text
+
+        tokens_in = response.usage.input_tokens
+        tokens_out = response.usage.output_tokens
+        cost_eur = (
+            (tokens_in / 1_000_000) * _COST_PER_1M_INPUT +
+            (tokens_out / 1_000_000) * _COST_PER_1M_OUTPUT
+        ) * _EUR_PER_USD
+
+    except Exception as e:
+        logger.error("[AI-CHAT] Errore chiamata Anthropic: %s", e)
+        return {"ok": False, "error": f"Errore chiamata AI: {str(e)}"}
+
+    # Parsing
+    parsed = parse_ai_proposals(text)
+    if "error" in parsed:
+        return {"ok": False, "error": parsed["error"]}
+
+    chat_response = ""
+    # Prova a estrarre chat_response dal JSON raw
+    try:
+        raw_json = text.strip()
+        if "```json" in raw_json:
+            start = raw_json.index("```json") + 7
+            end = raw_json.index("```", start)
+            raw_json = raw_json[start:end].strip()
+        elif "```" in raw_json:
+            start = raw_json.index("```") + 3
+            end = raw_json.index("```", start)
+            raw_json = raw_json[start:end].strip()
+        if not raw_json.startswith("{"):
+            idx = raw_json.find("{")
+            if idx >= 0:
+                raw_json = raw_json[idx:]
+        data = json.loads(raw_json[:raw_json.rfind("}") + 1] if not raw_json.endswith("}") else raw_json)
+        chat_response = data.get("chat_response", "")
+    except Exception:
+        pass
+
+    # Aggiorna chat_history nella sessione DB
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    new_history = list(chat_history) + [
+        {"role": "user", "content": user_message},
+        {"role": "assistant", "content": text},
+    ]
+    try:
+        db.execute(
+            f"UPDATE ai_planning_sessions SET chat_history = {ph}, "
+            f"ai_response = {ph} WHERE id = {ph}",
+            (json.dumps(new_history, ensure_ascii=False),
+             json.dumps(parsed, ensure_ascii=False),
+             session_id)
+        )
+        db.commit()
+    except Exception as e:
+        logger.error("[AI-CHAT] Errore salvataggio chat: %s", e)
+
+    return {
+        "ok": True,
+        "proposals": parsed["proposals"],
+        "summary": parsed.get("summary", ""),
+        "notes": parsed.get("notes", ""),
+        "chat_response": chat_response,
+        "chat_history": new_history,
+        "stats": {
+            "model": model,
+            "tokens_input": tokens_in,
+            "tokens_output": tokens_out,
+            "cost_eur": round(cost_eur, 4),
+            "duration_ms": duration_ms,
         },
     }
 

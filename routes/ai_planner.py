@@ -858,6 +858,42 @@ def api_ai_propose_crew():
     return jsonify(result)
 
 
+@ai_planner.post("/api/admin/ai/chat")
+@_admin_required
+def api_ai_chat():
+    """Chat interattiva per raffinare le proposte AI."""
+    data = request.get_json(silent=True) or {}
+    session_id = data.get("session_id")
+    message = (data.get("message") or "").strip()
+    chat_history = data.get("chat_history", [])
+    current_proposals = data.get("current_proposals", [])
+    original_summary = data.get("original_summary", "")
+
+    if not session_id:
+        return jsonify({"ok": False, "error": "session_id obbligatorio"}), 400
+    if not message:
+        return jsonify({"ok": False, "error": "Messaggio vuoto"}), 400
+
+    from flask import current_app
+    from ai_planner_engine import chat_with_ai
+
+    db = _get_db()
+    result = chat_with_ai(
+        session_id=session_id,
+        user_message=message,
+        chat_history=chat_history,
+        current_proposals=current_proposals,
+        original_context_summary=original_summary,
+        db=db,
+        app=current_app,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 500
+
+    return jsonify(result)
+
+
 @ai_planner.post("/api/admin/ai/confirm-proposals")
 @_admin_required
 def api_ai_confirm_proposals():
@@ -869,6 +905,8 @@ def api_ai_confirm_proposals():
 
     if not session_id:
         return jsonify({"ok": False, "error": "session_id obbligatorio"}), 400
+    if not accepted:
+        return jsonify({"ok": False, "error": "Nessuna proposta selezionata"}), 400
 
     db = _get_db()
     ph = _ph()
@@ -877,52 +915,74 @@ def api_ai_confirm_proposals():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     bookings_created = 0
+    errors = []
 
     # Inserisci le proposte accettate come booking
     for proposal in accepted:
         resource_type = proposal.get("resource_type", "internal")
-        identifier = proposal.get("identifier", "")
-        project_code = proposal.get("project_code", "")
-        project_name = proposal.get("project_name", "")
-        function_name = proposal.get("function", "")
-        planning_date = proposal.get("date", "")
+        identifier = str(proposal.get("identifier", "")).strip()
+        project_code = (proposal.get("project_code") or "").strip()
+        project_name = (proposal.get("project_name") or "").strip()
+        function_name = (proposal.get("function") or "").strip()
+        planning_date = (proposal.get("date") or "").strip()
         score = proposal.get("score", 0)
         reasoning = proposal.get("reasoning", "")
 
-        username = identifier if resource_type == "internal" else None
+        # Validazione data
+        if not planning_date:
+            errors.append(f"Data mancante per {proposal.get('name', 'N/D')}")
+            continue
+
+        # Validazione project_code
+        if not project_code:
+            errors.append(f"Codice progetto mancante per {proposal.get('name', 'N/D')}")
+            continue
+
+        username = identifier if resource_type == "internal" and identifier else None
         ext_id = int(identifier) if resource_type == "external" and identifier.isdigit() else None
 
-        db.execute(
-            f"INSERT INTO resource_bookings "
-            f"(project_code, project_name, resource_type, username, external_resource_id, "
-            f"function_name, date, status, proposed_by_ai, ai_score, ai_reasoning, "
-            f"confirmed_by, confirmed_at) "
-            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-            (project_code, project_name, resource_type, username, ext_id,
-             function_name, planning_date, "optioned", 1, score, reasoning,
-             confirmed_by, now)
-        )
-        bookings_created += 1
+        try:
+            db.execute(
+                f"INSERT INTO resource_bookings "
+                f"(project_code, project_name, resource_type, username, external_resource_id, "
+                f"function_name, date, status, proposed_by_ai, ai_score, ai_reasoning, "
+                f"confirmed_by, confirmed_at) "
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+                (project_code, project_name, resource_type, username, ext_id,
+                 function_name, planning_date, "optioned", 1, score, reasoning,
+                 confirmed_by, now)
+            )
+            bookings_created += 1
+        except Exception as e:
+            errors.append(f"Errore inserimento {proposal.get('name', 'N/D')}: {str(e)}")
 
     # Aggiorna la sessione AI con le scelte
-    db.execute(
-        f"UPDATE ai_planning_sessions SET "
-        f"accepted_proposals = {ph}, rejected_proposals = {ph} "
-        f"WHERE id = {ph}",
-        (
-            json.dumps(accepted, ensure_ascii=False),
-            json.dumps(rejected, ensure_ascii=False),
-            session_id,
+    try:
+        db.execute(
+            f"UPDATE ai_planning_sessions SET "
+            f"accepted_proposals = {ph}, rejected_proposals = {ph} "
+            f"WHERE id = {ph}",
+            (
+                json.dumps(accepted, ensure_ascii=False),
+                json.dumps(rejected, ensure_ascii=False),
+                session_id,
+            )
         )
-    )
+    except Exception as e:
+        errors.append(f"Errore aggiornamento sessione: {str(e)}")
 
     db.commit()
 
-    return jsonify({
-        "ok": True,
+    result = {
+        "ok": bookings_created > 0,
         "bookings_created": bookings_created,
-        "message": f"{bookings_created} assegnazioni create"
-    })
+        "message": f"{bookings_created} assegnazioni create",
+    }
+    if errors:
+        result["errors"] = errors
+        result["message"] += f" ({len(errors)} errori)"
+
+    return jsonify(result)
 
 
 @ai_planner.get("/api/admin/ai/sessions")
