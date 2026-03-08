@@ -13,6 +13,7 @@ import secrets
 import sqlite3
 import time
 import re
+import uuid
 from decimal import Decimal
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
@@ -121,6 +122,7 @@ except ImportError:  # pragma: no cover - fallback when MySQL client not install
     DictCursor = None
 
 from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
+from werkzeug.utils import secure_filename
 from flask_session import Session
 from flask.typing import ResponseReturnValue
 from openpyxl import Workbook
@@ -3153,6 +3155,8 @@ def ensure_employee_shifts_table(db: DatabaseLike) -> None:
 # Cartella per salvare le foto del progetto
 PHOTOS_UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "photos")
 os.makedirs(PHOTOS_UPLOAD_FOLDER, exist_ok=True)
+TASKS_UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "tasks")
+os.makedirs(TASKS_UPLOAD_FOLDER, exist_ok=True)
 
 ALLOWED_PHOTO_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "heic", "heif"}
 MAX_PHOTO_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -15525,6 +15529,194 @@ def ensure_user_documents_table(db: DatabaseLike) -> None:
             pass
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# TABELLE TASK ASSIGNMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ADMIN_TASKS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS admin_tasks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    oggetto VARCHAR(255) NOT NULL,
+    descrizione TEXT,
+    progetto VARCHAR(255) DEFAULT NULL,
+    scadenza DATE DEFAULT NULL,
+    priorita ENUM('alta','media','bassa') NOT NULL DEFAULT 'media',
+    location VARCHAR(255) DEFAULT NULL,
+    assign_type ENUM('users','group') NOT NULL DEFAULT 'users',
+    assign_group_id INT DEFAULT NULL,
+    status ENUM('attivo','completato','annullato') NOT NULL DEFAULT 'attivo',
+    created_by VARCHAR(190) NOT NULL,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    INDEX idx_task_status (status),
+    INDEX idx_task_scadenza (scadenza),
+    INDEX idx_task_created (created_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+ADMIN_TASKS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS admin_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oggetto TEXT NOT NULL,
+    descrizione TEXT,
+    progetto TEXT DEFAULT NULL,
+    scadenza TEXT DEFAULT NULL,
+    priorita TEXT NOT NULL DEFAULT 'media' CHECK(priorita IN ('alta','media','bassa')),
+    location TEXT DEFAULT NULL,
+    assign_type TEXT NOT NULL DEFAULT 'users' CHECK(assign_type IN ('users','group')),
+    assign_group_id INTEGER DEFAULT NULL,
+    status TEXT NOT NULL DEFAULT 'attivo' CHECK(status IN ('attivo','completato','annullato')),
+    created_by TEXT NOT NULL,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_status ON admin_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_task_scadenza ON admin_tasks(scadenza);
+CREATE INDEX IF NOT EXISTS idx_task_created ON admin_tasks(created_by);
+"""
+
+TASK_ASSIGNMENTS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS task_assignments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    task_id INT NOT NULL,
+    username VARCHAR(190) NOT NULL,
+    status ENUM('nuovo','in_corso','completato','rifiutato') NOT NULL DEFAULT 'nuovo',
+    rifiuto_motivo TEXT DEFAULT NULL,
+    started_ts BIGINT DEFAULT NULL,
+    completed_ts BIGINT DEFAULT NULL,
+    notified INT NOT NULL DEFAULT 0,
+    read_at BIGINT DEFAULT NULL,
+    created_ts BIGINT NOT NULL,
+    updated_ts BIGINT NOT NULL,
+    INDEX idx_assign_task (task_id),
+    INDEX idx_assign_user (username),
+    INDEX idx_assign_status (status),
+    UNIQUE KEY uk_task_user (task_id, username),
+    FOREIGN KEY (task_id) REFERENCES admin_tasks(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+TASK_ASSIGNMENTS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS task_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'nuovo' CHECK(status IN ('nuovo','in_corso','completato','rifiutato')),
+    rifiuto_motivo TEXT DEFAULT NULL,
+    started_ts INTEGER DEFAULT NULL,
+    completed_ts INTEGER DEFAULT NULL,
+    notified INTEGER NOT NULL DEFAULT 0,
+    read_at INTEGER DEFAULT NULL,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL,
+    UNIQUE(task_id, username),
+    FOREIGN KEY (task_id) REFERENCES admin_tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_assign_task ON task_assignments(task_id);
+CREATE INDEX IF NOT EXISTS idx_assign_user ON task_assignments(username);
+CREATE INDEX IF NOT EXISTS idx_assign_status ON task_assignments(status);
+"""
+
+TASK_ATTACHMENTS_TABLE_MYSQL = """
+CREATE TABLE IF NOT EXISTS task_attachments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    task_id INT NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    file_size INT DEFAULT 0,
+    mime_type VARCHAR(100) DEFAULT NULL,
+    uploaded_by VARCHAR(190) NOT NULL,
+    created_ts BIGINT NOT NULL,
+    INDEX idx_attach_task (task_id),
+    FOREIGN KEY (task_id) REFERENCES admin_tasks(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+TASK_ATTACHMENTS_TABLE_SQLITE = """
+CREATE TABLE IF NOT EXISTS task_attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    file_size INTEGER DEFAULT 0,
+    mime_type TEXT DEFAULT NULL,
+    uploaded_by TEXT NOT NULL,
+    created_ts INTEGER NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES admin_tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_attach_task ON task_attachments(task_id);
+"""
+
+
+def ensure_task_attachments_table(db: DatabaseLike) -> None:
+    """Crea la tabella task_attachments se non esiste."""
+    ensure_admin_tasks_table(db)
+    statement = (
+        TASK_ATTACHMENTS_TABLE_MYSQL if DB_VENDOR == "mysql" else TASK_ATTACHMENTS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        try:
+            cursor = db.execute(sql)
+            try:
+                cursor.close()
+            except AttributeError:
+                pass
+        except Exception:
+            pass
+
+
+def ensure_admin_tasks_table(db: DatabaseLike) -> None:
+    """Crea la tabella admin_tasks se non esiste."""
+    statement = (
+        ADMIN_TASKS_TABLE_MYSQL if DB_VENDOR == "mysql" else ADMIN_TASKS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        try:
+            cursor = db.execute(sql)
+            try:
+                cursor.close()
+            except AttributeError:
+                pass
+        except Exception:
+            pass
+
+
+def ensure_task_assignments_table(db: DatabaseLike) -> None:
+    """Crea la tabella task_assignments se non esiste."""
+    ensure_admin_tasks_table(db)
+    statement = (
+        TASK_ASSIGNMENTS_TABLE_MYSQL if DB_VENDOR == "mysql" else TASK_ASSIGNMENTS_TABLE_SQLITE
+    )
+    for stmt in statement.strip().split(";"):
+        sql = stmt.strip()
+        if not sql:
+            continue
+        try:
+            cursor = db.execute(sql)
+            try:
+                cursor.close()
+            except AttributeError:
+                pass
+        except Exception:
+            pass
+    # Migrate: add read_at column if missing
+    alter = (
+        "ALTER TABLE task_assignments ADD COLUMN read_at BIGINT DEFAULT NULL"
+        if DB_VENDOR == "mysql"
+        else "ALTER TABLE task_assignments ADD COLUMN read_at INTEGER DEFAULT NULL"
+    )
+    try:
+        db.execute(alter)
+    except Exception:
+        pass
+
+
 def ensure_rentman_plannings_table(db: DatabaseLike) -> None:
     """Crea la tabella rentman_plannings se non esiste."""
     statement = (
@@ -15754,7 +15946,8 @@ def get_function_phases_config(db: DatabaseLike) -> dict:
 
 def get_phases_for_function(db: DatabaseLike, function_name: str) -> list:
     """Trova le fasi applicabili a una funzione, in base al matching.
-    
+    Supporta aliases (ricodifica funzioni Rentman) e exact match.
+
     Returns:
         list di {'name': str, 'order': int, 'function_key': str} ordinate per order.
         Vuoto se nessun template corrisponde.
@@ -15763,22 +15956,31 @@ def get_phases_for_function(db: DatabaseLike, function_name: str) -> list:
         return []
     config = get_function_phases_config(db)
     fn_lower = function_name.lower().strip()
-    
+
+    def _build_result(key: str, template: dict) -> list:
+        result = []
+        for p in template.get('phases', []):
+            result.append({
+                'name': p.get('name', ''),
+                'order': p.get('order', 0),
+                'function_key': key
+            })
+        result.sort(key=lambda x: x['order'])
+        return result
+
+    # 0. Aliases — ricodifica esplicita funzioni Rentman
     for key, template in config.items():
-        key_lower = key.lower().strip()
-        
-        if fn_lower == key_lower:
-            phases = template.get('phases', [])
-            result = []
-            for p in phases:
-                result.append({
-                    'name': p.get('name', ''),
-                    'order': p.get('order', 0),
-                    'function_key': key
-                })
-            result.sort(key=lambda x: x['order'])
-            return result
-    
+        aliases = template.get('aliases', [])
+        if isinstance(aliases, list):
+            for alias in aliases:
+                if isinstance(alias, str) and alias.lower().strip() == fn_lower:
+                    return _build_result(key, template)
+
+    # 1. Exact match sulla chiave
+    for key, template in config.items():
+        if key.lower().strip() == fn_lower:
+            return _build_result(key, template)
+
     return []
 
 
@@ -17602,6 +17804,422 @@ def api_admin_rentman_planning_send() -> ResponseReturnValue:
         "notifications_sent": notifications_sent,
         "errors": errors,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  AI CREW PLANNER — Proposta crew assistita da AI
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/admin/ai/propose-crew")
+@login_required
+def api_admin_ai_propose_crew() -> ResponseReturnValue:
+    """Genera analisi progetto + proposta crew via AI."""
+    if not is_admin_or_supervisor():
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+    project_id = data.get("project_id")
+    target_date = data.get("date")
+    user_message = data.get("message")
+
+    if not project_id:
+        return jsonify({"error": "project_id richiesto"}), 400
+    if not target_date:
+        target_date = datetime.now().date().isoformat()
+
+    config = load_config()
+    anthropic_cfg = config.get("anthropic", {})
+    api_key = anthropic_cfg.get("api_key", "")
+    if not api_key:
+        return jsonify({"error": "API key Anthropic non configurata"}), 500
+
+    client = get_rentman_client()
+    if not client:
+        return jsonify({"error": "Rentman non disponibile"}), 500
+
+    from ai_planner import build_ai_context, call_ai_planner
+
+    # Raccogli dati
+    context = build_ai_context(client, get_db(), int(project_id), target_date, DB_VENDOR)
+
+    # Chiama AI
+    proposal = call_ai_planner(context, api_key, user_message=user_message)
+
+    return jsonify({
+        "success": not proposal.get("error"),
+        "proposal": proposal,
+        "context_summary": {
+            "project_name": context["project"].get("name", ""),
+            "functions_count": len(context["functions"]),
+            "equipment_count": len(context["equipment"]),
+            "crew_total": len(context["available_crew"]),
+            "crew_busy_today": len(context["busy_crew_ids_today"]),
+            "already_assigned": len(context["already_assigned"]),
+            "data_issues": context.get("data_quality", {}),
+        },
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TASK ASSIGNMENT — Gestione attivita assegnate agli operatori
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/admin/tasks")
+@login_required
+def admin_tasks_page() -> ResponseReturnValue:
+    if not session.get("is_admin"):
+        return ("Forbidden", 403)
+    username = session.get("user") or session.get("username") or "Admin"
+    initials = "".join([p[0].upper() for p in username.split()[:2]]) if username else "?"
+    return render_template("admin_tasks.html", is_admin=True, user_name=username, user_initials=initials, active_page="tasks")
+
+
+@app.route("/admin/monitoring")
+@login_required
+def admin_monitoring_page() -> ResponseReturnValue:
+    if not session.get("is_admin"):
+        return ("Forbidden", 403)
+    return render_template("admin_monitoring.html", active_page="monitoring")
+
+
+@app.get("/api/admin/tasks")
+@login_required
+def api_admin_tasks_list() -> ResponseReturnValue:
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    db = get_db()
+    ensure_task_assignments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    rows = db.execute(
+        "SELECT id, oggetto, descrizione, progetto, scadenza, priorita, location, "
+        "assign_type, assign_group_id, status, created_by, created_ts, updated_ts "
+        "FROM admin_tasks ORDER BY "
+        "CASE status WHEN 'attivo' THEN 0 ELSE 1 END, "
+        "CASE priorita WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, "
+        "created_ts DESC"
+    ).fetchall()
+    tasks = []
+    for row in rows:
+        t = dict(row) if isinstance(row, Mapping) else {}
+        tid = t.get("id", row[0] if not isinstance(row, Mapping) else None)
+        assigns = db.execute(
+            f"SELECT username, status, notified, started_ts, completed_ts, rifiuto_motivo, read_at "
+            f"FROM task_assignments WHERE task_id = {ph}", (tid,)
+        ).fetchall()
+        a_list = []
+        for a in assigns:
+            if isinstance(a, Mapping):
+                a_list.append(dict(a))
+            else:
+                a_list.append({"username": a[0], "status": a[1], "notified": a[2],
+                               "started_ts": a[3], "completed_ts": a[4], "rifiuto_motivo": a[5],
+                               "read_at": a[6]})
+        t["assignments"] = a_list
+        t["counts"] = {
+            "nuovo": sum(1 for a in a_list if a["status"] == "nuovo"),
+            "in_corso": sum(1 for a in a_list if a["status"] == "in_corso"),
+            "completato": sum(1 for a in a_list if a["status"] == "completato"),
+            "rifiutato": sum(1 for a in a_list if a["status"] == "rifiutato"),
+        }
+        # Allegati
+        ensure_task_attachments_table(db)
+        att_rows = db.execute(
+            f"SELECT id, file_name, original_name, file_size, mime_type FROM task_attachments WHERE task_id = {ph}",
+            (tid,)
+        ).fetchall()
+        t["attachments"] = [
+            {"id": r["id"] if isinstance(r, Mapping) else r[0],
+             "file_name": r["file_name"] if isinstance(r, Mapping) else r[1],
+             "original_name": r["original_name"] if isinstance(r, Mapping) else r[2],
+             "file_size": r["file_size"] if isinstance(r, Mapping) else r[3],
+             "mime_type": r["mime_type"] if isinstance(r, Mapping) else r[4],
+             "url": f"/uploads/tasks/{r['file_name'] if isinstance(r, Mapping) else r[1]}"}
+            for r in att_rows
+        ]
+        tasks.append(t)
+    return jsonify({"tasks": tasks})
+
+
+@app.post("/api/admin/tasks")
+@login_required
+def api_admin_tasks_create() -> ResponseReturnValue:
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    oggetto = (data.get("oggetto") or "").strip()
+    if not oggetto:
+        return jsonify({"error": "Oggetto obbligatorio"}), 400
+    db = get_db()
+    ensure_task_assignments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    ts = now_ms()
+    cursor = db.execute(
+        f"INSERT INTO admin_tasks (oggetto, descrizione, progetto, scadenza, priorita, "
+        f"location, assign_type, assign_group_id, status, created_by, created_ts, updated_ts) "
+        f"VALUES ({','.join([ph]*12)})",
+        (oggetto, data.get("descrizione"), data.get("progetto"),
+         data.get("scadenza"), data.get("priorita", "media"),
+         data.get("location"), data.get("assign_type", "users"),
+         data.get("assign_group_id"), "attivo",
+         session.get("user") or session.get("username") or "admin", ts, ts)
+    )
+    task_id = cursor.lastrowid
+    usernames: List[str] = []
+    if data.get("assign_type") == "group" and data.get("assign_group_id"):
+        group_users = db.execute(
+            f"SELECT username FROM app_users WHERE group_id = {ph} AND is_active = 1",
+            (data["assign_group_id"],)
+        ).fetchall()
+        usernames = [r["username"] if isinstance(r, Mapping) else r[0] for r in group_users]
+    else:
+        usernames = [u.strip() for u in (data.get("usernames") or []) if u and u.strip()]
+    for uname in usernames:
+        try:
+            db.execute(
+                f"INSERT INTO task_assignments (task_id, username, status, notified, created_ts, updated_ts) "
+                f"VALUES ({','.join([ph]*6)})",
+                (task_id, uname, "nuovo", 0, ts, ts)
+            )
+        except Exception:
+            pass
+    db.commit()
+    _send_task_notifications(db, task_id, oggetto, usernames)
+    return jsonify({"ok": True, "task_id": task_id, "assigned_count": len(usernames)})
+
+
+@app.delete("/api/admin/tasks/<int:task_id>")
+@login_required
+def api_admin_tasks_delete(task_id: int) -> ResponseReturnValue:
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    db = get_db()
+    ensure_admin_tasks_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    ts = now_ms()
+    db.execute(
+        f"UPDATE admin_tasks SET status = 'annullato', updated_ts = {ph} WHERE id = {ph}",
+        (ts, task_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/tasks/pending-count")
+@login_required
+def api_admin_tasks_pending_count() -> ResponseReturnValue:
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    db = get_db()
+    ensure_task_assignments_table(db)
+    row = db.execute(
+        "SELECT COUNT(DISTINCT t.id) as cnt FROM admin_tasks t "
+        "JOIN task_assignments ta ON t.id = ta.task_id "
+        "WHERE t.status = 'attivo' AND ta.status IN ('nuovo','in_corso')"
+    ).fetchone()
+    count = row["cnt"] if isinstance(row, Mapping) else row[0]
+    return jsonify({"count": count})
+
+
+# --- User Task API ---
+
+@app.get("/api/user/tasks")
+@login_required
+def api_user_tasks_list() -> ResponseReturnValue:
+    username = session.get("user") or session.get("username") or ""
+    db = get_db()
+    ensure_task_assignments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    rows = db.execute(
+        f"SELECT ta.id as assignment_id, ta.task_id, ta.status as assignment_status, "
+        f"ta.rifiuto_motivo, ta.started_ts, ta.completed_ts, ta.read_at, ta.created_ts, "
+        f"t.oggetto, t.descrizione, t.progetto, t.scadenza, t.priorita, t.location, "
+        f"t.status as task_status, t.created_by "
+        f"FROM task_assignments ta JOIN admin_tasks t ON ta.task_id = t.id "
+        f"WHERE ta.username = {ph} AND t.status = 'attivo' "
+        f"ORDER BY CASE ta.status WHEN 'nuovo' THEN 0 WHEN 'in_corso' THEN 1 ELSE 2 END, "
+        f"CASE t.priorita WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, "
+        f"ta.created_ts DESC",
+        (username,)
+    ).fetchall()
+    tasks = []
+    ensure_task_attachments_table(db)
+    for r in rows:
+        t = dict(r) if isinstance(r, Mapping) else {}
+        tid = t.get("task_id")
+        if tid:
+            att_rows = db.execute(
+                f"SELECT id, file_name, original_name, file_size, mime_type FROM task_attachments WHERE task_id = {ph}",
+                (tid,)
+            ).fetchall()
+            t["attachments"] = [
+                {"id": ar["id"] if isinstance(ar, Mapping) else ar[0],
+                 "original_name": ar["original_name"] if isinstance(ar, Mapping) else ar[2],
+                 "url": f"/uploads/tasks/{ar['file_name'] if isinstance(ar, Mapping) else ar[1]}",
+                 "mime_type": ar["mime_type"] if isinstance(ar, Mapping) else ar[4]}
+                for ar in att_rows
+            ]
+        else:
+            t["attachments"] = []
+        tasks.append(t)
+    return jsonify({"tasks": tasks})
+
+
+@app.put("/api/user/tasks/<int:assignment_id>/start")
+@login_required
+def api_user_task_start(assignment_id: int) -> ResponseReturnValue:
+    username = session.get("user") or session.get("username") or ""
+    db = get_db()
+    ensure_task_assignments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    row = db.execute(
+        f"SELECT id, status FROM task_assignments WHERE id = {ph} AND username = {ph}",
+        (assignment_id, username)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Assegnazione non trovata"}), 404
+    current = row["status"] if isinstance(row, Mapping) else row[1]
+    if current != "nuovo":
+        return jsonify({"error": "Il task non e nello stato 'nuovo'"}), 400
+    ts = now_ms()
+    db.execute(
+        f"UPDATE task_assignments SET status = 'in_corso', started_ts = {ph}, updated_ts = {ph} WHERE id = {ph}",
+        (ts, ts, assignment_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.put("/api/user/tasks/<int:assignment_id>/complete")
+@login_required
+def api_user_task_complete(assignment_id: int) -> ResponseReturnValue:
+    username = session.get("user") or session.get("username") or ""
+    db = get_db()
+    ensure_task_assignments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    row = db.execute(
+        f"SELECT id, status FROM task_assignments WHERE id = {ph} AND username = {ph}",
+        (assignment_id, username)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Assegnazione non trovata"}), 404
+    current = row["status"] if isinstance(row, Mapping) else row[1]
+    if current != "in_corso":
+        return jsonify({"error": "Il task non e nello stato 'in_corso'"}), 400
+    ts = now_ms()
+    db.execute(
+        f"UPDATE task_assignments SET status = 'completato', completed_ts = {ph}, updated_ts = {ph} WHERE id = {ph}",
+        (ts, ts, assignment_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.put("/api/user/tasks/<int:assignment_id>/reject")
+@login_required
+def api_user_task_reject(assignment_id: int) -> ResponseReturnValue:
+    username = session.get("user") or session.get("username") or ""
+    data = request.get_json(silent=True) or {}
+    motivo = (data.get("motivo") or "").strip()
+    if not motivo:
+        return jsonify({"error": "Motivo rifiuto obbligatorio"}), 400
+    db = get_db()
+    ensure_task_assignments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    row = db.execute(
+        f"SELECT id, status FROM task_assignments WHERE id = {ph} AND username = {ph}",
+        (assignment_id, username)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Assegnazione non trovata"}), 404
+    current = row["status"] if isinstance(row, Mapping) else row[1]
+    if current not in ("nuovo", "in_corso"):
+        return jsonify({"error": "Il task non puo essere rifiutato"}), 400
+    ts = now_ms()
+    db.execute(
+        f"UPDATE task_assignments SET status = 'rifiutato', rifiuto_motivo = {ph}, completed_ts = {ph}, updated_ts = {ph} WHERE id = {ph}",
+        (motivo, ts, ts, assignment_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.put("/api/user/tasks/<int:assignment_id>/read")
+@login_required
+def api_user_task_read(assignment_id: int) -> ResponseReturnValue:
+    """Marca un task come letto (l'utente lo ha visualizzato)."""
+    username = session.get("user") or session.get("username") or ""
+    db = get_db()
+    ensure_task_assignments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    row = db.execute(
+        f"SELECT id, read_at FROM task_assignments WHERE id = {ph} AND username = {ph}",
+        (assignment_id, username)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Assegnazione non trovata"}), 404
+    existing_read_at = row["read_at"] if isinstance(row, Mapping) else row[1]
+    if existing_read_at:
+        return jsonify({"ok": True, "read_at": existing_read_at})
+    ts = now_ms()
+    db.execute(
+        f"UPDATE task_assignments SET read_at = {ph}, updated_ts = {ph} WHERE id = {ph}",
+        (ts, ts, assignment_id)
+    )
+    db.commit()
+    return jsonify({"ok": True, "read_at": ts})
+
+
+# --- Push notification per task ---
+
+def _send_task_notifications(db: DatabaseLike, task_id: int, oggetto: str, usernames: List[str]) -> None:
+    settings = get_webpush_settings()
+    if not settings:
+        return
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    for username in usernames:
+        subs = db.execute(
+            f"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE username = {ph}",
+            (username,)
+        ).fetchall()
+        if not subs:
+            continue
+        payload = {
+            "title": "📋 Nuovo Task Assegnato",
+            "body": oggetto,
+            "icon": "/static/icons/icon-192x192.png",
+            "badge": "/static/icons/icon-72x72.png",
+            "tag": f"task-{task_id}",
+            "data": {"url": "/?open_tasks=1", "type": "task_assigned"},
+        }
+        sent_ok = False
+        for sub in subs:
+            endpoint = sub["endpoint"] if isinstance(sub, Mapping) else sub[0]
+            p256dh = sub["p256dh"] if isinstance(sub, Mapping) else sub[1]
+            auth = sub["auth"] if isinstance(sub, Mapping) else sub[2]
+            try:
+                webpush(
+                    subscription_info={"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}},
+                    data=json.dumps(payload),
+                    vapid_private_key=settings["vapid_private"],
+                    vapid_claims={"sub": settings["subject"]},
+                    ttl=86400,
+                )
+                sent_ok = True
+            except WebPushException as e:
+                if e.response and e.response.status_code in {404, 410}:
+                    remove_push_subscription(db, endpoint)
+            except Exception:
+                pass
+        if sent_ok:
+            try:
+                record_push_notification(db, kind="task_assigned", title=payload["title"], body=payload["body"], payload=payload, username=username)
+            except Exception:
+                pass
+        db.execute(
+            f"UPDATE task_assignments SET notified = 1 WHERE task_id = {ph} AND username = {ph}",
+            (task_id, username)
+        )
+    db.commit()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -25749,6 +26367,99 @@ def serve_document_file(filename):
         os.path.join(app.root_path, 'uploads', 'documents'),
         filename
     )
+
+
+@app.route("/uploads/tasks/<path:filename>")
+@login_required
+def serve_task_file(filename):
+    """Serve i file allegati ai task."""
+    return send_from_directory(TASKS_UPLOAD_FOLDER, filename)
+
+
+@app.post("/api/admin/tasks/<int:task_id>/attachments")
+@login_required
+def api_admin_task_upload(task_id: int) -> ResponseReturnValue:
+    """Upload allegati a un task."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    db = get_db()
+    ensure_task_attachments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    task = db.execute(f"SELECT id FROM admin_tasks WHERE id = {ph}", (task_id,)).fetchone()
+    if not task:
+        return jsonify({"error": "Task non trovato"}), 404
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "Nessun file"}), 400
+    username = session.get("user") or session.get("username") or ""
+    ts = now_ms()
+    saved = []
+    for f in files:
+        if not f.filename:
+            continue
+        original = secure_filename(f.filename) or f"file_{ts}"
+        ext = os.path.splitext(original)[1]
+        unique = f"{task_id}_{ts}_{uuid.uuid4().hex[:8]}{ext}"
+        path = os.path.join(TASKS_UPLOAD_FOLDER, unique)
+        f.save(path)
+        size = os.path.getsize(path)
+        mime = f.content_type or "application/octet-stream"
+        db.execute(
+            f"INSERT INTO task_attachments (task_id, file_name, original_name, file_size, mime_type, uploaded_by, created_ts) "
+            f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})",
+            (task_id, unique, original, size, mime, username, ts)
+        )
+        saved.append({"file_name": unique, "original_name": original, "file_size": size, "mime_type": mime})
+    db.commit()
+    return jsonify({"ok": True, "files": saved, "count": len(saved)})
+
+
+@app.get("/api/admin/tasks/<int:task_id>/attachments")
+@login_required
+def api_task_attachments_list(task_id: int) -> ResponseReturnValue:
+    """Lista allegati di un task."""
+    db = get_db()
+    ensure_task_attachments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    rows = db.execute(
+        f"SELECT id, file_name, original_name, file_size, mime_type, uploaded_by, created_ts "
+        f"FROM task_attachments WHERE task_id = {ph} ORDER BY created_ts",
+        (task_id,)
+    ).fetchall()
+    attachments = []
+    for r in rows:
+        if isinstance(r, Mapping):
+            a = dict(r)
+        else:
+            a = {"id": r[0], "file_name": r[1], "original_name": r[2], "file_size": r[3],
+                 "mime_type": r[4], "uploaded_by": r[5], "created_ts": r[6]}
+        a["url"] = f"/uploads/tasks/{a['file_name']}"
+        attachments.append(a)
+    return jsonify({"attachments": attachments})
+
+
+@app.delete("/api/admin/tasks/<int:task_id>/attachments/<int:att_id>")
+@login_required
+def api_admin_task_attachment_delete(task_id: int, att_id: int) -> ResponseReturnValue:
+    """Elimina un allegato."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Accesso negato"}), 403
+    db = get_db()
+    ensure_task_attachments_table(db)
+    ph = "%s" if DB_VENDOR == "mysql" else "?"
+    row = db.execute(
+        f"SELECT file_name FROM task_attachments WHERE id = {ph} AND task_id = {ph}",
+        (att_id, task_id)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Allegato non trovato"}), 404
+    fname = row["file_name"] if isinstance(row, Mapping) else row[0]
+    fpath = os.path.join(TASKS_UPLOAD_FOLDER, fname)
+    if os.path.exists(fpath):
+        os.remove(fpath)
+    db.execute(f"DELETE FROM task_attachments WHERE id = {ph}", (att_id,))
+    db.commit()
+    return jsonify({"ok": True})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

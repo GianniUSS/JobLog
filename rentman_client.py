@@ -813,3 +813,19 @@ class RentmanClient:
 
         data = payload.get("data") if isinstance(payload, dict) else None
         return data
+
+    def get_all_crew(self, active_only: bool = True) -> List[Dict[str, Any]]:
+        """Recupera TUTTI i crew members da Rentman.
+
+        Endpoint: GET /crew
+        Campi importanti: id, displayname, firstname, lastname, city,
+                          phone, email, tags, driving_license, contract, remark, custom
+        NOTA: il campo 'tags' contiene etichette libere, NON competenze strutturate.
+        """
+        params: Dict[str, Any] = {}
+        if active_only:
+            params["active"] = True
+        logger.info("Rentman: recupero tutti i crew members (active_only=%s)", active_only)
+        items = self._get_all("/crew", params)
+        logger.info("Rentman: trovati %s crew members", len(items))
+        return items

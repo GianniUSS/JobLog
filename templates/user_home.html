@@ -2647,6 +2647,83 @@ header {
   cursor: not-allowed;
 }
 
+/* Task Popup */
+.task-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 900;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px;
+}
+.task-popup-overlay.active {
+  display: flex;
+}
+.task-popup-panel {
+  background: var(--bg-card);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.3);
+  animation: slideUp .3s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.task-popup-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.task-popup-header h3 { font-size: 18px; font-weight: 700; }
+.task-popup-close {
+  width: 32px; height: 32px;
+  border: none; border-radius: 50%;
+  background: var(--border);
+  color: var(--text-primary);
+  font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.task-popup-body { padding: 12px 20px 20px; }
+.task-item {
+  background: var(--bg);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-left: 4px solid var(--brand);
+}
+.task-item.priorita-alta { border-left-color: var(--red); }
+.task-item.priorita-media { border-left-color: var(--warning); }
+.task-item.priorita-bassa { border-left-color: var(--success); }
+.task-item.in_corso { border-left-color: var(--orange); background: rgba(249,115,22,0.05); }
+.task-item-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+.task-item-meta { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+.task-item-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.5; }
+.task-item-actions { display: flex; gap: 8px; }
+.task-btn {
+  flex: 1; padding: 10px; border: none; border-radius: 10px;
+  font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+  transition: opacity .2s;
+}
+.task-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.task-btn.start { background: var(--brand); color: #fff; }
+.task-btn.complete { background: var(--green); color: #fff; }
+.task-btn.reject { background: var(--red); color: #fff; }
+.task-reject-input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 10px; font-size: 13px; background: var(--bg-card);
+  color: var(--text-primary); margin-top: 8px; font-family: inherit;
+  outline: none;
+}
+.task-reject-input:focus { border-color: var(--brand); }
+
 
 </style>
 </head>
@@ -2710,6 +2787,11 @@ header {
         <span class="icon">🕐</span>
         <span>Storico Timbrature</span>
       </a>
+      <div class="menu-item" onclick="closeMenu(); setTimeout(checkPendingTasks, 300);">
+        <span class="icon">📋</span>
+        <span>I Miei Task</span>
+        <span class="task-menu-badge" id="taskMenuBadge" style="display:none;background:#ef4444;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:auto"></span>
+      </div>
 
     </div>
     
@@ -8760,6 +8842,196 @@ async function submitOvertimeRequest() {
         btn.textContent = 'Richiedi';
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// TASK ASSEGNATI - Popup per visualizzare e gestire task
+// ═══════════════════════════════════════════════════════════════════
+
+let _taskPopupEl = null;
+
+async function checkPendingTasks() {
+    try {
+        const res = await fetch('/api/user/tasks');
+        const data = await res.json();
+        const tasks = (data.tasks || []).filter(t => t.assignment_status === 'nuovo' || t.assignment_status === 'in_corso');
+        // Aggiorna badge menu
+        const badge = document.getElementById('taskMenuBadge');
+        if (badge) {
+            if (tasks.length > 0) { badge.textContent = tasks.length; badge.style.display = 'inline-block'; }
+            else { badge.style.display = 'none'; }
+        }
+        if (tasks.length > 0) {
+            showTaskPopup(tasks);
+            // Marca i task come letti (read receipt)
+            for (const t of tasks) {
+                if (t.assignment_id && !t.read_at) {
+                    fetch('/api/user/tasks/' + t.assignment_id + '/read', {method: 'PUT'}).catch(() => {});
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Errore caricamento task:', e);
+    }
+}
+
+function showTaskPopup(tasks) {
+    // Remove existing popup
+    if (_taskPopupEl) { _taskPopupEl.remove(); _taskPopupEl = null; }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'task-popup-overlay active';
+    overlay.id = 'taskPopupOverlay';
+    overlay.onclick = function(e) { if (e.target === overlay) closeTaskPopup(); };
+
+    const nuovi = tasks.filter(t => t.assignment_status === 'nuovo');
+    const inCorso = tasks.filter(t => t.assignment_status === 'in_corso');
+
+    let html = `<div class="task-popup-panel">
+        <div class="task-popup-header">
+            <h3>&#128203; I tuoi Task (${tasks.length})</h3>
+            <button class="task-popup-close" onclick="closeTaskPopup()">&times;</button>
+        </div>
+        <div class="task-popup-body">`;
+
+    if (nuovi.length) {
+        html += `<div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">Nuovi task</div>`;
+        nuovi.forEach(t => { html += renderTaskItem(t); });
+    }
+
+    if (inCorso.length) {
+        html += `<div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin:${nuovi.length ? '16px' : '0'} 0 8px">Task in corso</div>`;
+        inCorso.forEach(t => { html += renderTaskItem(t); });
+    }
+
+    html += `</div></div>`;
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay);
+    _taskPopupEl = overlay;
+}
+
+function renderTaskItem(t) {
+    const prioritaClass = 'priorita-' + (t.priorita || 'media');
+    const statusClass = t.assignment_status === 'in_corso' ? ' in_corso' : '';
+    const scadenza = t.scadenza ? new Date(t.scadenza).toLocaleDateString('it-IT') : '';
+    const isNuovo = t.assignment_status === 'nuovo';
+    const isInCorso = t.assignment_status === 'in_corso';
+
+    let actions = '';
+    if (isNuovo) {
+        actions = `<div class="task-item-actions">
+            <button class="task-btn start" onclick="taskAction(${t.assignment_id}, 'start', this)">&#9654; Avvia</button>
+            <button class="task-btn reject" onclick="showRejectInput(${t.assignment_id}, this)">&#10060; Rifiuta</button>
+        </div>
+        <div id="rejectBox_${t.assignment_id}" style="display:none">
+            <input class="task-reject-input" id="rejectMotivo_${t.assignment_id}" placeholder="Motivo del rifiuto (obbligatorio)..." />
+            <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="task-btn reject" style="flex:1" onclick="taskAction(${t.assignment_id}, 'reject', this)">Conferma Rifiuto</button>
+                <button class="task-btn" style="flex:0;background:var(--border);color:var(--text-primary);padding:10px 16px" onclick="hideRejectInput(${t.assignment_id})">Annulla</button>
+            </div>
+        </div>`;
+    } else if (isInCorso) {
+        actions = `<div class="task-item-actions">
+            <button class="task-btn complete" onclick="taskAction(${t.assignment_id}, 'complete', this)">&#9989; Completa</button>
+            <button class="task-btn reject" onclick="showRejectInput(${t.assignment_id}, this)">&#10060; Rifiuta</button>
+        </div>
+        <div id="rejectBox_${t.assignment_id}" style="display:none">
+            <input class="task-reject-input" id="rejectMotivo_${t.assignment_id}" placeholder="Motivo del rifiuto (obbligatorio)..." />
+            <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="task-btn reject" style="flex:1" onclick="taskAction(${t.assignment_id}, 'reject', this)">Conferma Rifiuto</button>
+                <button class="task-btn" style="flex:0;background:var(--border);color:var(--text-primary);padding:10px 16px" onclick="hideRejectInput(${t.assignment_id})">Annulla</button>
+            </div>
+        </div>`;
+    }
+
+    return `<div class="task-item ${prioritaClass}${statusClass}">
+        <div class="task-item-title">${escTask(t.oggetto)}</div>
+        <div class="task-item-meta">
+            ${t.progetto ? `<span>&#128194; ${escTask(t.progetto)}</span>` : ''}
+            ${scadenza ? `<span>&#128197; ${scadenza}</span>` : ''}
+            ${t.location ? `<span>&#128205; ${escTask(t.location)}</span>` : ''}
+            <span style="font-weight:600;color:${t.priorita === 'alta' ? 'var(--red)' : t.priorita === 'bassa' ? 'var(--success)' : 'var(--warning)'}">${escTask(t.priorita || 'media')}</span>
+        </div>
+        ${t.descrizione ? `<div class="task-item-desc">${escTask(t.descrizione)}</div>` : ''}
+        ${(t.attachments && t.attachments.length) ? `<div style="margin:8px 0;font-size:12px">&#128206; Allegati: ${t.attachments.map(att => `<a href="${escTask(att.url)}" target="_blank" style="color:var(--brand-color,#38bdf8);text-decoration:none;margin-right:8px">${escTask(att.original_name)}</a>`).join('')}</div>` : ''}
+        ${actions}
+    </div>`;
+}
+
+function escTask(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
+}
+
+function showRejectInput(assignmentId, btn) {
+    // Hide the actions row
+    btn.closest('.task-item-actions').style.display = 'none';
+    document.getElementById('rejectBox_' + assignmentId).style.display = 'block';
+    document.getElementById('rejectMotivo_' + assignmentId).focus();
+}
+
+function hideRejectInput(assignmentId) {
+    document.getElementById('rejectBox_' + assignmentId).style.display = 'none';
+    const item = document.getElementById('rejectBox_' + assignmentId).closest('.task-item');
+    const actionsDiv = item.querySelector('.task-item-actions');
+    if (actionsDiv) actionsDiv.style.display = 'flex';
+}
+
+async function taskAction(assignmentId, action, btn) {
+    let url = '/api/user/tasks/' + assignmentId + '/' + action;
+    let bodyData = {};
+    if (action === 'reject') {
+        const motivo = (document.getElementById('rejectMotivo_' + assignmentId) || {}).value || '';
+        if (!motivo.trim()) {
+            showToast('Inserisci il motivo del rifiuto', 'error');
+            return;
+        }
+        bodyData.motivo = motivo.trim();
+    }
+    btn.disabled = true;
+    try {
+        const res = await fetch(url, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(bodyData)
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const msgs = { start: 'Task avviato', complete: 'Task completato', reject: 'Task rifiutato' };
+            showToast(msgs[action] || 'OK', 'success');
+            // Refresh tasks
+            closeTaskPopup();
+            setTimeout(checkPendingTasks, 500);
+        } else {
+            showToast(data.error || 'Errore', 'error');
+            btn.disabled = false;
+        }
+    } catch (e) {
+        showToast('Errore di connessione', 'error');
+        btn.disabled = false;
+    }
+}
+
+function closeTaskPopup() {
+    if (_taskPopupEl) { _taskPopupEl.remove(); _taskPopupEl = null; }
+}
+
+// Check tasks on page load and on URL param
+(function initTaskCheck() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('open_tasks') === '1') {
+        // Remove param from URL without reload
+        const url = new URL(window.location);
+        url.searchParams.delete('open_tasks');
+        window.history.replaceState({}, '', url.pathname + url.search);
+        // Check tasks immediately
+        setTimeout(checkPendingTasks, 800);
+    } else {
+        // Auto-check on load
+        setTimeout(checkPendingTasks, 2000);
+    }
+})();
 </script>
 </body>
 </html>

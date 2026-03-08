@@ -19,6 +19,7 @@
         <a href="/admin/operators" class="menu-item {% if active_page == 'operators' %}active{% endif %}">👷 Operatori Rentman</a>
         <div class="menu-divider"></div>
         <a href="/admin/rentman-planning" class="menu-item {% if active_page == 'rentman-planning' %}active{% endif %}">📅 Pianificazioni</a>
+        <a href="/admin/monitoring" class="menu-item {% if active_page == 'monitoring' %}active{% endif %}">📊 Monitoraggio</a>
         <a href="/admin/locations" class="menu-item {% if active_page == 'locations' %}active{% endif %}">📍 Location GPS</a>
         <a href="/admin/employee-shifts" class="menu-item {% if active_page == 'employee-shifts' %}active{% endif %}">🗓️ Turni Dipendenti</a>
         <a href="/admin/sessions" class="menu-item {% if active_page == 'sessions' %}active{% endif %}">⏱️ Sessioni</a>
@@ -35,6 +36,10 @@
         <div class="menu-divider"></div>
         <a href="/admin/skills" class="menu-item {% if active_page == 'skills' %}active{% endif %}">🎯 Skills</a>
         <a href="/admin/external-resources" class="menu-item {% if active_page == 'external-resources' %}active{% endif %}">👥 Risorse Esterne</a>
+        <a href="/admin/tasks" class="menu-item {% if active_page == 'tasks' %}active{% endif %}">
+            📋 Task
+            <span class="menu-badge" id="pendingTasksBadge" style="display: none;"></span>
+        </a>
         <div class="menu-divider"></div>
         <a href="/admin/company-settings" class="menu-item {% if active_page == 'company-settings' %}active{% endif %}">🏢 Impostazioni</a>
         <div class="menu-divider"></div>
@@ -174,6 +179,25 @@ function loadPendingRequestsCount() {
         .catch(() => {});
 }
 
-// Carica il contatore al caricamento della pagina
-document.addEventListener('DOMContentLoaded', loadPendingRequestsCount);
+// Carica contatore task pendenti
+function loadPendingTasksCount() {
+    fetch('/api/admin/tasks/pending-count')
+        .then(r => r.json())
+        .then(data => {
+            const badge = document.getElementById('pendingTasksBadge');
+            if (badge && data.count > 0) {
+                badge.textContent = data.count;
+                badge.style.display = 'inline-block';
+            } else if (badge) {
+                badge.style.display = 'none';
+            }
+        })
+        .catch(() => {});
+}
+
+// Carica i contatori al caricamento della pagina
+document.addEventListener('DOMContentLoaded', () => {
+    loadPendingRequestsCount();
+    loadPendingTasksCount();
+});
 </script>

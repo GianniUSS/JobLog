@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gestione Task - JobLog Admin</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/svg+xml" href="/static/icons/icon-192x192.svg" />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script>
+(function(){
+    var s=localStorage.getItem('joblog-theme');
+    var d=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
+    document.documentElement.dataset.theme=s||(d?'dark':'light');
+})();
+</script>
+<style>
+:root{--bg:#0b1224;--bg-panel:#0f172a;--bg-soft:#111a30;--bg-card:#0f172a;--text:#e2e8f0;--text-muted:#94a3b8;--brand:#38bdf8;--brand-strong:#0ea5e9;--border:rgba(148,163,184,0.18);--success:#22c55e;--danger:#ef4444;--warning:#f59e0b;--purple:#a855f7}
+[data-theme="light"]{--bg:#f6f8fc;--bg-panel:#ffffff;--bg-soft:#eef2ff;--bg-card:#ffffff;--text:#0f172a;--text-muted:#475569;--brand:#2563eb;--brand-strong:#1d4ed8;--border:rgba(15,23,42,0.1);--success:#16a34a;--danger:#dc2626;--warning:#d97706;--purple:#9333ea}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Manrope','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:linear-gradient(135deg,#667eea 0%,#4f46e5 100%);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+.header-left{display:flex;align-items:center;gap:16px}
+.menu-btn{background:rgba(255,255,255,0.2);border:none;width:40px;height:40px;border-radius:10px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.menu-btn:hover{background:rgba(255,255,255,0.3)}
+.header h1{font-size:20px;font-weight:700}
+.header-actions{display:flex;align-items:center;gap:10px}
+.header-icon-btn{width:40px;height:40px;border:none;border-radius:10px;background:rgba(255,255,255,0.15);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s}
+.header-icon-btn:hover{background:rgba(255,255,255,0.25)}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:16px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer;border:none;transition:all .2s;font-family:inherit}
+.btn-primary{background:var(--brand);color:#fff}
+.btn-primary:hover{background:var(--brand-strong)}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+.btn-sm{padding:6px 12px;font-size:12px;border-radius:8px}
+
+/* Cards */
+.task-list{display:flex;flex-direction:column;gap:16px}
+.task-card{background:var(--bg-card);border-radius:16px;border:1px solid var(--border);overflow:hidden;transition:box-shadow .2s}
+.task-card:hover{box-shadow:0 4px 12px rgba(0,0,0,0.15)}
+.task-card.annullato{opacity:0.5}
+.task-card-header{padding:16px 20px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.task-card-title{font-size:16px;font-weight:700;flex:1}
+.task-card-meta{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 12px}
+.task-card-body{padding:0 20px 16px}
+.task-card-body p{color:var(--text-muted);font-size:14px;line-height:1.6}
+.task-card-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.badge-alta{background:rgba(239,68,68,0.15);color:var(--danger)}
+.badge-media{background:rgba(245,158,11,0.15);color:var(--warning)}
+.badge-bassa{background:rgba(34,197,94,0.15);color:var(--success)}
+.badge-attivo{background:rgba(56,189,248,0.15);color:var(--brand)}
+.badge-annullato{background:rgba(148,163,184,0.15);color:var(--text-muted)}
+.badge-completato{background:rgba(34,197,94,0.15);color:var(--success)}
+.counts{display:flex;gap:12px;font-size:13px;color:var(--text-muted)}
+.counts span{display:flex;align-items:center;gap:4px}
+.detail-chip{font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:4px}
+
+/* Assignments detail */
+.assignments-list{padding:0 20px 16px;display:flex;flex-direction:column;gap:6px}
+.assign-row{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg);border-radius:8px;font-size:13px}
+.assign-row .username{font-weight:600;flex:1}
+.assign-status{padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600}
+.assign-status.nuovo{background:rgba(56,189,248,0.15);color:var(--brand)}
+.assign-status.in_corso{background:rgba(245,158,11,0.15);color:var(--warning)}
+.assign-status.completato{background:rgba(34,197,94,0.15);color:var(--success)}
+.assign-status.rifiutato{background:rgba(239,68,68,0.15);color:var(--danger)}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all .3s ease}
+.modal-overlay.open{opacity:1!important;visibility:visible!important}
+.modal{background:var(--bg-card);border-radius:16px;width:90%;max-width:560px;max-height:90vh;overflow-y:auto;transform:scale(0.9);transition:transform .3s ease}
+.modal-overlay.open .modal{transform:scale(1)}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.modal-header h2{font-size:18px;font-weight:700}
+.modal-close{background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-muted)}
+.modal-body{padding:24px}
+.form-group{margin-bottom:20px}
+.form-group label{display:block;font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:var(--bg);color:var(--text);outline:none;transition:border-color .2s;font-family:inherit}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:var(--brand)}
+.form-group textarea{min-height:80px;resize:vertical}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:12px}
+
+/* Assign mode tabs */
+.assign-tabs{display:flex;gap:4px;margin-bottom:16px;background:var(--bg);border-radius:10px;padding:4px}
+.assign-tab{flex:1;padding:10px;border:none;background:transparent;color:var(--text-muted);font-weight:600;font-size:13px;border-radius:8px;cursor:pointer;transition:all .2s;font-family:inherit;text-align:center}
+.assign-tab.active{background:var(--brand);color:#fff}
+.user-checkboxes{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:4px}
+.user-check{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg);border-radius:8px;cursor:pointer;transition:background .2s}
+.user-check:hover{background:var(--bg-soft)}
+.user-check input{width:18px;height:18px;accent-color:var(--brand)}
+.user-check span{font-size:14px}
+
+/* Empty state */
+.empty-state{text-align:center;padding:60px 20px}
+.empty-state-icon{font-size:48px;margin-bottom:16px}
+.empty-state h3{font-size:18px;margin-bottom:8px}
+.empty-state p{color:var(--text-muted);font-size:14px}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;padding:14px 20px;border-radius:10px;color:#fff;font-weight:500;z-index:400;transform:translateY(100px);opacity:0;transition:all .3s ease}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.success{background:var(--success)}
+.toast.error{background:var(--danger)}
+
+/* Filter */
+.filter-select{padding:10px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:14px;font-family:inherit;outline:none;cursor:pointer}
+
+@media(max-width:768px){
+    .toolbar{flex-direction:column;align-items:stretch}
+    .task-card-header{flex-direction:column}
+    .task-card-footer{flex-direction:column;align-items:flex-start}
+    .counts{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+
+{% include 'partials/admin_menu.html' %}
+
+<!-- Header -->
+<header class="header">
+    <div class="header-left">
+        <button class="menu-btn" onclick="toggleMenu()">&#9776;</button>
+        <h1>&#128203; Task</h1>
+    </div>
+    <div class="header-actions">
+        <button class="header-icon-btn" id="themeToggle" title="Tema">&#127763;</button>
+    </div>
+</header>
+
+<div class="container">
+    <div class="toolbar">
+        <select class="filter-select" id="statusFilter" onchange="loadTasks()">
+            <option value="attivo">Attivi</option>
+            <option value="all">Tutti</option>
+            <option value="annullato">Annullati</option>
+        </select>
+        <button class="btn btn-primary" onclick="openCreateModal()">+ Nuovo Task</button>
+    </div>
+
+    <div id="taskList" class="task-list">
+        <div class="empty-state">
+            <div class="empty-state-icon">&#128203;</div>
+            <h3>Caricamento...</h3>
+        </div>
+    </div>
+</div>
+
+<!-- Create Task Modal -->
+<div class="modal-overlay" id="createModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Nuovo Task</h2>
+            <button class="modal-close" onclick="closeCreateModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Oggetto *</label>
+                <input type="text" id="taskOggetto" placeholder="Titolo del task" />
+            </div>
+            <div class="form-group">
+                <label>Descrizione</label>
+                <textarea id="taskDescrizione" placeholder="Descrizione dettagliata..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Progetto</label>
+                <input type="text" id="taskProgetto" placeholder="Nome progetto" />
+            </div>
+            <div class="form-group" style="display:flex;gap:16px">
+                <div style="flex:1">
+                    <label>Scadenza</label>
+                    <input type="date" id="taskScadenza" />
+                </div>
+                <div style="flex:1">
+                    <label>Priorita</label>
+                    <select id="taskPriorita">
+                        <option value="media">Media</option>
+                        <option value="alta">Alta</option>
+                        <option value="bassa">Bassa</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Location</label>
+                <input type="text" id="taskLocation" placeholder="Luogo (opzionale)" />
+            </div>
+
+            <hr style="border:none;border-top:1px solid var(--border);margin:20px 0">
+
+            <div class="form-group">
+                <label>Assegna a</label>
+                <div class="assign-tabs">
+                    <button class="assign-tab active" onclick="switchAssignTab('users')">Utenti</button>
+                    <button class="assign-tab" onclick="switchAssignTab('group')">Gruppo</button>
+                </div>
+                <div id="assignUsersPane">
+                    <div class="user-checkboxes" id="userCheckboxes">
+                        <p style="color:var(--text-muted);font-size:13px;padding:12px">Caricamento utenti...</p>
+                    </div>
+                </div>
+                <div id="assignGroupPane" style="display:none">
+                    <select id="groupSelect" class="filter-select" style="width:100%">
+                        <option value="">Seleziona gruppo...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Allegati</label>
+                <input type="file" id="taskFiles" multiple style="font-size:13px" />
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeCreateModal()">Annulla</button>
+            <button class="btn btn-primary" id="btnCreateTask" onclick="createTask()">Crea Task</button>
+        </div>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detailModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="detailTitle">Dettaglio Task</h2>
+            <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="detailBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeDetailModal()">Chiudi</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+let allTasks = [];
+let allUsers = [];
+let allGroups = [];
+let currentAssignTab = 'users';
+
+// --- Theme toggle ---
+document.getElementById('themeToggle').addEventListener('click', () => {
+    const html = document.documentElement;
+    const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    localStorage.setItem('joblog-theme', next);
+});
+
+// --- Toast ---
+function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + (type || 'success') + ' show';
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// --- Load data ---
+async function loadTasks() {
+    try {
+        const res = await fetch('/api/admin/tasks');
+        const data = await res.json();
+        allTasks = data.tasks || [];
+        renderTasks();
+    } catch (e) {
+        showToast('Errore caricamento task', 'error');
+    }
+}
+
+async function loadUsersAndGroups() {
+    try {
+        const [usersRes, groupsRes] = await Promise.all([
+            fetch('/api/admin/users'),
+            fetch('/api/admin/groups')
+        ]);
+        const usersData = await usersRes.json();
+        const groupsData = await groupsRes.json();
+        allUsers = (usersData.users || []).filter(u => u.is_active !== 0);
+        allGroups = groupsData.groups || [];
+    } catch (e) {
+        console.error('Error loading users/groups:', e);
+    }
+}
+
+// --- Render ---
+function renderTasks() {
+    const container = document.getElementById('taskList');
+    const filter = document.getElementById('statusFilter').value;
+    let filtered = allTasks;
+    if (filter !== 'all') {
+        filtered = allTasks.filter(t => t.status === filter);
+    }
+
+    if (!filtered.length) {
+        container.innerHTML = `<div class="empty-state">
+            <div class="empty-state-icon">&#128203;</div>
+            <h3>Nessun task</h3>
+            <p>Crea un nuovo task per assegnare attivita agli operatori</p>
+        </div>`;
+        return;
+    }
+
+    container.innerHTML = filtered.map(t => {
+        const prioritaClass = 'badge-' + (t.priorita || 'media');
+        const statusClass = 'badge-' + (t.status || 'attivo');
+        const counts = t.counts || {};
+        const createdDate = t.created_ts ? new Date(t.created_ts).toLocaleDateString('it-IT') : '';
+        const assigns = t.assignments || [];
+        const totalAssign = assigns.length;
+
+        // Scadenza con colori
+        let scadHtml = '';
+        if (t.scadenza) {
+            const scadDate = new Date(t.scadenza);
+            const today = new Date(); today.setHours(0,0,0,0);
+            const diffDays = Math.ceil((scadDate - today) / 86400000);
+            const scadStr = scadDate.toLocaleDateString('it-IT');
+            let scadStyle = '';
+            let scadIcon = '&#128197;';
+            if (diffDays < 0) { scadStyle = 'color:var(--danger);font-weight:700'; scadIcon = '&#9888;&#65039;'; }
+            else if (diffDays <= 2) { scadStyle = 'color:var(--warning);font-weight:700'; scadIcon = '&#9888;&#65039;'; }
+            scadHtml = `<span class="detail-chip" style="${scadStyle}">${scadIcon} ${scadStr}${diffDays < 0 ? ' (SCADUTO)' : diffDays === 0 ? ' (OGGI)' : diffDays <= 2 ? ' (tra ' + diffDays + 'g)' : ''}</span>`;
+        }
+
+        // Mini riepilogo assegnazioni inline
+        const assignSummary = assigns.map(a => {
+            const icon = a.status === 'nuovo' ? '&#9898;' : a.status === 'in_corso' ? '&#128992;' : a.status === 'completato' ? '&#9989;' : '&#10060;';
+            const notifIcon = a.notified ? '&#128276;' : '&#9203;';
+            return `<span title="${esc(a.username)}: ${esc(a.status)}${a.notified ? ' (notificato)' : ' (non notificato)'}" style="display:inline-flex;align-items:center;gap:2px;padding:2px 8px;background:var(--bg);border-radius:12px;font-size:11px;cursor:default">
+                ${notifIcon} <b>${esc(a.username)}</b> ${icon}
+            </span>`;
+        }).join('');
+
+        return `<div class="task-card ${t.status === 'annullato' ? 'annullato' : ''}" onclick="showDetail(${t.id})" style="cursor:pointer">
+            <div class="task-card-header">
+                <div class="task-card-title">${esc(t.oggetto)}</div>
+                <div style="display:flex;gap:6px;align-items:center">
+                    <span class="badge ${prioritaClass}">${esc(t.priorita || 'media')}</span>
+                    <span class="badge ${statusClass}">${esc(t.status || 'attivo')}</span>
+                </div>
+            </div>
+            <div class="task-card-meta">
+                ${t.progetto ? `<span class="detail-chip">&#128194; ${esc(t.progetto)}</span>` : ''}
+                ${scadHtml}
+                ${t.location ? `<span class="detail-chip">&#128205; ${esc(t.location)}</span>` : ''}
+                ${createdDate ? `<span class="detail-chip">&#128100; ${esc(t.created_by || '')} &middot; ${createdDate}</span>` : ''}
+            </div>
+            ${t.descrizione ? `<div class="task-card-body"><p>${esc(t.descrizione)}</p></div>` : ''}
+            <div style="padding:0 20px 12px;display:flex;flex-wrap:wrap;gap:6px">${assignSummary}</div>
+            <div class="task-card-footer">
+                <div class="counts">
+                    ${counts.nuovo ? `<span>&#9898; ${counts.nuovo} nuov${counts.nuovo === 1 ? 'o' : 'i'}</span>` : ''}
+                    ${counts.in_corso ? `<span>&#128992; ${counts.in_corso} in corso</span>` : ''}
+                    ${counts.completato ? `<span>&#9989; ${counts.completato} completat${counts.completato === 1 ? 'o' : 'i'}</span>` : ''}
+                    ${counts.rifiutato ? `<span>&#10060; ${counts.rifiutato} rifiutat${counts.rifiutato === 1 ? 'o' : 'i'}</span>` : ''}
+                </div>
+                <div style="display:flex;gap:8px" onclick="event.stopPropagation()">
+                    <button class="btn btn-sm btn-secondary" onclick="showDetail(${t.id})">Dettagli</button>
+                    ${t.status === 'attivo' ? `<button class="btn btn-sm btn-danger" onclick="deleteTask(${t.id})">Annulla</button>` : ''}
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function esc(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
+}
+
+// --- Detail ---
+function showDetail(taskId) {
+    const t = allTasks.find(x => x.id === taskId);
+    if (!t) return;
+    document.getElementById('detailTitle').textContent = t.oggetto;
+    const assigns = t.assignments || [];
+    const body = document.getElementById('detailBody');
+    let html = '';
+    if (t.descrizione) {
+        html += `<p style="margin-bottom:16px;color:var(--text-muted)">${esc(t.descrizione)}</p>`;
+    }
+    html += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+        ${t.progetto ? `<span class="detail-chip">&#128194; ${esc(t.progetto)}</span>` : ''}
+        ${t.scadenza ? `<span class="detail-chip">&#128197; ${new Date(t.scadenza).toLocaleDateString('it-IT')}</span>` : ''}
+        ${t.location ? `<span class="detail-chip">&#128205; ${esc(t.location)}</span>` : ''}
+        <span class="badge badge-${t.priorita || 'media'}">Priorita: ${esc(t.priorita || 'media')}</span>
+    </div>`;
+    // Scadenza con evidenza
+    if (t.scadenza) {
+        const scadDate = new Date(t.scadenza);
+        const today = new Date(); today.setHours(0,0,0,0);
+        const diffDays = Math.ceil((scadDate - today) / 86400000);
+        if (diffDays < 0) {
+            html += `<div style="padding:10px 14px;background:rgba(239,68,68,0.12);border-radius:10px;margin-bottom:16px;font-size:13px;font-weight:600;color:var(--danger)">&#9888;&#65039; Scaduto da ${Math.abs(diffDays)} giorn${Math.abs(diffDays)===1?'o':'i'}</div>`;
+        } else if (diffDays <= 2) {
+            html += `<div style="padding:10px 14px;background:rgba(245,158,11,0.12);border-radius:10px;margin-bottom:16px;font-size:13px;font-weight:600;color:var(--warning)">&#9888;&#65039; Scadenza ${diffDays === 0 ? 'OGGI' : 'tra ' + diffDays + ' giorn' + (diffDays===1?'o':'i')}</div>`;
+        }
+    }
+
+    html += `<h4 style="margin-bottom:12px;font-size:14px">Assegnatari (${assigns.length})</h4>`;
+    if (!assigns.length) {
+        html += `<p style="color:var(--text-muted);font-size:13px">Nessun assegnatario</p>`;
+    } else {
+        html += assigns.map(a => {
+            const notifIcon = a.notified ? '&#128276;' : '&#9203;';
+            const notifText = a.notified ? 'Notifica inviata' : 'Notifica non inviata';
+            let detailLines = '';
+            if (a.status === 'in_corso' && a.started_ts) {
+                detailLines += `<div style="font-size:11px;color:var(--warning);margin-top:4px">&#9654; Avviato: ${new Date(a.started_ts).toLocaleString('it-IT')}</div>`;
+            }
+            if (a.status === 'completato' && a.completed_ts) {
+                detailLines += `<div style="font-size:11px;color:var(--success);margin-top:4px">&#9989; Completato: ${new Date(a.completed_ts).toLocaleString('it-IT')}</div>`;
+            }
+            if (a.status === 'rifiutato') {
+                detailLines += `<div style="font-size:11px;color:var(--danger);margin-top:4px">&#10060; Rifiutato${a.completed_ts ? ': ' + new Date(a.completed_ts).toLocaleString('it-IT') : ''}</div>`;
+                if (a.rifiuto_motivo) {
+                    detailLines += `<div style="font-size:11px;color:var(--danger);margin-top:2px;font-style:italic">Motivo: ${esc(a.rifiuto_motivo)}</div>`;
+                }
+            }
+            return `<div class="assign-row" style="flex-wrap:wrap">
+                <span title="${notifText}" style="font-size:14px">${notifIcon}</span>
+                <span class="username">${esc(a.username)}</span>
+                <span class="assign-status ${a.status}">${esc(a.status)}</span>
+                ${detailLines ? `<div style="width:100%;padding-left:28px">${detailLines}</div>` : ''}
+            </div>`;
+        }).join('');
+    }
+
+    // Allegati
+    const attachments = t.attachments || [];
+    if (attachments.length) {
+        html += `<h4 style="margin:16px 0 10px;font-size:14px">&#128206; Allegati (${attachments.length})</h4>`;
+        html += attachments.map(att => {
+            const sizeKb = att.file_size ? (att.file_size / 1024).toFixed(1) + ' KB' : '';
+            return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);border-radius:8px;margin-bottom:4px">
+                <span style="font-size:16px">&#128196;</span>
+                <a href="${esc(att.url)}" target="_blank" style="flex:1;color:var(--brand);font-size:13px;text-decoration:none;word-break:break-all">${esc(att.original_name)}</a>
+                <span style="font-size:11px;color:var(--text-muted)">${sizeKb}</span>
+            </div>`;
+        }).join('');
+    }
+
+    body.innerHTML = html;
+    document.getElementById('detailModal').classList.add('open');
+}
+function closeDetailModal() {
+    document.getElementById('detailModal').classList.remove('open');
+}
+
+// --- Create ---
+function openCreateModal() {
+    document.getElementById('taskOggetto').value = '';
+    document.getElementById('taskDescrizione').value = '';
+    document.getElementById('taskProgetto').value = '';
+    document.getElementById('taskScadenza').value = '';
+    document.getElementById('taskPriorita').value = 'media';
+    document.getElementById('taskLocation').value = '';
+    document.getElementById('taskFiles').value = '';
+    currentAssignTab = 'users';
+    renderAssignPane();
+    document.getElementById('createModal').classList.add('open');
+}
+function closeCreateModal() {
+    document.getElementById('createModal').classList.remove('open');
+}
+
+function switchAssignTab(tab) {
+    currentAssignTab = tab;
+    document.querySelectorAll('.assign-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.assign-tab').forEach(b => {
+        if ((tab === 'users' && b.textContent.trim() === 'Utenti') ||
+            (tab === 'group' && b.textContent.trim() === 'Gruppo')) {
+            b.classList.add('active');
+        }
+    });
+    document.getElementById('assignUsersPane').style.display = tab === 'users' ? 'block' : 'none';
+    document.getElementById('assignGroupPane').style.display = tab === 'group' ? 'block' : 'none';
+}
+
+function renderAssignPane() {
+    // Users checkboxes
+    const container = document.getElementById('userCheckboxes');
+    if (!allUsers.length) {
+        container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:12px">Nessun utente trovato</p>';
+    } else {
+        container.innerHTML = allUsers.map(u => `<label class="user-check">
+            <input type="checkbox" value="${esc(u.username)}">
+            <span>${esc(u.display_name || u.username)}</span>
+        </label>`).join('');
+    }
+    // Groups select
+    const sel = document.getElementById('groupSelect');
+    sel.innerHTML = '<option value="">Seleziona gruppo...</option>' +
+        allGroups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+
+    switchAssignTab('users');
+}
+
+async function createTask() {
+    const oggetto = document.getElementById('taskOggetto').value.trim();
+    if (!oggetto) {
+        showToast('Oggetto obbligatorio', 'error');
+        return;
+    }
+    const body = {
+        oggetto,
+        descrizione: document.getElementById('taskDescrizione').value.trim() || null,
+        progetto: document.getElementById('taskProgetto').value.trim() || null,
+        scadenza: document.getElementById('taskScadenza').value || null,
+        priorita: document.getElementById('taskPriorita').value,
+        location: document.getElementById('taskLocation').value.trim() || null,
+        assign_type: currentAssignTab,
+    };
+
+    if (currentAssignTab === 'group') {
+        const gid = document.getElementById('groupSelect').value;
+        if (!gid) { showToast('Seleziona un gruppo', 'error'); return; }
+        body.assign_group_id = parseInt(gid);
+    } else {
+        const checked = document.querySelectorAll('#userCheckboxes input:checked');
+        const usernames = Array.from(checked).map(c => c.value);
+        if (!usernames.length) { showToast('Seleziona almeno un utente', 'error'); return; }
+        body.usernames = usernames;
+    }
+
+    const btn = document.getElementById('btnCreateTask');
+    btn.disabled = true;
+    btn.textContent = 'Creazione...';
+    try {
+        const res = await fetch('/api/admin/tasks', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.ok) {
+            // Upload allegati se presenti
+            const fileInput = document.getElementById('taskFiles');
+            if (fileInput.files.length > 0) {
+                const fd = new FormData();
+                for (let i = 0; i < fileInput.files.length; i++) fd.append('files', fileInput.files[i]);
+                await fetch('/api/admin/tasks/' + data.task_id + '/attachments', {method:'POST', body: fd}).catch(() => {});
+            }
+            showToast('Task creato e notifiche inviate (' + (data.assigned_count || 0) + ' utenti)');
+            closeCreateModal();
+            loadTasks();
+        } else {
+            showToast(data.error || 'Errore creazione', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Crea Task';
+    }
+}
+
+async function deleteTask(taskId) {
+    if (!confirm('Vuoi annullare questo task?')) return;
+    try {
+        const res = await fetch('/api/admin/tasks/' + taskId, {method: 'DELETE'});
+        const data = await res.json();
+        if (data.ok) {
+            showToast('Task annullato');
+            loadTasks();
+        } else {
+            showToast(data.error || 'Errore', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione', 'error');
+    }
+}
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadUsersAndGroups();
+    loadTasks();
+});
+
+// Close modals on overlay click
+document.getElementById('createModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeCreateModal();
+});
+document.getElementById('detailModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeDetailModal();
+});
+</script>
+</body>
+</html>

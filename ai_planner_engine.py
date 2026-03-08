@@ -134,16 +134,14 @@ def gather_planning_context(project_code: str, planning_date: str, db, app) -> D
         from app import DB_VENDOR
         ph = "%s" if DB_VENDOR == "mysql" else "?"
 
-        # Solo utenti del gruppo Produzione (join user_groups) con le loro skills
+        # Solo utenti del gruppo Produzione (join user_groups)
         users = db.execute(
             "SELECT u.username, u.display_name, u.full_name, "
             "COALESCE(u.gruppo, ug.name, '') AS gruppo "
             "FROM app_users u "
             "LEFT JOIN user_groups ug ON ug.id = u.group_id "
-            "WHERE u.is_active = 1 AND ("
-            "  LOWER(COALESCE(ug.name, '')) = 'produzione' "
-            "  OR u.role = 'supervisor'"
-            ") "
+            "WHERE u.is_active = 1 "
+            "  AND LOWER(COALESCE(ug.name, '')) = 'produzione' "
             "ORDER BY u.display_name"
         ).fetchall()
 

@@ -1984,6 +1984,104 @@
         .fn-suggestions .fn-suggestion-item:hover {
             background: var(--brand-soft);
         }
+        /* === ALIASES / RICODIFICA === */
+        .fn-aliases-section {
+            margin: 8px 0 12px 0;
+            padding: 8px 12px;
+            background: rgba(99, 102, 241, 0.04);
+            border: 1px dashed rgba(99, 102, 241, 0.25);
+            border-radius: 8px;
+        }
+        .fn-aliases-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .fn-aliases-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .fn-alias-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background: var(--brand);
+            color: #fff;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .fn-alias-chip .alias-remove {
+            cursor: pointer;
+            opacity: 0.7;
+            font-size: 14px;
+            line-height: 1;
+            margin-left: 2px;
+        }
+        .fn-alias-chip .alias-remove:hover { opacity: 1; }
+        .fn-alias-add-wrap {
+            position: relative;
+            display: inline-block;
+        }
+        .fn-alias-add-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background: var(--bg-card);
+            color: var(--brand);
+            border: 1px dashed var(--brand);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .fn-alias-add-btn:hover { background: var(--brand-soft); }
+        .fn-alias-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            min-width: 280px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+            z-index: 110;
+            max-height: 220px;
+            overflow-y: auto;
+            display: none;
+        }
+        .fn-alias-dropdown.open { display: block; }
+        .fn-alias-dropdown input {
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            outline: none;
+            background: transparent;
+            color: var(--text);
+            box-sizing: border-box;
+        }
+        .fn-alias-dropdown .alias-opt {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text);
+        }
+        .fn-alias-dropdown .alias-opt:hover { background: var(--brand-soft); }
+        .fn-alias-dropdown .alias-opt.used {
+            color: var(--muted);
+            cursor: default;
+            text-decoration: line-through;
+        }
         .fp-modal-actions {
             display: flex;
             justify-content: flex-end;
@@ -2064,6 +2162,7 @@
             <a href="/admin/group-planning" class="menu-item">📆 Planning Gruppo</a>
             <a href="/admin/employee-shifts" class="menu-item">📅 Turni Dipendenti</a>
             <a href="/admin/rentman-planning" class="menu-item active">📋 Pianificazioni</a>
+            <a href="/admin/monitoring" class="menu-item">📊 Monitoraggio</a>
             <div class="menu-divider"></div>
             <a href="/admin/sessions" class="menu-item">⏱️ Sessioni</a>
             <a href="/admin/documents" class="menu-item">📄 Documenti</a>
@@ -2077,6 +2176,7 @@
             <a href="/admin/users" class="menu-item">👥 Utenti</a>
             <a href="/admin/groups" class="menu-item">🏷️ Gruppi</a>
             <a href="/admin/timbratura-rules" class="menu-item">⚡ Regole Timbrature</a>
+            <a href="/admin/tasks" class="menu-item">📋 Task</a>
             <a href="/admin/company-settings" class="menu-item">⚙️ Impostazioni</a>
             <div class="menu-divider"></div>
             <a href="/logout" class="menu-item danger">🚪 Logout</a>
@@ -2092,6 +2192,7 @@
             </div>
         </div>
         <div class="header-actions">
+            <button class="header-icon-btn" onclick="toggleTasksPanel()" title="Task" style="position:relative">📋<span id="taskHeaderBadge" style="display:none;position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:50%;line-height:16px;text-align:center"></span></button>
             <button class="header-icon-btn" onclick="toggleLocationsPanel()" title="Gestisci Location">📍</button>
             <button class="header-icon-btn" onclick="refreshData()" title="Aggiorna">↻</button>
             <button class="header-icon-btn" onclick="toggleTheme()" title="Tema">🌓</button>
@@ -2115,6 +2216,87 @@
         </div>
     </aside>
     <div class="locations-panel-overlay" id="locationsPanelOverlay" onclick="toggleLocationsPanel()"></div>
+
+    <!-- Pannello Task (overlay a destra) -->
+    <aside class="locations-panel" id="tasksPanel" style="width:380px;max-width:90vw">
+        <div class="locations-panel-header">
+            <h3>📋 Task</h3>
+            <button class="locations-panel-close" onclick="toggleTasksPanel()">✕</button>
+        </div>
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+            <button class="btn primary" style="width:100%;font-size:13px" onclick="openTaskCreateInPanel()">+ Nuovo Task</button>
+        </div>
+        <div id="tasksPanelContent" style="padding:12px 16px;overflow-y:auto;flex:1">
+            <p style="color:var(--muted);text-align:center;padding:20px">Caricamento task...</p>
+        </div>
+    </aside>
+    <div class="locations-panel-overlay" id="tasksPanelOverlay" onclick="toggleTasksPanel()"></div>
+
+    <!-- Modal Crea Task (inline nel planning) -->
+    <div class="fp-modal-overlay" id="taskCreateOverlay" onclick="if(event.target===this)closeTaskCreate()">
+        <div class="fp-modal" style="max-width:500px">
+            <div class="fp-modal-header">
+                <h3>Nuovo Task</h3>
+                <button class="fp-modal-close" onclick="closeTaskCreate()">✕</button>
+            </div>
+            <div style="padding:20px">
+                <div style="margin-bottom:16px">
+                    <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">Oggetto *</label>
+                    <input type="text" id="ptOggetto" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px" placeholder="Titolo del task" />
+                </div>
+                <div style="margin-bottom:16px">
+                    <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">Descrizione</label>
+                    <textarea id="ptDescrizione" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px;min-height:60px;resize:vertical" placeholder="Descrizione..."></textarea>
+                </div>
+                <div style="display:flex;gap:12px;margin-bottom:16px">
+                    <div style="flex:1">
+                        <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">Progetto</label>
+                        <input type="text" id="ptProgetto" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px" placeholder="Progetto" />
+                    </div>
+                    <div style="flex:1">
+                        <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">Priorita</label>
+                        <select id="ptPriorita" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px">
+                            <option value="media">Media</option>
+                            <option value="alta">Alta</option>
+                            <option value="bassa">Bassa</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:flex;gap:12px;margin-bottom:16px">
+                    <div style="flex:1">
+                        <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">Scadenza</label>
+                        <input type="date" id="ptScadenza" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px" />
+                    </div>
+                    <div style="flex:1">
+                        <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">Location</label>
+                        <input type="text" id="ptLocation" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px" placeholder="Luogo" />
+                    </div>
+                </div>
+                <div style="margin-bottom:16px">
+                    <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">Assegna a</label>
+                    <div style="display:flex;gap:4px;margin-bottom:10px;background:var(--bg);border-radius:8px;padding:3px">
+                        <button class="btn" id="ptTabUsers" style="flex:1;font-size:12px;padding:8px;border-radius:6px;background:var(--brand);color:#fff" onclick="ptSwitchTab('users')">Utenti</button>
+                        <button class="btn" id="ptTabGroup" style="flex:1;font-size:12px;padding:8px;border-radius:6px;background:transparent" onclick="ptSwitchTab('group')">Gruppo</button>
+                    </div>
+                    <div id="ptUsersPane" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+                    <div id="ptGroupPane" style="display:none">
+                        <select id="ptGroupSelect" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px">
+                            <option value="">Seleziona gruppo...</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-bottom:16px">
+                    <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">Allegati</label>
+                    <input type="file" id="ptFiles" multiple style="font-size:13px;font-family:inherit" />
+                    <div id="ptFileList" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>
+                </div>
+                <div style="display:flex;gap:12px;justify-content:flex-end">
+                    <button class="btn" onclick="closeTaskCreate()">Annulla</button>
+                    <button class="btn primary" id="ptBtnCreate" onclick="ptCreateTask()">Crea Task</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Wrapper principale con pannello progetti fisso -->
     <div class="main-wrapper">
@@ -2516,18 +2698,37 @@
                 const tmpl = fpEditData[fnKey];
                 const phases = tmpl.phases || [];
                 const displayName = tmpl.display_name || fnKey;
+                const aliases = tmpl.aliases || [];
                 html += `<div class="fn-template" data-fn-idx="${fnIdx}" data-fn-key="${fpEscapeHtml(fnKey)}">
                     <div class="fn-template-header">
                         <div style="position: relative; flex: 1;">
                             <input type="text" value="${fpEscapeHtml(displayName)}"
                                    class="fp-fn-name-input"
-                                   placeholder="Nome funzione (es. Montaggio)"
+                                   placeholder="Nome template (es. Ripristino)"
                                    oninput="fpOnNameInput(this, ${fnIdx})"
                                    onfocus="fpShowSuggestions(this, ${fnIdx})"
                                    onblur="setTimeout(() => fpHideSuggestions(${fnIdx}), 200)">
                             <div class="fn-suggestions" id="fpSug_${fnIdx}" style="display:none;"></div>
                         </div>
                         <button class="btn-remove-fn" onclick="fpRemoveFunction(${fnIdx})" title="Rimuovi funzione">✕</button>
+                    </div>
+                    <div class="fn-aliases-section">
+                        <div class="fn-aliases-label">🔗 Funzioni Rentman collegate</div>
+                        <div class="fn-aliases-chips">
+                            ${aliases.map((a, aIdx) =>
+                                '<span class="fn-alias-chip">' + fpEscapeHtml(a) +
+                                ' <span class="alias-remove" onclick="fpRemoveAlias(' + fnIdx + ',' + aIdx + ')">✕</span></span>'
+                            ).join('')}
+                            <div class="fn-alias-add-wrap">
+                                <button class="fn-alias-add-btn" onclick="fpToggleAliasDropdown(${fnIdx})">+ Collega funzione</button>
+                                <div class="fn-alias-dropdown" id="fpAliasDd_${fnIdx}">
+                                    <input type="text" placeholder="Cerca funzione Rentman..."
+                                           oninput="fpFilterAliasOpts(${fnIdx}, this.value)"
+                                           id="fpAliasSearch_${fnIdx}">
+                                    <div id="fpAliasOpts_${fnIdx}"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="fn-phase-list">`;
                 const pLen = phases.length;
@@ -2622,9 +2823,18 @@
         function fpSelectSuggestion(fnIdx, fnName) {
             const keys = Object.keys(fpEditData);
             if (fnIdx >= keys.length) return;
-            const key = keys[fnIdx];
-            // Aggiorna il display_name con la suggestion selezionata
-            fpEditData[key].display_name = fnName;
+            const key = keys[fnIdx]; // Chiave originale (nome Rentman)
+            const tmpl = fpEditData[key];
+            // Aggiungi la chiave ORIGINALE (nome Rentman) come alias se diversa dal nuovo nome
+            if (fnName.toLowerCase().trim() !== key.toLowerCase().trim()) {
+                if (!tmpl.aliases) tmpl.aliases = [];
+                if (!tmpl.aliases.find(a => a.toLowerCase() === key.toLowerCase().trim())) {
+                    tmpl.aliases.push(key);
+                }
+                // Rimuovi il nuovo nome dagli aliases se presente
+                tmpl.aliases = tmpl.aliases.filter(a => a.toLowerCase() !== fnName.toLowerCase().trim());
+            }
+            tmpl.display_name = fnName;
             fpRender();
         }
 
@@ -2701,27 +2911,113 @@
             }
         }
 
+        // === ALIASES / RICODIFICA ===
+        function fpGetAllUsedAliases() {
+            const used = new Set();
+            Object.values(fpEditData).forEach(tmpl => {
+                (tmpl.aliases || []).forEach(a => used.add(a.toLowerCase()));
+            });
+            // Anche le chiavi stesse contano come "usate"
+            Object.keys(fpEditData).forEach(k => used.add(k.toLowerCase()));
+            return used;
+        }
+
+        function fpToggleAliasDropdown(fnIdx) {
+            const dd = document.getElementById('fpAliasDd_' + fnIdx);
+            if (!dd) return;
+            const isOpen = dd.classList.contains('open');
+            // Chiudi tutti
+            document.querySelectorAll('.fn-alias-dropdown.open').forEach(d => d.classList.remove('open'));
+            if (!isOpen) {
+                dd.classList.add('open');
+                const searchInput = document.getElementById('fpAliasSearch_' + fnIdx);
+                if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+                fpFilterAliasOpts(fnIdx, '');
+            }
+        }
+
+        function fpFilterAliasOpts(fnIdx, filter) {
+            const container = document.getElementById('fpAliasOpts_' + fnIdx);
+            if (!container) return;
+            const usedAliases = fpGetAllUsedAliases();
+            const filterLower = filter.toLowerCase().trim();
+            const matches = fpKnownFunctions.filter(fn => {
+                if (filterLower && !fn.toLowerCase().includes(filterLower)) return false;
+                return true;
+            });
+            if (matches.length === 0) {
+                container.innerHTML = '<div style="padding: 10px 12px; color: var(--muted); font-size: 13px;">Nessuna funzione trovata</div>';
+                return;
+            }
+            container.innerHTML = matches.map(fn => {
+                const isUsed = usedAliases.has(fn.toLowerCase());
+                return '<div class="alias-opt' + (isUsed ? ' used' : '') + '"' +
+                    (isUsed ? '' : ' onclick="fpAddAlias(' + fnIdx + ', \'' + fpEscapeHtml(fn).replace(/'/g, "\\'") + '\')"') +
+                    '>' + fpEscapeHtml(fn) + (isUsed ? ' (già collegata)' : '') + '</div>';
+            }).join('');
+        }
+
+        function fpAddAlias(fnIdx, aliasName) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const tmpl = fpEditData[keys[fnIdx]];
+            if (!tmpl.aliases) tmpl.aliases = [];
+            // Evita duplicati
+            if (tmpl.aliases.find(a => a.toLowerCase() === aliasName.toLowerCase())) return;
+            tmpl.aliases.push(aliasName);
+            // Chiudi dropdown e re-render
+            document.querySelectorAll('.fn-alias-dropdown.open').forEach(d => d.classList.remove('open'));
+            fpRender();
+        }
+
+        function fpRemoveAlias(fnIdx, aliasIdx) {
+            const keys = Object.keys(fpEditData);
+            if (fnIdx >= keys.length) return;
+            const tmpl = fpEditData[keys[fnIdx]];
+            if (tmpl.aliases && aliasIdx < tmpl.aliases.length) {
+                tmpl.aliases.splice(aliasIdx, 1);
+                fpRender();
+            }
+        }
+
+        // Chiudi dropdown alias cliccando fuori
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.fn-alias-add-wrap')) {
+                document.querySelectorAll('.fn-alias-dropdown.open').forEach(d => d.classList.remove('open'));
+            }
+        });
+
         function fpCollectClean() {
             const cleaned = {};
             const keys = Object.keys(fpEditData);
-            // Leggi i display_name dal DOM
+            // Leggi i nomi dal DOM
             const nameInputs = document.querySelectorAll('.fp-fn-name-input');
             keys.forEach((key, idx) => {
                 const tmpl = fpEditData[key];
-                // Leggi il display_name dal DOM
                 const domName = nameInputs[idx] ? nameInputs[idx].value.trim() : '';
-                const displayName = domName || tmpl.display_name || key;
-                const k = key.trim(); // La chiave originale resta invariata
-                if (!k) return;
+                const newName = domName || tmpl.display_name || key;
+                const finalKey = newName.trim();
+                if (!finalKey) return;
                 const phases = (tmpl.phases || [])
                     .filter(p => p.name && p.name.trim())
                     .map((p, i) => ({ name: p.name.trim(), order: i + 1, project_number: p.project_number || '' }));
                 if (phases.length > 0) {
-                    cleaned[k] = {
+                    // Raccogli aliases esistenti
+                    let aliases = [...(tmpl.aliases || [])].filter(a => a && a.trim());
+                    // Se il nome è cambiato, aggiungi il vecchio nome come alias automatico
+                    const oldKey = key.trim();
+                    if (finalKey.toLowerCase() !== oldKey.toLowerCase()) {
+                        if (!aliases.find(a => a.toLowerCase() === oldKey.toLowerCase())) {
+                            aliases.push(oldKey);
+                        }
+                        // Rimuovi il nuovo nome dagli aliases (se l'utente ha rinominato con un alias esistente)
+                        aliases = aliases.filter(a => a.toLowerCase() !== finalKey.toLowerCase());
+                    }
+                    cleaned[finalKey] = {
                         match_mode: tmpl.match_mode || 'contains',
-                        phases,
-                        display_name: displayName !== k ? displayName : undefined
+                        phases
                     };
+                    if (aliases.length > 0) cleaned[finalKey].aliases = aliases;
                 }
             });
             console.log('[FP] fpCollectClean result:', JSON.stringify(cleaned));
@@ -2906,15 +3202,22 @@
         function getPhasesForFunction(functionName) {
             if (!functionName) return null;
             const fnLower = functionName.toLowerCase().trim();
+            const makeResult = (key, tmpl) => ({
+                function_key: key,
+                display_name: tmpl.display_name || key,
+                phases: (tmpl.phases || []).sort((a, b) => a.order - b.order)
+            });
+            // 0. ALIASES — ricodifica esplicita funzioni Rentman
             for (const [key, tmpl] of Object.entries(functionPhasesConfig)) {
-                const keyLower = key.toLowerCase().trim();
-                if (fnLower === keyLower) {
-                    return {
-                        function_key: key,
-                        display_name: tmpl.display_name || key,
-                        phases: (tmpl.phases || []).sort((a, b) => a.order - b.order)
-                    };
+                if (tmpl.aliases && Array.isArray(tmpl.aliases)) {
+                    for (const alias of tmpl.aliases) {
+                        if (alias.toLowerCase().trim() === fnLower) return makeResult(key, tmpl);
+                    }
                 }
+            }
+            // 1. Exact match sulla chiave
+            for (const [key, tmpl] of Object.entries(functionPhasesConfig)) {
+                if (key.toLowerCase().trim() === fnLower) return makeResult(key, tmpl);
             }
             return null;
         }
@@ -3322,7 +3625,7 @@
                             <div class="project-header-right">
                                 ${group.project_manager ? `<span class="project-manager-badge">👤 Capo progetto: ${escapeHtml(group.project_manager)}</span>` : ''}
                                 ${leaderNames ? `<span class="project-leader-badge">⭐ Capo squadra: ${escapeHtml(leaderNames)}</span>` : ''}
-                                <button class="ai-proponi-btn" onclick="openAIPropose('${escapeHtml(group.code)}', '${escapeHtml(group.name || '')}')" style="background:rgba(168,85,247,0.15); color:#a855f7; padding:3px 10px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid rgba(168,85,247,0.4); user-select:none;" title="AI suggerisce assegnazioni crew">🤖 AI Proponi</button>
+                                <button class="btn-ai-propose" onclick="proposeCrewAI(${group.project_id}, '${escapeHtml(group.name || '')}')">🤖 Proponi Crew</button>
                             </div>
                         </div>
                         ${group.vehicle_data.length > 0 ? `
@@ -5046,6 +5349,10 @@
         window.fpUpdatePhaseProjectNumber = fpUpdatePhaseProjectNumber;
         window.fpOnProjectInput = fpOnProjectInput;
         window.fpSave = fpSave;
+        window.fpToggleAliasDropdown = fpToggleAliasDropdown;
+        window.fpFilterAliasOpts = fpFilterAliasOpts;
+        window.fpAddAlias = fpAddAlias;
+        window.fpRemoveAlias = fpRemoveAlias;
         window.togglePhase = togglePhase;
 
         // ═══════════════════════════════════════════════════════════════
@@ -5307,453 +5614,513 @@
     </script>
 
     <!-- ═══════════════════════════════════════════════════════════════ -->
-    <!-- AI CREW PLANNER — Modal proposte (Fase 2)                     -->
+    <!-- AI CREW PLANNER V3 — Analisi progetto + proposte crew          -->
     <!-- ═══════════════════════════════════════════════════════════════ -->
+    <style>
+        .btn-ai-propose { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 600; }
+        .btn-ai-propose:disabled { opacity: 0.5; cursor: wait; }
+        .ai-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .ai-modal { background: #1a1a2e; color: #e0e0e0; border-radius: 16px; padding: 0; max-width: 750px; width: 95%; max-height: 90vh; overflow-y: auto; }
+        .ai-modal .modal-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; }
+        .ai-modal .modal-header h3 { margin: 0; font-size: 16px; }
+        .ai-modal .modal-header button { background: none; border: none; color: #9ca3af; font-size: 22px; cursor: pointer; padding: 4px 8px; }
+        .ai-section { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+        .ai-analysis h3 { color: #a78bfa; margin: 0 0 12px; }
+        .ai-summary { font-size: 15px; color: #d1d5db; margin-bottom: 12px; }
+        .ai-detail { color: #9ca3af; margin: 4px 0; }
+        .ai-phase { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 12px; margin: 8px 0; }
+        .phase-header { font-size: 14px; margin-bottom: 6px; }
+        .func-badge { display: inline-block; background: #312e81; padding: 2px 10px; border-radius: 12px; font-size: 12px; margin: 2px; }
+        .phase-notes { font-style: italic; color: #9ca3af; font-size: 12px; margin-top: 4px; }
+        .ai-equipment-box { background: rgba(255,255,255,0.03); border-radius: 10px; padding: 12px; margin-top: 10px; }
+        .ai-equipment-box h4 { margin: 0 0 8px; font-size: 14px; color: #d1d5db; }
+        .equip-cat { font-size: 13px; margin: 4px 0; }
+        .equip-notes { color: #fbbf24; font-size: 13px; margin-top: 8px; }
+        .ai-resources { margin-top: 10px; }
+        .ai-resources h4 { margin: 0 0 8px; font-size: 14px; color: #d1d5db; }
+        .resource-line { font-size: 13px; margin: 3px 0; }
+        .resource-gap { color: #f87171; margin-top: 8px; }
+        .ai-proposals h3 { color: #34d399; margin: 0 0 12px; }
+        .ai-func-card { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 14px; margin: 10px 0; }
+        .func-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .phase-tag { background: #1e3a5f; padding: 1px 8px; border-radius: 10px; font-size: 11px; }
+        .slots { margin-left: auto; background: #065f46; padding: 2px 10px; border-radius: 10px; font-size: 12px; }
+        .crew-card { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; margin: 6px 0; }
+        .crew-card.hallucinated { border: 2px solid #ef4444; }
+        .crew-header { display: flex; align-items: center; gap: 8px; }
+        .score { margin-left: auto; background: #065f46; padding: 2px 8px; border-radius: 8px; font-size: 13px; font-weight: 700; }
+        .hallu-warn { color: #fca5a5; font-size: 11px; }
+        .crew-reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+        .reason { background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 6px; font-size: 11px; color: #9ca3af; }
+        .gap-note { color: #fbbf24; font-size: 13px; margin-top: 6px; }
+        .ai-warnings .critical { background: #7f1d1d; padding: 8px 12px; border-radius: 8px; margin: 4px 0; font-size: 13px; }
+        .ai-warnings .warning-item { background: #78350f; padding: 8px 12px; border-radius: 8px; margin: 4px 0; font-size: 13px; }
+        .ai-chat-box { padding: 12px 20px; display: flex; gap: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
+        .ai-chat-box input { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 8px 12px; color: white; font-size: 13px; }
+        .ai-chat-box input::placeholder { color: #6b7280; }
+        .ai-chat-box button { background: #6366f1; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        .ai-footer { padding: 8px 20px; color: #6b7280; font-size: 11px; text-align: center; }
+        .modal-actions { padding: 12px 20px; text-align: center; border-top: 1px solid rgba(255,255,255,0.08); }
+        .btn-confirm-ai { background: #059669; color: white; border: none; padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+        .btn-confirm-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+        .ai-loading { text-align: center; padding: 40px 20px; color: #d1d5db; }
+        .ai-loading .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1); border-top-color: #a78bfa; border-radius: 50%; animation: aiSpin 0.8s linear infinite; margin: 0 auto 16px; }
+        @keyframes aiSpin { to { transform: rotate(360deg); } }
+    </style>
     <script>
     (function() {
         'use strict';
 
-        let _aiCurrentProject = null;
-        let _aiSessionId = null;
-        let _aiProposals = [];
-        let _aiChatHistory = [];
-        let _aiOriginalSummary = '';
-        let _aiTotalCostEur = 0;
+        // --- Stato V3 ---
+        let _v3ProjectId = null;
+        let _v3ProjectName = '';
+        let _v3Date = '';
+        let _v3Proposal = null;
+        let _v3CtxSummary = null;
 
-        // --- CSS per il modal AI ---
-        const aiStyle = document.createElement('style');
-        aiStyle.textContent = `
-            .ai-modal-overlay {
-                position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-                z-index: 9999; display: none; align-items: center; justify-content: center;
-            }
-            .ai-modal-overlay.open { display: flex; }
-            .ai-modal {
-                background: var(--bg-card, #fff); border-radius: 16px;
-                width: 95%; max-width: 700px; max-height: 90vh;
-                display: flex; flex-direction: column;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            }
-            .ai-modal-header {
-                background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
-                color: white; padding: 16px 20px; border-radius: 16px 16px 0 0;
-                display: flex; align-items: center; justify-content: space-between;
-                flex-shrink: 0;
-            }
-            .ai-modal-header h3 { font-size: 16px; font-weight: 700; margin: 0; }
-            .ai-modal-close { background: rgba(255,255,255,0.2); border: none; color: white;
-                width: 32px; height: 32px; border-radius: 50%; font-size: 18px; cursor: pointer; }
-            .ai-modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0; }
-            .ai-summary { background: var(--bg-soft, #f8f9fa); padding: 12px 16px;
-                border-radius: 10px; margin-bottom: 16px; font-size: 13px;
-                border-left: 4px solid #a855f7; }
-            .ai-proposal-card {
-                background: var(--bg-soft, #f8f9fa); border-radius: 12px;
-                padding: 12px 16px; margin-bottom: 10px;
-                border: 1px solid var(--border, #e2e8f0);
-                transition: border-color 0.2s;
-            }
-            .ai-proposal-card.selected { border-color: #22c55e; background: rgba(34,197,94,0.05); }
-            .ai-proposal-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-            .ai-proposal-check { width: 18px; height: 18px; accent-color: #22c55e; cursor: pointer; }
-            .ai-proposal-name { font-weight: 700; font-size: 14px; }
-            .ai-proposal-type { font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 600; }
-            .ai-proposal-type.internal { background: #dbeafe; color: #1d4ed8; }
-            .ai-proposal-type.external { background: #fef3c7; color: #d97706; }
-            .ai-proposal-leader { background: #fef3c7; color: #b45309; font-size: 10px;
-                padding: 2px 6px; border-radius: 6px; font-weight: 600; }
-            .ai-proposal-function { color: var(--text-muted, #6b7280); font-size: 12px; }
-            .ai-proposal-score { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
-            .ai-score-bar { flex: 1; height: 6px; background: var(--border, #e2e8f0);
-                border-radius: 3px; overflow: hidden; }
-            .ai-score-fill { height: 100%; border-radius: 3px;
-                transition: width 0.3s ease; }
-            .ai-score-value { font-size: 11px; font-weight: 700; min-width: 30px; text-align: right; }
-            .ai-proposal-reasoning { font-size: 12px; color: var(--text-muted, #6b7280);
-                font-style: italic; margin-top: 4px; }
-
-            /* Chat section */
-            .ai-chat-section { border-top: 1px solid var(--border, #e2e8f0); padding: 12px 20px; flex-shrink: 0; }
-            .ai-chat-messages { max-height: 120px; overflow-y: auto; margin-bottom: 8px; }
-            .ai-chat-msg { font-size: 12px; margin-bottom: 6px; padding: 6px 10px; border-radius: 8px; }
-            .ai-chat-msg.user { background: #dbeafe; color: #1d4ed8; margin-left: 20%; text-align: right; }
-            .ai-chat-msg.assistant { background: var(--bg-soft, #f3f4f6); color: var(--text, #1f2937); margin-right: 20%; }
-            .ai-chat-input-row { display: flex; gap: 8px; }
-            .ai-chat-input {
-                flex: 1; padding: 8px 12px; border-radius: 10px; font-size: 13px;
-                border: 1px solid var(--border, #d1d5db); background: var(--bg-card, #fff);
-                color: var(--text, #1f2937); outline: none;
-            }
-            .ai-chat-input:focus { border-color: #a855f7; box-shadow: 0 0 0 2px rgba(168,85,247,0.15); }
-            .ai-chat-input::placeholder { color: var(--text-muted, #9ca3af); }
-            .ai-chat-send {
-                background: linear-gradient(135deg, #7c3aed, #a855f7); color: white;
-                border: none; padding: 8px 16px; border-radius: 10px; font-weight: 600;
-                font-size: 12px; cursor: pointer; white-space: nowrap;
-            }
-            .ai-chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
-            .ai-chat-hint { font-size: 11px; color: var(--text-muted, #9ca3af); margin-top: 4px; }
-
-            /* Footer */
-            .ai-modal-footer {
-                padding: 12px 20px; border-top: 1px solid var(--border, #e2e8f0);
-                display: flex; align-items: center; justify-content: space-between; gap: 12px;
-                flex-shrink: 0;
-            }
-            .ai-stats { font-size: 11px; color: var(--text-muted, #6b7280); }
-            .ai-confirm-btn {
-                background: linear-gradient(135deg, #22c55e, #16a34a);
-                color: white; border: none; padding: 10px 24px; border-radius: 10px;
-                font-weight: 700; font-size: 13px; cursor: pointer;
-            }
-            .ai-confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-            .ai-loading { text-align: center; padding: 40px 20px; }
-            .ai-loading .spinner {
-                width: 40px; height: 40px; border: 4px solid var(--border, #e2e8f0);
-                border-top-color: #a855f7; border-radius: 50%;
-                animation: aiSpin 0.8s linear infinite; margin: 0 auto 16px;
-            }
-            @keyframes aiSpin { to { transform: rotate(360deg); } }
-            .ai-error { color: #ef4444; text-align: center; padding: 20px; }
-            .ai-notes { background: #fffbeb; border: 1px solid #fbbf24;
-                border-radius: 8px; padding: 10px 14px; margin-top: 12px;
-                font-size: 12px; color: #92400e; }
-        `;
-        document.head.appendChild(aiStyle);
-
-        // --- Modal HTML ---
-        const aiOverlay = document.createElement('div');
-        aiOverlay.className = 'ai-modal-overlay';
-        aiOverlay.id = 'aiProposalOverlay';
-        aiOverlay.innerHTML = `
-            <div class="ai-modal">
-                <div class="ai-modal-header">
-                    <h3>🤖 AI Crew Planner</h3>
-                    <button class="ai-modal-close" onclick="closeAIPropose()">&times;</button>
-                </div>
-                <div class="ai-modal-body" id="aiModalBody">
-                    <div class="ai-loading">
-                        <div class="spinner"></div>
-                        <p>L'AI sta analizzando il progetto...</p>
-                        <p style="font-size:12px; color:var(--text-muted)">Merce, skills, disponibilita crew...</p>
-                    </div>
-                </div>
-                <div class="ai-chat-section" id="aiChatSection" style="display:none;">
-                    <div class="ai-chat-messages" id="aiChatMessages"></div>
-                    <div class="ai-chat-input-row">
-                        <input type="text" class="ai-chat-input" id="aiChatInput"
-                            placeholder="Modifica le proposte... (es: sostituisci Mario con Luigi, aggiungi un facchino)"
-                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendAIChat();}">
-                        <button class="ai-chat-send" id="aiChatSendBtn" onclick="sendAIChat()">Invia</button>
-                    </div>
-                    <div class="ai-chat-hint">Chiedi all'AI di modificare le proposte, aggiungere persone, cambiare ruoli...</div>
-                </div>
-                <div class="ai-modal-footer" id="aiModalFooter" style="display:none;">
-                    <div class="ai-stats" id="aiStats"></div>
-                    <button class="ai-confirm-btn" id="aiConfirmBtn" onclick="confirmAIProposals()" disabled>
-                        Conferma selezionate (0)
-                    </button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(aiOverlay);
-
-        // Chiudi cliccando fuori
-        aiOverlay.addEventListener('click', function(e) {
-            if (e.target === aiOverlay) closeAIPropose();
-        });
-
-        // --- Helper: data corrente planning ---
-        function _getPlanDate() {
-            const dateInput = document.getElementById('dateInput');
-            return (dateInput && dateInput.value) ? dateInput.value : new Date().toISOString().slice(0, 10);
+        function _getTargetDate() {
+            const d = document.getElementById('targetDate');
+            return (d && d.value) ? d.value : new Date().toISOString().slice(0, 10);
         }
 
-        // --- Apri modal e chiama AI ---
-        function openAIPropose(projectCode, projectName) {
-            _aiCurrentProject = { code: projectCode, name: projectName };
-            _aiSessionId = null;
-            _aiProposals = [];
-            _aiChatHistory = [];
-            _aiOriginalSummary = '';
-            _aiTotalCostEur = 0;
+        // ═══ MAIN: chiamata API ═══
+        async function proposeCrewAI(projectId, projectName) {
+            const btn = event.target;
+            btn.textContent = '🤖 Analizzo...';
+            btn.disabled = true;
+            _v3ProjectId = projectId;
+            _v3ProjectName = projectName;
+            _v3Date = _getTargetDate();
 
-            const planDate = _getPlanDate();
+            try {
+                const resp = await fetch('/api/admin/ai/propose-crew', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({project_id: projectId, date: _v3Date})
+                });
+                const data = await resp.json();
 
-            // Reset UI
-            document.getElementById('aiModalBody').innerHTML = `
-                <div class="ai-loading">
-                    <div class="spinner"></div>
-                    <p>L'AI sta analizzando <strong>${projectName || projectCode}</strong>...</p>
-                    <p style="font-size:12px; color:var(--text-muted)">Merce, skills, disponibilita crew...</p>
-                </div>
-            `;
-            document.getElementById('aiModalFooter').style.display = 'none';
-            document.getElementById('aiChatSection').style.display = 'none';
-            document.getElementById('aiChatMessages').innerHTML = '';
-            aiOverlay.classList.add('open');
-
-            // Chiama API
-            fetch('/api/admin/ai/propose-crew', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project_code: projectCode, date: planDate })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (!data.ok) {
-                    document.getElementById('aiModalBody').innerHTML = `
-                        <div class="ai-error">
-                            <p style="font-size:24px">⚠️</p>
-                            <p><strong>Errore</strong></p>
-                            <p>${data.error || 'Errore sconosciuto'}</p>
-                        </div>
-                    `;
-                    return;
+                if (data.success && data.proposal) {
+                    _v3Proposal = data.proposal;
+                    _v3CtxSummary = data.context_summary;
+                    showAIModal(data.proposal, data.context_summary, projectId, _v3Date);
+                } else {
+                    alert(data.proposal?.error || data.error || 'Errore AI');
                 }
-                _aiSessionId = data.session_id;
-                _aiProposals = data.proposals || [];
-                _aiOriginalSummary = data.summary || '';
-                if (data.stats) _aiTotalCostEur = data.stats.cost_eur || 0;
-                renderAIProposals(data);
-            })
-            .catch(err => {
-                document.getElementById('aiModalBody').innerHTML = `
-                    <div class="ai-error">
-                        <p style="font-size:24px">❌</p>
-                        <p><strong>Errore di connessione</strong></p>
-                        <p>${err.message}</p>
-                    </div>
-                `;
-            });
+            } catch(e) {
+                alert('Errore: ' + e.message);
+            } finally {
+                btn.textContent = '🤖 Proponi Crew';
+                btn.disabled = false;
+            }
         }
 
-        // --- Renderizza proposte ---
-        function renderAIProposals(data) {
-            const body = document.getElementById('aiModalBody');
+        // ═══ MOSTRA MODAL ═══
+        function showAIModal(proposal, ctx, projectId, date) {
+            const analysis = proposal.project_analysis || {};
+            const crews = proposal.crew_proposals || [];
+            const warnings = proposal.warnings || [];
+            const meta = proposal._meta || {};
+
             let html = '';
 
-            // Summary
-            if (data.summary) {
-                html += `<div class="ai-summary">${data.summary}</div>`;
+            // === SEZIONE 1: ANALISI PROGETTO ===
+            html += '<div class="ai-section ai-analysis">';
+            html += '<h3>📋 Analisi Progetto</h3>';
+            html += '<p class="ai-summary">' + (analysis.summary || '') + '</p>';
+
+            if (analysis.location) {
+                html += '<div class="ai-detail">📍 ' + analysis.location + '</div>';
+            }
+            if (analysis.period) {
+                html += '<div class="ai-detail">📅 ' + analysis.period + '</div>';
             }
 
-            // Proposals
-            if (_aiProposals.length === 0) {
-                html += `<div class="ai-error"><p>Nessuna proposta generata dall'AI</p></div>`;
-            } else {
-                _aiProposals.forEach((p, idx) => {
-                    const scoreColor = p.score >= 70 ? '#22c55e' : p.score >= 40 ? '#f59e0b' : '#ef4444';
-                    html += `
-                        <div class="ai-proposal-card selected" id="aiProposal${idx}">
-                            <div class="ai-proposal-top">
-                                <input type="checkbox" class="ai-proposal-check" data-idx="${idx}"
-                                    onchange="toggleAIProposal(${idx})" checked>
-                                <span class="ai-proposal-name">${p.name}</span>
-                                <span class="ai-proposal-type ${p.resource_type}">${p.resource_type === 'internal' ? 'Interno' : 'Esterno'}</span>
-                                ${p.is_leader ? '<span class="ai-proposal-leader">⭐ Leader</span>' : ''}
-                            </div>
-                            <div class="ai-proposal-function">📋 ${p.function} · ${p.phase}</div>
-                            <div class="ai-proposal-score">
-                                <div class="ai-score-bar">
-                                    <div class="ai-score-fill" style="width:${p.score}%; background:${scoreColor}"></div>
-                                </div>
-                                <span class="ai-score-value" style="color:${scoreColor}">${p.score}</span>
-                            </div>
-                            <div class="ai-proposal-reasoning">${p.reasoning}</div>
-                        </div>
-                    `;
+            // Fasi
+            if (analysis.phases && analysis.phases.length > 0) {
+                html += '<div class="ai-phases">';
+                const icons = {'Montaggio': '🔧', 'Evento': '🎭', 'Smontaggio': '📦', 'Setup': '🔧', 'Show': '🎭'};
+                analysis.phases.forEach(function(phase) {
+                    const iconEntry = Object.entries(icons).find(function(kv) {
+                        return phase.name.toLowerCase().includes(kv[0].toLowerCase());
+                    });
+                    const icon = iconEntry ? iconEntry[1] : '📌';
+                    html += '<div class="ai-phase">';
+                    html += '<div class="phase-header">' + icon + ' <strong>' + phase.name + '</strong> — ' + phase.period + '</div>';
+                    if (phase.functions && phase.functions.length > 0) {
+                        html += '<div class="phase-functions">';
+                        phase.functions.forEach(function(f) {
+                            html += '<span class="func-badge">' + f.name + ' x' + f.quantity + '</span>';
+                        });
+                        html += '</div>';
+                    }
+                    if (phase.notes) html += '<div class="phase-notes">' + phase.notes + '</div>';
+                    html += '</div>';
                 });
+                html += '</div>';
             }
 
-            // Notes
-            if (data.notes) {
-                html += `<div class="ai-notes">💡 ${data.notes}</div>`;
+            // Equipment
+            if (analysis.equipment_summary) {
+                const eq = analysis.equipment_summary;
+                html += '<div class="ai-equipment-box">';
+                html += '<h4>📦 Equipment (' + (eq.total_items || 0) + ' item)';
+                if (eq.total_weight) html += ' — ' + eq.total_weight;
+                if (eq.total_power) html += ' — ' + eq.total_power;
+                html += '</h4>';
+                if (eq.categories) {
+                    eq.categories.forEach(function(cat) {
+                        html += '<div class="equip-cat"><strong>' + cat.category + ':</strong> ' + cat.items.join(', ') + '</div>';
+                    });
+                }
+                if (eq.load_notes) html += '<div class="equip-notes">💪 ' + eq.load_notes + '</div>';
+                html += '</div>';
             }
 
-            body.innerHTML = html;
+            // Risorse necessarie
+            if (analysis.resources_needed) {
+                const rn = analysis.resources_needed;
+                html += '<div class="ai-resources">';
+                html += '<h4>👥 Risorse Necessarie: ' + rn.total_people + '</h4>';
+                if (rn.by_function) {
+                    rn.by_function.forEach(function(f) {
+                        html += '<div class="resource-line">' + f.function + ': <strong>' + f.count + '</strong> (' + f.when + ')</div>';
+                    });
+                }
+                if (analysis.gaps) html += '<div class="resource-gap">⚠️ ' + analysis.gaps + '</div>';
+                html += '</div>';
+            }
+            html += '</div>'; // fine analisi
 
-            // Mostra chat e footer
-            document.getElementById('aiChatSection').style.display = 'block';
-            const footer = document.getElementById('aiModalFooter');
-            footer.style.display = 'flex';
-            if (data.stats) {
-                const s = data.stats;
-                _aiTotalCostEur += (s.cost_eur || 0);
-                document.getElementById('aiStats').innerHTML =
-                    `${s.model || ''} · ${s.tokens_input + s.tokens_output} tok · ${_aiTotalCostEur.toFixed(4)}€ · ${(s.duration_ms / 1000).toFixed(1)}s`;
+            // === SEZIONE 2: PROPOSTE CREW ===
+            html += '<div class="ai-section ai-proposals">';
+            html += '<h3>👥 Proposte Crew</h3>';
+
+            // Warnings
+            if (warnings.length > 0) {
+                html += '<div class="ai-warnings">';
+                warnings.forEach(function(w) {
+                    const critical = w.includes('INVENTATI') || w.includes('HALLUCINATION');
+                    html += '<div class="warning-item ' + (critical ? 'critical' : '') + '">' + w + '</div>';
+                });
+                html += '</div>';
             }
 
-            // Tutte selezionate di default
-            _aiProposals.forEach((_, idx) => { _aiProposals[idx]._selected = true; });
-            updateAIConfirmBtn();
+            crews.forEach(function(cp) {
+                html += '<div class="ai-func-card">';
+                html += '<div class="func-header">';
+                html += '<strong>' + cp.function_name + '</strong>';
+                if (cp.phase) html += ' <span class="phase-tag">' + cp.phase + '</span>';
+                html += '<span class="slots">' + (cp.proposals || []).length + '/' + cp.slots_needed + '</span>';
+                html += '</div>';
+
+                (cp.proposals || []).forEach(function(p) {
+                    const hallu = p._hallucination;
+                    html += '<div class="crew-card ' + (hallu ? 'hallucinated' : '') + '">';
+                    html += '<div class="crew-header">';
+                    html += '<input type="checkbox" checked data-crew-id="' + p.crew_id + '" data-func-id="' + (cp.function_id || '') + '">';
+                    html += '<strong>' + p.crew_name + '</strong>';
+                    html += '<span class="score">' + (p.score || '?') + '</span>';
+                    html += '</div>';
+                    if (hallu) html += '<div class="hallu-warn">⚠️ DATO POTENZIALMENTE INVENTATO</div>';
+                    html += '<div class="crew-reasons">';
+                    (p.reasons || []).forEach(function(r) { html += '<span class="reason">' + r + '</span>'; });
+                    html += '</div></div>';
+                });
+
+                if (cp.gap_note) html += '<div class="gap-note">⚠️ ' + cp.gap_note + '</div>';
+                html += '</div>';
+            });
+            html += '</div>'; // fine proposte
+
+            // === CHAT REFINEMENT ===
+            html += '<div class="ai-chat-box">';
+            html += '<input type="text" id="aiChatInput" placeholder="Modifica: es. \'sostituisci Marco con Luigi\', \'aggiungi un facchino\'..." onkeydown="if(event.key===\'Enter\'){event.preventDefault(); aiChatRefine(' + projectId + ', \'' + date + '\');}" />';
+            html += '<button onclick="aiChatRefine(' + projectId + ', \'' + date + '\')">Invia</button>';
+            html += '</div>';
+
+            // === FOOTER META ===
+            html += '<div class="ai-footer">';
+            html += (meta.model || '') + ' · ' + (meta.input_tokens || '?') + '+' + (meta.output_tokens || '?') + ' tok · ';
+            html += (meta.hallucination_check || '');
+            html += '</div>';
+
+            // === CONFERMA ===
+            html += '<div class="modal-actions">';
+            html += '<button class="btn-confirm-ai" onclick="confirmAIProposals(' + projectId + ', \'' + date + '\')">Conferma Selezionati</button>';
+            html += '</div>';
+
+            // Modal
+            const overlay = document.createElement('div');
+            overlay.className = 'ai-overlay';
+            overlay.id = 'aiV3Overlay';
+            overlay.innerHTML = '<div class="ai-modal">' +
+                '<div class="modal-header">' +
+                '<h3>🤖 AI Crew Planner — ' + (ctx.project_name || '') + '</h3>' +
+                '<button onclick="this.closest(\'.ai-overlay\').remove()">✕</button>' +
+                '</div>' +
+                html +
+                '</div>';
+            // Chiudi cliccando fuori
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) overlay.remove();
+            });
+            document.body.appendChild(overlay);
         }
 
-        // --- Toggle singola proposta ---
-        function toggleAIProposal(idx) {
-            _aiProposals[idx]._selected = !_aiProposals[idx]._selected;
-            const card = document.getElementById('aiProposal' + idx);
-            if (card) card.classList.toggle('selected', _aiProposals[idx]._selected);
-            updateAIConfirmBtn();
-        }
-
-        function updateAIConfirmBtn() {
-            const count = _aiProposals.filter(p => p._selected).length;
-            const btn = document.getElementById('aiConfirmBtn');
-            btn.textContent = `Conferma selezionate (${count})`;
-            btn.disabled = count === 0;
-        }
-
-        // --- Chat: invia messaggio ---
-        function sendAIChat() {
+        // ═══ CHAT REFINE ═══
+        async function aiChatRefine(projectId, date) {
             const input = document.getElementById('aiChatInput');
-            const msg = (input.value || '').trim();
-            if (!msg || !_aiSessionId) return;
-
-            const sendBtn = document.getElementById('aiChatSendBtn');
+            const msg = (input ? input.value : '').trim();
+            if (!msg) return;
             input.value = '';
             input.disabled = true;
-            sendBtn.disabled = true;
-            sendBtn.textContent = '...';
 
-            // Mostra messaggio utente nella chat
-            const chatDiv = document.getElementById('aiChatMessages');
-            chatDiv.innerHTML += `<div class="ai-chat-msg user">${msg}</div>`;
-            chatDiv.innerHTML += `<div class="ai-chat-msg assistant" id="aiChatPending"><em>L'AI sta pensando...</em></div>`;
-            chatDiv.scrollTop = chatDiv.scrollHeight;
-
-            // Prepara proposte attuali (senza _selected)
-            const cleanProposals = _aiProposals.map(p => ({
-                resource_type: p.resource_type, identifier: p.identifier, name: p.name,
-                function: p.function, phase: p.phase, is_leader: p.is_leader,
-                score: p.score, reasoning: p.reasoning,
-            }));
-
-            fetch('/api/admin/ai/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session_id: _aiSessionId,
-                    message: msg,
-                    chat_history: _aiChatHistory,
-                    current_proposals: cleanProposals,
-                    original_summary: _aiOriginalSummary,
-                })
-            })
-            .then(r => r.json())
-            .then(data => {
-                // Rimuovi "sta pensando"
-                const pending = document.getElementById('aiChatPending');
-                if (pending) pending.remove();
-
-                if (!data.ok) {
-                    chatDiv.innerHTML += `<div class="ai-chat-msg assistant" style="color:#ef4444">Errore: ${data.error || 'sconosciuto'}</div>`;
+            try {
+                const resp = await fetch('/api/admin/ai/propose-crew', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({project_id: projectId, date: date, message: msg})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    // Rimuovi modal attuale e riapri con nuova proposta
+                    const old = document.getElementById('aiV3Overlay');
+                    if (old) old.remove();
+                    showAIModal(data.proposal, data.context_summary, projectId, date);
                 } else {
-                    // Mostra risposta AI
-                    const reply = data.chat_response || 'Proposte aggiornate.';
-                    chatDiv.innerHTML += `<div class="ai-chat-msg assistant">🤖 ${reply}</div>`;
-
-                    // Aggiorna proposte
-                    _aiProposals = data.proposals || [];
-                    _aiChatHistory = data.chat_history || [];
-                    renderAIProposals(data);
+                    alert('Errore: ' + (data.proposal?.error || data.error || 'sconosciuto'));
                 }
-                chatDiv.scrollTop = chatDiv.scrollHeight;
-            })
-            .catch(err => {
-                const pending = document.getElementById('aiChatPending');
-                if (pending) pending.remove();
-                chatDiv.innerHTML += `<div class="ai-chat-msg assistant" style="color:#ef4444">Errore: ${err.message}</div>`;
-            })
-            .finally(() => {
-                input.disabled = false;
-                sendBtn.disabled = false;
-                sendBtn.textContent = 'Invia';
-                input.focus();
-            });
+            } catch(e) {
+                alert('Errore: ' + e.message);
+            } finally {
+                if (input) input.disabled = false;
+            }
         }
 
-        // --- Conferma proposte ---
-        function confirmAIProposals() {
-            if (!_aiSessionId) return;
+        // ═══ CONFERMA SELEZIONATI ═══
+        function confirmAIProposals(projectId, date) {
+            // Raccogli checkbox selezionate
+            const overlay = document.getElementById('aiV3Overlay');
+            if (!overlay) return;
 
-            const planDate = _getPlanDate();
-            if (!planDate) {
-                alert('Seleziona una data prima di confermare.');
+            const checked = overlay.querySelectorAll('input[type="checkbox"]:checked');
+            if (checked.length === 0) {
+                alert('Seleziona almeno una proposta.');
                 return;
             }
 
-            const accepted = [];
-            const rejected = [];
+            const msg = 'Confermi ' + checked.length + ' assegnazione/i?';
+            if (!confirm(msg)) return;
 
-            _aiProposals.forEach(p => {
-                const item = {
-                    resource_type: p.resource_type,
-                    identifier: p.identifier,
-                    name: p.name,
-                    function: p.function,
-                    phase: p.phase,
-                    score: p.score,
-                    reasoning: p.reasoning,
-                    project_code: _aiCurrentProject.code,
-                    project_name: _aiCurrentProject.name,
-                    date: planDate,
-                };
-                if (p._selected) accepted.push(item);
-                else rejected.push(item);
-            });
-
-            if (accepted.length === 0) {
-                alert('Seleziona almeno una proposta da confermare.');
-                return;
-            }
-
-            const btn = document.getElementById('aiConfirmBtn');
-            btn.disabled = true;
-            btn.textContent = 'Salvando...';
-
-            fetch('/api/admin/ai/confirm-proposals', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: _aiSessionId, accepted, rejected })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.ok) {
-                    closeAIPropose();
-                    const msg = data.errors && data.errors.length
-                        ? `⚠️ ${data.bookings_created} assegnazioni create, ${data.errors.length} errori`
-                        : `✅ ${data.bookings_created} assegnazioni AI create`;
-                    if (typeof showMessage === 'function') {
-                        showMessage(msg, data.errors ? 'warning' : 'success');
-                    } else {
-                        alert(msg);
-                    }
-                } else {
-                    alert('Errore: ' + (data.error || 'Errore sconosciuto'));
-                    btn.disabled = false;
-                    updateAIConfirmBtn();
-                }
-            })
-            .catch(err => {
-                alert('Errore di connessione: ' + err.message);
-                btn.disabled = false;
-                updateAIConfirmBtn();
-            });
-        }
-
-        // --- Chiudi modal ---
-        function closeAIPropose() {
-            aiOverlay.classList.remove('open');
+            // Per ora chiudi il modal (il backend confirm-proposals non e ancora V3)
+            overlay.remove();
+            alert('✅ ' + checked.length + ' proposte selezionate. (Funzione conferma da completare nella Fase successiva)');
         }
 
         // Esporta funzioni globali
-        window.openAIPropose = openAIPropose;
-        window.closeAIPropose = closeAIPropose;
-        window.toggleAIProposal = toggleAIProposal;
+        window.proposeCrewAI = proposeCrewAI;
+        window.aiChatRefine = aiChatRefine;
         window.confirmAIProposals = confirmAIProposals;
-        window.sendAIChat = sendAIChat;
 
+    })();
+    </script>
+
+    <script>
+    // ═══════════════════════════════════════════════════════════════════
+    // TASK PANEL — Gestione task dalla pianificazione
+    // ═══════════════════════════════════════════════════════════════════
+    (function() {
+        let _ptUsers = [], _ptGroups = [], _ptTasks = [], _ptTab = 'users';
+
+        window.toggleTasksPanel = function() {
+            document.getElementById('tasksPanel').classList.toggle('open');
+            document.getElementById('tasksPanelOverlay').classList.toggle('open');
+            if (document.getElementById('tasksPanel').classList.contains('open')) {
+                loadPanelTasks();
+            }
+        };
+
+        async function loadPanelTasks() {
+            try {
+                const res = await fetch('/api/admin/tasks');
+                const data = await res.json();
+                _ptTasks = (data.tasks || []).filter(t => t.status === 'attivo');
+                renderPanelTasks();
+                updateTaskBadge();
+            } catch(e) {
+                document.getElementById('tasksPanelContent').innerHTML = '<p style="color:var(--danger);text-align:center;padding:20px">Errore caricamento</p>';
+            }
+        }
+
+        function updateTaskBadge() {
+            const badge = document.getElementById('taskHeaderBadge');
+            const pending = _ptTasks.filter(t => t.counts && (t.counts.nuovo > 0 || t.counts.in_corso > 0)).length;
+            if (pending > 0) { badge.textContent = pending; badge.style.display = 'block'; }
+            else { badge.style.display = 'none'; }
+        }
+
+        function renderPanelTasks() {
+            const el = document.getElementById('tasksPanelContent');
+            if (!_ptTasks.length) {
+                el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px">Nessun task attivo</p>';
+                return;
+            }
+            el.innerHTML = _ptTasks.map(t => {
+                const c = t.counts || {};
+                const priCol = t.priorita === 'alta' ? 'var(--danger)' : t.priorita === 'bassa' ? 'var(--success)' : 'var(--warning)';
+                const scad = t.scadenza ? new Date(t.scadenza).toLocaleDateString('it-IT') : '';
+                const assignHtml = (t.assignments || []).map(a => {
+                    const stBg = a.status==='nuovo'?'background:rgba(56,189,248,0.15);color:var(--brand)':
+                                 a.status==='in_corso'?'background:rgba(245,158,11,0.15);color:var(--warning)':
+                                 a.status==='completato'?'background:rgba(34,197,94,0.15);color:var(--success)':
+                                 'background:rgba(239,68,68,0.15);color:var(--danger)';
+                    const notifIcon = a.notified ? '🔔' : '⏳';
+                    const notifTip = a.notified ? 'Notifica inviata' : 'Notifica non inviata';
+                    let detailLine = '';
+                    if (a.status === 'in_corso' && a.started_ts) {
+                        detailLine = '<div style="font-size:10px;color:var(--muted);margin-top:2px">Avviato: ' + new Date(a.started_ts).toLocaleString('it-IT') + '</div>';
+                    } else if (a.status === 'completato' && a.completed_ts) {
+                        detailLine = '<div style="font-size:10px;color:var(--success);margin-top:2px">Completato: ' + new Date(a.completed_ts).toLocaleString('it-IT') + '</div>';
+                    } else if (a.status === 'rifiutato') {
+                        detailLine = '<div style="font-size:10px;color:var(--danger);margin-top:2px">Rifiutato' +
+                            (a.completed_ts ? ': ' + new Date(a.completed_ts).toLocaleString('it-IT') : '') +
+                            (a.rifiuto_motivo ? ' — ' + _esc(a.rifiuto_motivo) : '') + '</div>';
+                    }
+                    return '<div style="padding:5px 8px;background:var(--bg);border-radius:6px;font-size:12px">' +
+                        '<div style="display:flex;align-items:center;gap:6px">' +
+                        '<span title="' + notifTip + '" style="font-size:11px">' + notifIcon + '</span>' +
+                        '<span style="flex:1;font-weight:600">' + _esc(a.username) + '</span>' +
+                        '<span style="padding:2px 6px;border-radius:10px;font-size:10px;font-weight:600;' + stBg + '">' + _esc(a.status) + '</span></div>' +
+                        detailLine + '</div>';
+                }).join('');
+                return '<div style="background:var(--bg-card);border-radius:12px;padding:14px;margin-bottom:12px;border-left:3px solid ' + priCol + '">' +
+                    '<div style="font-weight:700;font-size:14px;margin-bottom:6px">' + _esc(t.oggetto) + '</div>' +
+                    '<div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--muted);margin-bottom:8px">' +
+                    (t.progetto ? '<span>📂 ' + _esc(t.progetto) + '</span>' : '') +
+                    (scad ? '<span>📅 ' + scad + '</span>' : '') +
+                    (t.location ? '<span>📍 ' + _esc(t.location) + '</span>' : '') +
+                    '<span style="color:' + priCol + ';font-weight:600">' + _esc(t.priorita) + '</span></div>' +
+                    (t.descrizione ? '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4">' + _esc(t.descrizione) + '</div>' : '') +
+                    ((t.attachments && t.attachments.length) ? '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">&#128206; ' + t.attachments.length + ' allegat' + (t.attachments.length === 1 ? 'o' : 'i') + ': ' +
+                        t.attachments.map(function(att){ return '<a href="' + _esc(att.url) + '" target="_blank" style="color:var(--brand);text-decoration:none" title="' + _esc(att.original_name) + '">' + _esc(att.original_name) + '</a>'; }).join(', ') +
+                    '</div>' : '') +
+                    '<div style="display:flex;flex-direction:column;gap:4px">' + assignHtml + '</div>' +
+                    '<div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">' +
+                    '<button class="btn" style="font-size:11px;padding:4px 10px" onclick="ptDeleteTask(' + t.id + ')">Annulla</button></div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function _esc(s) { if(!s) return ''; var d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; }
+
+        // --- Create task ---
+        async function loadUsersGroups() {
+            if (_ptUsers.length) return;
+            try {
+                const [ur, gr] = await Promise.all([fetch('/api/admin/users'), fetch('/api/admin/groups')]);
+                const ud = await ur.json(), gd = await gr.json();
+                _ptUsers = (ud.users || []).filter(u => u.is_active !== 0);
+                _ptGroups = gd.groups || [];
+            } catch(e) {}
+        }
+
+        window.openTaskCreateInPanel = async function() {
+            await loadUsersGroups();
+            document.getElementById('ptOggetto').value = '';
+            document.getElementById('ptDescrizione').value = '';
+            document.getElementById('ptProgetto').value = '';
+            document.getElementById('ptScadenza').value = '';
+            document.getElementById('ptPriorita').value = 'media';
+            document.getElementById('ptLocation').value = '';
+            _ptTab = 'users';
+            document.getElementById('ptUsersPane').innerHTML = _ptUsers.map(u =>
+                '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg);border-radius:6px;cursor:pointer;font-size:13px">' +
+                '<input type="checkbox" value="' + _esc(u.username) + '" style="accent-color:var(--brand)">' +
+                '<span>' + _esc(u.display_name || u.username) + '</span></label>'
+            ).join('');
+            var gs = document.getElementById('ptGroupSelect');
+            gs.innerHTML = '<option value="">Seleziona gruppo...</option>' + _ptGroups.map(g =>
+                '<option value="' + g.id + '">' + _esc(g.name) + '</option>'
+            ).join('');
+            document.getElementById('ptFiles').value = '';
+            document.getElementById('ptFileList').innerHTML = '';
+            ptSwitchTab('users');
+            document.getElementById('taskCreateOverlay').classList.add('open');
+        };
+
+        window.closeTaskCreate = function() {
+            document.getElementById('taskCreateOverlay').classList.remove('open');
+        };
+
+        window.ptSwitchTab = function(tab) {
+            _ptTab = tab;
+            document.getElementById('ptUsersPane').style.display = tab === 'users' ? 'flex' : 'none';
+            document.getElementById('ptGroupPane').style.display = tab === 'group' ? 'block' : 'none';
+            document.getElementById('ptTabUsers').style.background = tab === 'users' ? 'var(--brand)' : 'transparent';
+            document.getElementById('ptTabUsers').style.color = tab === 'users' ? '#fff' : 'var(--text)';
+            document.getElementById('ptTabGroup').style.background = tab === 'group' ? 'var(--brand)' : 'transparent';
+            document.getElementById('ptTabGroup').style.color = tab === 'group' ? '#fff' : 'var(--text)';
+        };
+
+        window.ptCreateTask = async function() {
+            var oggetto = document.getElementById('ptOggetto').value.trim();
+            if (!oggetto) { alert('Oggetto obbligatorio'); return; }
+            var body = {
+                oggetto: oggetto,
+                descrizione: document.getElementById('ptDescrizione').value.trim() || null,
+                progetto: document.getElementById('ptProgetto').value.trim() || null,
+                scadenza: document.getElementById('ptScadenza').value || null,
+                priorita: document.getElementById('ptPriorita').value,
+                location: document.getElementById('ptLocation').value.trim() || null,
+                assign_type: _ptTab
+            };
+            if (_ptTab === 'group') {
+                var gid = document.getElementById('ptGroupSelect').value;
+                if (!gid) { alert('Seleziona un gruppo'); return; }
+                body.assign_group_id = parseInt(gid);
+            } else {
+                var checked = document.querySelectorAll('#ptUsersPane input:checked');
+                var usernames = Array.from(checked).map(c => c.value);
+                if (!usernames.length) { alert('Seleziona almeno un utente'); return; }
+                body.usernames = usernames;
+            }
+            var btn = document.getElementById('ptBtnCreate');
+            btn.disabled = true; btn.textContent = 'Creazione...';
+            try {
+                var res = await fetch('/api/admin/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+                var data = await res.json();
+                if (data.ok) {
+                    // Upload allegati se presenti
+                    var fileInput = document.getElementById('ptFiles');
+                    if (fileInput.files.length > 0) {
+                        var fd = new FormData();
+                        for (var i = 0; i < fileInput.files.length; i++) fd.append('files', fileInput.files[i]);
+                        await fetch('/api/admin/tasks/' + data.task_id + '/attachments', {method:'POST', body: fd}).catch(function(){});
+                    }
+                    closeTaskCreate();
+                    loadPanelTasks();
+                    alert('Task creato e notifiche inviate (' + (data.assigned_count||0) + ' utenti)');
+                } else { alert(data.error || 'Errore'); }
+            } catch(e) { alert('Errore di connessione'); }
+            finally { btn.disabled = false; btn.textContent = 'Crea Task'; }
+        };
+
+        window.ptDeleteTask = async function(id) {
+            if (!confirm('Annullare questo task?')) return;
+            try {
+                var res = await fetch('/api/admin/tasks/' + id, {method:'DELETE'});
+                var data = await res.json();
+                if (data.ok) loadPanelTasks();
+                else alert(data.error || 'Errore');
+            } catch(e) { alert('Errore'); }
+        };
+
+        // Auto-load badge on page init
+        fetch('/api/admin/tasks/pending-count').then(r=>r.json()).then(d => {
+            var badge = document.getElementById('taskHeaderBadge');
+            if (d.count > 0) { badge.textContent = d.count; badge.style.display = 'block'; }
+        }).catch(()=>{});
     })();
     </script>
 

@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Monitoraggio - JobLog Admin</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/svg+xml" href="/static/icons/icon-192x192.svg" />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script>
+(function(){
+    var s=localStorage.getItem('joblog-theme');
+    var d=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
+    document.documentElement.dataset.theme=s||(d?'dark':'light');
+})();
+</script>
+<style>
+:root{--bg:#0b1224;--bg-panel:#0f172a;--bg-soft:#111a30;--bg-card:#0f172a;--text:#e2e8f0;--text-muted:#94a3b8;--brand:#38bdf8;--brand-strong:#0ea5e9;--border:rgba(148,163,184,0.18);--success:#22c55e;--danger:#ef4444;--warning:#f59e0b;--purple:#a855f7}
+[data-theme="light"]{--bg:#f6f8fc;--bg-panel:#ffffff;--bg-soft:#eef2ff;--bg-card:#ffffff;--text:#0f172a;--text-muted:#475569;--brand:#2563eb;--brand-strong:#1d4ed8;--border:rgba(15,23,42,0.1);--success:#16a34a;--danger:#dc2626;--warning:#d97706;--purple:#9333ea}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Manrope','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:linear-gradient(135deg,#667eea 0%,#4f46e5 100%);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+.header-left{display:flex;align-items:center;gap:16px}
+.menu-btn{background:rgba(255,255,255,0.2);border:none;width:40px;height:40px;border-radius:10px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.menu-btn:hover{background:rgba(255,255,255,0.3)}
+.header h1{font-size:20px;font-weight:700}
+.header-actions{display:flex;align-items:center;gap:10px}
+.header-icon-btn{width:40px;height:40px;border:none;border-radius:10px;background:rgba(255,255,255,0.15);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s}
+.header-icon-btn:hover{background:rgba(255,255,255,0.25)}
+.container{max-width:1200px;margin:0 auto;padding:20px 16px}
+
+/* Filtri */
+.filters{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;align-items:center}
+.filter-input{padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:14px;font-family:inherit;outline:none}
+.filter-input:focus{border-color:var(--brand)}
+.filter-select{padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:14px;font-family:inherit;outline:none;cursor:pointer;min-width:160px}
+
+/* Sezioni */
+.section{margin-bottom:32px}
+.section-title{font-size:16px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid var(--border)}
+.section-title .count-badge{background:var(--brand);color:#fff;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:700}
+
+/* Card progetto */
+.project-card{background:var(--bg-card);border-radius:14px;border:1px solid var(--border);margin-bottom:14px;overflow:hidden}
+.project-card-header{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:12px}
+.project-card-header:hover{background:var(--bg-soft)}
+.project-name{font-weight:700;font-size:15px;flex:1}
+.project-badges{display:flex;gap:6px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:600}
+.badge-info{background:rgba(56,189,248,0.12);color:var(--brand)}
+.badge-success{background:rgba(34,197,94,0.12);color:var(--success)}
+.badge-warning{background:rgba(245,158,11,0.12);color:var(--warning)}
+.badge-danger{background:rgba(239,68,68,0.12);color:var(--danger)}
+.badge-muted{background:rgba(148,163,184,0.12);color:var(--text-muted)}
+
+/* Tabella operatori */
+.crew-table{width:100%;border-collapse:collapse;font-size:13px}
+.crew-table th{text-align:left;padding:8px 14px;font-weight:600;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border)}
+.crew-table td{padding:8px 14px;border-bottom:1px solid var(--border)}
+.crew-table tr:last-child td{border-bottom:none}
+.sent-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.sent-yes{background:rgba(34,197,94,0.12);color:var(--success)}
+.sent-no{background:rgba(148,163,184,0.12);color:var(--text-muted)}
+
+/* Card task */
+.task-card{background:var(--bg-card);border-radius:14px;border:1px solid var(--border);margin-bottom:14px;overflow:hidden}
+.task-card-header{padding:14px 18px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.task-title{font-weight:700;font-size:15px;flex:1}
+.task-meta{display:flex;flex-wrap:wrap;gap:8px;padding:0 18px 10px;font-size:12px;color:var(--text-muted)}
+
+/* Tabella assegnazioni task */
+.assign-table{width:100%;border-collapse:collapse;font-size:13px}
+.assign-table th{text-align:left;padding:8px 14px;font-weight:600;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border)}
+.assign-table td{padding:8px 14px;border-bottom:1px solid var(--border)}
+.assign-table tr:last-child td{border-bottom:none}
+
+/* Status indicators */
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.status-dot.nuovo{background:var(--brand)}
+.status-dot.in_corso{background:var(--warning)}
+.status-dot.completato{background:var(--success)}
+.status-dot.rifiutato{background:var(--danger)}
+
+/* Espandibile — default aperto */
+.expandable{overflow:hidden;transition:max-height .3s ease;max-height:3000px}
+.expandable.collapsed{max-height:0}
+
+/* Fasi — stile identico a pianificazione */
+.project-phases-container{margin-top:8px;padding:8px 12px;background:rgba(67,97,238,0.04);border-radius:8px;border:1px solid rgba(67,97,238,0.12)}
+.project-phases-container .phases-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.project-phases-container .phases-label{font-size:11px;font-weight:600;color:var(--brand,#4361ee);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0}
+.phases-progress-bar{height:6px;background:#e9ecef;border-radius:3px;overflow:hidden;margin-bottom:8px}
+.phases-progress-fill{height:100%;background:linear-gradient(90deg,#4361ee,#2ecc71);border-radius:3px;transition:width .3s ease}
+.phases-checklist{display:flex;flex-wrap:wrap;gap:4px}
+.phase-check-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid #e0e0e0;border-radius:6px;background:#fff;cursor:default;font-size:12px;transition:all .15s ease;user-select:none}
+.phase-check-btn.completed{background:rgba(46,204,113,0.1);border-color:rgba(46,204,113,0.3);color:#27ae60}
+.phase-check-icon{font-size:14px}
+.phase-check-label{font-size:12px;white-space:nowrap}
+.phase-in-progress{display:inline-block;margin-left:8px;font-size:11px;color:var(--info,#3b82f6);background:rgba(59,130,246,0.08);padding:2px 6px;border-radius:8px;font-weight:600}
+.phases-counter{font-size:11px;color:var(--muted,#888);text-align:right;margin-top:4px}
+.phase-check-btn .phase-operators{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;margin-left:4px;padding:1px 6px;border-radius:10px;color:#4361ee;background:rgba(67,97,238,0.1)}
+.phase-check-btn.phase-active{border-color:#4361ee;background:rgba(67,97,238,0.08);box-shadow:0 0 0 1px rgba(67,97,238,0.2)}
+.phase-active-dot{display:inline-block;width:6px;height:6px;background:#4361ee;border-radius:50%;animation:pulseDot 1.2s ease-in-out infinite}
+@keyframes pulseDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.7)}}
+.phase-summary{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px}
+.phase-summary.all-done{background:rgba(34,197,94,0.12);color:var(--success)}
+.phase-summary.partial{background:rgba(245,158,11,0.12);color:var(--warning)}
+.phase-summary.none-done{background:rgba(148,163,184,0.12);color:var(--text-muted)}
+
+/* KPI Grid */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi-card{background:var(--bg-card);border-radius:14px;padding:16px;text-align:center;border:1px solid var(--border);transition:transform .15s}
+.kpi-card:hover{transform:translateY(-2px)}
+.kpi-icon{font-size:22px;margin-bottom:4px}
+.kpi-value{font-size:26px;font-weight:800;line-height:1.2}
+.kpi-label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px;margin-top:2px}
+.kpi-brand .kpi-value{color:var(--brand)}
+.kpi-info .kpi-value{color:#3b82f6}
+.kpi-success .kpi-value{color:var(--success)}
+.kpi-warning .kpi-value{color:var(--warning)}
+@media(max-width:768px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+
+/* Alert */
+.alert-bar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:10px;margin-bottom:8px;font-size:13px;font-weight:500;animation:slideIn .3s ease}
+.alert-danger{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);color:#dc2626}
+.alert-warning{background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#d97706}
+.alert-info{background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);color:#2563eb}
+.alert-bar .alert-icon{font-size:18px;flex-shrink:0}
+.alert-bar .alert-text{flex:1}
+@keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+
+/* Auto-refresh */
+.auto-refresh-indicator{display:flex;align-items:center;gap:4px;padding:6px 12px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);border-radius:8px;font-size:11px;font-weight:700;color:var(--success);white-space:nowrap;cursor:pointer;user-select:none}
+.auto-refresh-indicator.paused{background:rgba(148,163,184,0.1);border-color:var(--border);color:var(--text-muted)}
+
+/* Loading / empty */
+.loading,.empty{text-align:center;padding:40px 20px;color:var(--text-muted);font-size:14px}
+
+/* Responsive */
+@media(max-width:768px){
+    .filters{flex-direction:column}
+    .filter-select,.filter-input{width:100%}
+    .crew-table,.assign-table{font-size:12px}
+    .crew-table th,.crew-table td,.assign-table th,.assign-table td{padding:6px 10px}
+}
+</style>
+</head>
+<body>
+
+{% include 'partials/admin_menu.html' %}
+
+<header class="header">
+    <div class="header-left">
+        <button class="menu-btn" onclick="toggleMenu()">&#9776;</button>
+        <h1>&#128202; Monitoraggio</h1>
+    </div>
+    <div class="header-actions">
+        <button style="padding:8px 16px;border:none;border-radius:10px;background:rgba(255,255,255,0.25);color:#fff;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit" onclick="openNewTaskModal()">+ Nuovo Task</button>
+        <button class="header-icon-btn" onclick="loadAll()" title="Ricarica">&#8635;</button>
+        <button class="header-icon-btn" id="themeToggle" title="Tema">&#127763;</button>
+    </div>
+</header>
+
+<div class="container">
+    <!-- KPI Dashboard -->
+    <div class="kpi-grid" id="kpiGrid">
+        <div class="kpi-card kpi-brand"><div class="kpi-icon">&#128101;</div><div class="kpi-value" id="kpiOperatori">-</div><div class="kpi-label">Operatori al lavoro</div></div>
+        <div class="kpi-card kpi-info"><div class="kpi-icon">&#128197;</div><div class="kpi-value" id="kpiProgetti">-</div><div class="kpi-label">Progetti attivi</div></div>
+        <div class="kpi-card kpi-success"><div class="kpi-icon">&#9201;</div><div class="kpi-value" id="kpiOre">-</div><div class="kpi-label">Ore pianificate</div></div>
+        <div class="kpi-card kpi-warning"><div class="kpi-icon">&#128203;</div><div class="kpi-value" id="kpiTask">-</div><div class="kpi-label">Task aperti</div></div>
+    </div>
+
+    <!-- Alert -->
+    <div id="alertsContainer"></div>
+
+    <!-- Filtri -->
+    <div class="filters">
+        <input type="date" id="filterDate" class="filter-input" onchange="loadAll()" />
+        <select id="filterOperatore" class="filter-select" onchange="applyFilters()">
+            <option value="">Tutti gli operatori</option>
+        </select>
+        <select id="filterProgetto" class="filter-select" onchange="applyFilters()">
+            <option value="">Tutti i progetti</option>
+        </select>
+        <div class="auto-refresh-indicator" id="autoRefreshBadge" title="Auto-refresh attivo">&#9889; <span id="autoRefreshCountdown">30</span>s</div>
+    </div>
+
+    <!-- Sezione Progetti -->
+    <div class="section">
+        <div class="section-title">
+            &#128197; Progetti del giorno <span class="count-badge" id="projectCount">0</span>
+        </div>
+        <div id="projectsContainer">
+            <div class="loading">Caricamento pianificazioni...</div>
+        </div>
+    </div>
+
+    <!-- Sezione Task -->
+    <div class="section">
+        <div class="section-title">
+            &#128203; Task assegnati <span class="count-badge" id="taskCount">0</span>
+        </div>
+        <div id="tasksContainer">
+            <div class="loading">Caricamento task...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+let _plannings = [];
+let _tasks = [];
+let _users = [];
+let _userMap = {}; // username -> display_name, display_name -> username
+let _phases = {}; // projectKey -> [{phase_name, phase_order, completed, function_key, ...}]
+let _fpConfig = {}; // function_phases config: { "Montaggio": { phases: [{name, order}], display_name, ... } }
+let _activeTimers = {}; // project_code -> { "func::phase": [username, ...] }
+
+// Theme toggle
+document.getElementById('themeToggle').addEventListener('click', () => {
+    const html = document.documentElement;
+    const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    localStorage.setItem('joblog-theme', next);
+});
+
+// Init
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('filterDate').value = new Date().toISOString().split('T')[0];
+    loadAll();
+    startAutoRefresh();
+});
+
+async function loadAll() {
+    await Promise.all([loadPlannings(), loadTasks(), loadUsers()]);
+    populateFilterOptions();
+    applyFilters();
+}
+
+// --- Load plannings + phase config + phase state ---
+async function loadPlannings() {
+    const date = document.getElementById('filterDate').value;
+    // Carica pianificazioni e config fasi in parallelo
+    try {
+        const [planRes, fpRes, timerRes] = await Promise.all([
+            fetch('/api/admin/rentman-planning/saved?date=' + date),
+            fetch('/api/admin/function-phases'),
+            fetch('/api/production/active-timers')
+        ]);
+        const planData = await planRes.json();
+        _plannings = planData.plannings || planData || [];
+        if (!Array.isArray(_plannings)) _plannings = [];
+        const fpData = await fpRes.json();
+        if (fpData.ok) _fpConfig = fpData.function_phases || {};
+        const timerData = await timerRes.json();
+        _activeTimers = timerData.ok ? (timerData.active_timers || {}) : {};
+    } catch (e) {
+        _plannings = [];
+    }
+    // Carica stato fasi per ogni progetto unico
+    _phases = {};
+    const projectKeys = new Set();
+    _plannings.forEach(p => {
+        const key = p.project_code || p.project_name;
+        if (key) projectKeys.add(key);
+    });
+    const phasePromises = [...projectKeys].map(async pk => {
+        try {
+            const r = await fetch('/api/project-phases?date=' + date + '&project_key=' + encodeURIComponent(pk));
+            const d = await r.json();
+            if (d.ok && d.phases) _phases[pk] = d.phases;
+        } catch(e) {}
+    });
+    await Promise.all(phasePromises);
+}
+
+// Trova le fasi configurate per una funzione (supporta aliases, exact, contains)
+function getPhasesForFunction(functionName) {
+    if (!functionName || !_fpConfig) return null;
+    const fnLower = functionName.toLowerCase().trim();
+    const makeResult = (key, tmpl) => ({
+        function_key: key,
+        display_name: tmpl.display_name || key,
+        phases: (tmpl.phases || []).sort((a, b) => (a.order || 0) - (b.order || 0))
+    });
+    // 0. ALIASES — match esplicito per ricodifica funzioni Rentman
+    for (const [key, tmpl] of Object.entries(_fpConfig)) {
+        if (tmpl.aliases && Array.isArray(tmpl.aliases)) {
+            for (const alias of tmpl.aliases) {
+                if (alias.toLowerCase().trim() === fnLower) return makeResult(key, tmpl);
+            }
+        }
+    }
+    // 1. Exact match sulla chiave
+    for (const [key, tmpl] of Object.entries(_fpConfig)) {
+        if (key.toLowerCase().trim() === fnLower) return makeResult(key, tmpl);
+    }
+    // 2. Contains match (se match_mode è 'contains')
+    for (const [key, tmpl] of Object.entries(_fpConfig)) {
+        const keyLower = key.toLowerCase().trim();
+        const mode = tmpl.match_mode || 'exact';
+        if (mode === 'contains' && (fnLower.includes(keyLower) || keyLower.includes(fnLower))) {
+            return makeResult(key, tmpl);
+        }
+    }
+    // 3. Partial match — startsWith
+    for (const [key, tmpl] of Object.entries(_fpConfig)) {
+        const keyLower = key.toLowerCase().trim();
+        if (fnLower.startsWith(keyLower) || keyLower.startsWith(fnLower)) {
+            return makeResult(key, tmpl);
+        }
+    }
+    return null;
+}
+
+// Operatori attivi su una fase (da active timers, come in pianificazione)
+function getOperatorsOnPhase(projectKey, phaseName, functionKey) {
+    projectKey = String(projectKey || '');
+    let projectTimers = _activeTimers[projectKey];
+    if (!projectTimers) {
+        for (const [key, val] of Object.entries(_activeTimers)) {
+            if (key.toLowerCase() === projectKey.toLowerCase()) {
+                projectTimers = val; break;
+            }
+        }
+        if (!projectTimers) return [];
+    }
+    if (functionKey) {
+        const compoundKey = functionKey + '::' + phaseName;
+        const compoundOps = projectTimers[compoundKey];
+        if (compoundOps && compoundOps.length) return compoundOps;
+        for (const [phKey, phOps] of Object.entries(projectTimers)) {
+            if (phKey.toLowerCase() === compoundKey.toLowerCase()) return phOps;
+        }
+    }
+    if (!functionKey) return projectTimers[phaseName] || [];
+    const simpleOps = projectTimers[phaseName];
+    if (simpleOps && simpleOps.length) return simpleOps;
+    const phLower = phaseName.toLowerCase();
+    for (const [phKey, phOps] of Object.entries(projectTimers)) {
+        if (phKey.toLowerCase() === phLower) return phOps;
+    }
+    return [];
+}
+
+// --- Load tasks ---
+async function loadTasks() {
+    try {
+        const res = await fetch('/api/admin/tasks');
+        const data = await res.json();
+        _tasks = (data.tasks || []).filter(t => t.status === 'attivo');
+    } catch (e) {
+        _tasks = [];
+    }
+}
+
+// --- Load users for filter (solo gruppi produzione) ---
+async function loadUsers() {
+    if (_users.length) return;
+    try {
+        const [ur, gr] = await Promise.all([
+            fetch('/api/admin/users'),
+            fetch('/api/admin/groups')
+        ]);
+        const ud = await ur.json(), gd = await gr.json();
+        // Trova gruppi produzione
+        const prodGroupIds = new Set((gd.groups || []).filter(g => g.is_production && g.is_active !== false).map(g => g.id));
+        // Filtra utenti attivi in gruppi produzione
+        _users = (ud.users || []).filter(u => u.is_active !== 0 && u.group_id && prodGroupIds.has(u.group_id));
+        // Build bidirectional map for operator filtering
+        _userMap = {};
+        _users.forEach(u => {
+            const dn = (u.display_name || u.username).toLowerCase();
+            const un = u.username.toLowerCase();
+            _userMap[dn] = un;
+            _userMap[un] = dn;
+        });
+    } catch (e) { _users = []; }
+}
+
+function populateFilterOptions() {
+    // Operatori: solo utenti gruppo produzione
+    const opSelect = document.getElementById('filterOperatore');
+    const currentOp = opSelect.value;
+    const operators = new Set();
+    // Aggiungi solo operatori produzione (da _users già filtrato)
+    _users.forEach(u => operators.add(u.display_name || u.username));
+    const sorted = [...operators].sort();
+    opSelect.innerHTML = '<option value="">Tutti gli operatori</option>' +
+        sorted.map(o => '<option value="' + esc(o) + '">' + esc(o) + '</option>').join('');
+    opSelect.value = currentOp;
+
+    // Progetti: da plannings
+    const prSelect = document.getElementById('filterProgetto');
+    const currentPr = prSelect.value;
+    const projects = new Map();
+    _plannings.forEach(p => {
+        if (p.project_name && !projects.has(p.project_name)) {
+            projects.set(p.project_name, p.project_code || '');
+        }
+    });
+    prSelect.innerHTML = '<option value="">Tutti i progetti</option>' +
+        [...projects.entries()].sort((a,b) => a[0].localeCompare(b[0]))
+        .map(([name, code]) => '<option value="' + esc(name) + '">' + esc(name) + (code ? ' (' + esc(code) + ')' : '') + '</option>').join('');
+    prSelect.value = currentPr;
+}
+
+function applyFilters() {
+    const opFilter = document.getElementById('filterOperatore').value.toLowerCase();
+    const prFilter = document.getElementById('filterProgetto').value;
+
+    renderProjects(opFilter, prFilter);
+    renderTasks(opFilter);
+    updateKPIs();
+    updateAlerts();
+}
+
+// === KPI ===
+function updateKPIs() {
+    // Operatori unici
+    const ops = new Set();
+    _plannings.forEach(p => { if (p.crew_name) ops.add(p.crew_name); });
+    document.getElementById('kpiOperatori').textContent = ops.size;
+
+    // Progetti unici
+    const projs = new Set();
+    _plannings.forEach(p => { if (p.project_name) projs.add(p.project_name); });
+    document.getElementById('kpiProgetti').textContent = projs.size;
+
+    // Ore totali
+    const hours = _plannings.reduce((s, p) => s + (parseFloat(p.hours_planned) || 0), 0);
+    document.getElementById('kpiOre').textContent = fmtHM(hours);
+
+    // Task aperti (non annullati)
+    const openTasks = _tasks.filter(t => t.status !== 'annullato' && t.status !== 'completato');
+    document.getElementById('kpiTask').textContent = openTasks.length;
+}
+
+// === ALERT ===
+function updateAlerts() {
+    const alerts = [];
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    // 1. Operatori non inviati
+    const notSent = _plannings.filter(p => !p.sent_to_webservice);
+    if (notSent.length > 0) {
+        alerts.push({ type: 'warning', icon: '&#9888;&#65039;', text: notSent.length + ' pianificazion' + (notSent.length === 1 ? 'e non inviata' : 'i non inviate') + ' al webservice' });
+    }
+
+    // 2. Task scaduti
+    const expired = _tasks.filter(t => t.status !== 'annullato' && t.scadenza && new Date(t.scadenza) < today);
+    if (expired.length > 0) {
+        alerts.push({ type: 'danger', icon: '&#128680;', text: expired.length + ' task scadut' + (expired.length === 1 ? 'o' : 'i') + '!' });
+    }
+
+    // 3. Task in scadenza oggi
+    const dueToday = _tasks.filter(t => t.status !== 'annullato' && t.scadenza && Math.ceil((new Date(t.scadenza) - today) / 86400000) === 0);
+    if (dueToday.length > 0) {
+        alerts.push({ type: 'warning', icon: '&#9200;', text: dueToday.length + ' task in scadenza oggi' });
+    }
+
+    // 4. Fasi completamento totale — conta dal template config, non solo dal DB
+    let totalPhases = 0, donePhases = 0;
+    // Per ogni progetto nei plannings, per ogni funzione, conta le fasi dal template _fpConfig
+    const projectFunctions = new Map(); // "projKey::funcName" -> true (evita duplicati)
+    _plannings.forEach(p => {
+        const projKey = p.project_code || p.project_name;
+        if (!projKey) return;
+        const funcName = p.function_name || p.function;
+        if (!funcName) return;
+        const mapKey = projKey + '::' + funcName;
+        if (projectFunctions.has(mapKey)) return;
+        projectFunctions.set(mapKey, true);
+        const cfg = getPhasesForFunction(funcName);
+        if (cfg && cfg.phases && cfg.phases.length) {
+            totalPhases += cfg.phases.length;
+            const phaseState = _phases[projKey] || [];
+            cfg.phases.forEach(ph => {
+                const stateRec = phaseState.find(s => s.function_key === cfg.function_key && s.phase_name === ph.name);
+                if (stateRec && stateRec.completed) donePhases++;
+            });
+        }
+    });
+    if (totalPhases > 0 && donePhases === totalPhases) {
+        alerts.push({ type: 'info', icon: '&#127942;', text: 'Tutte le ' + totalPhases + ' fasi completate!' });
+    } else if (totalPhases > 0 && donePhases > 0) {
+        alerts.push({ type: 'info', icon: '&#9881;&#65039;', text: donePhases + '/' + totalPhases + ' fasi completate' });
+    }
+
+    const container = document.getElementById('alertsContainer');
+    container.innerHTML = alerts.map(a =>
+        '<div class="alert-bar alert-' + a.type + '"><span class="alert-icon">' + a.icon + '</span><span class="alert-text">' + a.text + '</span></div>'
+    ).join('');
+}
+
+// === AUTO-REFRESH ===
+let _autoRefreshInterval = null;
+let _autoRefreshCountdown = 30;
+let _autoRefreshPaused = false;
+
+function startAutoRefresh() {
+    _autoRefreshCountdown = 30;
+    if (_autoRefreshInterval) clearInterval(_autoRefreshInterval);
+    _autoRefreshInterval = setInterval(() => {
+        if (_autoRefreshPaused) return;
+        _autoRefreshCountdown--;
+        document.getElementById('autoRefreshCountdown').textContent = _autoRefreshCountdown;
+        if (_autoRefreshCountdown <= 0) {
+            _autoRefreshCountdown = 30;
+            loadAll();
+        }
+    }, 1000);
+}
+
+document.getElementById('autoRefreshBadge').addEventListener('click', function() {
+    _autoRefreshPaused = !_autoRefreshPaused;
+    this.classList.toggle('paused', _autoRefreshPaused);
+    this.title = _autoRefreshPaused ? 'Auto-refresh in pausa — clicca per riattivare' : 'Auto-refresh attivo — clicca per mettere in pausa';
+});
+
+// === AZIONI TASK ===
+async function monDeleteTask(taskId) {
+    if (!confirm('Vuoi annullare questo task?')) return;
+    try {
+        const res = await fetch('/api/admin/tasks/' + taskId, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) loadAll();
+        else alert(data.error || 'Errore');
+    } catch(e) { alert('Errore di connessione'); }
+}
+
+// --- Render Progetti ---
+function renderProjects(opFilter, prFilter) {
+    const container = document.getElementById('projectsContainer');
+
+    // Raggruppa per progetto
+    let filtered = _plannings;
+    if (prFilter) filtered = filtered.filter(p => p.project_name === prFilter);
+    if (opFilter) filtered = filtered.filter(p => (p.crew_name || '').toLowerCase().includes(opFilter));
+
+    const byProject = {};
+    filtered.forEach(p => {
+        const key = p.project_name || 'Senza progetto';
+        if (!byProject[key]) byProject[key] = { code: p.project_code || '', manager: p.project_manager_name || '', plannings: [] };
+        byProject[key].plannings.push(p);
+    });
+
+    const projectNames = Object.keys(byProject).sort();
+    document.getElementById('projectCount').textContent = projectNames.length;
+
+    if (!projectNames.length) {
+        container.innerHTML = '<div class="empty">Nessuna pianificazione per questa data</div>';
+        return;
+    }
+
+    container.innerHTML = projectNames.map(name => {
+        const proj = byProject[name];
+        const crewCount = proj.plannings.length;
+        const totalHours = proj.plannings.reduce((s, p) => s + (parseFloat(p.hours_planned) || 0), 0);
+        const sentCount = proj.plannings.filter(p => p.sent_to_webservice).length;
+        const allSent = sentCount === crewCount;
+
+        // Fasi del progetto: combina template config + stato completamento
+        const projectKey = proj.code || name;
+        const phaseState = _phases[projectKey] || []; // stato salvato in DB
+
+        // Raggruppa per funzione
+        const byFunction = {};
+        proj.plannings.forEach(p => {
+            const fn = p.function_name || 'Generale';
+            if (!byFunction[fn]) byFunction[fn] = [];
+            byFunction[fn].push(p);
+        });
+
+        // Calcola totale fasi per il progetto (da template config)
+        let totalProjectPhases = 0, completedProjectPhases = 0;
+        Object.keys(byFunction).forEach(funcName => {
+            const cfg = getPhasesForFunction(funcName);
+            if (cfg && cfg.phases.length) {
+                cfg.phases.forEach(ph => {
+                    totalProjectPhases++;
+                    const stateRec = phaseState.find(s => s.function_key === cfg.function_key && s.phase_name === ph.name);
+                    if (stateRec && stateRec.completed) completedProjectPhases++;
+                });
+            }
+        });
+
+        // Badge fasi per header
+        let phaseBadge = '';
+        if (totalProjectPhases > 0) {
+            const cls = completedProjectPhases === totalProjectPhases ? 'phase-summary all-done' :
+                        completedProjectPhases > 0 ? 'phase-summary partial' : 'phase-summary none-done';
+            phaseBadge = '<span class="' + cls + '">&#9881; ' + completedProjectPhases + '/' + totalProjectPhases + ' fasi</span>';
+        }
+
+        const id = 'proj_' + name.replace(/\W/g, '_');
+        const functionHtml = Object.keys(byFunction).sort().map(funcName => {
+            const crew = byFunction[funcName];
+
+            // Fasi da template config per questa funzione
+            const cfg = getPhasesForFunction(funcName);
+            let phaseBarHtml = '';
+            let funcDone = 0, funcTotal = 0;
+
+            if (cfg && cfg.phases.length) {
+                funcTotal = cfg.phases.length;
+                const projectKey = proj.code || name;
+
+                // Build fasi checklist (stile pianificazione)
+                let checklistHtml = '';
+                cfg.phases.forEach(ph => {
+                    const stateRec = phaseState.find(s => s.function_key === cfg.function_key && s.phase_name === ph.name);
+                    const isDone = stateRec && stateRec.completed;
+                    if (isDone) funcDone++;
+                    const doneBy = isDone && stateRec.completed_by ? ' (' + esc(stateRec.completed_by) + ')' : '';
+                    const operators = getOperatorsOnPhase(projectKey, ph.name, cfg.function_key);
+                    const opCount = operators.length;
+                    const isActive = opCount > 0;
+                    const activeClass = isActive ? ' phase-active' : '';
+                    const opBadge = isActive
+                        ? '<span class="phase-operators"><span class="phase-active-dot"></span> ' + opCount + '</span>'
+                        : '';
+                    const titleText = isDone
+                        ? 'Completata' + doneBy
+                        : (isActive ? 'In corso: ' + operators.join(', ') : '');
+                    checklistHtml += '<span class="phase-check-btn ' + (isDone ? 'completed' : '') + activeClass + '"' +
+                        ' title="' + esc(titleText) + '">' +
+                        '<span class="phase-check-icon">' + (isDone ? '✅' : (isActive ? '🔵' : '⬜')) + '</span>' +
+                        '<span class="phase-check-label">' + esc(ph.name) + '</span>' +
+                        (isActive && !isDone ? '<span class="phase-in-progress">In corso</span>' : '') +
+                        opBadge +
+                        '</span>';
+                });
+
+                const pct = funcTotal > 0 ? Math.round((funcDone / funcTotal) * 100) : 0;
+                phaseBarHtml = '<div class="project-phases-container">' +
+                    '<div class="phases-progress-bar"><div class="phases-progress-fill" style="width:' + pct + '%"></div></div>' +
+                    '<div class="phases-checklist">' + checklistHtml + '</div>' +
+                    '<div class="phases-counter">' + funcDone + '/' + funcTotal + '</div>' +
+                    '</div>';
+            }
+
+            // Tabella operatori
+            const crewRows = crew.map(c => {
+                const start = c.plan_start ? new Date(c.plan_start).toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'}) : '-';
+                const end = c.plan_end ? new Date(c.plan_end).toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'}) : '-';
+                const hours = parseFloat(c.hours_planned) || 0;
+                return '<tr>' +
+                    '<td><strong>' + esc(c.crew_name || '-') + '</strong>' + (c.is_leader ? ' <span title="Leader" style="color:var(--warning)">&#9733;</span>' : '') + '</td>' +
+                    '<td>' + start + ' - ' + end + '</td>' +
+                    '<td>' + fmtHM(hours) + '</td>' +
+                    '<td style="font-size:12px;color:var(--text-muted)">' + esc(c.location_name || '-') + '</td>' +
+                    '<td><span class="sent-badge ' + (c.sent_to_webservice ? 'sent-yes' : 'sent-no') + '">' +
+                    (c.sent_to_webservice ? '&#9989; Si' : '&#9898; No') + '</span></td>' +
+                    '</tr>';
+            }).join('');
+
+            const displayName = cfg ? (cfg.display_name || funcName) : funcName;
+            const phaseSummary = funcTotal > 0 ? '<span style="font-size:11px;font-weight:500;color:var(--text-muted);text-transform:none">' +
+                funcDone + '/' + funcTotal + ' fasi completate</span>' : '';
+            const crewId = 'crew_' + id + '_' + funcName.replace(/\W/g, '_');
+
+            return '<div style="margin-bottom:12px">' +
+                '<div style="font-size:13px;font-weight:700;color:var(--brand);padding:8px 14px;text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)">' +
+                '&#9881; ' + esc(displayName) + phaseSummary +
+                '</div>' +
+                phaseBarHtml +
+                '<div style="padding:4px 14px 8px"><span onclick="toggleExpand(\'' + crewId + '\')" style="cursor:pointer;font-size:11px;color:var(--brand);font-weight:600;display:inline-flex;align-items:center;gap:4px">&#128101; ' + crew.length + ' operatori &#9650;</span></div>' +
+                '<div class="expandable" id="' + crewId + '">' +
+                '<table class="crew-table"><thead><tr>' +
+                '<th>Operatore</th><th>Orario</th><th>Ore</th><th>Location</th><th>Inviato</th>' +
+                '</tr></thead><tbody>' + crewRows + '</tbody></table></div></div>';
+        }).join('');
+
+        return '<div class="project-card">' +
+            '<div class="project-card-header" onclick="toggleExpand(\'' + id + '\')">' +
+            '<div class="project-name">' + esc(name) + (proj.code ? ' <span style="color:var(--text-muted);font-weight:500;font-size:13px">(' + esc(proj.code) + ')</span>' : '') + '</div>' +
+            '<div class="project-badges">' +
+            (proj.manager ? '<span class="badge badge-muted">&#128100; ' + esc(proj.manager) + '</span>' : '') +
+            '<span class="badge badge-info">&#128101; ' + crewCount + '</span>' +
+            '<span class="badge badge-info">&#9201; ' + fmtHM(totalHours) + '</span>' +
+            '<span class="badge ' + (allSent ? 'badge-success' : 'badge-warning') + '">' +
+            (allSent ? '&#9989; Tutti inviati' : '&#9888;&#65039; ' + sentCount + '/' + crewCount + ' inviati') + '</span>' +
+            phaseBadge +
+            '</div></div>' +
+            '<div class="expandable" id="' + id + '">' +
+            '<div style="padding:0 4px 14px">' + functionHtml + '</div>' +
+            '</div></div>';
+    }).join('');
+}
+
+// --- Render Task ---
+function renderTasks(opFilter) {
+    const container = document.getElementById('tasksContainer');
+
+    let filtered = _tasks;
+    if (opFilter) {
+        // Match by username or display_name via _userMap
+        const mappedUsername = _userMap[opFilter] || opFilter;
+        filtered = filtered.filter(t =>
+            (t.assignments || []).some(a => {
+                const un = a.username.toLowerCase();
+                return un === opFilter || un === mappedUsername || un.includes(opFilter) || opFilter.includes(un);
+            })
+        );
+    }
+
+    document.getElementById('taskCount').textContent = filtered.length;
+
+    if (!filtered.length) {
+        container.innerHTML = '<div class="empty">Nessun task attivo</div>';
+        return;
+    }
+
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    container.innerHTML = filtered.map(t => {
+        const assigns = t.assignments || [];
+        const priCol = t.priorita === 'alta' ? 'badge-danger' : t.priorita === 'bassa' ? 'badge-success' : 'badge-warning';
+
+        // Scadenza
+        let scadHtml = '';
+        if (t.scadenza) {
+            const scad = new Date(t.scadenza);
+            const diff = Math.ceil((scad - today) / 86400000);
+            const scadStr = scad.toLocaleDateString('it-IT');
+            if (diff < 0) scadHtml = '<span class="badge badge-danger">&#9888;&#65039; SCADUTO ' + scadStr + '</span>';
+            else if (diff === 0) scadHtml = '<span class="badge badge-warning">&#9888;&#65039; OGGI ' + scadStr + '</span>';
+            else if (diff <= 2) scadHtml = '<span class="badge badge-warning">&#128197; ' + scadStr + ' (tra ' + diff + 'g)</span>';
+            else scadHtml = '<span class="badge badge-muted">&#128197; ' + scadStr + '</span>';
+        }
+
+        // Tabella assegnazioni
+        const assignRows = assigns.map(a => {
+            // Notifica
+            const notifHtml = a.notified
+                ? '<span title="Notifica inviata" style="color:var(--success)">&#128276;</span>'
+                : '<span title="Non notificato" style="color:var(--text-muted)">&#9203;</span>';
+            // Lettura
+            let readHtml;
+            if (a.read_at) {
+                readHtml = '<span title="Letto: ' + new Date(a.read_at).toLocaleString('it-IT') + '" style="color:var(--success)">&#128065; ' + new Date(a.read_at).toLocaleString('it-IT', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}) + '</span>';
+            } else {
+                readHtml = '<span title="Non ancora letto" style="color:var(--text-muted)">&#128065; -</span>';
+            }
+            // Stato
+            const statusClass = a.status;
+            let statusHtml = '<span class="status-dot ' + statusClass + '"></span>' + esc(a.status);
+            // Dettaglio timestamp
+            let detailHtml = '-';
+            if (a.status === 'in_corso' && a.started_ts) {
+                detailHtml = '&#9654; ' + new Date(a.started_ts).toLocaleString('it-IT');
+            } else if (a.status === 'completato' && a.completed_ts) {
+                detailHtml = '&#9989; ' + new Date(a.completed_ts).toLocaleString('it-IT');
+            } else if (a.status === 'rifiutato') {
+                detailHtml = '&#10060; ' + (a.completed_ts ? new Date(a.completed_ts).toLocaleString('it-IT') : '') +
+                    (a.rifiuto_motivo ? '<br><em style="color:var(--danger);font-size:11px">' + esc(a.rifiuto_motivo) + '</em>' : '');
+            }
+
+            return '<tr>' +
+                '<td><strong>' + esc(a.username) + '</strong></td>' +
+                '<td style="text-align:center">' + notifHtml + '</td>' +
+                '<td>' + readHtml + '</td>' +
+                '<td>' + statusHtml + '</td>' +
+                '<td style="font-size:12px">' + detailHtml + '</td>' +
+                '</tr>';
+        }).join('');
+
+        // Conteggi stato assegnazioni
+        const aNew = assigns.filter(a => a.status === 'nuovo').length;
+        const aInCorso = assigns.filter(a => a.status === 'in_corso').length;
+        const aDone = assigns.filter(a => a.status === 'completato').length;
+        const aTotal = assigns.length;
+
+        return '<div class="task-card">' +
+            '<div class="task-card-header">' +
+            '<div class="task-title">' + esc(t.oggetto) + '</div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+            '<span class="badge ' + priCol + '">' + esc(t.priorita) + '</span>' +
+            scadHtml +
+            (aDone === aTotal && aTotal > 0 ? '<span class="badge badge-success">&#9989; Completato</span>' :
+             aInCorso > 0 ? '<span class="badge badge-info">&#9654; ' + aInCorso + '/' + aTotal + ' in corso</span>' :
+             '<span class="badge badge-muted">' + aNew + '/' + aTotal + ' nuovi</span>') +
+            '<button onclick="event.stopPropagation();monDeleteTask(' + t.id + ')" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text-muted);padding:2px 4px" title="Annulla task">&#128465;</button>' +
+            '</div></div>' +
+            '<div class="task-meta">' +
+            (t.progetto ? '<span>&#128194; ' + esc(t.progetto) + '</span>' : '') +
+            (t.location ? '<span>&#128205; ' + esc(t.location) + '</span>' : '') +
+            (t.descrizione ? '<span>' + esc(t.descrizione) + '</span>' : '') +
+            ((t.attachments && t.attachments.length) ? '<span>&#128206; ' + t.attachments.length + ' allegat' + (t.attachments.length === 1 ? 'o' : 'i') + '</span>' : '') +
+            '</div>' +
+            ((t.attachments && t.attachments.length) ?
+                '<div style="padding:0 18px 10px;display:flex;flex-wrap:wrap;gap:6px">' +
+                t.attachments.map(function(att) {
+                    return '<a href="' + esc(att.url) + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-soft);border-radius:8px;font-size:11px;color:var(--brand);text-decoration:none;border:1px solid var(--border)">&#128206; ' + esc(att.original_name) + '</a>';
+                }).join('') + '</div>' : '') +
+            '<div style="padding:0 4px 14px">' +
+            '<table class="assign-table"><thead><tr>' +
+            '<th>Operatore</th><th style="text-align:center">Notifica</th><th>Lettura</th><th>Stato</th><th>Dettaglio</th>' +
+            '</tr></thead><tbody>' + assignRows + '</tbody></table>' +
+            '</div></div>';
+    }).join('');
+}
+
+// --- Helpers ---
+function toggleExpand(id) {
+    document.getElementById(id).classList.toggle('collapsed');
+}
+
+function esc(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
+}
+
+// Formatta ore decimali in HH:MM
+function fmtHM(decimalHours) {
+    const h = Math.floor(decimalHours);
+    const m = Math.round((decimalHours - h) * 60);
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+/* ===== Nuovo Task Modal ===== */
+let _mtProdUsers = []; // Solo operatori del gruppo produzione
+let _mtProdGroupId = null;
+let _mtLocations = []; // Location disponibili
+let _mtLoaded = false;
+let _mtSearch = '';
+let _mtSelected = new Set();
+
+async function loadMtProdUsers() {
+    if (_mtLoaded) return;
+    try {
+        const [ur, gr, lr] = await Promise.all([
+            fetch('/api/admin/users'),
+            fetch('/api/admin/groups'),
+            fetch('/api/admin/locations')
+        ]);
+        const ud = await ur.json(), gd = await gr.json(), ld = await lr.json();
+        // Trova gruppi produzione
+        const prodGroupIds = new Set((gd.groups || []).filter(g => g.is_production && g.is_active !== false).map(g => g.id));
+        if (prodGroupIds.size > 0) _mtProdGroupId = [...prodGroupIds][0];
+        // Filtra utenti attivi in gruppi produzione
+        _mtProdUsers = (ud.users || []).filter(u => u.is_active !== 0 && u.group_id && prodGroupIds.has(u.group_id))
+            .sort((a, b) => (a.display_name || a.username).localeCompare(b.display_name || b.username));
+        // Location
+        _mtLocations = (ld.locations || []).sort((a, b) => a.name.localeCompare(b.name));
+        _mtLoaded = true;
+    } catch(e) {}
+}
+
+async function openNewTaskModal() {
+    await loadMtProdUsers();
+    document.getElementById('mtOggetto').value = '';
+    document.getElementById('mtDescrizione').value = '';
+    document.getElementById('mtProgetto').value = '';
+    document.getElementById('mtScadenza').value = '';
+    document.getElementById('mtPriorita').value = 'media';
+    document.getElementById('mtLocInput').value = '';
+    document.getElementById('mtLocDropdown').classList.remove('open');
+    document.getElementById('mtFiles').value = '';
+    document.getElementById('mtSearchUser').value = '';
+    _mtSearch = '';
+    _mtSelected = new Set();
+    mtRenderUsers();
+    mtUpdateCounter();
+    document.getElementById('mtOverlay').classList.add('open');
+}
+
+function closeNewTaskModal() {
+    document.getElementById('mtOverlay').classList.remove('open');
+}
+
+function mtRenderUsers() {
+    const pane = document.getElementById('mtUsersPane');
+    const q = _mtSearch.toLowerCase().trim();
+    const filtered = q ? _mtProdUsers.filter(u =>
+        (u.display_name || '').toLowerCase().includes(q) || u.username.toLowerCase().includes(q)
+    ) : _mtProdUsers;
+
+    pane.innerHTML = filtered.map(u => {
+        const checked = _mtSelected.has(u.username);
+        const name = esc(u.display_name || u.username);
+        const initials = (u.display_name || u.username).split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+        return '<label class="mt-user-item' + (checked ? ' selected' : '') + '">' +
+            '<input type="checkbox" value="' + esc(u.username) + '"' + (checked ? ' checked' : '') +
+            ' onchange="mtToggleUser(this)" style="display:none">' +
+            '<span class="mt-user-avatar">' + initials + '</span>' +
+            '<span class="mt-user-name">' + name + '</span>' +
+            '<span class="mt-user-check">' + (checked ? '✅' : '') + '</span>' +
+            '</label>';
+    }).join('');
+
+    if (!filtered.length && q) {
+        pane.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">Nessun operatore trovato</div>';
+    }
+}
+
+function mtToggleUser(cb) {
+    if (cb.checked) _mtSelected.add(cb.value);
+    else _mtSelected.delete(cb.value);
+    mtRenderUsers();
+    mtUpdateCounter();
+}
+
+function mtSelectAll() {
+    const q = _mtSearch.toLowerCase().trim();
+    const targets = q ? _mtProdUsers.filter(u =>
+        (u.display_name || '').toLowerCase().includes(q) || u.username.toLowerCase().includes(q)
+    ) : _mtProdUsers;
+    const allSelected = targets.every(u => _mtSelected.has(u.username));
+    if (allSelected) {
+        targets.forEach(u => _mtSelected.delete(u.username));
+    } else {
+        targets.forEach(u => _mtSelected.add(u.username));
+    }
+    mtRenderUsers();
+    mtUpdateCounter();
+}
+
+function mtClearSelection() {
+    _mtSelected.clear();
+    mtRenderUsers();
+    mtUpdateCounter();
+}
+
+function mtUpdateCounter() {
+    const cnt = document.getElementById('mtSelCount');
+    const n = _mtSelected.size;
+    const total = _mtProdUsers.length;
+    if (n === 0) {
+        cnt.textContent = 'Nessuno selezionato';
+        cnt.style.color = 'var(--text-muted)';
+    } else if (n === total) {
+        cnt.textContent = 'Tutti selezionati (' + n + ')';
+        cnt.style.color = 'var(--success)';
+    } else {
+        cnt.textContent = n + ' di ' + total + ' selezionati';
+        cnt.style.color = 'var(--brand)';
+    }
+}
+
+function mtOnSearch() {
+    _mtSearch = document.getElementById('mtSearchUser').value;
+    mtRenderUsers();
+}
+
+// --- Location autocomplete + aggiunta nuova ---
+let _mtLocAdding = false;
+
+function mtLocSearch() {
+    if (_mtLocAdding) return;
+    var q = document.getElementById('mtLocInput').value.toLowerCase().trim();
+    var dd = document.getElementById('mtLocDropdown');
+    if (!q) { dd.classList.remove('open'); return; }
+    var filtered = _mtLocations.filter(l => l.name.toLowerCase().includes(q) || (l.address && l.address.toLowerCase().includes(q)));
+    var html = filtered.slice(0, 8).map(l => {
+        var mapLink = (l.has_cache && l.latitude && l.longitude)
+            ? ' <a href="https://www.google.com/maps?q=' + l.latitude + ',' + l.longitude + '" target="_blank" onclick="event.stopPropagation()" class="mt-loc-map-link">🗺️ Mappa</a>'
+            : '';
+        return '<div class="mt-loc-item" onclick="mtLocPick(\'' + esc(l.name).replace(/'/g, "\\'") + '\')">' +
+            '<span class="mt-loc-name">' + (l.has_cache ? '📍' : '📌') + ' ' + esc(l.name) + mapLink + '</span>' +
+            (l.address ? '<span class="mt-loc-addr">' + esc(l.address) + '</span>' : '') +
+            '</div>';
+    }).join('');
+    html += '<div class="mt-loc-item mt-loc-add" onclick="mtLocShowAdd()">' +
+        '<span class="mt-loc-name">➕ Aggiungi "<strong>' + esc(document.getElementById('mtLocInput').value.trim()) + '</strong>"</span>' +
+        '<span class="mt-loc-addr">Crea nuova location con coordinate GPS</span></div>';
+    dd.innerHTML = html;
+    dd.classList.add('open');
+}
+
+function mtLocPick(name) {
+    document.getElementById('mtLocInput').value = name;
+    var dd = document.getElementById('mtLocDropdown');
+    dd.classList.remove('open', 'adding');
+    _mtLocAdding = false;
+}
+
+function mtLocShowAdd() {
+    _mtLocAdding = true;
+    var name = document.getElementById('mtLocInput').value.trim();
+    var dd = document.getElementById('mtLocDropdown');
+    dd.classList.add('adding');
+    dd.innerHTML =
+        '<div style="padding:14px">' +
+        '<div style="font-size:13px;font-weight:700;margin-bottom:10px">➕ Nuova Location</div>' +
+        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Nome</div>' +
+        '<input type="text" id="mtNewLocName" value="' + esc(name) + '" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);margin-bottom:10px;box-sizing:border-box" />' +
+        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Indirizzo</div>' +
+        '<input type="text" id="mtNewLocAddr" placeholder="Via, Citta, CAP..." style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);margin-bottom:10px;box-sizing:border-box" />' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+        '<div style="flex:1"><div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Lat</div>' +
+        '<input type="number" step="any" id="mtNewLocLat" placeholder="41.xxx" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);box-sizing:border-box" /></div>' +
+        '<div style="flex:1"><div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Lon</div>' +
+        '<input type="number" step="any" id="mtNewLocLon" placeholder="16.xxx" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);box-sizing:border-box" /></div>' +
+        '<div style="width:90px"><div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Raggio (m)</div>' +
+        '<input type="number" id="mtNewLocRadius" value="300" min="50" max="5000" step="50" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);box-sizing:border-box" /></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<button onclick="mtLocGeolocate()" class="mt-loc-geo-btn">📡 Usa GPS attuale</button>' +
+        '<button onclick="mtLocGeocode()" class="mt-loc-geo-btn">🔍 Cerca da indirizzo</button>' +
+        '</div>' +
+        '<div id="mtNewLocStatus" style="font-size:11px;color:var(--text-muted);text-align:center;margin-top:8px;min-height:16px"></div>' +
+        '<a id="mtNewLocMapLink" href="#" target="_blank" style="display:none;margin-top:6px;text-align:center;font-size:12px;font-weight:600;color:var(--brand);text-decoration:none;padding:8px;border:1px solid var(--brand);border-radius:8px;background:rgba(67,97,238,0.06)" onclick="event.stopPropagation()">🗺️ Apri su Google Maps</a>' +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+        '<button onclick="mtLocCancelAdd()" class="mt-btn mt-btn-secondary" style="flex:1;padding:10px">Annulla</button>' +
+        '<button onclick="mtLocSaveNew()" class="mt-btn mt-btn-primary" style="flex:1;padding:10px">💾 Salva Location</button>' +
+        '</div></div>';
+    dd.classList.add('open');
+}
+
+function mtLocUpdateMapLink() {
+    var lat = parseFloat(document.getElementById('mtNewLocLat').value);
+    var lon = parseFloat(document.getElementById('mtNewLocLon').value);
+    var link = document.getElementById('mtNewLocMapLink');
+    if (!isNaN(lat) && !isNaN(lon)) {
+        link.href = 'https://www.google.com/maps?q=' + lat + ',' + lon;
+        link.style.display = 'block';
+    } else {
+        link.style.display = 'none';
+    }
+}
+
+function mtLocCancelAdd() {
+    _mtLocAdding = false;
+    var dd = document.getElementById('mtLocDropdown');
+    dd.classList.remove('open', 'adding');
+}
+
+function mtLocGeolocate() {
+    var status = document.getElementById('mtNewLocStatus');
+    if (!navigator.geolocation) { status.textContent = '❌ Geolocalizzazione non supportata'; return; }
+    status.textContent = '📡 Rilevamento posizione...';
+    navigator.geolocation.getCurrentPosition(function(pos) {
+        document.getElementById('mtNewLocLat').value = pos.coords.latitude.toFixed(6);
+        document.getElementById('mtNewLocLon').value = pos.coords.longitude.toFixed(6);
+        status.innerHTML = '✅ Coordinate: ' + pos.coords.latitude.toFixed(4) + ', ' + pos.coords.longitude.toFixed(4);
+        mtLocUpdateMapLink();
+    }, function(err) {
+        status.textContent = '❌ ' + (err.code === 1 ? 'Permesso negato' : err.code === 2 ? 'Non disponibile' : 'Timeout');
+    }, { enableHighAccuracy: true, timeout: 10000 });
+}
+
+async function mtLocGeocode() {
+    var addr = document.getElementById('mtNewLocAddr').value.trim();
+    if (!addr) { document.getElementById('mtNewLocStatus').textContent = '⚠️ Inserisci un indirizzo prima'; return; }
+    var status = document.getElementById('mtNewLocStatus');
+    status.textContent = '🔍 Geocodifica in corso...';
+    try {
+        var res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(addr));
+        var data = await res.json();
+        if (data.length > 0) {
+            document.getElementById('mtNewLocLat').value = parseFloat(data[0].lat).toFixed(6);
+            document.getElementById('mtNewLocLon').value = parseFloat(data[0].lon).toFixed(6);
+            status.innerHTML = '✅ Trovato: ' + parseFloat(data[0].lat).toFixed(4) + ', ' + parseFloat(data[0].lon).toFixed(4);
+            mtLocUpdateMapLink();
+        } else {
+            status.textContent = '❌ Indirizzo non trovato, prova con piu dettagli';
+        }
+    } catch(e) {
+        status.textContent = '❌ Errore di connessione';
+    }
+}
+
+async function mtLocSaveNew() {
+    var name = document.getElementById('mtNewLocName').value.trim();
+    var addr = document.getElementById('mtNewLocAddr').value.trim();
+    var lat = parseFloat(document.getElementById('mtNewLocLat').value);
+    var lon = parseFloat(document.getElementById('mtNewLocLon').value);
+    var radius = parseInt(document.getElementById('mtNewLocRadius').value) || 300;
+    var status = document.getElementById('mtNewLocStatus');
+    if (!name) { status.textContent = '⚠️ Nome obbligatorio'; return; }
+    if (isNaN(lat) || isNaN(lon)) { status.textContent = '⚠️ Coordinate obbligatorie — usa GPS o cerca da indirizzo'; return; }
+    if (radius < 50) radius = 50;
+    if (radius > 5000) radius = 5000;
+    status.textContent = '💾 Salvataggio...';
+    try {
+        var res = await fetch('/api/admin/locations/custom', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name, latitude: lat, longitude: lon, radius_meters: radius, address: addr })
+        });
+        var data = await res.json();
+        if (data.ok) {
+            _mtLocations.push({ name: name, address: addr, has_cache: true, latitude: lat, longitude: lon, is_custom: true });
+            _mtLocations.sort((a, b) => a.name.localeCompare(b.name));
+            mtLocPick(name);
+        } else {
+            status.textContent = '❌ ' + (data.error || 'Errore');
+        }
+    } catch(e) {
+        status.textContent = '❌ Errore di connessione';
+    }
+}
+
+document.addEventListener('click', function(e) {
+    if (_mtLocAdding) return; // Non chiudere mentre il form aggiunta è attivo
+    if (!e.target.closest('.mt-loc-wrapper')) {
+        var dd = document.getElementById('mtLocDropdown');
+        if (dd) { dd.classList.remove('open', 'adding'); _mtLocAdding = false; }
+    }
+});
+
+function mtUpdateFileLabel() {
+    var files = document.getElementById('mtFiles').files;
+    var label = document.getElementById('mtFileLabel');
+    var icon = document.getElementById('mtFileIcon');
+    var drop = document.querySelector('.mt-file-drop');
+    if (files.length === 0) {
+        label.textContent = 'Clicca per aggiungere file';
+        icon.textContent = '📎';
+        drop.classList.remove('has-files');
+    } else if (files.length === 1) {
+        label.textContent = files[0].name;
+        icon.textContent = '✅';
+        drop.classList.add('has-files');
+    } else {
+        label.textContent = files.length + ' file selezionati';
+        icon.textContent = '✅';
+        drop.classList.add('has-files');
+    }
+}
+
+async function mtCreateTask() {
+    var oggetto = document.getElementById('mtOggetto').value.trim();
+    if (!oggetto) { alert('Oggetto obbligatorio'); return; }
+    if (!_mtSelected.size) { alert('Seleziona almeno un operatore'); return; }
+    var body = {
+        oggetto: oggetto,
+        descrizione: document.getElementById('mtDescrizione').value.trim() || null,
+        progetto: document.getElementById('mtProgetto').value.trim() || null,
+        scadenza: document.getElementById('mtScadenza').value || null,
+        priorita: document.getElementById('mtPriorita').value,
+        location: document.getElementById('mtLocInput').value.trim() || null,
+        assign_type: 'users',
+        usernames: [..._mtSelected]
+    };
+    var btn = document.getElementById('mtBtnCreate');
+    btn.disabled = true; btn.textContent = 'Creazione...';
+    try {
+        var res = await fetch('/api/admin/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        var data = await res.json();
+        if (data.ok) {
+            var fileInput = document.getElementById('mtFiles');
+            if (fileInput.files.length > 0) {
+                var fd = new FormData();
+                for (var i = 0; i < fileInput.files.length; i++) fd.append('files', fileInput.files[i]);
+                await fetch('/api/admin/tasks/' + data.task_id + '/attachments', {method:'POST', body:fd}).catch(function(){});
+            }
+            closeNewTaskModal();
+            loadAll();
+        } else {
+            alert(data.error || 'Errore creazione');
+        }
+    } catch(e) {
+        alert('Errore di connessione');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Crea Task';
+    }
+}
+</script>
+
+<!-- Modale Nuovo Task -->
+<style>
+.mt-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all .3s ease}
+.mt-overlay.open{opacity:1;visibility:visible}
+.mt-modal{background:var(--bg-card);border-radius:16px;width:90%;max-width:540px;max-height:90vh;overflow-y:auto;transform:scale(0.9);transition:transform .3s ease}
+.mt-overlay.open .mt-modal{transform:scale(1)}
+.mt-header{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.mt-header h2{font-size:17px;font-weight:700;margin:0}
+.mt-close{background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-muted)}
+.mt-body{padding:20px 22px}
+.mt-group{margin-bottom:16px}
+.mt-group > label{display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.3px}
+.mt-group input,.mt-group textarea,.mt-group select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;background:var(--bg);color:var(--text);outline:none;font-family:inherit;box-sizing:border-box}
+.mt-group textarea{min-height:70px;resize:vertical}
+.mt-footer{padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
+.mt-btn{padding:10px 18px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:inherit}
+.mt-btn-primary{background:var(--brand);color:#fff}
+.mt-btn-secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+/* Assegnazione operatori */
+.mt-assign-section{background:var(--bg);border-radius:12px;padding:14px;border:1px solid var(--border)}
+.mt-assign-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.mt-search-input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg-card);color:var(--text);outline:none;font-family:inherit}
+.mt-search-input:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(67,97,238,0.15)}
+.mt-quick-btn{padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;background:var(--bg-card);color:var(--text);font-family:inherit;white-space:nowrap;transition:all .15s ease}
+.mt-quick-btn:hover{border-color:var(--brand);color:var(--brand)}
+.mt-quick-btn.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+.mt-user-list{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}
+.mt-user-item{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg-card);border-radius:8px;cursor:pointer;transition:all .15s ease;border:1px solid transparent}
+.mt-user-item:hover{border-color:var(--brand);background:rgba(67,97,238,0.04)}
+.mt-user-item.selected{background:rgba(67,97,238,0.08);border-color:rgba(67,97,238,0.3)}
+.mt-user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.mt-user-name{flex:1;font-size:13px;font-weight:500}
+.mt-user-check{font-size:16px;width:20px;text-align:center}
+.mt-sel-counter{font-size:12px;font-weight:600;padding:4px 0;text-align:center}
+/* Location autocomplete */
+.mt-loc-wrapper{position:relative}
+.mt-loc-input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;background:var(--bg);color:var(--text);outline:none;font-family:inherit;box-sizing:border-box}
+.mt-loc-input:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(67,97,238,0.15)}
+.mt-loc-dropdown{position:absolute;top:100%;left:0;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:10;max-height:220px;overflow-y:auto;margin-top:4px;display:none}
+.mt-loc-dropdown.adding{max-height:420px}
+.mt-loc-dropdown.open{display:block}
+.mt-loc-item{padding:10px 14px;cursor:pointer;transition:background .1s;border-bottom:1px solid var(--border)}
+.mt-loc-item:last-child{border-bottom:none}
+.mt-loc-item:hover{background:rgba(67,97,238,0.06)}
+.mt-loc-name{display:block;font-size:13px;font-weight:600;color:var(--text)}
+.mt-loc-addr{display:block;font-size:11px;color:var(--text-muted);margin-top:2px}
+.mt-loc-map-link{font-size:11px;font-weight:600;color:var(--brand);text-decoration:none;padding:2px 6px;border-radius:6px;background:rgba(67,97,238,0.08);margin-left:6px;white-space:nowrap}
+.mt-loc-map-link:hover{background:rgba(67,97,238,0.18)}
+.mt-loc-add{background:rgba(67,97,238,0.04);border-top:2px solid var(--border)}
+.mt-loc-add:hover{background:rgba(67,97,238,0.1)}
+.mt-loc-geo-btn{flex:1;padding:8px;border:1px solid var(--brand);border-radius:8px;background:rgba(67,97,238,0.06);color:var(--brand);font-weight:600;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s ease}
+.mt-loc-geo-btn:hover{background:rgba(67,97,238,0.15)}
+/* File upload */
+.mt-file-drop{display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;transition:all .15s ease;background:var(--bg);font-size:13px;color:var(--text-muted);font-weight:500}
+.mt-file-drop:hover{border-color:var(--brand);color:var(--brand);background:rgba(67,97,238,0.04)}
+.mt-file-drop.has-files{border-color:var(--success);color:var(--success);border-style:solid;background:rgba(34,197,94,0.05)}
+</style>
+
+<div class="mt-overlay" id="mtOverlay" onclick="if(event.target===this)closeNewTaskModal()">
+    <div class="mt-modal">
+        <div class="mt-header">
+            <h2>📋 Nuovo Task</h2>
+            <button class="mt-close" onclick="closeNewTaskModal()">&times;</button>
+        </div>
+        <div class="mt-body">
+            <div class="mt-group">
+                <label>Oggetto *</label>
+                <input type="text" id="mtOggetto" placeholder="Titolo del task..." />
+            </div>
+            <div class="mt-group">
+                <label>Descrizione</label>
+                <textarea id="mtDescrizione" placeholder="Descrizione dettagliata..."></textarea>
+            </div>
+            <div class="mt-group">
+                <label>Progetto</label>
+                <input type="text" id="mtProgetto" placeholder="Nome progetto" />
+            </div>
+            <div class="mt-group" style="display:flex;gap:12px">
+                <div style="flex:1">
+                    <label>Scadenza</label>
+                    <input type="date" id="mtScadenza" />
+                </div>
+                <div style="flex:1">
+                    <label>Priorità</label>
+                    <select id="mtPriorita">
+                        <option value="media">Media</option>
+                        <option value="alta">Alta</option>
+                        <option value="bassa">Bassa</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-group">
+                <label>📍 Location</label>
+                <div class="mt-loc-wrapper">
+                    <input type="text" id="mtLocInput" class="mt-loc-input" placeholder="Cerca location..." autocomplete="off" oninput="mtLocSearch()" onfocus="mtLocSearch()" />
+                    <div class="mt-loc-dropdown" id="mtLocDropdown"></div>
+                </div>
+            </div>
+            <div class="mt-group">
+                <label>Allegati</label>
+                <input type="file" id="mtFiles" multiple style="display:none" onchange="mtUpdateFileLabel()" />
+                <div class="mt-file-drop" onclick="document.getElementById('mtFiles').click()">
+                    <span id="mtFileIcon">📎</span>
+                    <span id="mtFileLabel">Clicca per aggiungere file</span>
+                </div>
+            </div>
+            <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+            <div class="mt-group">
+                <label>👥 Assegna a — Operatori Produzione</label>
+                <div class="mt-assign-section">
+                    <div class="mt-assign-toolbar">
+                        <input type="text" id="mtSearchUser" class="mt-search-input" placeholder="🔍 Cerca operatore..." oninput="mtOnSearch()" />
+                        <button class="mt-quick-btn" onclick="mtSelectAll()" title="Seleziona/deseleziona tutti">Tutti</button>
+                        <button class="mt-quick-btn" onclick="mtClearSelection()" title="Rimuovi selezione">Nessuno</button>
+                    </div>
+                    <div class="mt-user-list" id="mtUsersPane"></div>
+                    <div class="mt-sel-counter" id="mtSelCount">Nessuno selezionato</div>
+                </div>
+            </div>
+        </div>
+        <div class="mt-footer">
+            <button class="mt-btn mt-btn-secondary" onclick="closeNewTaskModal()">Annulla</button>
+            <button class="mt-btn mt-btn-primary" id="mtBtnCreate" onclick="mtCreateTask()">Crea Task</button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

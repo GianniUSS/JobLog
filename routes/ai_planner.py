@@ -894,26 +894,59 @@ def api_external_availability_set(res_id: int):
 @ai_planner.post("/api/admin/ai/propose-crew")
 @_admin_required
 def api_ai_propose_crew():
-    """Chiede all'AI di proporre assegnazioni crew per un progetto."""
+    """Genera analisi progetto + proposta crew via AI (V3)."""
+    from datetime import datetime as dt
+    from ai_planner import build_ai_context, call_ai_planner
+
     data = request.get_json(silent=True) or {}
-    project_code = (data.get("project_code") or "").strip()
-    planning_date = (data.get("date") or "").strip()
+    project_id = data.get("project_id")
+    target_date = (data.get("date") or "").strip()
+    user_message = data.get("message")
 
-    if not project_code:
-        return jsonify({"ok": False, "error": "project_code obbligatorio"}), 400
-    if not planning_date:
-        return jsonify({"ok": False, "error": "date obbligatoria (YYYY-MM-DD)"}), 400
+    if not project_id:
+        return jsonify({"success": False, "error": "project_id richiesto"}), 400
+    if not target_date:
+        target_date = dt.now().date().isoformat()
 
-    from flask import current_app
-    from ai_planner_engine import propose_crew
+    # API key da config
+    import json
+    from pathlib import Path
+    config_path = Path(__file__).resolve().parent.parent / "config.json"
+    api_key = ""
+    try:
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        api_key = cfg.get("anthropic", {}).get("api_key", "")
+    except Exception:
+        pass
+    if not api_key:
+        return jsonify({"success": False, "error": "API key Anthropic non configurata"}), 500
+
+    # Rentman client
+    from rentman_client import RentmanClient, RentmanAuthError
+    try:
+        client = RentmanClient()
+    except RentmanAuthError:
+        return jsonify({"success": False, "error": "Rentman non disponibile"}), 500
 
     db = _get_db()
-    result = propose_crew(project_code, planning_date, db, current_app)
+    db_vendor = _db_vendor()
 
-    if not result.get("ok"):
-        return jsonify(result), 500 if "API" in result.get("error", "") else 400
+    context = build_ai_context(client, db, int(project_id), target_date, db_vendor)
+    proposal = call_ai_planner(context, api_key, user_message=user_message)
 
-    return jsonify(result)
+    return jsonify({
+        "success": not proposal.get("error"),
+        "proposal": proposal,
+        "context_summary": {
+            "project_name": context["project"].get("name", ""),
+            "functions_count": len(context["functions"]),
+            "equipment_count": len(context["equipment"]),
+            "crew_total": len(context["available_crew"]),
+            "crew_busy_today": len(context["busy_crew_ids_today"]),
+            "already_assigned": len(context["already_assigned"]),
+            "data_issues": context.get("data_quality", {}),
+        },
+    })
 
 
 @ai_planner.post("/api/admin/ai/chat")

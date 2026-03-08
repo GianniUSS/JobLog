@@ -457,9 +457,11 @@ self.addEventListener('notificationclick', (event) => {
     console.log('[ServiceWorker] notificationData.url:', notificationData.url);
     console.log('[ServiceWorker] notificationData.type:', notificationData.type);
     
-    // IMPORTANTE: Controlla il type PRIMA dell'URL, per gestire turni_published
+    // IMPORTANTE: Controlla il type PRIMA dell'URL, per gestire turni_published e task_assigned
     if (notificationData.type === 'turni_published') {
         targetUrl = '/user/turni';
+    } else if (notificationData.type === 'task_assigned') {
+        targetUrl = '/?open_tasks=1';
     } else if (notificationData.url) {
         targetUrl = notificationData.url;
     }
